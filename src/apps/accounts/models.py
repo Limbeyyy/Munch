@@ -1,0 +1,122 @@
+from django.contrib.auth.models import AbstractUser
+from django.db import models
+from django.utils import timezone
+from django.core.validators import EmailValidator
+from src.utilities.utils import encrypt_token, decrypt_token
+import uuid
+
+class User(AbstractUser):
+    """
+    Custom User model with Google OAuth integration
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    email = models.EmailField(unique=True, validators=[EmailValidator()])
+    google_subject = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    avatar_url = models.URLField(max_length=500, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    is_verified = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    # Application-specific fields
+    preferred_language = models.CharField(max_length=10, default='en')
+    timezone = models.CharField(max_length=50, default='UTC')
+    notification_preferences = models.JSONField(default=dict, blank=True)
+    
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['username']
+    
+    class Meta:
+        db_table = 'users'
+        indexes = [
+            models.Index(fields=['email']),
+            models.Index(fields=['google_subject']),
+        ]
+    
+    def __str__(self):
+        return f"{self.email} ({self.get_full_name()})"
+    
+    @property
+    def display_name(self):
+        return self.get_full_name() or self.email
+    
+    def get_google_connection(self):
+        """Get the user's Google connection"""
+        return GoogleConnection.objects.filter(user=self, is_active=True).first()
+
+class GoogleConnection(models.Model):
+    """
+    Stores Google OAuth connection details securely
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='google_connections')
+    provider = models.CharField(max_length=50, default='google')
+    provider_subject = models.CharField(max_length=255, unique=True)
+    
+    # Encrypted tokens
+    _access_token = models.TextField(db_column='access_token_encrypted')
+    _refresh_token = models.TextField(db_column='refresh_token_encrypted', null=True, blank=True)
+    
+    token_expiry = models.DateTimeField(null=True, blank=True)
+    scopes = models.JSONField(default=list)
+    
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'google_connections'
+        indexes = [
+            models.Index(fields=['user']),
+            models.Index(fields=['provider_subject']),
+        ]
+    
+    @property
+    def access_token(self):
+        """Decrypt and return access token"""
+        return decrypt_token(self._access_token) if self._access_token else None
+    
+    @access_token.setter
+    def access_token(self, value):
+        """Encrypt and store access token"""
+        self._access_token = encrypt_token(value) if value else None
+    
+    @property
+    def refresh_token(self):
+        """Decrypt and return refresh token"""
+        return decrypt_token(self._refresh_token) if self._refresh_token else None
+    
+    @refresh_token.setter
+    def refresh_token(self, value):
+        """Encrypt and store refresh token"""
+        self._refresh_token = encrypt_token(value) if value else None
+    
+    def is_token_expired(self):
+        """Check if the current token is expired"""
+        if not self.token_expiry:
+            return True
+        return timezone.now() >= self.token_expiry
+    
+    def __str__(self):
+        return f"Google connection for {self.user.email}"
+
+class GoogleConnectionScope(models.Model):
+    """
+    Track granular OAuth scopes for each connection
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    connection = models.ForeignKey(GoogleConnection, on_delete=models.CASCADE, related_name='scope_grants')
+    scope = models.CharField(max_length=500)
+    granted_at = models.DateTimeField(auto_now_add=True)
+    last_used = models.DateTimeField(null=True, blank=True)
+    is_revoked = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = 'google_connection_scopes'
+        unique_together = [['connection', 'scope']]
+        indexes = [
+            models.Index(fields=['connection', 'is_revoked']),
+        ]
+
+    def __str__(self):
+        return f"{self.scope} for {self.connection.user.email}"
