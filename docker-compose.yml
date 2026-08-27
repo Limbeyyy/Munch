@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      DJANGO_ENV: ${DJANGO_ENV:-dev}
+      POSTGRES_USER: munch
+      POSTGRES_PASSWORD: munch
+      POSTGRES_DB: munch_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U munch"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    environment:
+      DJANGO_ENV: ${DJANGO_ENV:-dev}
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  celery-worker:
+    build: .
+    command: celery -A meeting_platform worker -l info
+    environment:
+      DJANGO_ENV: ${DJANGO_ENV:-dev}
+      DATABASE_URL: postgres://munch:munch@postgres:5432/munch_db
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-beat:
+    build: .
+    command: celery -A meeting_platform beat -l info
+    environment:
+      DJANGO_ENV: ${DJANGO_ENV:-dev}
+      DATABASE_URL: postgres://munch:munch@postgres:5432/munch_db
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+      - "5000:5000"
+    environment:
+      DJANGO_SETTINGS_MODULE: meeting_platform.settings
+      DJANGO_ENV: ${DJANGO_ENV:-dev}
+      DATABASE_URL: postgres://munch:munch@postgres:5432/munch_db
+      REDIS_URL: redis://redis:6379/0
+      REDIS_CACHE_URL: redis://redis:6379/1
+      REDIS_WS_URL: redis://redis:6379/2
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      SECRET_KEY: ${SECRET_KEY}
+      DEBUG: ${DEBUG:-False}
+    volumes:
+      - ./staticfiles:/app/staticfiles
+      - ./media:/app/media
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      celery-worker:
+        condition: service_started
+      celery-beat:
+        condition: service_started
+
+volumes:
+  postgres_data:

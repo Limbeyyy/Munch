@@ -1,0 +1,59 @@
+# Prevent pkg_resources deprecation warnings
+setuptools<82
+
+
+# Django Core
+Django==4.2.15
+djangorestframework==3.15.2
+django-cors-headers==4.3.1
+django-allauth==0.62.0
+django-environ==0.11.2
+
+# Database
+psycopg2-binary==2.9.9
+django-redis==5.4.0
+
+# Authentication
+PyJWT==2.8.0
+oauthlib==3.2.2
+requests-oauthlib==1.4.0
+google-auth==2.29.0
+google-auth-oauthlib==1.2.0
+
+# Google APIs
+google-api-python-client==2.132.0
+google-auth-httplib2==0.1.1
+
+# Real-time
+channels==4.0.0
+channels-redis==4.2.0
+
+# Async
+asgiref==3.7.2
+redis==4.6.0
+
+# Background Tasks
+celery==5.3.6
+django-celery-beat==2.6.0
+
+# Utilities
+python-dotenv==1.0.1
+django-storages==1.14.2
+pillow==10.4.0
+python-decouple==3.8
+
+# Serialization & API Docs
+djangorestframework-simplejwt==5.3.1
+drf-yasg==1.21.7
+
+# Development
+pytest==7.4.4
+pytest-django==4.8.0
+pytest-asyncio==0.23.7
+coverage==7.6.1
+black==23.12.1
+flake8==6.1.0
+ipython==8.26.0
+
+# Additional helpful packages (optional)
+# django-debug-toolbar==4.2.0

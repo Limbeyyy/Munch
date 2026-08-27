@@ -1,0 +1,222 @@
+# Python bytecode
+*.pyc
+*.pyo
+__pycache__/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+.virtualenv
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.*
+# ...but the template carries no secrets and contributors need it.
+!.env.example
+
+# Django-specific
+*.log
+*.pot
+*.mo
+*.db
+*.sqlite3
+*.sqlite
+db.sqlite3
+media/
+staticfiles/
+static/
+media/uploads/
+logs/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE / Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-workspace
+*.sublime-project
+
+# Testing
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+.tox/
+.nosetests
+*.cover
+*.py,cover
+.hypothesis/
+.cache
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Docker
+*.pid
+
+# Local settings
+local_settings.py
+local.py
+
+# Logs
+logs/
+*.log
+
+# Secret keys / sensitive files
+*.key
+*.pem
+*.crt
+*.csr
+*.p12
+*.pfx
+
+# Static files collected by Django
+staticfiles/
+assets/
+
+# Node modules (if using frontend)
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Coverage reports
+.coverage
+htmlcov/
+*.cover
+
+# Sphinx documentation
+docs/_build/
+
+# PyCharm
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+*.swp
+*.swo
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Git
+*.orig
+*.rej
+
+# Memcached
+*.memcache
+
+# Redis dumps
+dump.rdb
+
+# Celery
+*.pid
+
+# Jupyter Notebooks
+*.ipynb
+
+# Database migrations (if you want to keep them in repo, remove this)
+# migrations/
+# **/migrations/*.py
+# !**/migrations/__init__.py
+
+# Backup files
+*.bak
+*.backup
+*.tmp
+*.temp
+
+# Environment-specific
+.env.production
+.env.staging
+.env.development
+
+# ---------------------------------------------------------------------------
+# Heavy build and media artefacts
+# ---------------------------------------------------------------------------
+
+# Frontend build output and caches
+Munch-frontend/build/
+Munch-frontend/coverage/
+Munch-frontend/.eslintcache
+.parcel-cache/
+.next/
+.turbo/
+
+# Recordings and uploaded media - these belong in Drive, not in git
+*.mp4
+*.webm
+*.mkv
+*.mov
+*.avi
+*.wav
+*.mp3
+*.m4a
+*.ogg
+
+# Large binaries occasionally produced during testing
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.iso
+*.dmg
+
+# Model and data dumps
+*.pkl
+*.h5
+*.onnx
+*.pt
+*.ckpt
+*.parquet
+*.sql.gz
+*.dump
+
+# Runtime scratch
+config/logs/
+celerybeat-schedule*
+*.sock
