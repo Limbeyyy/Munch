@@ -9,8 +9,7 @@ import {
 } from '../types';
 import toast from 'react-hot-toast';
 import { ShareMeetingDialog } from '../components/ShareMeetingDialog';
-import { RemoteVideoGrid } from '../components/RemoteVideoGrid';
-import { useWebRTC } from '../hooks/useWebRTC';
+import { LiveTranscriptStage } from '../components/LiveTranscriptStage';
 
 const RESOURCE_POLL_MS = 8000;
 
@@ -42,12 +41,7 @@ export const MeetingRoomPage: React.FC = () => {
   const { user } = useAuthStore();
   const { currentMeeting, setMeeting, participants, setParticipants, transcript, addTranscriptSegment } = useMeetingStore();
   const wsRef = useRef<WebSocket | null>(null);
-  const localVideoRef = useRef<HTMLVideoElement | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isVideoOn, setIsVideoOn] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
-  const [hasVideoTrack, setHasVideoTrack] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [resources, setResources] = useState<Artifact[]>([]);
   const [uploadPercent, setUploadPercent] = useState<number | null>(null);
@@ -73,16 +67,12 @@ export const MeetingRoomPage: React.FC = () => {
   const [waitingGuests, setWaitingGuests] = useState<GuestAttendee[]>([]);
   const [decidingGuest, setDecidingGuest] = useState<string | null>(null);
   const [showShare, setShowShare] = useState(false);
-  const [showShareMenu, setShowShareMenu] = useState(false);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const screenStreamRef = useRef<MediaStream | null>(null);
-  const screenVideoRef = useRef<HTMLVideoElement | null>(null);
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [showAttendance, setShowAttendance] = useState(false);
   const [attendance, setAttendance] = useState<AttendanceReport | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const showChatRef = useRef(false);
   const meetingIdRef = useRef<string | null>(null);
+  const elapsedRef = useRef(0);
 
   // Effects key off these primitives rather than the meeting object, whose
   // identity changes on every refetch and would otherwise tear down the
@@ -259,76 +249,6 @@ export const MeetingRoomPage: React.FC = () => {
     }
   };
 
-  const { remotePeers, isConnected: rtcConnected, replaceVideoTrack } = useWebRTC({
-    meetingCode: meetingId ? meetingCode ?? null : null,
-    token: localStorage.getItem('access_token'),
-    localStream,
-  });
-
-  const canShareScreen =
-    isHost || myRole === 'co_host' || myRole === 'presenter';
-
-  const stopScreenShare = useCallback(() => {
-    screenStreamRef.current?.getTracks().forEach((t) => t.stop());
-    screenStreamRef.current = null;
-    if (screenVideoRef.current) screenVideoRef.current.srcObject = null;
-    setIsScreenSharing(false);
-
-    // Put the camera back on the wire.
-    replaceVideoTrack(localStreamRef.current?.getVideoTracks()[0] ?? null);
-
-    const id = meetingIdRef.current;
-    if (id && user) {
-      apiClient
-        .updateParticipantState(id, user.id, { is_screen_sharing: false })
-        .catch(() => undefined);
-    }
-  }, [user, replaceVideoTrack]);
-
-  const startScreenShare = async () => {
-    if (!navigator.mediaDevices?.getDisplayMedia) {
-      toast.error('Screen sharing is not supported in this browser');
-      return;
-    }
-
-    try {
-      // The browser presents its own picker here: tab, window or screen.
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: true,
-      });
-
-      screenStreamRef.current = stream;
-      if (screenVideoRef.current) screenVideoRef.current.srcObject = stream;
-      setIsScreenSharing(true);
-      setShowShareMenu(false);
-
-      // Send the screen to everyone in place of the camera.
-      await replaceVideoTrack(stream.getVideoTracks()[0] ?? null);
-
-      // Stopping from the browser's own bar must leave us consistent.
-      stream.getVideoTracks()[0]?.addEventListener('ended', stopScreenShare);
-
-      const id = meetingIdRef.current;
-      if (id && user) {
-        apiClient
-          .updateParticipantState(id, user.id, { is_screen_sharing: true })
-          .catch(() => undefined);
-      }
-    } catch (error) {
-      // Cancelling the picker is not an error worth reporting.
-      if ((error as DOMException).name !== 'NotAllowedError') {
-        toast.error('Could not start screen sharing');
-      }
-      setShowShareMenu(false);
-    }
-  };
-
-  // Release the capture if we leave the room while still sharing.
-  useEffect(() => () => {
-    screenStreamRef.current?.getTracks().forEach((t) => t.stop());
-  }, []);
-
   const loadAttendance = useCallback(async () => {
     const id = meetingIdRef.current;
     if (!id) return;
@@ -500,46 +420,6 @@ export const MeetingRoomPage: React.FC = () => {
     };
   }, [meetingCode, addTranscriptSegment, refreshParticipants, setMeeting, navigate]);
 
-  const setupLocalMedia = useCallback(async () => {
-    // Fall back to audio-only, then give up gracefully: a device that is
-    // missing or blocked should not leave the room unusable.
-    const attempts: MediaStreamConstraints[] = [
-      { video: true, audio: true },
-      { video: false, audio: true },
-      { video: true, audio: false },
-    ];
-
-    for (const constraints of attempts) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        localStreamRef.current = stream;
-        setLocalStream(stream);
-        setHasVideoTrack(stream.getVideoTracks().length > 0);
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-        }
-        if (!constraints.video) {
-          setIsVideoOn(false);
-          toast('Joined without camera', { icon: '🎙️' });
-        }
-        return;
-      } catch (error) {
-        const err = error as DOMException;
-        // A denied permission will not be fixed by asking for less.
-        if (err.name === 'NotAllowedError') {
-          setHasVideoTrack(false);
-          setIsVideoOn(false);
-            toast.error('Camera/microphone permission denied. Allow access in your browser to enable them.');
-          return;
-        }
-      }
-    }
-
-    setHasVideoTrack(false);
-    setIsVideoOn(false);
-    toast.error('No camera or microphone available');
-  }, []);
-
   useEffect(() => {
     if (meetingCode) {
       loadMeeting();
@@ -552,15 +432,12 @@ export const MeetingRoomPage: React.FC = () => {
     if (!meetingId) return;
 
     connectWebSocket();
-    setupLocalMedia();
     return () => {
       if (wsRef.current) {
         wsRef.current.close();
       }
-      localStreamRef.current?.getTracks().forEach((track) => track.stop());
-      localStreamRef.current = null;
     };
-  }, [meetingId, connectWebSocket, setupLocalMedia]);
+  }, [meetingId, connectWebSocket]);
 
   const loadResources = useCallback(async (meetingId: string) => {
     try {
@@ -569,6 +446,16 @@ export const MeetingRoomPage: React.FC = () => {
       // Resources are supplementary; a failure here must not break the room.
     }
   }, []);
+
+  // The device streams new lines over the socket; this fills in what was
+  // said before we arrived.
+  useEffect(() => {
+    if (!meetingCode) return;
+    apiClient
+      .getMeetingSegments(meetingCode)
+      .then((segments) => segments.forEach(addTranscriptSegment))
+      .catch(() => undefined);
+  }, [meetingCode, addTranscriptSegment]);
 
   useEffect(() => {
     if (meetingId) loadChat();
@@ -655,77 +542,15 @@ export const MeetingRoomPage: React.FC = () => {
     }
     const origin = new Date(startedAt).getTime();
 
-    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - origin) / 1000)));
+    const tick = () => {
+      const secs = Math.max(0, Math.floor((Date.now() - origin) / 1000));
+      elapsedRef.current = secs;
+      setElapsed(secs);
+    };
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [meetingId, startedAt]);
-
-  // Mirror the mute/video state onto the live tracks.
-  useEffect(() => {
-    localStreamRef.current?.getAudioTracks().forEach((track) => {
-      track.enabled = !isMuted;
-    });
-  }, [isMuted]);
-
-  useEffect(() => {
-    localStreamRef.current?.getVideoTracks().forEach((track) => {
-      track.enabled = isVideoOn;
-    });
-
-    // Re-assert playback: the element may have been paused while hidden.
-    if (isVideoOn) {
-      const el = localVideoRef.current;
-      if (el && localStreamRef.current) {
-        if (el.srcObject !== localStreamRef.current) {
-          el.srcObject = localStreamRef.current;
-        }
-        el.play().catch(() => undefined);
-      }
-    }
-  }, [isVideoOn]);
-
-  const toggleMute = async () => {
-    const newMuteState = !isMuted;
-    setIsMuted(newMuteState);
-
-    if (currentMeeting && user) {
-      try {
-        await apiClient.updateParticipantState(currentMeeting.id, user.id, {
-          is_muted: newMuteState,
-        });
-
-        wsRef.current?.send(JSON.stringify({
-          type: 'participant_state_update',
-          is_muted: newMuteState,
-        }));
-      } catch (error) {
-        toast.error('Failed to update mute status');
-        setIsMuted(!newMuteState);
-      }
-    }
-  };
-
-  const toggleVideo = async () => {
-    const newVideoState = !isVideoOn;
-    setIsVideoOn(newVideoState);
-
-    if (currentMeeting && user) {
-      try {
-        await apiClient.updateParticipantState(currentMeeting.id, user.id, {
-          is_video_on: newVideoState,
-        });
-
-        wsRef.current?.send(JSON.stringify({
-          type: 'participant_state_update',
-          is_video_on: newVideoState,
-        }));
-      } catch (error) {
-        toast.error('Failed to update video status');
-        setIsVideoOn(!newVideoState);
-      }
-    }
-  };
 
   /** Host only: closes the meeting for everyone. */
   const endMeeting = async () => {
@@ -950,74 +775,8 @@ export const MeetingRoomPage: React.FC = () => {
       <div className="flex h-screen">
         {/* Main Video Area */}
         <div className="flex-1 flex flex-col">
-          <div className="flex-1 bg-black flex items-center justify-center relative min-h-0">
-            {/* What you are sharing takes over the stage while it runs. */}
-            <video
-              ref={screenVideoRef}
-              autoPlay
-              playsInline
-              muted
-              className={`w-full h-full object-contain bg-black ${
-                isScreenSharing ? '' : 'hidden'
-              }`}
-            />
-
-            {/*
-              Kept mounted and hidden with visibility: display:none pauses the
-              element in Chrome, which leaves the preview blank when the camera
-              is switched back on.
-            */}
-            <video
-              ref={localVideoRef}
-              autoPlay
-              playsInline
-              muted
-              className="w-full h-full object-cover absolute inset-0"
-              style={{
-                visibility:
-                  !isScreenSharing && hasVideoTrack && isVideoOn
-                    ? 'visible'
-                    : 'hidden',
-              }}
-            />
-
-            {isScreenSharing && (
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-black/70 px-4 py-2 rounded-full text-sm">
-                <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                You are sharing your screen
-                <button
-                  onClick={stopScreenShare}
-                  className="ml-1 px-3 py-1 bg-red-600 hover:bg-red-700 rounded-full text-xs font-semibold"
-                >
-                  Stop
-                </button>
-              </div>
-            )}
-
-            {!isScreenSharing && !(hasVideoTrack && isVideoOn) && (
-              <div className="flex flex-col items-center gap-3 text-gray-400">
-                <div className="w-24 h-24 rounded-full bg-gray-700 flex items-center justify-center text-3xl font-semibold text-white">
-                  {(user?.email ?? '?').charAt(0).toUpperCase()}
-                </div>
-                <p className="text-sm">
-                  {hasVideoTrack ? 'Camera is off' : 'No camera available'}
-                </p>
-              </div>
-            )}
-
-            <RemoteVideoGrid peers={remotePeers} />
-
-            {/* Signalling state, so a silent failure is visible. */}
-            <div className="absolute top-4 left-32 flex items-center gap-2 bg-black/60 px-3 py-1.5 rounded-full text-xs">
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  rtcConnected ? 'bg-green-400' : 'bg-red-400'
-                }`}
-              />
-              {rtcConnected
-                ? `${remotePeers.length} peer${remotePeers.length === 1 ? '' : 's'}`
-                : 'connecting'}
-            </div>
+          <div className="flex-1 bg-gray-950 flex flex-col relative min-h-0">
+            <LiveTranscriptStage transcript={transcript} />
 
             {/* Session timer */}
             <div className="absolute top-4 left-4 flex items-center gap-2 bg-black/60 px-3 py-1.5 rounded-full text-sm">
@@ -1033,80 +792,11 @@ export const MeetingRoomPage: React.FC = () => {
             <h2 className="text-xl font-semibold mr-auto">{currentMeeting.title}</h2>
 
             <button
-              onClick={toggleMute}
-              className={`px-6 py-2 rounded-lg font-semibold ${
-                isMuted
-                  ? 'bg-red-600 hover:bg-red-700'
-                  : 'bg-blue-600 hover:bg-blue-700'
-              }`}
+              onClick={() => setShowShare(true)}
+              className="px-6 py-2 rounded-lg font-semibold bg-gray-700 hover:bg-gray-600"
             >
-              {isMuted ? 'Unmute' : 'Mute'}
+              Share link
             </button>
-
-            <button
-              onClick={toggleVideo}
-              className={`px-6 py-2 rounded-lg font-semibold ${
-                isVideoOn
-                  ? 'bg-blue-600 hover:bg-blue-700'
-                  : 'bg-red-600 hover:bg-red-700'
-              }`}
-            >
-              {isVideoOn ? 'Stop Video' : 'Start Video'}
-            </button>
-
-            <div className="relative">
-              <button
-                onClick={() =>
-                  isScreenSharing ? stopScreenShare() : setShowShareMenu((v) => !v)
-                }
-                aria-haspopup={!isScreenSharing}
-                aria-expanded={showShareMenu}
-                className={`px-6 py-2 rounded-lg font-semibold ${
-                  isScreenSharing
-                    ? 'bg-red-600 hover:bg-red-700'
-                    : 'bg-gray-700 hover:bg-gray-600'
-                }`}
-              >
-                {isScreenSharing ? 'Stop sharing' : 'Share'}
-              </button>
-
-              {showShareMenu && !isScreenSharing && (
-                <>
-                  {/* Click-away */}
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setShowShareMenu(false)}
-                  />
-                  <div className="absolute bottom-full mb-2 left-0 z-50 bg-gray-800 border border-gray-600 rounded-lg shadow-2xl p-2 flex gap-2">
-                    <button
-                      onClick={startScreenShare}
-                      disabled={!canShareScreen}
-                      title={
-                        canShareScreen
-                          ? 'Share a tab, a window or your whole screen'
-                          : 'Only the host, co-hosts and presenters can share a screen'
-                      }
-                      className="w-28 p-3 rounded-lg bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed flex flex-col items-center gap-1"
-                    >
-                      <span className="text-2xl" aria-hidden="true">&#128421;</span>
-                      <span className="text-xs font-semibold">Screen</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        setShowShareMenu(false);
-                        setShowShare(true);
-                      }}
-                      title="Share the meeting link and record who was invited"
-                      className="w-28 p-3 rounded-lg bg-gray-700 hover:bg-gray-600 flex flex-col items-center gap-1"
-                    >
-                      <span className="text-2xl" aria-hidden="true">&#128279;</span>
-                      <span className="text-xs font-semibold">Link</span>
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
 
             {isHost && (
               <button

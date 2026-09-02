@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../services/api';
 import { ChatMessage, ChatPerson, ChatSettings, GuestResource } from '../types';
 import toast from 'react-hot-toast';
-import { RemoteVideoGrid } from '../components/RemoteVideoGrid';
-import { useWebRTC } from '../hooks/useWebRTC';
+import { LiveTranscriptStage } from '../components/LiveTranscriptStage';
+import { TranscriptionSegment } from '../types';
 
 const API_BASE = (
   process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1'
@@ -40,26 +40,17 @@ const formatElapsed = (totalSeconds: number): string => {
  */
 export const GuestMeetingPage: React.FC = () => {
   const navigate = useNavigate();
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
 
   const token = sessionStorage.getItem('guest_token');
   const meetingCode = sessionStorage.getItem('guest_meeting_code') ?? '';
   const meetingTitle = sessionStorage.getItem('guest_meeting_title') ?? 'Meeting';
   const guestName = sessionStorage.getItem('guest_name') ?? 'Guest';
 
-  const [isMuted, setIsMuted] = useState(false);
-  const [isVideoOn, setIsVideoOn] = useState(true);
-  const [hasVideoTrack, setHasVideoTrack] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [startedAt, setStartedAt] = useState<string | null>(null);
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  // Guests read the transcript; only account holders can speak into it.
+  const [transcript, setTranscript] = useState<TranscriptionSegment[]>([]);
 
-  const { remotePeers } = useWebRTC({
-    meetingCode: meetingCode || null,
-    guestToken: token,
-    localStream,
-  });
 
   // Chat
   const wsRef = useRef<WebSocket | null>(null);
@@ -93,7 +84,6 @@ export const GuestMeetingPage: React.FC = () => {
         // Best-effort.
       }
     }
-    streamRef.current?.getTracks().forEach((t) => t.stop());
     sessionStorage.clear();
     navigate('/login');
   }, [token, navigate]);
@@ -129,6 +119,14 @@ export const GuestMeetingPage: React.FC = () => {
       // Optional.
     }
   }, [token]);
+
+  useEffect(() => {
+    if (!token || !meetingCode) return;
+    apiClient
+      .getGuestSegments(meetingCode, token)
+      .then(setTranscript)
+      .catch(() => undefined);
+  }, [token, meetingCode]);
 
   useEffect(() => {
     loadChat();
@@ -173,6 +171,11 @@ export const GuestMeetingPage: React.FC = () => {
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
+
+      if (data.type === 'transcription_update' && data.segment) {
+        setTranscript((prev) => [...prev, data.segment]);
+        return;
+      }
 
       if (data.type === 'chat_message') {
         setMessages((prev) =>
@@ -304,59 +307,6 @@ export const GuestMeetingPage: React.FC = () => {
     return () => clearInterval(id);
   }, [token, leave]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      for (const constraints of [
-        { video: true, audio: true },
-        { video: false, audio: true },
-      ]) {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia(constraints);
-          if (cancelled) {
-            stream.getTracks().forEach((t) => t.stop());
-            return;
-          }
-          streamRef.current = stream;
-          setLocalStream(stream);
-          setHasVideoTrack(stream.getVideoTracks().length > 0);
-          if (videoRef.current) videoRef.current.srcObject = stream;
-          if (!constraints.video) setIsVideoOn(false);
-            return;
-        } catch (error) {
-          if ((error as DOMException).name === 'NotAllowedError') {
-            toast.error('Camera/microphone permission denied');
-            setIsVideoOn(false);
-                return;
-          }
-        }
-      }
-      setIsVideoOn(false);
-      })();
-
-    return () => {
-      cancelled = true;
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    streamRef.current?.getAudioTracks().forEach((t) => { t.enabled = !isMuted; });
-  }, [isMuted]);
-
-  useEffect(() => {
-    streamRef.current?.getVideoTracks().forEach((t) => { t.enabled = isVideoOn; });
-
-    if (isVideoOn) {
-      const el = videoRef.current;
-      if (el && streamRef.current) {
-        if (el.srcObject !== streamRef.current) el.srcObject = streamRef.current;
-        el.play().catch(() => undefined);
-      }
-    }
-  }, [isVideoOn]);
 
   // Same clock as everyone else: anchored to the host's start timestamp.
   useEffect(() => {
@@ -375,29 +325,8 @@ export const GuestMeetingPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-900 text-white flex">
       <div className="flex-1 flex flex-col min-w-0">
-      <div className="flex-1 bg-black flex items-center justify-center relative min-h-0">
-        {/* visibility, not display: a hidden element gets paused. */}
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className="w-full h-full object-cover absolute inset-0"
-          style={{ visibility: hasVideoTrack && isVideoOn ? 'visible' : 'hidden' }}
-        />
-
-        {!(hasVideoTrack && isVideoOn) && (
-          <div className="flex flex-col items-center gap-3 text-gray-400">
-            <div className="w-24 h-24 rounded-full bg-gray-700 flex items-center justify-center text-3xl font-semibold text-white">
-              {guestName.charAt(0).toUpperCase()}
-            </div>
-            <p className="text-sm">
-              {hasVideoTrack ? 'Camera is off' : 'No camera available'}
-            </p>
-          </div>
-        )}
-
-        <RemoteVideoGrid peers={remotePeers} />
+      <div className="flex-1 bg-gray-950 flex flex-col relative min-h-0">
+        <LiveTranscriptStage transcript={transcript} />
 
         <div className="absolute top-4 left-4 flex items-center gap-2 bg-black/60 px-3 py-1.5 rounded-full text-sm">
           <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
@@ -416,24 +345,6 @@ export const GuestMeetingPage: React.FC = () => {
           <h2 className="text-lg font-semibold">{meetingTitle}</h2>
           <p className="text-xs text-gray-400">Code {meetingCode}</p>
         </div>
-
-        <button
-          onClick={() => setIsMuted((v) => !v)}
-          className={`px-6 py-2 rounded-lg font-semibold ${
-            isMuted ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'
-          }`}
-        >
-          {isMuted ? 'Unmute' : 'Mute'}
-        </button>
-
-        <button
-          onClick={() => setIsVideoOn((v) => !v)}
-          className={`px-6 py-2 rounded-lg font-semibold ${
-            isVideoOn ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-600 hover:bg-red-700'
-          }`}
-        >
-          {isVideoOn ? 'Stop Video' : 'Start Video'}
-        </button>
 
         <button
           onClick={() => {
