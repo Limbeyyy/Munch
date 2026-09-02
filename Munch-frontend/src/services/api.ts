@@ -26,6 +26,7 @@ import {
   AttendanceReport,
   ChatPerson,
   GuestResource,
+  TranscriptionSegment,
 } from '../types';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
@@ -149,6 +150,12 @@ class ApiClient {
     return response.data.results || response.data;
   }
 
+  /** Edit a meeting in place - used by the organizer's agenda. */
+  async updateMeeting(meetingId: string, patch: Partial<Meeting>): Promise<Meeting> {
+    const response = await this.client.patch(`/meetings/${meetingId}/`, patch);
+    return response.data;
+  }
+
   async getActiveMeetings(): Promise<Meeting[]> {
     const response = await this.client.get('/meetings/active/');
     return response.data;
@@ -241,6 +248,27 @@ class ApiClient {
 
   async getAttendance(meetingId: string): Promise<AttendanceReport> {
     const response = await this.client.get(`/meetings/${meetingId}/attendance/`);
+    return response.data;
+  }
+
+  /**
+   * Transcript lines already spoken, so joining late still shows the record.
+   * The live stream itself arrives over the meeting websocket.
+   */
+  async getMeetingSegments(meetingCode: string): Promise<TranscriptionSegment[]> {
+    const response = await this.client.get(`/meetings/${meetingCode}/segments/`);
+    return response.data;
+  }
+
+  /** The same history, for a guest holding a signed token. */
+  async getGuestSegments(
+    meetingCode: string,
+    guestToken: string
+  ): Promise<TranscriptionSegment[]> {
+    const response = await axios.get(
+      `${API_BASE_URL}/meetings/${meetingCode}/segments/`,
+      { params: { guest_token: guestToken } }
+    );
     return response.data;
   }
 
