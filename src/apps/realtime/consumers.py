@@ -259,8 +259,13 @@ class MeetingConsumer(AsyncWebsocketConsumer):
             'start_time': data.get('start_time', 0),
             'end_time': data.get('end_time', 0),
             'is_final': data.get('is_final', False),
-            'confidence': data.get('confidence', 0.0)
+            'confidence': data.get('confidence', 0.0),
+            # The room may switch between Nepali and English mid-session.
+            'language': data.get('language', 'en'),
         }
+
+        if not segment_data['text'].strip():
+            return
 
         await self.save_transcription_segment(segment_data)
 
@@ -543,7 +548,8 @@ class MeetingConsumer(AsyncWebsocketConsumer):
                 start_time=segment_data['start_time'],
                 end_time=segment_data['end_time'],
                 is_final=segment_data['is_final'],
-                confidence=segment_data['confidence']
+                confidence=segment_data['confidence'],
+                language=segment_data.get('language', 'en'),
             )
 
         except Exception as e:

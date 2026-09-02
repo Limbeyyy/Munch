@@ -322,6 +322,10 @@ CORS_EXPOSE_HEADERS = [
 # Google OAuth Configuration
 GOOGLE_CLIENT_ID = env('GOOGLE_CLIENT_ID')
 GOOGLE_CLIENT_SECRET = env('GOOGLE_CLIENT_SECRET')
+# Shared secret the meeting-hall capture device presents when streaming
+# transcript text in. No audio is accepted, only the resulting text.
+TRANSCRIPTION_INGEST_TOKEN = env('TRANSCRIPTION_INGEST_TOKEN', default='')
+
 GOOGLE_DRIVE_APP_FOLDER = 'My Meeting Platform'
 
 # Encryption Keys (store securely in production)

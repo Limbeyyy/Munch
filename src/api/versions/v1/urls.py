@@ -188,8 +188,20 @@ def _broadcast_roles_changed(meeting_code):
 
 # Custom nested routes for participants (must come before router include)
 from src.apps.meetings import guest_views
+from src.apps.transcription import ingest as transcription_ingest
 
 urlpatterns = [
+    # The hall's capture device streams text in; clients only read it out.
+    re_path(
+        r'^meetings/(?P<meeting_ref>[^/.]+)/transcription/$',
+        transcription_ingest.ingest_transcription,
+        name='transcription-ingest',
+    ),
+    re_path(
+        r'^meetings/(?P<meeting_ref>[^/.]+)/segments/$',
+        transcription_ingest.meeting_segments,
+        name='transcription-segments',
+    ),
     path('meetings/guest/knock/', guest_views.guest_knock, name='guest-knock'),
     path('meetings/guest/status/', guest_views.guest_status, name='guest-status'),
     path('meetings/guest/leave/', guest_views.guest_leave, name='guest-leave'),
