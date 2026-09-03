@@ -198,7 +198,7 @@ def meeting_segments(request, meeting_ref):
 
     segments = meeting.transcription_segments.filter(
         is_final=True
-    ).order_by('created_at')[:500]
+    ).select_related('session').order_by('created_at')[:500]
 
     return Response([
         {
@@ -211,6 +211,9 @@ def meeting_segments(request, meeting_ref):
             'confidence': s.confidence,
             'is_final': s.is_final,
             'created_at': s.created_at,
+            # Which part of the running order this was said during.
+            'session_id': str(s.session_id) if s.session_id else None,
+            'session_title': s.session.title if s.session_id else None,
         }
         for s in segments
     ])
