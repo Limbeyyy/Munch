@@ -5,6 +5,8 @@ import { useAuthStore } from './store/authStore';
 import { LoginPage } from './pages/LoginPage';
 import { PricingPage } from './pages/PricingPage';
 import { OrganizerPage } from './pages/OrganizerPage';
+import { AttendeePage } from './pages/AttendeePage';
+import { HomeRedirect } from './pages/HomeRedirect';
 import { GuestWaitingPage } from './pages/GuestWaitingPage';
 import { GuestMeetingPage } from './pages/GuestMeetingPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -71,6 +73,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <OrganizerPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/app"
+            element={
+              <ProtectedRoute>
+                <AttendeePage />
               </ProtectedRoute>
             }
           />
@@ -170,7 +180,14 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <HomeRedirect />
+              </ProtectedRoute>
+            }
+          />
         </Routes>
       </BrowserRouter>
       <Toaster position="top-right" />

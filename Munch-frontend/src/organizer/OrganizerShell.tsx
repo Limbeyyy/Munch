@@ -135,7 +135,7 @@ export const OrganizerShell: React.FC<Props> = ({
           </button>
 
           <button
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate('/app')}
             className="hidden md:inline-flex px-3 py-1.5 rounded-lg border border-white/35 text-[13px] hover:bg-white/10"
           >
             {t({ ne: 'सहभागीले देख्ने रूप', en: 'Attendee view' })}

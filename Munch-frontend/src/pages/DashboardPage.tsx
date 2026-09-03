@@ -136,6 +136,12 @@ export const DashboardPage: React.FC = () => {
 
           <div className="ml-auto flex items-center gap-3">
             <button
+              onClick={() => navigate('/app')}
+              className="text-[13px] px-3 py-1.5 rounded-lg border border-white/25 hover:bg-white/10"
+            >
+              Attendee view
+            </button>
+            <button
               onClick={() => navigate('/organizer')}
               className="text-[13px] px-3 py-1.5 rounded-lg bg-amber text-[#20160A] font-semibold hover:bg-[#FFB43F]"
             >
