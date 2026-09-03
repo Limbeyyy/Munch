@@ -8,6 +8,7 @@ import { OrganizerProvider, useOrganizer } from '../organizer/i18n';
 import { Modal, OrganizerShell } from '../organizer/OrganizerShell';
 import { Btn, Chip } from '../organizer/ui';
 import { SetupView } from '../organizer/views/SetupView';
+import { EventsView } from '../organizer/views/EventsView';
 import { LiveView } from '../organizer/views/LiveView';
 import { AgendaView } from '../organizer/views/AgendaView';
 import { ContentView } from '../organizer/views/ContentView';
@@ -23,7 +24,7 @@ const OrganizerInner: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
 
-  const [view, setView] = useState('live');
+  const [view, setView] = useState('events');
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
@@ -95,6 +96,12 @@ const OrganizerInner: React.FC = () => {
             )}
             {view === 'live' && (
               <LiveView meetings={meetings} onChanged={load} onNavigate={setView} />
+            )}
+            {view === 'events' && (
+              <EventsView
+                onOpenRoom={(code) => navigate(`/meeting/${code}`)}
+                onChanged={load}
+              />
             )}
             {view === 'agenda' && (
               <AgendaView meetings={meetings} onChanged={load} onOpenSession={setDrawer} />
