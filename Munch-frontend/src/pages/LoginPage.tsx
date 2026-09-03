@@ -89,35 +89,57 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full">
-        <h1 className="text-3xl font-bold text-center mb-2 text-gray-800">Munch</h1>
-        <p className="text-center text-gray-600 mb-8">Meeting Platform</p>
+    <div
+      className="min-h-screen flex items-center justify-center px-5 py-10 bg-navy-800"
+      style={{
+        backgroundImage:
+          'radial-gradient(circle at 50% 30%, rgba(240,162,43,.20), transparent 46%)',
+      }}
+    >
+      <div className="w-full max-w-md text-center">
+        {/* The mark: a stage inside a frame, lit amber */}
+        <svg
+          width="60" height="60" viewBox="0 0 64 64" fill="none"
+          className="mx-auto" aria-hidden="true"
+        >
+          <g stroke="#8FB0DC" strokeWidth="2">
+            <path d="M32 8v8M32 48v8M8 32h8M48 32h8" />
+          </g>
+          <rect x="18" y="18" width="28" height="28" rx="4" stroke="#fff" strokeWidth="2.4" />
+          <rect x="26" y="26" width="12" height="12" rx="2" fill="#F0A22B" />
+        </svg>
+
+        <h1 className="text-4xl font-bold text-white mt-3">मञ्च</h1>
+        <p className="font-read text-sm text-[#BFD1EC] mb-7">
+          Meeting &amp; Agenda Network for Collaboration Hub
+        </p>
+
+        <div className="bg-white/[.07] border border-white/20 rounded-[22px] p-6 text-left backdrop-blur">
 
         <button
           onClick={handleGoogleLogin}
           disabled={isLoading}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full bg-amber hover:bg-[#FFB43F] text-[#20160A] font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isLoading ? 'Signing in...' : 'Sign in with Google'}
         </button>
 
         <div className="flex items-center gap-3 my-6">
-          <div className="flex-1 h-px bg-gray-200" />
-          <span className="text-xs uppercase tracking-wide text-gray-400">or</span>
-          <div className="flex-1 h-px bg-gray-200" />
+          <div className="flex-1 h-px bg-white/20" />
+          <span className="text-xs uppercase tracking-wide text-[#9FB8DC]">or</span>
+          <div className="flex-1 h-px bg-white/20" />
         </div>
 
         {!showGuest ? (
           <button
             onClick={() => setShowGuest(true)}
-            className="w-full border border-gray-300 hover:bg-gray-50 text-gray-700 font-semibold py-3 px-4 rounded-lg"
+            className="w-full border border-white/30 hover:bg-white/10 text-white font-semibold py-3 px-4 rounded-lg"
           >
             Join with a meeting code
           </button>
         ) : (
           <div className="space-y-3">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-[#BFD1EC]">
               Joining as a guest. The host will review your details before
               letting you in.
             </p>
@@ -127,7 +149,7 @@ export const LoginPage: React.FC = () => {
               value={guestCode}
               onChange={(e) => setGuestCode(e.target.value)}
               placeholder="Meeting code"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-3 rounded-lg uppercase tracking-wide bg-navy-900/50 border border-white/25 text-white placeholder-[#8FA6C6] focus:outline-none focus:ring-2 focus:ring-amber"
             />
             <input
               type="text"
@@ -135,7 +157,7 @@ export const LoginPage: React.FC = () => {
               onChange={(e) => setGuestName(e.target.value)}
               placeholder="Full name (required)"
               autoComplete="name"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-3 rounded-lg bg-navy-900/50 border border-white/25 text-white placeholder-[#8FA6C6] focus:outline-none focus:ring-2 focus:ring-amber"
             />
             <input
               type="tel"
@@ -146,28 +168,40 @@ export const LoginPage: React.FC = () => {
               }}
               placeholder="Phone number (required)"
               autoComplete="tel"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-3 rounded-lg bg-navy-900/50 border border-white/25 text-white placeholder-[#8FA6C6] focus:outline-none focus:ring-2 focus:ring-amber"
             />
 
             <button
               onClick={handleGuestJoin}
               disabled={isKnocking}
-              className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg disabled:opacity-50"
+              className="w-full bg-ok hover:bg-[#166F4C] text-white font-semibold py-3 px-4 rounded-lg disabled:opacity-50"
             >
               {isKnocking ? 'Asking the host...' : 'Ask to join'}
             </button>
             <button
               onClick={() => setShowGuest(false)}
-              className="w-full text-gray-500 text-sm py-1 hover:text-gray-700"
+              className="w-full text-[#9FB8DC] text-sm py-1 hover:text-white"
             >
               Back
             </button>
           </div>
         )}
 
-        <p className="text-center text-gray-600 text-sm mt-6">
-          Secure. Encrypted. Simple.
+        </div>
+
+        <p className="text-[12.5px] text-[#A9C0E2] mt-5 leading-relaxed">
+          <span className="inline-block border-t border-white/20 pt-3">
+            We keep no personal data beyond your account. No profiling, nothing
+            sold on.
+          </span>
         </p>
+
+        <button
+          onClick={() => navigate('/pricing')}
+          className="text-[#BFD1EC] text-sm underline underline-offset-4 mt-4 hover:text-white"
+        >
+          See plans and pricing
+        </button>
       </div>
     </div>
   );
