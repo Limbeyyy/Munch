@@ -58,6 +58,12 @@ export interface TranscriptionSegment {
   end_time: number;
   is_final: boolean;
   confidence: number;
+  language?: string;
+  /** Present on stored lines; live broadcasts carry it too. */
+  created_at?: string;
+  /** Which part of the running order this was said during. */
+  session_id?: string | null;
+  session_title?: string | null;
 }
 
 export interface Transcript {
