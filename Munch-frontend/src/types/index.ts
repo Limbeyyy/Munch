@@ -400,3 +400,88 @@ export interface GuestResource {
   /** Served by our backend, since guests have no Drive access. */
   download_url: string;
 }
+
+
+// --- Events, meetings and sessions -----------------------------------------
+// An event is a day's programme. It holds meetings, which are the rooms
+// people join, and each meeting holds the sessions that make up its
+// running order.
+
+export type SessionStatus = 'scheduled' | 'live' | 'done' | 'skipped';
+
+export interface Session {
+  id: string;
+  meeting: string;
+  title: string;
+  description: string;
+  speaker_name: string;
+  starts_at: string;
+  duration_minutes: number;
+  ends_at: string;
+  position: number;
+  status: SessionStatus;
+  started_at: string | null;
+  ended_at: string | null;
+  attendance_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EventMeeting {
+  id: string;
+  meeting_code: string;
+  title: string;
+  description: string;
+  status: Meeting['status'];
+  scheduled_start: string;
+  scheduled_end: string;
+  started_at?: string | null;
+  ended_at?: string | null;
+  participant_count: number;
+  sessions: Session[];
+  session_count: number;
+}
+
+export type EventStatus = 'draft' | 'scheduled' | 'active' | 'ended' | 'cancelled';
+
+export interface EventProgramme {
+  id: string;
+  title: string;
+  description: string;
+  venue: string;
+  event_date: string;
+  status: EventStatus;
+  organizer_email: string;
+  meetings: EventMeeting[];
+  meeting_count: number;
+  session_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A session as typed into the create form, before it exists. */
+export interface SessionDraft {
+  title: string;
+  speaker_name?: string;
+  starts_at: string;
+  duration_minutes: number;
+  description?: string;
+}
+
+/** A meeting as typed into the create form, with its running order. */
+export interface MeetingDraft {
+  title: string;
+  description?: string;
+  scheduled_start: string;
+  duration_minutes: number;
+  sessions: SessionDraft[];
+}
+
+export interface SessionAttendanceRow {
+  id: string;
+  session: string;
+  name: string;
+  is_guest: boolean;
+  marked_manually: boolean;
+  recorded_at: string;
+}

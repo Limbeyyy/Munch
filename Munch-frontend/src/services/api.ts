@@ -27,6 +27,11 @@ import {
   ChatPerson,
   GuestResource,
   TranscriptionSegment,
+  EventProgramme,
+  EventMeeting,
+  MeetingDraft,
+  Session,
+  SessionAttendanceRow,
 } from '../types';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
@@ -178,6 +183,100 @@ class ApiClient {
 
   async joinMeeting(meetingCode: string, role: string = 'attendee'): Promise<any> {
     const response = await this.client.post(`/meetings/${meetingCode}/join/`, { role });
+    return response.data;
+  }
+
+  // Events: a day's programme of meetings, each with its own sessions
+
+  async listEvents(): Promise<EventProgramme[]> {
+    const response = await this.client.get('/events/');
+    return response.data.results || response.data;
+  }
+
+  async getEvent(eventId: string): Promise<EventProgramme> {
+    const response = await this.client.get(`/events/${eventId}/`);
+    return response.data;
+  }
+
+  /** Create the whole programme at once - event, meetings and sessions. */
+  async createEvent(data: {
+    title: string;
+    description?: string;
+    venue?: string;
+    event_date: string;
+    meetings?: MeetingDraft[];
+  }): Promise<EventProgramme> {
+    const response = await this.client.post('/events/', data);
+    return response.data;
+  }
+
+  async updateEvent(eventId: string, patch: Partial<EventProgramme>): Promise<EventProgramme> {
+    const response = await this.client.patch(`/events/${eventId}/`, patch);
+    return response.data;
+  }
+
+  async deleteEvent(eventId: string): Promise<void> {
+    await this.client.delete(`/events/${eventId}/`);
+  }
+
+  /** Add a meeting, with its running order, to an event that already exists. */
+  async addMeetingToEvent(eventId: string, meeting: MeetingDraft): Promise<EventMeeting> {
+    const response = await this.client.post(`/events/${eventId}/meetings/`, meeting);
+    return response.data;
+  }
+
+  // Sessions: the running order inside one meeting
+
+  /** `meetingRef` takes either the meeting's id or its room code. */
+  async listSessions(meetingRef: string): Promise<Session[]> {
+    const response = await this.client.get('/sessions/', { params: { meeting: meetingRef } });
+    return response.data.results || response.data;
+  }
+
+  async createSession(data: {
+    meeting: string;
+    title: string;
+    speaker_name?: string;
+    starts_at: string;
+    duration_minutes: number;
+  }): Promise<Session> {
+    const response = await this.client.post('/sessions/', data);
+    return response.data;
+  }
+
+  async updateSession(sessionId: string, patch: Partial<Session>): Promise<Session> {
+    const response = await this.client.patch(`/sessions/${sessionId}/`, patch);
+    return response.data;
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    await this.client.delete(`/sessions/${sessionId}/`);
+  }
+
+  /** Put a session on stage. Any other live session in the meeting closes. */
+  async startSession(sessionId: string): Promise<Session> {
+    const response = await this.client.post(`/sessions/${sessionId}/start/`);
+    return response.data;
+  }
+
+  /** Close a session and record who was in the room for it. */
+  async endSession(sessionId: string): Promise<Session & { attendance_recorded: number }> {
+    const response = await this.client.post(`/sessions/${sessionId}/end/`);
+    return response.data;
+  }
+
+  async getSessionAttendance(sessionId: string): Promise<SessionAttendanceRow[]> {
+    const response = await this.client.get(`/sessions/${sessionId}/attendance/`);
+    return response.data;
+  }
+
+  /** Tick somebody off by hand for a session the room did not see them in. */
+  async markSessionAttendance(
+    sessionId: string,
+    who: { user_id?: string; guest_id?: string },
+    present = true
+  ): Promise<{ present: boolean }> {
+    const response = await this.client.post(`/sessions/${sessionId}/mark/`, { ...who, present });
     return response.data;
   }
 
