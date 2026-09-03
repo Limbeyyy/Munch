@@ -1,48 +1,86 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { ChatMessage, GuestAttendee, Meeting } from '../../types';
+import {
+  ChatMessage, EventProgramme, GuestAttendee, Meeting, Session,
+} from '../../types';
 import { useOrganizer } from '../i18n';
 import { Btn, Chip, Empty, Head, Panel, Tabs } from '../ui';
+
+const PAGE_SIZE = 20;
+
+const clock = (iso: string) =>
+  new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+/** Where one queued item sits in the programme. */
+interface Placement {
+  eventId: string;
+  eventTitle: string;
+  eventDate: string | null;
+  meeting: Meeting;
+  session: Session | null;
+}
+
+interface Row extends Placement {
+  kind: 'message' | 'guest';
+  id: string;
+  at: string;
+  message?: ChatMessage;
+  guest?: GuestAttendee;
+  /** Everything a search can match, lowercased once. */
+  haystack: string;
+}
 
 interface Props { meetings: Meeting[]; }
 
 /**
- * Everything waiting on the organizer's word: messages addressed to
- * presenters, and guests knocking to be let in.
+ * Everything waiting on the organizer's word, kept in the shape of the
+ * programme: an item belongs to a meeting, and to whichever session was
+ * running when it arrived.
  */
 export const ModerationView: React.FC<Props> = ({ meetings }) => {
   const { t, num } = useOrganizer();
-  const [tab, setTab] = useState('messages');
-  const [messages, setMessages] = useState<{ meeting: Meeting; item: ChatMessage }[]>([]);
-  const [guests, setGuests] = useState<{ meeting: Meeting; item: GuestAttendee }[]>([]);
+
+  const [tab, setTab] = useState<'messages' | 'guests'>('messages');
+  const [events, setEvents] = useState<EventProgramme[]>([]);
+  const [pending, setPending] = useState<Record<string, ChatMessage[]>>({});
+  const [waiting, setWaiting] = useState<Record<string, GuestAttendee[]>>({});
   const [busy, setBusy] = useState<string | null>(null);
 
-  // A moderator watches the whole event, not one session, so gather the
-  // queues from every meeting that is still running.
-  const live = meetings.filter((m) => m.status === 'active' || m.status === 'scheduled');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  // A moderator watches the whole programme, so both queues are gathered
+  // from every meeting that has not ended.
+  const live = useMemo(
+    () => meetings.filter((m) => m.status === 'active' || m.status === 'scheduled'),
+    [meetings]
+  );
+  const liveKey = live.map((m) => m.id).join(',');
+
+  useEffect(() => {
+    apiClient.listEvents().then(setEvents).catch(() => undefined);
+  }, []);
 
   const load = useCallback(async () => {
     const results = await Promise.allSettled(
       live.map(async (m) => ({
-        meeting: m,
+        id: m.id,
         pending: await apiClient.getPendingMessages(m.id).catch(() => [] as ChatMessage[]),
         waiting: await apiClient.getGuests(m.id).catch(() => [] as GuestAttendee[]),
       }))
     );
-
-    const nextMessages: { meeting: Meeting; item: ChatMessage }[] = [];
-    const nextGuests: { meeting: Meeting; item: GuestAttendee }[] = [];
+    const nextPending: Record<string, ChatMessage[]> = {};
+    const nextWaiting: Record<string, GuestAttendee[]> = {};
     results.forEach((r) => {
       if (r.status !== 'fulfilled') return;
-      r.value.pending.forEach((item) => nextMessages.push({ meeting: r.value.meeting, item }));
-      r.value.waiting
-        .filter((g) => g.status === 'pending')
-        .forEach((item) => nextGuests.push({ meeting: r.value.meeting, item }));
+      nextPending[r.value.id] = r.value.pending;
+      nextWaiting[r.value.id] = r.value.waiting.filter((g) => g.status === 'pending');
     });
-    setMessages(nextMessages);
-    setGuests(nextGuests);
-  }, [JSON.stringify(live.map((m) => m.id))]); // eslint-disable-line react-hooks/exhaustive-deps
+    setPending(nextPending);
+    setWaiting(nextWaiting);
+  }, [liveKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     load();
@@ -50,13 +88,112 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
     return () => clearInterval(id);
   }, [load]);
 
+  /** Which programme each meeting belongs to, and its running order. */
+  const placementOf = useCallback(
+    (meeting: Meeting, at: string): Placement => {
+      const event = events.find((e) => e.meetings.some((m) => m.id === meeting.id));
+      const sessions = event?.meetings.find((m) => m.id === meeting.id)?.sessions ?? [];
+
+      // Neither a message nor a guest records a session, so the session is
+      // the one that was on stage at the time.
+      const moment = +new Date(at);
+      const session =
+        sessions.find((s) => {
+          const from = +new Date(s.starts_at);
+          return moment >= from && moment < from + s.duration_minutes * 60000;
+        }) ?? null;
+
+      return {
+        eventId: event?.id ?? '__none__',
+        eventTitle: event?.title ?? t({ ne: 'कार्यक्रम बाहिर', en: 'Outside any event' }),
+        eventDate: event?.event_date ?? null,
+        meeting,
+        session,
+      };
+    },
+    [events, t]
+  );
+
+  const rows = useMemo<Row[]>(() => {
+    const out: Row[] = [];
+    live.forEach((meeting) => {
+      if (tab === 'messages') {
+        (pending[meeting.id] ?? []).forEach((m) => {
+          const place = placementOf(meeting, m.created_at);
+          out.push({
+            ...place,
+            kind: 'message',
+            id: m.id,
+            at: m.created_at,
+            message: m,
+            haystack: [
+              m.body, m.sender_name, m.sender_email, m.recipient_name,
+              meeting.title, meeting.meeting_code,
+              place.eventTitle, place.session?.title, place.session?.speaker_name,
+            ].filter(Boolean).join(' ').toLowerCase(),
+          });
+        });
+      } else {
+        (waiting[meeting.id] ?? []).forEach((g) => {
+          const place = placementOf(meeting, g.created_at);
+          out.push({
+            ...place,
+            kind: 'guest',
+            id: g.id,
+            at: g.created_at,
+            guest: g,
+            haystack: [
+              g.full_name, g.phone,
+              meeting.title, meeting.meeting_code,
+              place.eventTitle, place.session?.title, place.session?.speaker_name,
+            ].filter(Boolean).join(' ').toLowerCase(),
+          });
+        });
+      }
+    });
+
+    // Oldest first: whoever has waited longest deserves a decision first.
+    return out.sort((a, b) => +new Date(a.at) - +new Date(b.at));
+  }, [live, tab, pending, waiting, placementOf]);
+
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matched = useMemo(
+    () => (terms.length === 0 ? rows : rows.filter((r) => terms.every((w) => r.haystack.includes(w)))),
+    [rows, terms.join(' ')] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  const pageCount = Math.max(1, Math.ceil(matched.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const visible = matched.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  useEffect(() => { setPage(1); }, [tab, query]);
+
+  /** Group this page into event → meeting → session sections. */
+  const sections = useMemo(() => {
+    const order: string[] = [];
+    const byKey: Record<string, { row: Row; items: Row[] }> = {};
+    visible.forEach((row) => {
+      const key = `${row.eventId}|${row.meeting.id}|${row.session?.id ?? 'none'}`;
+      if (!byKey[key]) {
+        byKey[key] = { row, items: [] };
+        order.push(key);
+      }
+      byKey[key].items.push(row);
+    });
+    return order.map((key) => ({ key, ...byKey[key] }));
+  }, [visible]);
+
   const decideMessage = async (
-    meeting: Meeting, message: ChatMessage, action: 'approve' | 'decline' | 'remove'
+    row: Row, action: 'approve' | 'decline' | 'remove'
   ) => {
+    if (!row.message) return;
     try {
-      setBusy(message.id);
-      await apiClient.moderateMessage(meeting.id, message.id, action);
-      setMessages((prev) => prev.filter((m) => m.item.id !== message.id));
+      setBusy(row.id);
+      await apiClient.moderateMessage(row.meeting.id, row.message.id, action);
+      setPending((prev) => ({
+        ...prev,
+        [row.meeting.id]: (prev[row.meeting.id] ?? []).filter((m) => m.id !== row.id),
+      }));
       toast.success({
         approve: t({ ne: 'सन्देश पठाइयो', en: 'Delivered' }),
         decline: t({ ne: 'अस्वीकृत गरियो', en: 'Declined' }),
@@ -67,115 +204,202 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
     } finally { setBusy(null); }
   };
 
-  const decideGuest = async (meeting: Meeting, guest: GuestAttendee, admit: boolean) => {
+  const decideGuest = async (row: Row, admit: boolean) => {
+    if (!row.guest) return;
     try {
-      setBusy(guest.id);
-      await apiClient.admitGuest(meeting.id, guest.id, admit ? 'admit' : 'deny');
-      setGuests((prev) => prev.filter((g) => g.item.id !== guest.id));
+      setBusy(row.id);
+      await apiClient.admitGuest(row.meeting.id, row.guest.id, admit ? 'admit' : 'deny');
+      setWaiting((prev) => ({
+        ...prev,
+        [row.meeting.id]: (prev[row.meeting.id] ?? []).filter((g) => g.id !== row.id),
+      }));
       toast.success(admit
-        ? t({ ne: `${guest.full_name} भित्रिए`, en: `${guest.full_name} let in` })
+        ? t({ ne: `${row.guest.full_name} भित्रिए`, en: `${row.guest.full_name} let in` })
         : t({ ne: 'अनुरोध अस्वीकृत', en: 'Request declined' }));
     } catch {
       toast.error(t({ ne: 'गर्न सकिएन', en: 'That did not work' }));
     } finally { setBusy(null); }
   };
 
+  const messageCount = live.reduce((n, m) => n + (pending[m.id]?.length ?? 0), 0);
+  const guestCount = live.reduce((n, m) => n + (waiting[m.id]?.length ?? 0), 0);
+
   return (
     <>
       <Head
         title={{ ne: 'मडेरेसन', en: 'Moderation' }}
         lede={{
-          ne: 'सिधा सन्देश र पाहुनाका अनुरोध — तपाईंले स्वीकृत गरेपछि मात्र अघि बढ्छन्।',
-          en: 'Direct messages and guest requests move on only once you approve them.',
+          ne: 'हरेक कुरा आफ्नै बैठक र सत्रमुनि — एकै थुप्रोमा मिसिँदैन।',
+          en: 'Each item sits under its own meeting and session, never in one mixed pile.',
         }}
       />
 
       <Tabs
         active={tab}
-        onChange={setTab}
+        onChange={(id) => setTab(id as 'messages' | 'guests')}
         tabs={[
-          { id: 'messages', label: { ne: `सन्देश (${num(messages.length)})`, en: `Messages (${messages.length})` } },
-          { id: 'guests', label: { ne: `पाहुना (${num(guests.length)})`, en: `Guests (${guests.length})` } },
+          { id: 'messages', label: { ne: `सन्देश (${num(messageCount)})`, en: `Messages (${messageCount})` } },
+          { id: 'guests', label: { ne: `पाहुना (${num(guestCount)})`, en: `Guests (${guestCount})` } },
         ]}
       />
 
-      {tab === 'messages' && (
-        <Panel title={t({ ne: 'स्वीकृति पर्खिरहेका सन्देश', en: 'Messages awaiting a decision' })}>
-          <div className="px-4">
-            {messages.length === 0 ? (
-              <Empty>
-                {t({
+      {/* Search */}
+      <div className="flex items-center gap-2 flex-wrap mb-3.5">
+        <div className="relative flex-1 min-w-[240px]">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t({
+              ne: 'बैठकको नाम, कोड, सत्र, वक्ता, नाम वा सन्देश खोज्नुहोस्',
+              en: 'Search meeting, code, session, speaker, name or message',
+            })}
+            className="w-full border border-navy-800/15 rounded-[9px] pl-3 pr-8 py-2 text-[13.5px] bg-white"
+          />
+          {query && (
+            <button
+              onClick={() => setQuery('')}
+              aria-label={t({ ne: 'खोज हटाउने', en: 'Clear search' })}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[#6E7C8E] hover:text-ink"
+            >
+              ×
+            </button>
+          )}
+        </div>
+        <span className="text-[12.5px] text-[#6E7C8E]">
+          {terms.length > 0
+            ? t({
+                ne: `${num(matched.length)} भेटियो (जम्मा ${num(rows.length)})`,
+                en: `${matched.length} of ${rows.length} match`,
+              })
+            : t({ ne: `जम्मा ${num(rows.length)}`, en: `${rows.length} in the queue` })}
+        </span>
+      </div>
+
+      {matched.length === 0 ? (
+        <Panel>
+          <Empty>
+            {terms.length > 0
+              ? t({ ne: 'खोजसँग मिल्ने केही भेटिएन।', en: 'Nothing matches that search.' })
+              : tab === 'messages'
+              ? t({
                   ne: 'लाइन सफा छ। सहभागीले प्रस्तोतालाई पठाएका सन्देश यहाँ आउँछन्।',
                   en: 'The queue is clear. Messages attendees send to presenters land here.',
-                })}
-              </Empty>
-            ) : (
-              messages.map(({ meeting, item }) => (
-                <div key={item.id} className="flex gap-3 py-3.5 border-b border-navy-800/[.08] last:border-0 items-start">
-                  <div className="min-w-0">
-                    <p className="text-[13.5px]">{item.body}</p>
-                    <p className="text-[12.5px] text-[#6E7C8E] mt-0.5">
-                      {item.sender_name} &rarr; {item.recipient_name}
-                      {' · '}
-                      <span className="text-navy-700">{meeting.title}</span>
-                    </p>
-                  </div>
-                  <span className="ml-auto flex gap-1.5 flex-none flex-wrap justify-end">
-                    <Btn sm tone="solid" disabled={busy === item.id}
-                         onClick={() => decideMessage(meeting, item, 'approve')}>
-                      {t({ ne: 'पठाउने', en: 'Deliver' })}
-                    </Btn>
-                    <Btn sm disabled={busy === item.id}
-                         onClick={() => decideMessage(meeting, item, 'decline')}>
-                      {t({ ne: 'अस्वीकृत', en: 'Decline' })}
-                    </Btn>
-                    <Btn sm tone="danger" disabled={busy === item.id}
-                         onClick={() => decideMessage(meeting, item, 'remove')}>
-                      {t({ ne: 'हटाउने', en: 'Remove' })}
-                    </Btn>
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
+                })
+              : t({ ne: 'कोही पर्खिरहेको छैन।', en: 'Nobody is waiting.' })}
+          </Empty>
         </Panel>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {sections.map(({ key, row, items }) => {
+            const shut = !!collapsed[key];
+            return (
+              <Panel
+                key={key}
+                title={
+                  <button
+                    onClick={() => setCollapsed((v) => ({ ...v, [key]: !shut }))}
+                    className="flex items-center gap-2 text-left min-w-0"
+                  >
+                    <span className={`text-[#6E7C8E] transition-transform ${shut ? '' : 'rotate-90'}`}>›</span>
+                    <span className="text-[14.5px] font-semibold truncate">{row.meeting.title}</span>
+                    <span className="text-[12px] font-mono text-navy-700">{row.meeting.meeting_code}</span>
+                  </button>
+                }
+                aside={
+                  <span className="flex items-center gap-2 flex-wrap text-[12.5px] text-[#6E7C8E]">
+                    <span className="truncate max-w-[220px]">
+                      {row.eventTitle}
+                      {row.eventDate &&
+                        ` · ${new Date(row.eventDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`}
+                    </span>
+                    {row.session ? (
+                      <Chip tone="ok">
+                        {clock(row.session.starts_at)} {row.session.title}
+                        {row.session.speaker_name && ` · ${row.session.speaker_name}`}
+                      </Chip>
+                    ) : (
+                      <Chip tone="draft">{t({ ne: 'कुनै सत्र बाहिर', en: 'Between sessions' })}</Chip>
+                    )}
+                    <Chip>{num(items.length)}</Chip>
+                  </span>
+                }
+              >
+                {!shut && (
+                  <div className="px-4">
+                    {items.map((item: Row) =>
+                      item.kind === 'message' ? (
+                        <div key={item.id} className="flex gap-3 py-3.5 border-b border-navy-800/[.08] last:border-0 items-start">
+                          <span className="text-[12px] tabular-nums text-[#6E7C8E] w-[42px] flex-none pt-0.5">
+                            {clock(item.at)}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-[13.5px]">{item.message!.body}</p>
+                            <p className="text-[12.5px] text-[#6E7C8E] mt-0.5">
+                              {item.message!.sender_name} &rarr; {item.message!.recipient_name}
+                            </p>
+                          </div>
+                          <span className="ml-auto flex gap-1.5 flex-none flex-wrap justify-end">
+                            <Btn sm tone="solid" disabled={busy === item.id}
+                                 onClick={() => decideMessage(item, 'approve')}>
+                              {t({ ne: 'पठाउने', en: 'Deliver' })}
+                            </Btn>
+                            <Btn sm disabled={busy === item.id}
+                                 onClick={() => decideMessage(item, 'decline')}>
+                              {t({ ne: 'अस्वीकृत', en: 'Decline' })}
+                            </Btn>
+                            <Btn sm tone="danger" disabled={busy === item.id}
+                                 onClick={() => decideMessage(item, 'remove')}>
+                              {t({ ne: 'हटाउने', en: 'Remove' })}
+                            </Btn>
+                          </span>
+                        </div>
+                      ) : (
+                        <div key={item.id} className="flex gap-3 py-3.5 border-b border-navy-800/[.08] last:border-0 items-center">
+                          <span className="text-[12px] tabular-nums text-[#6E7C8E] w-[42px] flex-none">
+                            {clock(item.at)}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-[13.5px] font-medium">{item.guest!.full_name}</p>
+                            <p className="text-[12.5px] text-[#6E7C8E]">{item.guest!.phone}</p>
+                          </div>
+                          <span className="ml-auto flex gap-1.5 flex-none items-center">
+                            <Chip tone="warn">{t({ ne: 'पर्खिरहेको', en: 'Waiting' })}</Chip>
+                            <Btn sm tone="solid" disabled={busy === item.id}
+                                 onClick={() => decideGuest(item, true)}>
+                              {t({ ne: 'भित्र्याउने', en: 'Let in' })}
+                            </Btn>
+                            <Btn sm tone="danger" disabled={busy === item.id}
+                                 onClick={() => decideGuest(item, false)}>
+                              {t({ ne: 'अस्वीकृत', en: 'Decline' })}
+                            </Btn>
+                          </span>
+                        </div>
+                      )
+                    )}
+                  </div>
+                )}
+              </Panel>
+            );
+          })}
+        </div>
       )}
 
-      {tab === 'guests' && (
-        <Panel title={t({ ne: 'भित्र पस्न पर्खिरहेका', en: 'Waiting to be let in' })}>
-          <div className="px-4">
-            {guests.length === 0 ? (
-              <Empty>
-                {t({
-                  ne: 'कोही पर्खिरहेको छैन।',
-                  en: 'Nobody is waiting.',
-                })}
-              </Empty>
-            ) : (
-              guests.map(({ meeting, item }) => (
-                <div key={item.id} className="flex gap-3 py-3.5 border-b border-navy-800/[.08] last:border-0 items-center">
-                  <div className="min-w-0">
-                    <p className="text-[13.5px] font-medium">{item.full_name}</p>
-                    <p className="text-[12.5px] text-[#6E7C8E]">
-                      {item.phone} &middot; <span className="text-navy-700">{meeting.title}</span>
-                    </p>
-                  </div>
-                  <span className="ml-auto flex gap-1.5 flex-none">
-                    <Chip tone="warn">{t({ ne: 'पर्खिरहेको', en: 'Waiting' })}</Chip>
-                    <Btn sm tone="solid" disabled={busy === item.id}
-                         onClick={() => decideGuest(meeting, item, true)}>
-                      {t({ ne: 'भित्र्याउने', en: 'Let in' })}
-                    </Btn>
-                    <Btn sm tone="danger" disabled={busy === item.id}
-                         onClick={() => decideGuest(meeting, item, false)}>
-                      {t({ ne: 'अस्वीकृत', en: 'Decline' })}
-                    </Btn>
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </Panel>
+      {/* Paging, only once there is more than a page to show */}
+      {pageCount > 1 && (
+        <div className="flex items-center gap-2 mt-4 justify-center">
+          <Btn sm disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
+            {t({ ne: 'अघिल्लो', en: 'Previous' })}
+          </Btn>
+          <span className="text-[12.5px] text-[#6E7C8E] tabular-nums px-2">
+            {t({
+              ne: `पृष्ठ ${num(currentPage)} / ${num(pageCount)}`,
+              en: `Page ${currentPage} of ${pageCount}`,
+            })}
+          </span>
+          <Btn sm disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>
+            {t({ ne: 'अर्को', en: 'Next' })}
+          </Btn>
+        </div>
       )}
     </>
   );
