@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { Meeting } from '../../types';
-import { useOrganizer } from '../i18n';
-import { Btn, Card, Head, Panel } from '../ui';
+import { EventProgramme, Meeting } from '../../types';
+import { Pair, useOrganizer } from '../i18n';
+import { Btn, Card, Chip, Empty, Head, Panel } from '../ui';
 
 interface Props {
   meetings: Meeting[];
@@ -10,181 +11,314 @@ interface Props {
   onCreate: () => void;
 }
 
-/** What still needs doing before the event can run, checked against real data. */
+/** One line of the checklist, judged against what is really there. */
+interface Check {
+  ok: boolean;
+  /** Not done, and the next thing worth doing. */
+  now?: boolean;
+  title: Pair;
+  lede: Pair;
+  action: string;
+}
+
+/** What an event's checklist is judged on, fetched when it is opened. */
+interface Facts {
+  sessions: number;
+  invites: number;
+  presenters: number;
+  files: number;
+  started: boolean;
+}
+
 export const SetupView: React.FC<Props> = ({ meetings, onNavigate, onCreate }) => {
   const { t, num } = useOrganizer();
-  const [inviteCount, setInviteCount] = useState(0);
-  const [fileCount, setFileCount] = useState(0);
+
+  const [events, setEvents] = useState<EventProgramme[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [facts, setFacts] = useState<Record<string, Facts>>({});
+  const [checking, setChecking] = useState<Record<string, boolean>>({});
+
+  // Meetings made before events existed still deserve a checklist, so they
+  // are gathered under one heading of their own.
+  const loose = meetings.filter((m) => !events.some((e) => e.meetings.some((em) => em.id === m.id)));
 
   useEffect(() => {
-    Promise.allSettled(meetings.map((m) => apiClient.getMeetingInvites(m.id))).then((rs) => {
-      setInviteCount(
-        rs.reduce((sum, r) => sum + (r.status === 'fulfilled' ? r.value.length : 0), 0)
-      );
-    });
-  }, [meetings]);
+    apiClient
+      .listEvents()
+      .then(setEvents)
+      .catch(() => toast.error(t({ ne: 'कार्यक्रम ल्याउन सकिएन', en: 'Could not load the events' })))
+      .finally(() => setLoading(false));
+  }, [t]);
 
-  useEffect(() => {
-    Promise.allSettled(meetings.map((m) => apiClient.getResources(m.id))).then((rs) => {
-      setFileCount(
-        rs.reduce((sum, r) => sum + (r.status === 'fulfilled' ? r.value.length : 0), 0)
-      );
-    });
-  }, [meetings]);
+  /** Gather an event's figures only when somebody opens it. */
+  const gather = useCallback(async (
+    key: string,
+    meetingIds: string[],
+    sessions: number | null,
+    started: boolean
+  ) => {
+    if (facts[key] || checking[key]) return;
+    setChecking((v) => ({ ...v, [key]: true }));
 
-  const withPresenters = meetings.length > 0;
-  const anyStarted = meetings.some((m) => m.started_at);
+    const [invites, participants, files, sessionLists] = await Promise.all([
+      Promise.allSettled(meetingIds.map((id) => apiClient.getMeetingInvites(id))),
+      Promise.allSettled(meetingIds.map((id) => apiClient.getParticipants(id))),
+      Promise.allSettled(meetingIds.map((id) => apiClient.getResources(id))),
+      // An event already knows its session count; a loose meeting does not.
+      sessions === null
+        ? Promise.allSettled(meetingIds.map((id) => apiClient.listSessions(id)))
+        : Promise.resolve([]),
+    ]);
 
-  const items = [
-    {
-      ok: meetings.length > 0,
-      title: { ne: 'सत्र बनाउनुहोस्', en: 'Create the sessions' },
-      lede: meetings.length
-        ? { ne: `${num(meetings.length)} सत्र तालिकामा छन्`, en: `${meetings.length} session${meetings.length === 1 ? '' : 's'} scheduled` }
-        : { ne: 'अझै कुनै सत्र छैन', en: 'No sessions yet' },
-      action: meetings.length > 0 ? 'agenda' : 'create',
-    },
-    {
-      ok: inviteCount > 0,
-      now: meetings.length > 0 && inviteCount === 0,
-      title: { ne: 'सहभागीलाई निम्तो', en: 'Invite the attendees' },
-      lede: inviteCount
-        ? { ne: `${num(inviteCount)} निम्तो पठाइएको`, en: `${inviteCount} invitation${inviteCount === 1 ? '' : 's'} sent` }
-        : { ne: 'निम्तोको सङ्ख्याले अपेक्षित उपस्थिति बनाउँछ', en: 'Invitations set the expected headcount' },
-      action: 'attendance',
-    },
-    {
-      ok: withPresenters,
-      title: { ne: 'भूमिका मिलाउनुहोस्', en: 'Set the roles' },
-      lede: { ne: 'प्रस्तोता र सह-आयोजक तोक्नुहोस्', en: 'Name your presenters and co-hosts' },
-      action: 'people',
-    },
-    {
-      ok: fileCount > 0,
-      title: { ne: 'सामग्री राख्नुहोस्', en: 'Add the materials' },
-      lede: fileCount
-        ? { ne: `${num(fileCount)} फाइल आयोजकको ड्राइभमा`, en: `${fileCount} file${fileCount === 1 ? '' : 's'} in the host's Drive` }
-        : { ne: 'सत्रका स्लाइड र कागज अपलोड गर्नुहोस्', en: 'Upload the slides and papers for each session' },
-      action: 'content',
-    },
-    {
-      ok: true,
-      title: { ne: 'हलको यन्त्र', en: 'The hall device' },
-      lede: {
-        ne: 'यन्त्रले बोलेको कुरा पाठमा पठाउँछ — अडियो सर्भरमा आउँदैन।',
-        en: 'The device sends speech as text — no audio reaches the server.',
+    const total = (rs: PromiseSettledResult<any[]>[]) =>
+      rs.reduce((sum, r) => sum + (r.status === 'fulfilled' ? r.value.length : 0), 0);
+
+    const presenters = participants.reduce(
+      (sum, r) =>
+        sum +
+        (r.status === 'fulfilled'
+          ? r.value.filter((p: any) => ['co_host', 'presenter'].includes(p.role)).length
+          : 0),
+      0
+    );
+
+    setFacts((v) => ({
+      ...v,
+      [key]: {
+        sessions: sessions === null ? total(sessionLists as PromiseSettledResult<any[]>[]) : sessions,
+        invites: total(invites),
+        presenters,
+        files: total(files),
+        started,
       },
-      action: 'settings',
-    },
-    {
-      ok: anyStarted,
-      title: { ne: 'सत्र सुरु गर्नुहोस्', en: 'Run the event' },
-      lede: anyStarted
-        ? { ne: 'सत्र सुरु भइसकेको छ', en: 'A session has been started' }
-        : { ne: 'लाइभ नियन्त्रणबाट सुरु गर्नुहोस्', en: 'Start it from live control' },
-      action: 'live',
-    },
-  ];
+    }));
+    setChecking((v) => ({ ...v, [key]: false }));
+  }, [facts, checking]);
 
-  const done = items.filter((i) => i.ok).length;
-  const pct = Math.round((done / items.length) * 100);
+  const buildChecks = (f: Facts, meetingCount: number): Check[] => {
+    const list: Check[] = [
+      {
+        ok: f.sessions > 0,
+        title: { ne: 'सत्र बनाउनुहोस्', en: 'Create the sessions' },
+        lede: f.sessions
+          ? { ne: `${num(f.sessions)} सत्र तालिकामा`, en: `${f.sessions} session${f.sessions === 1 ? '' : 's'} scheduled` }
+          : { ne: `${num(meetingCount)} बैठक छन्, तर सत्र छैन`, en: `${meetingCount} meeting(s), but no sessions yet` },
+        action: 'events',
+      },
+      {
+        ok: f.invites > 0,
+        title: { ne: 'सहभागीलाई निम्तो', en: 'Invite the attendees' },
+        lede: f.invites
+          ? { ne: `${num(f.invites)} निम्तो पठाइएको`, en: `${f.invites} invitation${f.invites === 1 ? '' : 's'} sent` }
+          : { ne: 'निम्तोको सङ्ख्याले अपेक्षित उपस्थिति बनाउँछ', en: 'Invitations set the expected headcount' },
+        action: 'attendance',
+      },
+      {
+        ok: f.presenters > 0,
+        title: { ne: 'भूमिका मिलाउनुहोस्', en: 'Set the roles' },
+        lede: f.presenters
+          ? { ne: `${num(f.presenters)} प्रस्तोता/सह-आयोजक`, en: `${f.presenters} presenter${f.presenters === 1 ? '' : 's'} or co-host${f.presenters === 1 ? '' : 's'}` }
+          : { ne: 'प्रस्तोता र सह-आयोजक तोक्नुहोस्', en: 'Name your presenters and co-hosts' },
+        action: 'people',
+      },
+      {
+        ok: f.files > 0,
+        title: { ne: 'सामग्री राख्नुहोस्', en: 'Add the materials' },
+        lede: f.files
+          ? { ne: `${num(f.files)} फाइल आयोजकको ड्राइभमा`, en: `${f.files} file${f.files === 1 ? '' : 's'} in the host's Drive` }
+          : { ne: 'सत्रका स्लाइड र कागज अपलोड गर्नुहोस्', en: 'Upload the slides and papers for each session' },
+        action: 'content',
+      },
+      {
+        ok: true,
+        title: { ne: 'हलको यन्त्र', en: 'The hall device' },
+        lede: {
+          ne: 'यन्त्रले बोलेको कुरा पाठमा पठाउँछ — अडियो सर्भरमा आउँदैन।',
+          en: 'The device sends speech as text — no audio reaches the server.',
+        },
+        action: 'settings',
+      },
+      {
+        ok: f.started,
+        title: { ne: 'कार्यक्रम चलाउनुहोस्', en: 'Run the event' },
+        lede: f.started
+          ? { ne: 'सत्र सुरु भइसकेको छ', en: 'A session has been started' }
+          : { ne: 'लाइभ नियन्त्रणबाट सुरु गर्नुहोस्', en: 'Start it from live control' },
+        action: 'live',
+      },
+    ];
+
+    // Mark the first outstanding item, so the eye lands on what is next.
+    const next = list.find((c) => !c.ok);
+    if (next) next.now = true;
+    return list;
+  };
+
+  const Checklist: React.FC<{ checks: Check[] }> = ({ checks }) => (
+    <div>
+      {checks.map((check) => (
+        <div
+          key={check.title.en}
+          className="flex items-center gap-3 px-4 py-3.5 border-b border-navy-800/[.08] last:border-0"
+        >
+          <span
+            className={`w-6 h-6 rounded-full grid place-items-center flex-none text-xs border-2 ${
+              check.ok
+                ? 'bg-ok border-ok text-white'
+                : check.now
+                ? 'border-amber text-amber-700 font-bold'
+                : 'border-navy-800/15 text-[#6E7C8E]'
+            }`}
+          >
+            {check.ok ? '✓' : '!'}
+          </span>
+          <div className="min-w-0">
+            <h4 className="text-[14.5px] font-medium">{t(check.title)}</h4>
+            <p className="text-[12.5px] text-[#6E7C8E]">{t(check.lede)}</p>
+          </div>
+          <span className="ml-auto flex-none">
+            <Btn sm onClick={() => onNavigate(check.action)}>
+              {check.ok ? t({ ne: 'हेर्नुहोस्', en: 'Review' }) : t({ ne: 'पूरा गर्नुहोस्', en: 'Finish' })}
+            </Btn>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+
+  const Ring: React.FC<{ done: number; total: number }> = ({ done, total }) => {
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    return (
+      <div
+        className="w-11 h-11 rounded-full flex-none grid place-items-center"
+        style={{ background: `conic-gradient(#1B7F58 ${pct}%, #EFE8D8 0)` }}
+        title={`${done}/${total}`}
+      >
+        <span className="w-[34px] h-[34px] rounded-full bg-white grid place-items-center text-[11px] font-semibold tabular-nums">
+          {num(pct)}%
+        </span>
+      </div>
+    );
+  };
+
+  /** One expandable row: an event, or the meetings that sit outside one. */
+  const Group: React.FC<{
+    id: string;
+    title: string;
+    subtitle: string;
+    meetingIds: string[];
+    sessions: number | null;
+    started: boolean;
+  }> = ({ id, title, subtitle, meetingIds, sessions, started }) => {
+    const shown = !!open[id];
+    const f = facts[id];
+    const checks = f ? buildChecks(f, meetingIds.length) : null;
+    const done = checks ? checks.filter((c) => c.ok).length : 0;
+
+    return (
+      <Panel
+        title={
+          <button
+            onClick={() => {
+              setOpen((v) => ({ ...v, [id]: !shown }));
+              if (!shown) gather(id, meetingIds, sessions, started);
+            }}
+            className="flex items-center gap-2 text-left min-w-0"
+          >
+            <span className={`text-[#6E7C8E] transition-transform ${shown ? 'rotate-90' : ''}`}>›</span>
+            <span className="text-[15.5px] font-semibold truncate">{title}</span>
+          </button>
+        }
+        aside={
+          <span className="flex items-center gap-2 text-[12.5px] text-[#6E7C8E]">
+            {subtitle}
+            {checks && (
+              <Chip tone={done === checks.length ? 'ok' : 'warn'}>
+                {t({
+                  ne: `${num(done)}/${num(checks.length)} पूरा`,
+                  en: `${done} of ${checks.length} done`,
+                })}
+              </Chip>
+            )}
+          </span>
+        }
+        actions={checks ? <Ring done={done} total={checks.length} /> : undefined}
+      >
+        {shown && (
+          checking[id] || !checks ? (
+            <Empty>{t({ ne: 'जाँच्दै…', en: 'Checking…' })}</Empty>
+          ) : (
+            <Checklist checks={checks} />
+          )
+        )}
+      </Panel>
+    );
+  };
 
   return (
     <>
       <Head
         title={{ ne: 'सेटअप', en: 'Setup' }}
         lede={{
-          ne: 'कार्यक्रम चलाउन चाहिने कुरा — प्रत्येक वास्तविक अवस्थाबाट जाँचिएको।',
-          en: 'What an event needs to run, each checked against what is really there.',
+          ne: 'हरेक कार्यक्रमको आफ्नै जाँचसूची — खोल्नुहोस् र के बाँकी छ हेर्नुहोस्।',
+          en: 'Each event carries its own checklist — open one to see what it still needs.',
         }}
         actions={<Btn tone="amber" onClick={onCreate}>{t({ ne: '+ नयाँ सत्र', en: '+ New session' })}</Btn>}
       />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_330px] items-start">
-        <Panel
-          title={t({ ne: 'बाँकी काम', en: "What's left" })}
-          aside={
-            <span className="text-[12.5px] text-[#6E7C8E]">
-              {t({ ne: `${num(items.length - done)} वटा बाँकी`, en: `${items.length - done} left` })}
-            </span>
-          }
-        >
-          <div>
-            {items.map((item) => (
-              <div
-                key={item.title.en}
-                className="flex items-center gap-3 px-4 py-3.5 border-b border-navy-800/[.08] last:border-0"
-              >
-                <span
-                  className={`w-6 h-6 rounded-full grid place-items-center flex-none text-xs border-2 ${
-                    item.ok
-                      ? 'bg-ok border-ok text-white'
-                      : item.now
-                      ? 'border-amber text-amber-700 font-bold'
-                      : 'border-navy-800/15 text-[#6E7C8E]'
-                  }`}
-                >
-                  {item.ok ? '✓' : '!'}
-                </span>
-                <div className="min-w-0">
-                  <h4 className="text-[14.5px] font-medium">{t(item.title)}</h4>
-                  <p className="text-[12.5px] text-[#6E7C8E]">{t(item.lede)}</p>
-                </div>
-                <span className="ml-auto flex-none">
-                  <Btn
-                    sm
-                    onClick={() => (item.action === 'create' ? onCreate() : onNavigate(item.action))}
-                  >
-                    {item.ok ? t({ ne: 'हेर्नुहोस्', en: 'Review' }) : t({ ne: 'पूरा गर्नुहोस्', en: 'Finish' })}
-                  </Btn>
-                </span>
-              </div>
-            ))}
-          </div>
-        </Panel>
+      {loading ? (
+        <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>
+      ) : events.length === 0 && loose.length === 0 ? (
+        <Card className="text-center py-10">
+          <p className="text-[#6E7C8E] max-w-md mx-auto">
+            {t({
+              ne: 'अझै कुनै कार्यक्रम छैन। कार्यक्रम पानाबाट दिनको कार्यक्रम बनाउनुहोस्।',
+              en: 'No events yet. Build a day from the Programme page.',
+            })}
+          </p>
+          <Btn tone="amber" className="mt-4" onClick={() => onNavigate('events')}>
+            {t({ ne: 'कार्यक्रम खोल्नुहोस्', en: 'Open Programme' })}
+          </Btn>
+        </Card>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {events.map((event) => (
+            <Group
+              key={event.id}
+              id={event.id}
+              title={event.title}
+              subtitle={[
+                new Date(event.event_date).toLocaleDateString(undefined, {
+                  weekday: 'short', day: 'numeric', month: 'short',
+                }),
+                event.venue,
+                t({
+                  ne: `${num(event.meeting_count)} बैठक · ${num(event.session_count)} सत्र`,
+                  en: `${event.meeting_count} meetings · ${event.session_count} sessions`,
+                }),
+              ].filter(Boolean).join(' · ')}
+              meetingIds={event.meetings.map((m) => m.id)}
+              sessions={event.session_count}
+              started={event.meetings.some((m) => !!m.started_at)}
+            />
+          ))}
 
-        <div className="flex flex-col gap-3.5">
-          <Card className="flex gap-4 items-center">
-            <div
-              className="w-[74px] h-[74px] rounded-full flex-none grid place-items-center"
-              style={{ background: `conic-gradient(#1B7F58 ${pct}%, #EFE8D8 0)` }}
-            >
-              <span className="w-[58px] h-[58px] rounded-full bg-white grid place-items-center font-semibold text-base tabular-nums">
-                {num(pct)}%
-              </span>
-            </div>
-            <div>
-              <h3 className="text-[15.5px] font-semibold">{t({ ne: 'सेटअप प्रगति', en: 'Setup progress' })}</h3>
-              <p className="text-[12.5px] text-[#6E7C8E]">
-                {t({
-                  ne: 'हरेक चरण वास्तविक डाटाबाट जाँचिन्छ।',
-                  en: 'Each step is checked against real data.',
-                })}
-              </p>
-            </div>
-          </Card>
-
-          <Card>
-            <h3 className="text-[15px] font-semibold">{t({ ne: 'दुई भाषा', en: 'Two languages' })}</h3>
-            <p className="text-[12.5px] text-[#6E7C8E] mt-1.5">
-              {t({
-                ne: 'माथिको स्विचबाट नेपाली र English फेर्न मिल्छ। ट्रान्सक्रिप्टले पनि दुवै भाषा बोक्छ।',
-                en: 'Switch Nepali and English from the top bar. Transcripts carry both languages too.',
+          {loose.length > 0 && (
+            <Group
+              id="__loose__"
+              title={t({ ne: 'कार्यक्रम बाहिरका बैठक', en: 'Meetings outside any event' })}
+              subtitle={t({
+                ne: `${num(loose.length)} बैठक`,
+                en: `${loose.length} meeting${loose.length === 1 ? '' : 's'}`,
               })}
-            </p>
-          </Card>
-
-          <Card>
-            <h3 className="text-[15px] font-semibold">{t({ ne: 'डाटा कहाँ बस्छ', en: 'Where data lives' })}</h3>
-            <p className="text-[12.5px] text-[#6E7C8E] mt-1.5">
-              {t({
-                ne: 'फाइल आयोजकको गुगल ड्राइभमा, बाँकी तपाईंकै सर्भरमा। अडियो कतै राखिँदैन।',
-                en: "Files sit in the host's Google Drive, the rest on your own server. No audio is stored anywhere.",
-              })}
-            </p>
-          </Card>
+              meetingIds={loose.map((m) => m.id)}
+              sessions={null}
+              started={loose.some((m) => !!m.started_at)}
+            />
+          )}
         </div>
-      </div>
+      )}
     </>
   );
 };
