@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from './store/authStore';
 import { LoginPage } from './pages/LoginPage';
+import { PricingPage } from './pages/PricingPage';
+import { OrganizerPage } from './pages/OrganizerPage';
 import { GuestWaitingPage } from './pages/GuestWaitingPage';
 import { GuestMeetingPage } from './pages/GuestMeetingPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -51,6 +53,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/pricing" element={<PricingPage />} />
 
           {/* Guests: no account, no dashboard */}
           <Route path="/guest/waiting" element={<GuestWaitingPage />} />
@@ -60,6 +63,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/organizer"
+            element={
+              <ProtectedRoute>
+                <OrganizerPage />
               </ProtectedRoute>
             }
           />

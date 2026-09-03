@@ -118,16 +118,39 @@ export const DashboardPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-cream font-sans text-ink">
       {/* Header */}
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 py-6 flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-gray-800">Munch Dashboard</h1>
-          <div className="flex items-center gap-4">
-            <span className="text-gray-700">{user?.email}</span>
+      <header className="bg-navy-900 text-white">
+        <div className="max-w-7xl mx-auto px-5 py-3 flex items-center gap-3">
+          <svg width="26" height="26" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+            <rect x="18" y="18" width="28" height="28" rx="4" stroke="#fff" strokeWidth="2.6" />
+            <rect x="26" y="26" width="12" height="12" rx="2" fill="#F0A22B" />
+            <g stroke="#8FB0DC" strokeWidth="2">
+              <path d="M32 8v8M32 48v8M8 32h8M48 32h8" />
+            </g>
+          </svg>
+          <div className="leading-tight">
+            <b className="text-[17px]">मञ्च</b>
+            <span className="block text-[10.5px] text-[#9FB8DC]">Organizer</span>
+          </div>
+
+          <div className="ml-auto flex items-center gap-3">
+            <button
+              onClick={() => navigate('/organizer')}
+              className="text-[13px] px-3 py-1.5 rounded-lg bg-amber text-[#20160A] font-semibold hover:bg-[#FFB43F]"
+            >
+              Organizer panel
+            </button>
+            <button
+              onClick={() => navigate('/pricing')}
+              className="text-[13px] text-[#C7D8F0] hover:text-white underline underline-offset-4 hidden sm:block"
+            >
+              Plans
+            </button>
+            <span className="text-[13px] text-[#C7D8F0] hidden sm:block">{user?.email}</span>
             <button
               onClick={logout}
-              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
+              className="text-[13px] px-3 py-1.5 rounded-lg border border-white/25 hover:bg-white/10"
             >
               Logout
             </button>
@@ -140,7 +163,7 @@ export const DashboardPage: React.FC = () => {
         <div className="mb-8 flex flex-wrap items-center gap-3">
           <button
             onClick={() => setShowCreate(!showCreate)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold"
+            className="bg-amber hover:bg-[#FFB43F] text-[#20160A] px-6 py-3 rounded-lg font-semibold"
           >
             + New Meeting
           </button>
@@ -154,12 +177,12 @@ export const DashboardPage: React.FC = () => {
                 if (e.key === 'Enter') handleJoinByCode();
               }}
               placeholder="Enter meeting code"
-              className="px-4 py-3 border border-gray-300 rounded-lg uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="px-4 py-3 border border-navy-800/20 rounded-lg uppercase tracking-wide bg-white focus:outline-none focus:ring-2 focus:ring-navy-500"
             />
             <button
               onClick={handleJoinByCode}
               disabled={isJoining || !joinCode.trim()}
-              className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold disabled:opacity-50"
+              className="bg-navy-800 hover:bg-navy-700 text-white px-6 py-3 rounded-lg font-semibold disabled:opacity-50"
             >
               {isJoining ? 'Joining...' : 'Join'}
             </button>
@@ -168,7 +191,7 @@ export const DashboardPage: React.FC = () => {
 
         {/* Create Meeting Form */}
         {showCreate && (
-          <div className="bg-white rounded-lg shadow p-6 mb-8">
+          <div className="bg-white rounded-xl border border-navy-800/15 p-6 mb-8">
             <h2 className="text-xl font-semibold mb-4">Create a New Meeting</h2>
             <div className="space-y-4">
               <input
@@ -176,7 +199,7 @@ export const DashboardPage: React.FC = () => {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Meeting title"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 border border-navy-800/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-500"
               />
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -185,7 +208,7 @@ export const DashboardPage: React.FC = () => {
                     type="datetime-local"
                     value={scheduledStart}
                     onChange={(e) => setScheduledStart(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-navy-800/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-500"
                   />
                 </div>
                 <div>
@@ -194,14 +217,14 @@ export const DashboardPage: React.FC = () => {
                     type="datetime-local"
                     value={scheduledEnd}
                     onChange={(e) => setScheduledEnd(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-navy-800/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-500"
                   />
                 </div>
               </div>
               <button
                 onClick={handleCreateMeeting}
                 disabled={isLoading}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg disabled:opacity-50 w-full"
+                className="bg-navy-800 hover:bg-navy-700 text-white px-6 py-2 rounded-lg disabled:opacity-50 w-full"
               >
                 {isLoading ? 'Creating...' : 'Create Meeting'}
               </button>
@@ -212,7 +235,7 @@ export const DashboardPage: React.FC = () => {
         {/* Meetings List */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {meetings.map((meeting) => (
-            <div key={meeting.id} className="bg-white rounded-lg shadow hover:shadow-lg transition p-6">
+            <div key={meeting.id} className="bg-white rounded-xl border border-navy-800/15 hover:border-navy-500 transition p-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-2">{meeting.title}</h3>
               <p className="text-gray-600 text-sm mb-4">Code: {meeting.meeting_code}</p>
               <div className="flex gap-2 mb-4">
@@ -228,7 +251,7 @@ export const DashboardPage: React.FC = () => {
               <div className="flex gap-2">
                 <button
                   onClick={() => handleJoinMeeting(meeting.meeting_code, meeting)}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded transition"
+                  className="flex-1 bg-navy-800 hover:bg-navy-700 text-white py-2 rounded-lg transition"
                 >
                   {meeting.host?.id === user?.id ? 'Enter Meeting' : 'Join Meeting'}
                 </button>
@@ -236,7 +259,7 @@ export const DashboardPage: React.FC = () => {
                   <button
                     onClick={() => setSharing(meeting)}
                     title="Share link and count expected attendance"
-                    className="px-4 border border-gray-300 hover:bg-gray-50 rounded transition text-sm font-semibold"
+                    className="px-4 border border-navy-800/20 hover:bg-cream-200 rounded-lg transition text-sm font-semibold"
                   >
                     Share
                   </button>
