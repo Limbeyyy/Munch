@@ -134,9 +134,15 @@ def ingest_transcription(request, meeting_ref):
         'is_final': is_final,
     }
 
+    # A line belongs to whatever part of the running order is on stage.
+    live_session = meeting.sessions.filter(status='live').first()
+    segment['session_id'] = str(live_session.id) if live_session else None
+    segment['session_title'] = live_session.title if live_session else None
+
     if is_final:
         TranscriptionSegment.objects.create(
             meeting=meeting,
+            session=live_session,
             speaker_id=segment['speaker_id'],
             speaker_name=segment['speaker_name'],
             text=segment['text'],

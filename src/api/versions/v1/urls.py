@@ -17,6 +17,12 @@ try:
 except ImportError:
     MeetingViewSet = None
 
+try:
+    from src.apps.meetings.event_views import EventViewSet, SessionViewSet
+except ImportError:
+    EventViewSet = None
+    SessionViewSet = None
+
 router = routers.DefaultRouter()
 
 # Register implemented viewsets
@@ -26,6 +32,10 @@ if AuthViewSet:
     router.register(r'auth', AuthViewSet, basename='auth')
 if MeetingViewSet:
     router.register(r'meetings', MeetingViewSet, basename='meeting')
+if EventViewSet:
+    router.register(r'events', EventViewSet, basename='event')
+if SessionViewSet:
+    router.register(r'sessions', SessionViewSet, basename='session')
 
 def _resolve_meeting(meeting_ref):
     """Find a meeting by meeting_code or primary key."""
