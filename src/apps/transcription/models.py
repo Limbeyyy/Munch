@@ -9,6 +9,14 @@ class TranscriptionSegment(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name='transcription_segments')
+    # Which part of the running order this was said during, when known.
+    session = models.ForeignKey(
+        'meetings.Session',
+        on_delete=models.SET_NULL,
+        related_name='transcription_segments',
+        null=True,
+        blank=True,
+    )
 
     speaker_id = models.CharField(max_length=255, help_text="Participant session ID")
     speaker_name = models.CharField(max_length=255, null=True, blank=True)

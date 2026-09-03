@@ -3,6 +3,44 @@ from django.utils import timezone
 from src.apps.accounts.models import User
 import uuid
 
+class Event(models.Model):
+    """A day's programme, holding the meetings that make it up.
+
+    An event is the thing people are invited to ("the Sunday conference");
+    the meetings inside it are the rooms they actually join.
+    """
+    class Status(models.TextChoices):
+        DRAFT = 'draft', 'Draft'
+        SCHEDULED = 'scheduled', 'Scheduled'
+        ACTIVE = 'active', 'Active'
+        ENDED = 'ended', 'Ended'
+        CANCELLED = 'cancelled', 'Cancelled'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    organizer = models.ForeignKey(
+        User, on_delete=models.PROTECT, related_name='organized_events'
+    )
+    venue = models.CharField(max_length=255, blank=True)
+
+    # The day the programme runs. Meetings carry their own times within it.
+    event_date = models.DateField()
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.SCHEDULED
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-event_date', '-created_at']
+        indexes = [models.Index(fields=['organizer', 'event_date'])]
+
+    def __str__(self):
+        return f"{self.title} ({self.event_date})"
+
+
 class Meeting(models.Model):
     """
     Core meeting model - source of truth for meeting state
@@ -14,6 +52,14 @@ class Meeting(models.Model):
         CANCELLED = 'cancelled', 'Cancelled'
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    event = models.ForeignKey(
+        Event,
+        on_delete=models.CASCADE,
+        related_name='meetings',
+        null=True,
+        blank=True,
+        help_text='The programme this meeting belongs to, if any.',
+    )
     meeting_code = models.CharField(max_length=20, unique=True, db_index=True)
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
@@ -347,3 +393,112 @@ class MeetingInvite(models.Model):
     def __str__(self):
         state = 'joined' if self.has_joined else 'invited'
         return f"{self.email} ({state}) @ {self.meeting.meeting_code}"
+
+
+class Session(models.Model):
+    """A timed segment inside a meeting.
+
+    People join the meeting, not the session: a session is a slot in the
+    running order, so the room's code, chat and transcript stay on the
+    meeting while the session says what is happening at that moment.
+    """
+    class Status(models.TextChoices):
+        SCHEDULED = 'scheduled', 'Scheduled'
+        LIVE = 'live', 'Live'
+        DONE = 'done', 'Done'
+        SKIPPED = 'skipped', 'Skipped'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    meeting = models.ForeignKey(
+        Meeting, on_delete=models.CASCADE, related_name='sessions'
+    )
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+
+    # Free text rather than a link to an account: speakers are often guests
+    # of the institution who never sign in.
+    speaker_name = models.CharField(max_length=255, blank=True)
+
+    starts_at = models.DateTimeField()
+    duration_minutes = models.PositiveIntegerField(default=30)
+
+    # Keeps the running order stable when two sessions share a start time.
+    position = models.PositiveIntegerField(default=0)
+
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.SCHEDULED
+    )
+    started_at = models.DateTimeField(null=True, blank=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['starts_at', 'position']
+        indexes = [models.Index(fields=['meeting', 'starts_at'])]
+
+    def __str__(self):
+        return f"{self.title} @ {self.starts_at:%H:%M}"
+
+    @property
+    def ends_at(self):
+        return self.starts_at + timezone.timedelta(minutes=self.duration_minutes)
+
+
+class SessionAttendance(models.Model):
+    """Who was present for one session.
+
+    Attendance is per session rather than per meeting, so a certificate can
+    be judged on how much of the programme somebody actually sat through.
+    A row exists only for people who were present.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.ForeignKey(
+        Session, on_delete=models.CASCADE, related_name='attendance'
+    )
+
+    # Exactly one of these identifies the attendee: guests have no account.
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='session_attendance',
+        null=True,
+        blank=True,
+    )
+    guest = models.ForeignKey(
+        'meetings.GuestAttendee',
+        on_delete=models.CASCADE,
+        related_name='session_attendance',
+        null=True,
+        blank=True,
+    )
+
+    # Recorded automatically from the room, or ticked off by an organizer.
+    marked_manually = models.BooleanField(default=False)
+    recorded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(user__isnull=False, guest__isnull=True)
+                    | models.Q(user__isnull=True, guest__isnull=False)
+                ),
+                name='session_attendance_exactly_one_attendee',
+            ),
+            models.UniqueConstraint(
+                fields=['session', 'user'],
+                condition=models.Q(user__isnull=False),
+                name='session_attendance_unique_user',
+            ),
+            models.UniqueConstraint(
+                fields=['session', 'guest'],
+                condition=models.Q(guest__isnull=False),
+                name='session_attendance_unique_guest',
+            ),
+        ]
+
+    def __str__(self):
+        who = self.user.email if self.user else (self.guest.full_name if self.guest else '?')
+        return f"{who} @ {self.session.title}"

@@ -25,6 +25,14 @@ class Artifact(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name='artifacts')
+    # The part of the running order this file belongs to, when known.
+    session = models.ForeignKey(
+        'meetings.Session',
+        on_delete=models.SET_NULL,
+        related_name='artifacts',
+        null=True,
+        blank=True,
+    )
     artifact_type = models.CharField(max_length=50, choices=ArtifactType.choices)
 
     drive_file_id = models.CharField(max_length=255, null=True, blank=True)
