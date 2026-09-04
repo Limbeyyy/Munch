@@ -194,10 +194,22 @@ def build_meeting(data, *, event=None, host=None):
 class SessionAttendanceSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
     is_guest = serializers.SerializerMethodField()
+    person_id = serializers.SerializerMethodField()
 
     class Meta:
         model = SessionAttendance
-        fields = ['id', 'session', 'name', 'is_guest', 'marked_manually', 'recorded_at']
+        fields = [
+            'id', 'session', 'person_id', 'name', 'is_guest',
+            'marked_manually', 'recorded_at',
+        ]
+
+    def get_person_id(self, obj):
+        """Who this is, across sessions.
+
+        Counting by name would merge two people who share one, so the row
+        carries the identity the record actually hangs on.
+        """
+        return str(obj.user_id or obj.guest_id)
 
     def get_name(self, obj):
         if obj.user:
