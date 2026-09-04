@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { EventMeeting, EventProgramme, MeetingDraft, Session } from '../../types';
+import { EventProgramme, MeetingDraft, Session } from '../../types';
 import { useOrganizer } from '../i18n';
 import { Btn, Card, Chip, Empty, Head, Panel } from '../ui';
 import { Modal } from '../OrganizerShell';
@@ -60,40 +60,6 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
     return () => clearInterval(id);
   }, [load]);
 
-  /**
-   * Walking into a room that has not opened yet.
-   *
-   * A meeting scheduled for later is not running, so entering it starts it
-   * for everyone. That is worth asking about rather than doing quietly.
-   */
-  const enterRoom = async (meeting: EventMeeting) => {
-    if (meeting.status === 'active') {
-      onOpenRoom(meeting.meeting_code);
-      return;
-    }
-
-    const when = new Date(meeting.scheduled_start);
-    const early = Date.now() < +when;
-    const ok = window.confirm(
-      t({
-        ne: `“${meeting.title}” ${early ? 'पछिका लागि तालिकामा छ' : 'अझै सुरु भएको छैन'} — ${when.toLocaleString()}.\n\nअहिले भित्र पस्दा यो सबैका लागि सुरु हुन्छ। सुरु गर्ने?`,
-        en: `“${meeting.title}” ${early ? 'is scheduled for later' : 'has not started'} — ${when.toLocaleString()}.\n\nGoing in now starts it for everyone. Start it?`,
-      })
-    );
-    if (!ok) return;
-
-    try {
-      setBusy(meeting.id);
-      await apiClient.startMeeting(meeting.id);
-      toast.success(t({ ne: 'बैठक सुरु भयो', en: 'Meeting started' }));
-      await load();
-      onChanged();
-      onOpenRoom(meeting.meeting_code);
-    } catch (e: any) {
-      toast.error(e.response?.data?.error ?? t({ ne: 'सुरु गर्न सकिएन', en: 'Could not start it' }));
-    } finally { setBusy(null); }
-  };
-
   /** Remove a session from the running order. */
   const removeSession = async (session: Session) => {
     const ok = window.confirm(
@@ -122,6 +88,19 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
     try {
       setBusy(session.id);
       if (action === 'start') {
+        // Starting a session opens the meeting for everyone, so doing it
+        // ahead of its own slot is worth asking about.
+        const due = new Date(session.starts_at);
+        if (Date.now() < +due) {
+          const ok = window.confirm(
+            t({
+              ne: `“${session.title}” ${due.toLocaleString()} का लागि तालिकामा छ — अहिले त्योभन्दा अगाडि हो।\n\nअहिले सुरु गर्दा बैठक सबैका लागि खुल्छ। सुरु गर्ने?`,
+              en: `“${session.title}” is scheduled for ${due.toLocaleString()}, which is later than now.\n\nStarting it opens the meeting for everyone. Start it anyway?`,
+            })
+          );
+          if (!ok) { setBusy(null); return; }
+        }
+
         await apiClient.startSession(session.id);
         toast.success(t({ ne: `${session.title} मञ्चमा`, en: `${session.title} is on stage` }));
         await load();
@@ -260,12 +239,6 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
                               {meeting.status === 'active' && (
                                 <Chip tone="live">{t({ ne: 'चलिरहेको', en: 'Live' })}</Chip>
                               )}
-                              <span className="ml-auto flex gap-1.5">
-                                <Btn sm disabled={busy === meeting.id}
-                                     onClick={() => enterRoom(meeting)}>
-                                  {t({ ne: 'कोठा', en: 'Room' })}
-                                </Btn>
-                              </span>
                             </div>
 
                             <div className="px-3.5 py-2">
