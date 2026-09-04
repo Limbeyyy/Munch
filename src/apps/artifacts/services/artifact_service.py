@@ -342,8 +342,13 @@ Participants:
             parent_id=parent_id,
         )
 
+        # Whatever is on stage owns this file, which is what decides when
+        # the rest of the room gets to read it.
+        live_session = self.meeting.sessions.filter(status='live').first()
+
         artifact = Artifact.objects.create(
             meeting=self.meeting,
+            session=live_session,
             artifact_type=ArtifactType.RESOURCE,
             drive_file_id=drive_file['id'],
             display_name=uploaded_file.name,
@@ -370,12 +375,15 @@ Participants:
         for email in {e for e in emails if e}:
             self.drive_adapter.share_file(file_id, email, role='reader')
 
-    def list_resources(self):
-        """All resource artifacts for this meeting, newest first."""
-        return Artifact.objects.filter(
-            meeting=self.meeting,
-            artifact_type=ArtifactType.RESOURCE,
-        ).order_by('-created_at')
+    def list_resources(self, include_unreleased: bool = True):
+        """Resource artifacts for this meeting, newest first.
+
+        A file shared during a session waits until that session is over
+        before the room can read it; organizers see everything.
+        """
+        from src.apps.artifacts.visibility import resources_for
+
+        return resources_for(self.meeting, include_unreleased=include_unreleased)
 
     def create_shared_resource(self, name: str, content: str,
                               resource_type: str = 'document') -> Optional[str]:

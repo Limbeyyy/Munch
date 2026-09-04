@@ -317,9 +317,12 @@ def guest_resources(request):
         )
 
     token = request.query_params.get('token', '')
-    resources = Artifact.objects.filter(
-        meeting=guest.meeting, artifact_type=ArtifactType.RESOURCE
-    ).order_by('-created_at')
+
+    # A guest is in the room, not running it, so a session's files reach
+    # them only once that session is over.
+    from src.apps.artifacts.visibility import resources_for
+
+    resources = resources_for(guest.meeting, include_unreleased=False)
 
     return Response([
         {
@@ -366,6 +369,16 @@ def guest_resource_download(request, artifact_id):
         return Response(
             {'error': 'File not found'},
             status=status.HTTP_404_NOT_FOUND
+        )
+
+    # Listing withholds a session's files until it ends; the download has to
+    # say the same, or the link is a way around the rule.
+    from src.apps.artifacts.visibility import is_released
+
+    if not is_released(artifact):
+        return Response(
+            {'error': 'This file opens when its session ends'},
+            status=status.HTTP_403_FORBIDDEN
         )
 
     try:

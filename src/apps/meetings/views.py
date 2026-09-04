@@ -808,7 +808,13 @@ class MeetingViewSet(viewsets.ModelViewSet):
         artifact_service = MeetingArtifactService(meeting.id, meeting.host_id)
 
         if request.method == 'GET':
-            resources = artifact_service.list_resources()
+            # Attendees read a session's files once that session is over;
+            # organizers see what they have staged for sessions still to come.
+            from src.apps.artifacts.visibility import can_organize
+
+            resources = artifact_service.list_resources(
+                include_unreleased=can_organize(meeting, request.user)
+            )
             return Response(ArtifactSerializer(resources, many=True).data)
 
         uploaded_file = request.FILES.get('file')
