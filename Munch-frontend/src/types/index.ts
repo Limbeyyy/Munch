@@ -428,6 +428,8 @@ export interface Session {
   speaker_name: string;
   /** Which room in the venue this runs in. */
   hall: string;
+  /** Whether attendees may simply read the speaker's details, or must ask. */
+  speaker_visibility: 'public' | 'private';
   starts_at: string;
   duration_minutes: number;
   ends_at: string;
@@ -476,6 +478,10 @@ export interface EventProgramme {
 export interface SessionDraft {
   title: string;
   speaker_name?: string;
+  /** Compulsory: a speaker has to be reachable after the event. */
+  speaker_email?: string;
+  speaker_phone?: string;
+  speaker_visibility?: 'public' | 'private';
   hall?: string;
   starts_at: string;
   duration_minutes: number;
@@ -500,4 +506,32 @@ export interface SessionAttendanceRow {
   is_guest: boolean;
   marked_manually: boolean;
   recorded_at: string;
+}
+
+
+/** How to reach a session's speaker, and whether you may yet. */
+export interface SpeakerContact {
+  speaker_name: string;
+  visibility: 'public' | 'private';
+  session_is_over: boolean;
+  released: boolean;
+  request_status: 'pending' | 'approved' | 'declined' | null;
+  reason?: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface ContactRequestRow {
+  id: string;
+  session: string;
+  session_title: string;
+  speaker_name: string;
+  meeting_id: string;
+  meeting_title: string;
+  asker_name: string;
+  asker_is_guest: boolean;
+  reason: string;
+  status: 'pending' | 'approved' | 'declined';
+  created_at: string;
+  decided_at: string | null;
 }

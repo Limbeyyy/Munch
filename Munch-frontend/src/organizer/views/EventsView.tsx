@@ -9,6 +9,7 @@ import { Modal } from '../OrganizerShell';
 import {
   MeetingDraftFields,
   emptyMeeting,
+  missingSpeakerDetails,
   toApiMeeting,
   toLocalInput,
 } from '../MeetingDraftFields';
@@ -347,6 +348,16 @@ const NewEventModal: React.FC<{ onClose: () => void; onCreated: () => void }> = 
       toast.error(t({ ne: 'हरेक बैठकको नाम चाहिन्छ', en: 'Every meeting needs a name' }));
       return;
     }
+    const incomplete = named.flatMap(missingSpeakerDetails);
+    if (incomplete.length > 0) {
+      toast.error(
+        t({
+          ne: `वक्ताको नाम, इमेल र फोन चाहिन्छ: ${incomplete.join(', ')}`,
+          en: `A speaker name, email and phone are needed for: ${incomplete.join(', ')}`,
+        })
+      );
+      return;
+    }
     try {
       setBusy(true);
       const created = await apiClient.createEvent({
@@ -465,6 +476,16 @@ const AddMeetingModal: React.FC<{
   const save = async () => {
     if (!meeting.title.trim()) {
       toast.error(t({ ne: 'बैठकको नाम लेख्नुहोस्', en: 'Give the meeting a name' }));
+      return;
+    }
+    const incomplete = missingSpeakerDetails(meeting);
+    if (incomplete.length > 0) {
+      toast.error(
+        t({
+          ne: `वक्ताको नाम, इमेल र फोन चाहिन्छ: ${incomplete.join(', ')}`,
+          en: `A speaker name, email and phone are needed for: ${incomplete.join(', ')}`,
+        })
+      );
       return;
     }
     try {

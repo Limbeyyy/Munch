@@ -30,6 +30,11 @@ export const emptySession = (meeting: MeetingDraft): SessionDraft => {
   return {
     title: '',
     speaker_name: '',
+    speaker_email: '',
+    speaker_phone: '',
+    // Private by default: handing out somebody's number should be a
+    // decision, not what happens when nobody thinks about it.
+    speaker_visibility: 'private',
     // A new session usually runs in the same hall as the one before it.
     hall: last?.hall ?? '',
     starts_at: toLocalInput(from),
@@ -137,6 +142,13 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
           </Btn>
         </div>
 
+        <p className="text-[12px] text-[#6E7C8E] mb-2">
+          {t({
+            ne: 'वक्ताको इमेल र फोन अनिवार्य — कार्यक्रम सकिएपछि सम्पर्क गर्न यही चाहिन्छ। निजी राखे सम्पर्क आयोजकमार्फत मात्र जान्छ।',
+            en: "A speaker's email and phone are required: they are how anyone reaches them afterwards. Keep them private and requests come through you.",
+          })}
+        </p>
+
         {meeting.sessions.length === 0 ? (
           <p className="text-[12.5px] text-live">
             {t({
@@ -147,10 +159,8 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
         ) : (
           <div className="flex flex-col gap-2">
             {meeting.sessions.map((session, i) => (
-              <div
-                key={i}
-                className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_130px_120px_150px_78px_auto] items-end bg-cream rounded-lg p-2"
-              >
+              <div key={i} className="bg-cream rounded-lg p-2">
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_130px_120px_150px_78px_auto] items-end">
                 <div>
                   <label className="block text-[11.5px] text-[#6E7C8E] mb-1">
                     {t({ ne: 'सत्रको नाम', en: 'Session' })}
@@ -222,6 +232,49 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
                   ×
                 </button>
               </div>
+
+              {/* How the speaker is reached once the day is over. */}
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_150px_150px] mt-2 pt-2 border-t border-navy-800/[.08]">
+                <div>
+                  <label className="block text-[11.5px] text-[#6E7C8E] mb-1">
+                    {t({ ne: 'वक्ताको इमेल', en: "Speaker's email" })}
+                  </label>
+                  <input
+                    type="email"
+                    value={session.speaker_email ?? ''}
+                    onChange={(e) => setSession(i, { speaker_email: e.target.value })}
+                    placeholder="name@example.com"
+                    className="w-full border border-navy-800/15 rounded-md px-2 py-1 text-[13px] bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11.5px] text-[#6E7C8E] mb-1">
+                    {t({ ne: 'फोन', en: 'Phone' })}
+                  </label>
+                  <input
+                    value={session.speaker_phone ?? ''}
+                    onChange={(e) => setSession(i, { speaker_phone: e.target.value })}
+                    placeholder="98…"
+                    className="w-full border border-navy-800/15 rounded-md px-2 py-1 text-[13px] bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11.5px] text-[#6E7C8E] mb-1">
+                    {t({ ne: 'सम्पर्क', en: 'Contact' })}
+                  </label>
+                  <select
+                    value={session.speaker_visibility ?? 'private'}
+                    onChange={(e) =>
+                      setSession(i, { speaker_visibility: e.target.value as 'public' | 'private' })
+                    }
+                    className="w-full border border-navy-800/15 rounded-md px-2 py-1 text-[13px] bg-white"
+                  >
+                    <option value="private">{t({ ne: 'निजी — सोधेर मात्र', en: 'Private — on request' })}</option>
+                    <option value="public">{t({ ne: 'सार्वजनिक', en: 'Public' })}</option>
+                  </select>
+                </div>
+              </div>
+              </div>
             ))}
           </div>
         )}
@@ -231,6 +284,13 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
 };
 
 /** Turn the typed drafts into the shape the server expects. */
+/** What is still missing before this meeting can be created. */
+export const missingSpeakerDetails = (draft: MeetingDraft): string[] =>
+  draft.sessions
+    .filter((s) => s.title.trim())
+    .filter((s) => !s.speaker_name?.trim() || !s.speaker_email?.trim() || !s.speaker_phone?.trim())
+    .map((s) => s.title.trim());
+
 export const toApiMeeting = (draft: MeetingDraft): MeetingDraft => ({
   ...draft,
   title: draft.title.trim(),

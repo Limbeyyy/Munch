@@ -32,6 +32,8 @@ import {
   MeetingDraft,
   Session,
   SessionAttendanceRow,
+  SpeakerContact,
+  ContactRequestRow,
 } from '../types';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
@@ -255,6 +257,9 @@ class ApiClient {
     meeting: string;
     title: string;
     speaker_name?: string;
+    speaker_email?: string;
+    speaker_phone?: string;
+    speaker_visibility?: 'public' | 'private';
     hall?: string;
     starts_at: string;
     duration_minutes: number;
@@ -281,6 +286,41 @@ class ApiClient {
   /** Close a session and record who was in the room for it. */
   async endSession(sessionId: string): Promise<Session & { attendance_recorded: number }> {
     const response = await this.client.post(`/sessions/${sessionId}/end/`);
+    return response.data;
+  }
+
+  /**
+   * How to reach a session's speaker.
+   *
+   * The server decides whether the details come back: a public speaker
+   * once the session is over, a private one only with the host's blessing.
+   */
+  async getSpeakerContact(sessionId: string): Promise<SpeakerContact> {
+    const response = await this.client.get(`/sessions/${sessionId}/contact/`);
+    return response.data;
+  }
+
+  /** Ask the host to pass on a private speaker's details. */
+  async requestSpeakerContact(sessionId: string, reason: string): Promise<ContactRequestRow> {
+    const response = await this.client.post(`/sessions/${sessionId}/request_contact/`, { reason });
+    return response.data;
+  }
+
+  /** Requests waiting on the host, for one meeting or the whole programme. */
+  async listContactRequests(params: { meeting?: string; status?: string } = {}): Promise<ContactRequestRow[]> {
+    const response = await this.client.get('/sessions/contact_requests/', { params });
+    return response.data;
+  }
+
+  async decideContactRequest(
+    sessionId: string,
+    requestId: string,
+    decision: 'approve' | 'decline'
+  ): Promise<ContactRequestRow> {
+    const response = await this.client.post(`/sessions/${sessionId}/decide_contact/`, {
+      request_id: requestId,
+      decision,
+    });
     return response.data;
   }
 

@@ -6,6 +6,7 @@ import { useOrganizer } from '../organizer/i18n';
 import { Btn, Chip, Tabs } from '../organizer/ui';
 import { SESSION_STATE_LABEL, sessionState } from '../organizer/sessionState';
 import { SpineItem, clock } from './Spine';
+import { SpeakerContactButton } from './SpeakerContactButton';
 
 const formatSize = (bytes?: number | null) => {
   if (!bytes) return '—';
@@ -120,6 +121,12 @@ export const SessionDrawer: React.FC<Props> = ({ item, onClose, guestToken }) =>
                 {t(SESSION_STATE_LABEL[sessionState(session)])}
               </div>
             </div>
+
+            {session.speaker_name && (
+              <span className="ms-auto flex-none">
+                <SpeakerContactButton session={session} compact />
+              </span>
+            )}
           </div>
         </div>
 

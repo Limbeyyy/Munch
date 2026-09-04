@@ -7,7 +7,8 @@ import { Btn, Card, Chip, Empty, Head, Panel } from '../ui';
 import { SESSION_STATE_LABEL, SESSION_STATE_TONE, sessionState } from '../sessionState';
 import { Modal } from '../OrganizerShell';
 import {
-  MeetingDraftFields, emptyMeeting, toApiMeeting, toLocalInput as toLocalDay,
+  MeetingDraftFields, emptyMeeting, missingSpeakerDetails,
+  toApiMeeting, toLocalInput as toLocalDay,
 } from '../MeetingDraftFields';
 import {
   MEETING_GAP_MINUTES, PlannedMeeting, PlannedSession,
@@ -451,6 +452,16 @@ const NewMeetingModal: React.FC<{
       );
       return;
     }
+    const incomplete = missingSpeakerDetails(meeting);
+    if (incomplete.length > 0) {
+      toast.error(
+        t({
+          ne: `वक्ताको नाम, इमेल र फोन चाहिन्छ: ${incomplete.join(', ')}`,
+          en: `A speaker name, email and phone are needed for: ${incomplete.join(', ')}`,
+        })
+      );
+      return;
+    }
     try {
       setBusy(true);
       const created = await apiClient.createMeetingWithSessions(
@@ -529,6 +540,9 @@ const NewSessionModal: React.FC<{
   const [draft, setDraft] = useState<SessionDraft>(() => ({
     title: '',
     speaker_name: '',
+    speaker_email: '',
+    speaker_phone: '',
+    speaker_visibility: 'private',
     hall: last?.hall ?? '',
     starts_at: toLocalDay(
       new Date(last ? last.startsAt + last.durationMinutes * 60000 : meeting.startsAt)
@@ -542,12 +556,24 @@ const NewSessionModal: React.FC<{
       toast.error(t({ ne: 'सत्रको नाम लेख्नुहोस्', en: 'Give the session a name' }));
       return;
     }
+    if (!draft.speaker_name?.trim() || !draft.speaker_email?.trim() || !draft.speaker_phone?.trim()) {
+      toast.error(
+        t({
+          ne: 'वक्ताको नाम, इमेल र फोन चाहिन्छ',
+          en: 'A speaker name, email and phone are needed',
+        })
+      );
+      return;
+    }
     try {
       setBusy(true);
       await apiClient.createSession({
         meeting: meeting.id,
         title: draft.title.trim(),
         speaker_name: draft.speaker_name,
+        speaker_email: draft.speaker_email,
+        speaker_phone: draft.speaker_phone,
+        speaker_visibility: draft.speaker_visibility,
         hall: draft.hall,
         starts_at: new Date(draft.starts_at).toISOString(),
         duration_minutes: draft.duration_minutes,
@@ -608,6 +634,51 @@ const NewSessionModal: React.FC<{
               className="w-full border border-navy-800/15 rounded-lg px-2.5 py-2 text-[14px]"
             />
           </div>
+        </div>
+
+        <div className="grid gap-2.5 sm:grid-cols-[minmax(0,1fr)_150px]">
+          <div>
+            <label className="block text-[12px] text-[#6E7C8E] mb-1">
+              {t({ ne: 'वक्ताको इमेल', en: "Speaker's email" })}
+            </label>
+            <input
+              type="email"
+              value={draft.speaker_email ?? ''}
+              onChange={(e) => setDraft((d) => ({ ...d, speaker_email: e.target.value }))}
+              placeholder="name@example.com"
+              className="w-full border border-navy-800/15 rounded-lg px-2.5 py-2 text-[14px]"
+            />
+          </div>
+          <div>
+            <label className="block text-[12px] text-[#6E7C8E] mb-1">
+              {t({ ne: 'फोन', en: 'Phone' })}
+            </label>
+            <input
+              value={draft.speaker_phone ?? ''}
+              onChange={(e) => setDraft((d) => ({ ...d, speaker_phone: e.target.value }))}
+              className="w-full border border-navy-800/15 rounded-lg px-2.5 py-2 text-[14px]"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[12px] text-[#6E7C8E] mb-1">
+            {t({ ne: 'सम्पर्क कसरी', en: 'How they can be contacted' })}
+          </label>
+          <select
+            value={draft.speaker_visibility ?? 'private'}
+            onChange={(e) =>
+              setDraft((d) => ({ ...d, speaker_visibility: e.target.value as 'public' | 'private' }))
+            }
+            className="w-full border border-navy-800/15 rounded-lg px-2.5 py-2 text-[14px] bg-white"
+          >
+            <option value="private">
+              {t({ ne: 'निजी — अनुरोध तपाईंकहाँ आउँछ', en: 'Private — requests come to you' })}
+            </option>
+            <option value="public">
+              {t({ ne: 'सार्वजनिक — सत्र सकिएपछि सबैले देख्छन्', en: 'Public — anyone may see it once the session is over' })}
+            </option>
+          </select>
         </div>
 
         <div className="grid gap-2.5 sm:grid-cols-[minmax(0,1fr)_110px]">

@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { useOrganizer } from '../../organizer/i18n';
 import { Card, Chip } from '../../organizer/ui';
 import { SpineItem, clock } from '../Spine';
+import { SpeakerContactButton } from '../SpeakerContactButton';
 
 interface Props {
   items: SpineItem[];
@@ -66,19 +67,24 @@ export const SpeakersView: React.FC<Props> = ({ items, onOpen }) => {
               </div>
 
               {sessions.map((item) => (
-                <button
-                  key={item.session.id}
-                  onClick={() => onOpen(item)}
-                  className="text-[12.5px] text-ink-2 bg-cream rounded-lg px-3 py-2 text-start hover:bg-cream-200"
-                >
-                  <span className="tabular-nums">{clock(item.session.starts_at)}</span>
-                  {' · '}
-                  {item.session.title}
-                  {item.session.status === 'live' && (
-                    <span className="ms-1.5"><Chip tone="live">{t({ ne: 'लाइभ', en: 'Live' })}</Chip></span>
-                  )}
-                </button>
+                <div key={item.session.id} className="bg-cream rounded-lg px-3 py-2">
+                  <button
+                    onClick={() => onOpen(item)}
+                    className="text-[12.5px] text-ink-2 text-start w-full"
+                  >
+                    <span className="tabular-nums">{clock(item.session.starts_at)}</span>
+                    {' · '}
+                    {item.session.title}
+                    {item.session.status === 'live' && (
+                      <span className="ms-1.5"><Chip tone="live">{t({ ne: 'लाइभ', en: 'Live' })}</Chip></span>
+                    )}
+                  </button>
+                </div>
               ))}
+
+              {/* One speaker, one way to reach them - taken from the first
+                  slot, since the details are the same person's either way. */}
+              <SpeakerContactButton session={sessions[0].session} compact />
             </Card>
           ))}
         </div>

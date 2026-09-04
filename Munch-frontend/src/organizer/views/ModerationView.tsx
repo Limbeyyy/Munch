@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import {
-  ChatMessage, EventProgramme, GuestAttendee, Meeting, Session,
+  ChatMessage, ContactRequestRow, EventProgramme, GuestAttendee, Meeting, Session,
 } from '../../types';
 import { useOrganizer } from '../i18n';
 import { Btn, Chip, Empty, Head, Panel, Tabs } from '../ui';
@@ -41,7 +41,8 @@ interface Props { meetings: Meeting[]; }
 export const ModerationView: React.FC<Props> = ({ meetings }) => {
   const { t, num } = useOrganizer();
 
-  const [tab, setTab] = useState<'messages' | 'guests'>('messages');
+  const [tab, setTab] = useState<'messages' | 'guests' | 'contacts'>('messages');
+  const [contacts, setContacts] = useState<ContactRequestRow[]>([]);
   const [events, setEvents] = useState<EventProgramme[]>([]);
   const [pending, setPending] = useState<Record<string, ChatMessage[]>>({});
   const [waiting, setWaiting] = useState<Record<string, GuestAttendee[]>>({});
@@ -62,6 +63,20 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
   useEffect(() => {
     apiClient.listEvents().then(setEvents).catch(() => undefined);
   }, []);
+
+  const loadContacts = useCallback(async () => {
+    try {
+      setContacts(await apiClient.listContactRequests({ status: 'pending' }));
+    } catch {
+      // The other queues still work without this one.
+    }
+  }, []);
+
+  useEffect(() => {
+    loadContacts();
+    const id = setInterval(loadContacts, 10000);
+    return () => clearInterval(id);
+  }, [loadContacts]);
 
   const load = useCallback(async () => {
     const results = await Promise.allSettled(
@@ -204,6 +219,21 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
     } finally { setBusy(null); }
   };
 
+  const decideContact = async (item: ContactRequestRow, decision: 'approve' | 'decline') => {
+    try {
+      setBusy(item.id);
+      await apiClient.decideContactRequest(item.session, item.id, decision);
+      setContacts((prev) => prev.filter((c) => c.id !== item.id));
+      toast.success(
+        decision === 'approve'
+          ? t({ ne: 'सम्पर्क पठाइयो', en: 'Details passed on' })
+          : t({ ne: 'अनुरोध अस्वीकृत', en: 'Request declined' })
+      );
+    } catch {
+      toast.error(t({ ne: 'गर्न सकिएन', en: 'That did not work' }));
+    } finally { setBusy(null); }
+  };
+
   const decideGuest = async (row: Row, admit: boolean) => {
     if (!row.guest) return;
     try {
@@ -243,6 +273,64 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
         ]}
       />
 
+      {tab === 'contacts' ? (
+        <Panel
+          title={t({ ne: 'वक्तासँग सम्पर्कका अनुरोध', en: 'Requests to reach a speaker' })}
+          aside={
+            <span className="text-[12.5px] text-[#6E7C8E]">
+              {t({
+                ne: 'स्वीकृत गरेपछि मात्र इमेल र फोन देखिन्छ।',
+                en: 'The email and phone appear only once you approve.',
+              })}
+            </span>
+          }
+        >
+          <div className="px-4">
+            {contacts.length === 0 ? (
+              <Empty>
+                {t({
+                  ne: 'कुनै अनुरोध छैन। निजी वक्तालाई सम्पर्क गर्न खोज्नेहरू यहाँ आउँछन्।',
+                  en: 'Nothing waiting. People asking to reach a private speaker land here.',
+                })}
+              </Empty>
+            ) : (
+              contacts.map((item) => (
+                <div key={item.id} className="flex gap-3 py-3.5 border-b border-navy-800/[.08] last:border-0 items-start">
+                  <div className="min-w-0">
+                    <p className="text-[13.5px]">
+                      <b className="font-medium">{item.asker_name}</b>
+                      {item.asker_is_guest && (
+                        <span className="ms-1.5"><Chip>{t({ ne: 'पाहुना', en: 'Guest' })}</Chip></span>
+                      )}
+                      {' '}
+                      {t({ ne: 'ले', en: 'would like to reach' })}{' '}
+                      <b className="font-medium">{item.speaker_name}</b>
+                      {t({ ne: 'सँग सम्पर्क खोज्दै', en: '' })}
+                    </p>
+                    {item.reason && (
+                      <p className="text-[13px] text-ink-2 font-read mt-1">“{item.reason}”</p>
+                    )}
+                    <p className="text-[12.5px] text-[#6E7C8E] mt-0.5">
+                      {item.session_title} · <span className="text-navy-700">{item.meeting_title}</span>
+                    </p>
+                  </div>
+                  <span className="ml-auto flex gap-1.5 flex-none">
+                    <Btn sm tone="solid" disabled={busy === item.id}
+                         onClick={() => decideContact(item, 'approve')}>
+                      {t({ ne: 'पठाउने', en: 'Pass it on' })}
+                    </Btn>
+                    <Btn sm tone="danger" disabled={busy === item.id}
+                         onClick={() => decideContact(item, 'decline')}>
+                      {t({ ne: 'अस्वीकृत', en: 'Decline' })}
+                    </Btn>
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </Panel>
+      ) : (
+      <>
       {/* Search */}
       <div className="flex items-center gap-2 flex-wrap mb-3.5">
         <div className="relative flex-1 min-w-[240px]">
@@ -384,8 +472,11 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
         </div>
       )}
 
+      </>
+      )}
+
       {/* Paging, only once there is more than a page to show */}
-      {pageCount > 1 && (
+      {tab !== 'contacts' && pageCount > 1 && (
         <div className="flex items-center gap-2 mt-4 justify-center">
           <Btn sm disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
             {t({ ne: 'अघिल्लो', en: 'Previous' })}

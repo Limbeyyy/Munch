@@ -10,6 +10,7 @@ const hhmm = (v: number) => {
 
 const mkSession = (id: string, h: number, m: number, mins: number, status: any = 'scheduled') => ({
   id, meeting: 'day', title: id, description: '', speaker_name: '', hall: '',
+  speaker_visibility: 'private' as const,
   starts_at: at(h, m), duration_minutes: mins, ends_at: at(h, m), position: 0,
   status, started_at: null, ended_at: null, attendance_count: 0,
   created_at: at(0), updated_at: at(0),
