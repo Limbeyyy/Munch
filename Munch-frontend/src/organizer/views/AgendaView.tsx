@@ -19,9 +19,9 @@ const toLocalInput = (ms: number) => {
 };
 
 /** The table's shape. Header and rows share it so they stay aligned. */
-const COLUMNS = 'minmax(220px,1fr) 150px 200px 84px 124px 112px';
+const COLUMNS = 'minmax(200px,1fr) 150px 200px 84px 124px 112px 36px';
 /** Narrower than this the columns would be squashed, so the table scrolls. */
-const TABLE_MIN_WIDTH = 940;
+const TABLE_MIN_WIDTH = 976;
 
 const gapBefore = (plan: PlannedMeeting[], index: number) =>
   index === 0 ? null : Math.round((plan[index].startsAt - plan[index - 1].endsAt) / 60000);
@@ -45,6 +45,8 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
   const [plan, setPlan] = useState<PlannedMeeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  /** The session currently being removed, so only its own control locks. */
+  const [removing, setRemoving] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -128,6 +130,26 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
     } finally { setSaving(false); }
   };
 
+  /** Take a session out of the running order for good. */
+  const removeSession = async (session: PlannedSession) => {
+    const ok = window.confirm(
+      t({
+        ne: `“${session.title}” हटाउने?\n\nयसको उपस्थिति रेकर्ड पनि जान्छ।`,
+        en: `Remove “${session.title}”?\n\nIts attendance record goes with it.`,
+      })
+    );
+    if (!ok) return;
+    try {
+      setRemoving(session.id);
+      await apiClient.deleteSession(session.id);
+      toast.success(t({ ne: 'सत्र हटाइयो', en: 'Session removed' }));
+      await load();
+      onChanged();
+    } catch (e: any) {
+      toast.error(e.response?.data?.error ?? t({ ne: 'हटाउन सकिएन', en: 'Could not remove it' }));
+    } finally { setRemoving(null); }
+  };
+
   const statusChip = (status: PlannedSession['status']) => {
     if (status === 'live') return <Chip tone="live">{t({ ne: 'सुरु भयो', en: 'Started' })}</Chip>;
     if (status === 'done') return <Chip tone="ok">{t({ ne: 'सकियो', en: 'Finished' })}</Chip>;
@@ -189,6 +211,20 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
         </span>
 
         <span className="text-end">{statusChip(session.status)}</span>
+
+        <span className="text-end">
+          {session.status !== 'live' && (
+            <button
+              onClick={() => removeSession(session)}
+              disabled={removing === session.id}
+              aria-label={t({ ne: 'सत्र हटाउने', en: 'Remove session' })}
+              title={t({ ne: 'सत्र हटाउने', en: 'Remove session' })}
+              className="w-7 h-7 rounded-md text-[#6E7C8E] hover:text-live hover:bg-live/[.08] disabled:opacity-40"
+            >
+              ×
+            </button>
+          )}
+        </span>
       </div>
     );
   };
@@ -330,6 +366,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
                           <span className="text-center">{t({ ne: 'मिनेट', en: 'Mins' })}</span>
                           <span className="text-end">{t({ ne: 'अवधि', en: 'Runs' })}</span>
                           <span className="text-end">{t({ ne: 'अवस्था', en: 'Status' })}</span>
+                          <span />
                         </div>
                         {meeting.sessions.map((s) => sessionRow(meeting, s))}
                       </div>

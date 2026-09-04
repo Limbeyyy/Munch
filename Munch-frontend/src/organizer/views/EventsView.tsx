@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { EventProgramme, MeetingDraft, Session } from '../../types';
+import { EventMeeting, EventProgramme, MeetingDraft, Session } from '../../types';
 import { useOrganizer } from '../i18n';
 import { Btn, Card, Chip, Empty, Head, Panel } from '../ui';
 import { Modal } from '../OrganizerShell';
@@ -53,13 +53,84 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
 
   useEffect(() => { load(); }, [load]);
 
-  const runSession = async (session: Session, action: 'start' | 'end') => {
+  // Whoever is watching this page did not necessarily make the change: a
+  // session put on stage from another screen has to show up here too.
+  useEffect(() => {
+    const id = setInterval(load, 8000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  /**
+   * Walking into a room that has not opened yet.
+   *
+   * A meeting scheduled for later is not running, so entering it starts it
+   * for everyone. That is worth asking about rather than doing quietly.
+   */
+  const enterRoom = async (meeting: EventMeeting) => {
+    if (meeting.status === 'active') {
+      onOpenRoom(meeting.meeting_code);
+      return;
+    }
+
+    const when = new Date(meeting.scheduled_start);
+    const early = Date.now() < +when;
+    const ok = window.confirm(
+      t({
+        ne: `“${meeting.title}” ${early ? 'पछिका लागि तालिकामा छ' : 'अझै सुरु भएको छैन'} — ${when.toLocaleString()}.\n\nअहिले भित्र पस्दा यो सबैका लागि सुरु हुन्छ। सुरु गर्ने?`,
+        en: `“${meeting.title}” ${early ? 'is scheduled for later' : 'has not started'} — ${when.toLocaleString()}.\n\nGoing in now starts it for everyone. Start it?`,
+      })
+    );
+    if (!ok) return;
+
+    try {
+      setBusy(meeting.id);
+      await apiClient.startMeeting(meeting.id);
+      toast.success(t({ ne: 'बैठक सुरु भयो', en: 'Meeting started' }));
+      await load();
+      onChanged();
+      onOpenRoom(meeting.meeting_code);
+    } catch (e: any) {
+      toast.error(e.response?.data?.error ?? t({ ne: 'सुरु गर्न सकिएन', en: 'Could not start it' }));
+    } finally { setBusy(null); }
+  };
+
+  /** Remove a session from the running order. */
+  const removeSession = async (session: Session) => {
+    const ok = window.confirm(
+      t({
+        ne: `“${session.title}” हटाउने?\n\nयसको उपस्थिति र ट्रान्सक्रिप्टको सम्बन्ध पनि जान्छ।`,
+        en: `Remove “${session.title}”?\n\nIts attendance record goes with it.`,
+      })
+    );
+    if (!ok) return;
+    try {
+      setBusy(session.id);
+      await apiClient.deleteSession(session.id);
+      toast.success(t({ ne: 'सत्र हटाइयो', en: 'Session removed' }));
+      await load();
+      onChanged();
+    } catch (e: any) {
+      toast.error(e.response?.data?.error ?? t({ ne: 'हटाउन सकिएन', en: 'Could not remove it' }));
+    } finally { setBusy(null); }
+  };
+
+  const runSession = async (
+    session: Session,
+    action: 'start' | 'end',
+    meetingCode: string
+  ) => {
     try {
       setBusy(session.id);
       if (action === 'start') {
         await apiClient.startSession(session.id);
         toast.success(t({ ne: `${session.title} मञ्चमा`, en: `${session.title} is on stage` }));
-      } else {
+        await load();
+        onChanged();
+        // Starting a session opens its meeting, so the host goes straight in.
+        onOpenRoom(meetingCode);
+        return;
+      }
+      {
         const done = await apiClient.endSession(session.id);
         toast.success(
           t({
@@ -190,7 +261,8 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
                                 <Chip tone="live">{t({ ne: 'चलिरहेको', en: 'Live' })}</Chip>
                               )}
                               <span className="ml-auto flex gap-1.5">
-                                <Btn sm onClick={() => onOpenRoom(meeting.meeting_code)}>
+                                <Btn sm disabled={busy === meeting.id}
+                                     onClick={() => enterRoom(meeting)}>
                                   {t({ ne: 'कोठा', en: 'Room' })}
                                 </Btn>
                               </span>
@@ -224,15 +296,26 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
                                       {sessionChip(s)}
                                       {s.status === 'live' ? (
                                         <Btn sm tone="danger" disabled={busy === s.id}
-                                             onClick={() => runSession(s, 'end')}>
+                                             onClick={() => runSession(s, 'end', meeting.meeting_code)}>
                                           {t({ ne: 'सकाउने', en: 'End' })}
                                         </Btn>
                                       ) : s.status === 'scheduled' ? (
                                         <Btn sm tone="solid" disabled={busy === s.id}
-                                             onClick={() => runSession(s, 'start')}>
+                                             onClick={() => runSession(s, 'start', meeting.meeting_code)}>
                                           {t({ ne: 'मञ्चमा', en: 'On stage' })}
                                         </Btn>
                                       ) : null}
+                                      {s.status !== 'live' && (
+                                        <button
+                                          onClick={() => removeSession(s)}
+                                          disabled={busy === s.id}
+                                          aria-label={t({ ne: 'सत्र हटाउने', en: 'Remove session' })}
+                                          title={t({ ne: 'सत्र हटाउने', en: 'Remove session' })}
+                                          className="w-7 h-7 rounded-md text-[#6E7C8E] hover:text-live hover:bg-live/[.08]"
+                                        >
+                                          ×
+                                        </button>
+                                      )}
                                     </span>
                                   </div>
                                 ))

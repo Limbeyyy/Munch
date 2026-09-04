@@ -46,6 +46,13 @@ const OrganizerInner: React.FC = () => {
 
   useEffect(() => { load(); }, [load]);
 
+  // Meeting state changes when a session goes on stage, which may happen
+  // on another screen, so the rail's counts and badges keep up.
+  useEffect(() => {
+    const id = setInterval(load, 8000);
+    return () => clearInterval(id);
+  }, [load]);
+
   // The rail carries counts, so the queue is visible from any screen.
   useEffect(() => {
     const running = meetings.filter((m) => m.status === 'active' || m.status === 'scheduled');

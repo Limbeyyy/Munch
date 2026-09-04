@@ -54,6 +54,13 @@ const AttendeeInner: React.FC = () => {
 
   useEffect(() => { load(); }, [load]);
 
+  // The organizer decides what is on stage, so the attendee's view has to
+  // follow it rather than wait for a reload.
+  useEffect(() => {
+    const id = setInterval(load, 8000);
+    return () => clearInterval(id);
+  }, [load]);
+
   const event = events.find((e) => e.id === eventId) ?? events[0] ?? null;
 
   const items = useMemo<SpineItem[]>(() => {
