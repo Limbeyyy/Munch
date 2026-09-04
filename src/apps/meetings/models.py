@@ -419,6 +419,24 @@ class Session(models.Model):
     # of the institution who never sign in.
     speaker_name = models.CharField(max_length=255, blank=True)
 
+    # How to reach the speaker once the day is over. Held against the
+    # session rather than an account, for the same reason as the name.
+    speaker_email = models.EmailField(blank=True)
+    speaker_phone = models.CharField(max_length=40, blank=True)
+
+    class SpeakerVisibility(models.TextChoices):
+        PUBLIC = 'public', 'Public'
+        PRIVATE = 'private', 'Private'
+
+    # Whether attendees may simply read the speaker's details, or have to
+    # ask the host first. Private is the default: handing out somebody's
+    # phone number should be a decision, not an oversight.
+    speaker_visibility = models.CharField(
+        max_length=10,
+        choices=SpeakerVisibility.choices,
+        default=SpeakerVisibility.PRIVATE,
+    )
+
     # Which room in the venue this runs in. Free text, because halls are
     # named differently at every venue and are not worth a table of their own.
     hall = models.CharField(max_length=255, blank=True)
@@ -506,3 +524,82 @@ class SessionAttendance(models.Model):
     def __str__(self):
         who = self.user.email if self.user else (self.guest.full_name if self.guest else '?')
         return f"{who} @ {self.session.title}"
+
+
+class ContactRequest(models.Model):
+    """Somebody asking to be given a private speaker's details.
+
+    A public speaker needs none of this - their details are readable once
+    the session is over. A private one is reachable only through the host,
+    who decides which requests are worth passing on.
+    """
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        APPROVED = 'approved', 'Approved'
+        DECLINED = 'declined', 'Declined'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.ForeignKey(
+        Session, on_delete=models.CASCADE, related_name='contact_requests'
+    )
+
+    # Exactly one of these is the asker; guests have no account.
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='contact_requests',
+        null=True,
+        blank=True,
+    )
+    guest = models.ForeignKey(
+        'meetings.GuestAttendee',
+        on_delete=models.CASCADE,
+        related_name='contact_requests',
+        null=True,
+        blank=True,
+    )
+
+    # Why they are asking. The host judges the request on this.
+    reason = models.TextField(blank=True)
+
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decided_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        related_name='contact_decisions',
+        null=True,
+        blank=True,
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(user__isnull=False, guest__isnull=True)
+                    | models.Q(user__isnull=True, guest__isnull=False)
+                ),
+                name='contact_request_exactly_one_asker',
+            ),
+            # One standing request per person per session: asking twice is
+            # the same ask, and the host should see it once.
+            models.UniqueConstraint(
+                fields=['session', 'user'],
+                condition=models.Q(user__isnull=False),
+                name='contact_request_unique_user',
+            ),
+            models.UniqueConstraint(
+                fields=['session', 'guest'],
+                condition=models.Q(guest__isnull=False),
+                name='contact_request_unique_guest',
+            ),
+        ]
+
+    def __str__(self):
+        who = self.user.email if self.user else (self.guest.full_name if self.guest else '?')
+        return f"{who} -> {self.session.speaker_name} ({self.status})"

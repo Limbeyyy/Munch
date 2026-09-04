@@ -9,6 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from src.apps.meetings.event_serializers import (
+    ContactRequestSerializer,
     EventCreateSerializer,
     EventSerializer,
     MeetingWriteSerializer,
@@ -17,6 +18,7 @@ from src.apps.meetings.event_serializers import (
     build_meeting,
 )
 from src.apps.meetings.models import (
+    ContactRequest,
     Event,
     Meeting,
     Session,
@@ -179,6 +181,136 @@ class SessionViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=True, methods=['get'])
+    def contact(self, request, pk=None):
+        """How to reach this session's speaker, if the asker may know.
+
+        A public speaker is readable once the session is over - the point
+        is to let people follow up afterwards, not to hand out a phone
+        number while the talk is still running. A private one is readable
+        only by the host, and by anyone whose request the host approved.
+        """
+        session = self.get_object()
+        is_host = str(session.meeting.host_id) == str(request.user.id)
+        over = _session_is_over(session)
+
+        body = {
+            'speaker_name': session.speaker_name,
+            'visibility': session.speaker_visibility,
+            'session_is_over': over,
+            'released': False,
+            'request_status': None,
+        }
+
+        if session.speaker_visibility == Session.SpeakerVisibility.PUBLIC:
+            body['released'] = over or is_host
+            if not body['released']:
+                body['reason'] = 'These open when the session is over.'
+        else:
+            standing = ContactRequest.objects.filter(
+                session=session, user=request.user
+            ).first()
+            body['request_status'] = standing.status if standing else None
+            approved = standing and standing.status == ContactRequest.Status.APPROVED
+            body['released'] = bool(is_host or (approved and over))
+            if not body['released']:
+                body['reason'] = (
+                    'The host passes these on.' if not approved
+                    else 'These open when the session is over.'
+                )
+
+        if body['released']:
+            body['email'] = session.speaker_email
+            body['phone'] = session.speaker_phone
+
+        return Response(body)
+
+    @action(detail=True, methods=['post'], url_path='request_contact')
+    def request_contact(self, request, pk=None):
+        """Ask the host to pass on a private speaker's details."""
+        session = self.get_object()
+
+        if session.speaker_visibility == Session.SpeakerVisibility.PUBLIC:
+            return Response(
+                {'error': 'This speaker is listed publicly - no request is needed.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        existing = ContactRequest.objects.filter(
+            session=session, user=request.user
+        ).first()
+        if existing:
+            return Response(ContactRequestSerializer(existing).data)
+
+        created = ContactRequest.objects.create(
+            session=session,
+            user=request.user,
+            reason=(request.data.get('reason') or '').strip()[:2000],
+        )
+        logger.info(f"Contact request {created.id} for session {session.id}")
+        return Response(
+            ContactRequestSerializer(created).data,
+            status=status.HTTP_201_CREATED
+        )
+
+    @action(detail=True, methods=['post'], url_path='decide_contact')
+    def decide_contact(self, request, pk=None):
+        """Pass a request on, or turn it down. Host only."""
+        session = self.get_object()
+        denied = self._require_host(session)
+        if denied:
+            return denied
+
+        contact_request = ContactRequest.objects.filter(
+            id=request.data.get('request_id'), session=session
+        ).first()
+        if contact_request is None:
+            return Response(
+                {'error': 'No such request on this session'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        decision = request.data.get('decision')
+        if decision not in ('approve', 'decline'):
+            return Response(
+                {'error': "decision must be 'approve' or 'decline'"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        contact_request.status = (
+            ContactRequest.Status.APPROVED if decision == 'approve'
+            else ContactRequest.Status.DECLINED
+        )
+        contact_request.decided_at = timezone.now()
+        contact_request.decided_by = request.user
+        contact_request.save(update_fields=['status', 'decided_at', 'decided_by'])
+
+        return Response(ContactRequestSerializer(contact_request).data)
+
+    @action(detail=False, methods=['get'], url_path='contact_requests')
+    def contact_requests(self, request):
+        """Requests waiting on the host, across a meeting or everything."""
+        requests = ContactRequest.objects.filter(
+            session__meeting__host=request.user
+        ).select_related('session', 'session__meeting', 'user', 'guest')
+
+        meeting_ref = request.query_params.get('meeting')
+        if meeting_ref:
+            import uuid as _uuid
+
+            try:
+                _uuid.UUID(str(meeting_ref))
+            except (ValueError, AttributeError, TypeError):
+                requests = requests.filter(session__meeting__meeting_code=meeting_ref)
+            else:
+                requests = requests.filter(session__meeting_id=meeting_ref)
+
+        state = request.query_params.get('status')
+        if state:
+            requests = requests.filter(status=state)
+
+        return Response(ContactRequestSerializer(requests, many=True).data)
+
+    @action(detail=True, methods=['get'])
     def attendance(self, request, pk=None):
         """Who was present for this session."""
         session = self.get_object()
@@ -212,6 +344,17 @@ class SessionViewSet(viewsets.ModelViewSet):
             SessionAttendance.objects.filter(**lookup).delete()
 
         return Response({'present': bool(present)})
+
+
+def _session_is_over(session):
+    """Whether the speaking is done and the room has moved on."""
+    from django.utils import timezone as tz
+
+    if session.status in (Session.Status.DONE, Session.Status.SKIPPED):
+        return True
+    if session.status == Session.Status.LIVE:
+        return False
+    return tz.now() > session.starts_at + tz.timedelta(minutes=session.duration_minutes)
 
 
 def _close_session(session, now):

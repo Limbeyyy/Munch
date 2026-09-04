@@ -8,17 +8,46 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
 
-from src.apps.meetings.models import Event, Meeting, Session, SessionAttendance
+from src.apps.meetings.models import (
+    ContactRequest, Event, Meeting, Session, SessionAttendance,
+)
+
+
+def _require_speaker_details(attrs):
+    """A session must say who is speaking and how to reach them.
+
+    The details are collected once, when the running order is written,
+    because chasing them down after the event is how they never get
+    recorded at all.
+    """
+    missing = [
+        field for field in ('speaker_name', 'speaker_email', 'speaker_phone')
+        if not (attrs.get(field) or '').strip()
+    ]
+    if missing:
+        raise serializers.ValidationError({
+            field: 'This is needed so the speaker can be reached afterwards.'
+            for field in missing
+        })
+    return attrs
 
 
 class SessionSerializer(serializers.ModelSerializer):
     ends_at = serializers.DateTimeField(read_only=True)
     attendance_count = serializers.SerializerMethodField()
 
+    def validate(self, attrs):
+        # Only on the way in. A patch that leaves the speaker alone should
+        # not have to resend details that are already stored.
+        if self.instance is None:
+            return _require_speaker_details(attrs)
+        return attrs
+
     class Meta:
         model = Session
         fields = [
             'id', 'meeting', 'title', 'description', 'speaker_name', 'hall',
+            'speaker_email', 'speaker_phone', 'speaker_visibility',
             'starts_at', 'duration_minutes', 'ends_at', 'position',
             'status', 'started_at', 'ended_at', 'attendance_count',
             'created_at', 'updated_at',
@@ -27,6 +56,12 @@ class SessionSerializer(serializers.ModelSerializer):
             'id', 'ends_at', 'started_at', 'ended_at',
             'attendance_count', 'created_at', 'updated_at',
         ]
+        # Writable, but never read back with the session: who may see a
+        # speaker's details is decided by its own endpoint.
+        extra_kwargs = {
+            'speaker_email': {'write_only': True},
+            'speaker_phone': {'write_only': True},
+        }
 
     def get_attendance_count(self, obj):
         return obj.attendance.count()
@@ -39,8 +74,12 @@ class SessionWriteSerializer(serializers.ModelSerializer):
         model = Session
         fields = [
             'title', 'description', 'speaker_name', 'hall',
+            'speaker_email', 'speaker_phone', 'speaker_visibility',
             'starts_at', 'duration_minutes', 'position',
         ]
+
+    def validate(self, attrs):
+        return _require_speaker_details(attrs)
 
 
 class MeetingSummarySerializer(serializers.ModelSerializer):
@@ -178,6 +217,9 @@ def build_meeting(data, *, event=None, host=None):
             title=s['title'],
             description=s.get('description', ''),
             speaker_name=s.get('speaker_name', ''),
+            speaker_email=s.get('speaker_email', ''),
+            speaker_phone=s.get('speaker_phone', ''),
+            speaker_visibility=s.get('speaker_visibility', Session.SpeakerVisibility.PRIVATE),
             hall=s.get('hall', ''),
             starts_at=s['starts_at'],
             duration_minutes=s.get('duration_minutes', 30),
@@ -217,4 +259,32 @@ class SessionAttendanceSerializer(serializers.ModelSerializer):
         return obj.guest.full_name if obj.guest else '—'
 
     def get_is_guest(self, obj):
+        return obj.guest_id is not None
+
+
+class ContactRequestSerializer(serializers.ModelSerializer):
+    """A request as the host sees it."""
+    asker_name = serializers.SerializerMethodField()
+    asker_is_guest = serializers.SerializerMethodField()
+    session_title = serializers.CharField(source='session.title', read_only=True)
+    speaker_name = serializers.CharField(source='session.speaker_name', read_only=True)
+    meeting_title = serializers.CharField(source='session.meeting.title', read_only=True)
+    meeting_id = serializers.UUIDField(source='session.meeting_id', read_only=True)
+
+    class Meta:
+        model = ContactRequest
+        fields = [
+            'id', 'session', 'session_title', 'speaker_name',
+            'meeting_id', 'meeting_title',
+            'asker_name', 'asker_is_guest', 'reason',
+            'status', 'created_at', 'decided_at',
+        ]
+
+    def get_asker_name(self, obj):
+        if obj.user:
+            full = f"{obj.user.first_name} {obj.user.last_name}".strip()
+            return full or obj.user.email
+        return obj.guest.full_name if obj.guest else '—'
+
+    def get_asker_is_guest(self, obj):
         return obj.guest_id is not None
