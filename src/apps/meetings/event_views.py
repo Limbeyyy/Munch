@@ -118,6 +118,13 @@ class SessionViewSet(viewsets.ModelViewSet):
             raise PermissionDenied('Only the host can add sessions')
         serializer.save()
 
+    def perform_destroy(self, instance):
+        if str(instance.meeting.host_id) != str(self.request.user.id):
+            from rest_framework.exceptions import PermissionDenied
+
+            raise PermissionDenied('Only the host can remove sessions')
+        instance.delete()
+
     @action(detail=True, methods=['post'])
     def start(self, request, pk=None):
         """Put this session on stage.
@@ -143,7 +150,16 @@ class SessionViewSet(viewsets.ModelViewSet):
         session.ended_at = None
         session.save(update_fields=['status', 'started_at', 'ended_at', 'updated_at'])
 
-        _broadcast(session.meeting.meeting_code, session, 'session_started')
+        # A session on stage means the meeting is happening, so the room
+        # opens with it rather than waiting to be started separately.
+        meeting = session.meeting
+        if meeting.status != Meeting.Status.ACTIVE:
+            meeting.status = Meeting.Status.ACTIVE
+            meeting.started_at = meeting.started_at or now
+            meeting.ended_at = None
+            meeting.save(update_fields=['status', 'started_at', 'ended_at', 'updated_at'])
+
+        _broadcast(meeting.meeting_code, session, 'session_started')
         return Response(SessionSerializer(session).data)
 
     @action(detail=True, methods=['post'])
