@@ -18,6 +18,11 @@ const toLocalInput = (ms: number) => {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 };
 
+/** The table's shape. Header and rows share it so they stay aligned. */
+const COLUMNS = 'minmax(220px,1fr) 150px 200px 84px 124px 112px';
+/** Narrower than this the columns would be squashed, so the table scrolls. */
+const TABLE_MIN_WIDTH = 940;
+
 const gapBefore = (plan: PlannedMeeting[], index: number) =>
   index === 0 ? null : Math.round((plan[index].startsAt - plan[index - 1].endsAt) / 60000);
 
@@ -138,7 +143,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
         className={`grid gap-2.5 items-center px-4 py-2.5 border-b border-navy-800/[.08] last:border-0 ${
           session.moved ? 'bg-amber/[.08]' : ''
         }`}
-        style={{ gridTemplateColumns: 'minmax(0,1fr) 150px 172px 84px 92px 112px' }}
+        style={{ gridTemplateColumns: COLUMNS, minWidth: TABLE_MIN_WIDTH }}
       >
         <div className="min-w-0">
           <p className="text-[13.5px] font-medium truncate">{session.title}</p>
@@ -179,7 +184,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
           className="border border-navy-800/15 rounded-md px-2 py-1 text-[13px] text-center bg-white disabled:opacity-50"
         />
 
-        <span className="text-[12.5px] text-[#6E7C8E] tabular-nums text-end">
+        <span className="text-[12.5px] text-[#6E7C8E] tabular-nums text-end whitespace-nowrap">
           {clock(session.startsAt)}–{clock(session.startsAt + session.durationMinutes * 60000)}
         </span>
 
@@ -314,18 +319,20 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
                     {meeting.sessions.length === 0 ? (
                       <Empty>{t({ ne: 'यो बैठकमा सत्र छैन।', en: 'No sessions in this meeting.' })}</Empty>
                     ) : (
-                      <>
+                      <div className="overflow-x-auto">
                         <div
                           className="grid gap-2.5 px-4 py-2 bg-[#FBFAF6] border-b border-navy-800/15 text-xs text-[#6E7C8E] font-medium"
-                          style={{ gridTemplateColumns: 'minmax(0,1fr) 150px 172px 84px 92px 112px' }}
+                          style={{ gridTemplateColumns: COLUMNS, minWidth: TABLE_MIN_WIDTH }}
                         >
                           <span>{t({ ne: 'सत्र', en: 'Session' })}</span>
+                          <span>{t({ ne: 'हल', en: 'Hall' })}</span>
                           <span>{t({ ne: 'सुरु', en: 'Starts' })}</span>
                           <span className="text-center">{t({ ne: 'मिनेट', en: 'Mins' })}</span>
                           <span className="text-end">{t({ ne: 'अवधि', en: 'Runs' })}</span>
+                          <span className="text-end">{t({ ne: 'अवस्था', en: 'Status' })}</span>
                         </div>
                         {meeting.sessions.map((s) => sessionRow(meeting, s))}
-                      </>
+                      </div>
                     )}
                   </Panel>
                 </div>
