@@ -426,6 +426,8 @@ export interface Session {
   title: string;
   description: string;
   speaker_name: string;
+  /** Which room in the venue this runs in. */
+  hall: string;
   starts_at: string;
   duration_minutes: number;
   ends_at: string;
@@ -474,6 +476,7 @@ export interface EventProgramme {
 export interface SessionDraft {
   title: string;
   speaker_name?: string;
+  hall?: string;
   starts_at: string;
   duration_minutes: number;
   description?: string;

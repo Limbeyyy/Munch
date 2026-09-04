@@ -214,6 +214,7 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
                                       <span className="block text-[13.5px] truncate">{s.title}</span>
                                       <span className="text-[12px] text-[#6E7C8E]">
                                         {num(s.duration_minutes)}′
+                                        {s.hall && ` · ${s.hall}`}
                                         {s.speaker_name && ` · ${s.speaker_name}`}
                                         {s.attendance_count > 0 &&
                                           ` · ${num(s.attendance_count)} ${t({ ne: 'उपस्थित', en: 'present' })}`}

@@ -68,7 +68,7 @@ export const SessionsView: React.FC<Props> = ({ items, attendedIds, onOpen }) =>
                       {clock(session.starts_at)}–{clock(session.ends_at)}
                     </span>
                     <span>·</span>
-                    <span className="truncate">{meeting.title}</span>
+                    <span className="truncate">{session.hall || meeting.title}</span>
                     {session.status === 'done' && !was && (
                       <span className="ms-auto"><Chip tone="warn">{t({ ne: 'छुट्यो', en: 'Missed' })}</Chip></span>
                     )}

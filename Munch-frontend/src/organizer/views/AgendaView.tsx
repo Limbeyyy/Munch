@@ -6,7 +6,7 @@ import { useOrganizer } from '../i18n';
 import { Btn, Card, Chip, Empty, Head, Panel } from '../ui';
 import {
   MEETING_GAP_MINUTES, PlannedMeeting, PlannedSession,
-  applyEdit, countChanges, pendingChanges, reflowMeeting, toPlan,
+  applyEdit, countChanges, hallsInUse, pendingChanges, reflowMeeting, setHall, toPlan,
 } from '../schedule';
 
 const clock = (ms: number) =>
@@ -85,6 +85,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
           apiClient.updateSession(s.id, {
             starts_at: new Date(s.startsAt).toISOString(),
             duration_minutes: s.durationMinutes,
+            hall: s.hall,
           })
         ),
         ...meetings.map((m) =>
@@ -122,6 +123,13 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
     } finally { setSaving(false); }
   };
 
+  const statusChip = (status: PlannedSession['status']) => {
+    if (status === 'live') return <Chip tone="live">{t({ ne: 'सुरु भयो', en: 'Started' })}</Chip>;
+    if (status === 'done') return <Chip tone="ok">{t({ ne: 'सकियो', en: 'Finished' })}</Chip>;
+    if (status === 'skipped') return <Chip tone="draft">{t({ ne: 'छाडियो', en: 'Skipped' })}</Chip>;
+    return <Chip tone="warn">{t({ ne: 'आउँदै', en: 'Upcoming' })}</Chip>;
+  };
+
   const sessionRow = (meeting: PlannedMeeting, session: PlannedSession) => {
     const locked = session.status === 'done';
     return (
@@ -130,20 +138,23 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
         className={`grid gap-2.5 items-center px-4 py-2.5 border-b border-navy-800/[.08] last:border-0 ${
           session.moved ? 'bg-amber/[.08]' : ''
         }`}
-        style={{ gridTemplateColumns: 'minmax(0,1fr) 172px 92px 92px' }}
+        style={{ gridTemplateColumns: 'minmax(0,1fr) 150px 172px 84px 92px 112px' }}
       >
         <div className="min-w-0">
           <p className="text-[13.5px] font-medium truncate">{session.title}</p>
           <p className="text-[12px] text-[#6E7C8E] truncate">
             {session.speaker_name || t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' })}
-            {session.status === 'live' && (
-              <span className="ms-1.5"><Chip tone="live">{t({ ne: 'मञ्चमा', en: 'On stage' })}</Chip></span>
-            )}
-            {session.status === 'done' && (
-              <span className="ms-1.5"><Chip tone="ok">{t({ ne: 'सकियो', en: 'Done' })}</Chip></span>
-            )}
           </p>
         </div>
+
+        <input
+          list="manch-halls"
+          value={session.hall}
+          disabled={locked}
+          placeholder={t({ ne: 'हल', en: 'Hall' })}
+          onChange={(e) => setPlan((p) => setHall(p, session.id, e.target.value))}
+          className="border border-navy-800/15 rounded-md px-2 py-1 text-[13px] bg-white disabled:opacity-50"
+        />
 
         <input
           type="datetime-local"
@@ -171,6 +182,8 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
         <span className="text-[12.5px] text-[#6E7C8E] tabular-nums text-end">
           {clock(session.startsAt)}–{clock(session.startsAt + session.durationMinutes * 60000)}
         </span>
+
+        <span className="text-end">{statusChip(session.status)}</span>
       </div>
     );
   };
@@ -203,6 +216,13 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
           </>
         }
       />
+
+      {/* Halls already in use, so one is picked rather than retyped. */}
+      <datalist id="manch-halls">
+        {hallsInUse(plan).map((hall) => (
+          <option key={hall} value={hall} />
+        ))}
+      </datalist>
 
       {loading ? (
         <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>
@@ -297,7 +317,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
                       <>
                         <div
                           className="grid gap-2.5 px-4 py-2 bg-[#FBFAF6] border-b border-navy-800/15 text-xs text-[#6E7C8E] font-medium"
-                          style={{ gridTemplateColumns: 'minmax(0,1fr) 172px 92px 92px' }}
+                          style={{ gridTemplateColumns: 'minmax(0,1fr) 150px 172px 84px 92px 112px' }}
                         >
                           <span>{t({ ne: 'सत्र', en: 'Session' })}</span>
                           <span>{t({ ne: 'सुरु', en: 'Starts' })}</span>

@@ -82,6 +82,7 @@ export const Spine: React.FC<Props> = ({ items, onOpen, compact }) => {
               <h3 className="text-[16px] font-semibold">{session.title}</h3>
               <p className="text-[13px] text-[#6E7C8E] mt-0.5">
                 {session.speaker_name || t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' })}
+                {session.hall && ` · ${session.hall}`}
                 {!compact && ` · ${item.meeting.title}`}
                 {` · ${num(session.duration_minutes)}′`}
               </p>

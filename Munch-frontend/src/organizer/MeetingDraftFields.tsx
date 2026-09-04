@@ -25,7 +25,14 @@ export const emptySession = (meeting: MeetingDraft): SessionDraft => {
   const from = last
     ? new Date(new Date(last.starts_at).getTime() + last.duration_minutes * 60000)
     : new Date(meeting.scheduled_start);
-  return { title: '', speaker_name: '', starts_at: toLocalInput(from), duration_minutes: 30 };
+  return {
+    title: '',
+    speaker_name: '',
+    // A new session usually runs in the same hall as the one before it.
+    hall: last?.hall ?? '',
+    starts_at: toLocalInput(from),
+    duration_minutes: 30,
+  };
 };
 
 interface Props {
@@ -140,7 +147,7 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
             {meeting.sessions.map((session, i) => (
               <div
                 key={i}
-                className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_150px_155px_80px_auto] items-end bg-cream rounded-lg p-2"
+                className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_130px_120px_150px_78px_auto] items-end bg-cream rounded-lg p-2"
               >
                 <div>
                   <label className="block text-[11.5px] text-[#6E7C8E] mb-1">
@@ -160,6 +167,17 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
                   <input
                     value={session.speaker_name ?? ''}
                     onChange={(e) => setSession(i, { speaker_name: e.target.value })}
+                    className="w-full border border-navy-800/15 rounded-md px-2 py-1 text-[13px] bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11.5px] text-[#6E7C8E] mb-1">
+                    {t({ ne: 'हल', en: 'Hall' })}
+                  </label>
+                  <input
+                    value={session.hall ?? ''}
+                    onChange={(e) => setSession(i, { hall: e.target.value })}
+                    placeholder={t({ ne: 'मुख्य हल', en: 'Main hall' })}
                     className="w-full border border-navy-800/15 rounded-md px-2 py-1 text-[13px] bg-white"
                   />
                 </div>

@@ -12,12 +12,14 @@ export interface PlannedSession {
   meetingId: string;
   title: string;
   speaker_name: string;
+  hall: string;
   status: Session['status'];
   startsAt: number;
   durationMinutes: number;
-  /** What the server currently holds, so a move can be recognised. */
+  /** What the server currently holds, so a change can be recognised. */
   baseStartsAt: number;
   baseDurationMinutes: number;
+  baseHall: string;
   moved: boolean;
 }
 
@@ -41,6 +43,12 @@ const isUnderway = (m: PlannedMeeting) => m.status === 'active' || m.status === 
 
 const endOf = (s: PlannedSession) => s.startsAt + s.durationMinutes * MS;
 
+/** Anything about this session that differs from what the server holds. */
+const hasChanged = (s: PlannedSession) =>
+  s.startsAt !== s.baseStartsAt ||
+  s.durationMinutes !== s.baseDurationMinutes ||
+  s.hall !== s.baseHall;
+
 export const toPlan = (meetings: EventMeeting[]): PlannedMeeting[] =>
   [...meetings]
     .sort((a, b) => +new Date(a.scheduled_start) - +new Date(b.scheduled_start))
@@ -61,11 +69,13 @@ export const toPlan = (meetings: EventMeeting[]): PlannedMeeting[] =>
           meetingId: meeting.id,
           title: session.title,
           speaker_name: session.speaker_name,
+          hall: session.hall ?? '',
           status: session.status,
           startsAt: +new Date(session.starts_at),
           durationMinutes: session.duration_minutes,
           baseStartsAt: +new Date(session.starts_at),
           baseDurationMinutes: session.duration_minutes,
+          baseHall: session.hall ?? '',
           moved: false,
         })),
     }));
@@ -167,7 +177,7 @@ const resolve = (
     .sort((a, b) => a.startsAt - b.startsAt)
     .map((s) => ({
       ...s,
-      moved: s.startsAt !== s.baseStartsAt || s.durationMinutes !== s.baseDurationMinutes,
+      moved: hasChanged(s),
     }));
 };
 
@@ -238,6 +248,31 @@ export const applyEdit = (
 
 /** Kept for callers written against the older name. */
 export const reflow = applyEdit;
+
+/** Put a session in a different hall. Nothing else about the day changes. */
+export const setHall = (
+  plan: PlannedMeeting[],
+  sessionId: string,
+  hall: string
+): PlannedMeeting[] =>
+  plan.map((meeting) => ({
+    ...meeting,
+    sessions: meeting.sessions.map((s) =>
+      s.id === sessionId ? { ...s, hall, moved: hasChanged({ ...s, hall }) } : s
+    ),
+  }));
+
+/** Every hall already in use, for suggesting one rather than retyping it. */
+export const hallsInUse = (plan: PlannedMeeting[]): string[] => {
+  const seen: string[] = [];
+  plan.forEach((m) =>
+    m.sessions.forEach((s) => {
+      const hall = s.hall.trim();
+      if (hall && !seen.includes(hall)) seen.push(hall);
+    })
+  );
+  return seen.sort();
+};
 
 /** Move a whole meeting, running order and all. */
 export const reflowMeeting = (
