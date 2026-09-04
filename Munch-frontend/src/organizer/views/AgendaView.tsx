@@ -6,7 +6,7 @@ import { useOrganizer } from '../i18n';
 import { Btn, Card, Chip, Empty, Head, Panel } from '../ui';
 import {
   MEETING_GAP_MINUTES, PlannedMeeting, PlannedSession,
-  countChanges, pendingChanges, reflow, reflowMeeting, toPlan,
+  applyEdit, countChanges, pendingChanges, reflowMeeting, toPlan,
 } from '../schedule';
 
 const clock = (ms: number) =>
@@ -151,7 +151,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
           disabled={locked}
           onChange={(e) => {
             const next = new Date(e.target.value).getTime();
-            if (!Number.isNaN(next)) setPlan((p) => reflow(p, session.id, { startsAt: next }));
+            if (!Number.isNaN(next)) setPlan((p) => applyEdit(p, session.id, { startsAt: next }));
           }}
           className="border border-navy-800/15 rounded-md px-2 py-1 text-[13px] bg-white disabled:opacity-50"
         />
@@ -163,7 +163,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
           value={session.durationMinutes}
           disabled={locked}
           onChange={(e) =>
-            setPlan((p) => reflow(p, session.id, { durationMinutes: Number(e.target.value) || 5 }))
+            setPlan((p) => applyEdit(p, session.id, { durationMinutes: Number(e.target.value) || 5 }))
           }
           className="border border-navy-800/15 rounded-md px-2 py-1 text-[13px] text-center bg-white disabled:opacity-50"
         />
@@ -180,8 +180,8 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
       <Head
         title={{ ne: 'सत्रहरू', en: 'Sessions' }}
         lede={{
-          ne: 'सुरु वा अवधि फेर्दा बाँकी दिन आफैँ मिल्छ। बैठकबीच कम्तीमा १५ मिनेटको खाली ठाउँ रहन्छ।',
-          en: `Change a start or a length and the rest of the day follows. Meetings keep at least ${MEETING_GAP_MINUTES} minutes between them.`,
+          ne: 'अर्को सत्रकै समय राख्नुभयो भने दुवैले ठाउँ साट्छन्। अरू कुनै समय राख्दा त्यो सत्र सबैभन्दा नजिकको खाली समयमा बस्छ — बीचमा कम्तीमा १५ मिनेट।',
+          en: `Give a session the time another one holds and the two trade places. Any other time puts it at the nearest free point, with at least ${MEETING_GAP_MINUTES} minutes either side.`,
         }}
         actions={
           <>

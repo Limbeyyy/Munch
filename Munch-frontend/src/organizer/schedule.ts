@@ -1,18 +1,23 @@
 import { EventMeeting, Session } from '../types';
 
-/** The least breathing room left between one meeting and the next. */
-export const MEETING_GAP_MINUTES = 15;
+/** The least breathing room left between one slot and the next. */
+export const GAP_MINUTES = 15;
+/** Kept under the old name so existing callers still read well. */
+export const MEETING_GAP_MINUTES = GAP_MINUTES;
 
 const MS = 60000;
 
 export interface PlannedSession {
   id: string;
+  meetingId: string;
   title: string;
   speaker_name: string;
   status: Session['status'];
   startsAt: number;
   durationMinutes: number;
-  /** True once this row differs from what the server holds. */
+  /** What the server currently holds, so a move can be recognised. */
+  baseStartsAt: number;
+  baseDurationMinutes: number;
   moved: boolean;
 }
 
@@ -23,11 +28,19 @@ export interface PlannedMeeting {
   status: EventMeeting['status'];
   startsAt: number;
   endsAt: number;
+  baseStartsAt: number;
+  baseEndsAt: number;
   moved: boolean;
   sessions: PlannedSession[];
 }
 
-/** Read the event's meetings into a plan that can be reflowed. */
+/** A session that has run, or is running, has a real time and keeps it. */
+const isSettled = (s: PlannedSession) => s.status !== 'scheduled';
+/** Likewise a meeting already under way cannot be moved. */
+const isUnderway = (m: PlannedMeeting) => m.status === 'active' || m.status === 'ended';
+
+const endOf = (s: PlannedSession) => s.startsAt + s.durationMinutes * MS;
+
 export const toPlan = (meetings: EventMeeting[]): PlannedMeeting[] =>
   [...meetings]
     .sort((a, b) => +new Date(a.scheduled_start) - +new Date(b.scheduled_start))
@@ -38,125 +51,193 @@ export const toPlan = (meetings: EventMeeting[]): PlannedMeeting[] =>
       status: meeting.status,
       startsAt: +new Date(meeting.scheduled_start),
       endsAt: +new Date(meeting.scheduled_end),
+      baseStartsAt: +new Date(meeting.scheduled_start),
+      baseEndsAt: +new Date(meeting.scheduled_end),
       moved: false,
       sessions: [...meeting.sessions]
         .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at))
         .map((session) => ({
           id: session.id,
+          meetingId: meeting.id,
           title: session.title,
           speaker_name: session.speaker_name,
           status: session.status,
           startsAt: +new Date(session.starts_at),
           durationMinutes: session.duration_minutes,
+          baseStartsAt: +new Date(session.starts_at),
+          baseDurationMinutes: session.duration_minutes,
           moved: false,
         })),
     }));
 
-const sessionEnd = (s: PlannedSession) => s.startsAt + s.durationMinutes * MS;
+/** Every session in the day, earliest first, whichever meeting holds it. */
+const underwayMeetings = (plan: PlannedMeeting[]) =>
+  new Set(plan.filter(isUnderway).map((m) => m.id));
 
-/**
- * Settle a meeting's own window around the sessions it holds.
- *
- * A meeting exists to contain its running order, so its window is the span
- * of that order. A meeting with nothing in it keeps the window it has.
- */
-const fitWindow = (meeting: PlannedMeeting): PlannedMeeting => {
-  if (meeting.sessions.length === 0) return meeting;
+const allSessions = (plan: PlannedMeeting[]): PlannedSession[] =>
+  plan.flatMap((m) => m.sessions).sort((a, b) => a.startsAt - b.startsAt);
 
-  const startsAt = Math.min(...meeting.sessions.map((s) => s.startsAt));
-  const endsAt = Math.max(...meeting.sessions.map(sessionEnd));
-  return {
-    ...meeting,
-    startsAt,
-    endsAt,
-    moved: meeting.moved || startsAt !== meeting.startsAt || endsAt !== meeting.endsAt,
-  };
-};
+/** Put the day's sessions back into the meetings that own them. */
+const regroup = (plan: PlannedMeeting[], sessions: PlannedSession[]): PlannedMeeting[] => {
+  const byMeeting: Record<string, PlannedSession[]> = {};
+  sessions.forEach((s) => {
+    (byMeeting[s.meetingId] ||= []).push(s);
+  });
 
-/** A session that has run, or is running, has a real time and keeps it. */
-const isSettled = (session: PlannedSession) => session.status !== 'scheduled';
+  return plan
+    .map((meeting) => {
+      const own = (byMeeting[meeting.id] ?? []).sort((a, b) => a.startsAt - b.startsAt);
+      if (own.length === 0) return { ...meeting, sessions: own };
 
-/** Likewise a meeting that has already started cannot be moved. */
-const isUnderway = (meeting: PlannedMeeting) =>
-  meeting.status === 'active' || meeting.status === 'ended';
-
-const shiftMeeting = (meeting: PlannedMeeting, byMs: number): PlannedMeeting => {
-  if (isUnderway(meeting)) return meeting;
-  const sessions = meeting.sessions.map((s) =>
-    isSettled(s) ? s : { ...s, startsAt: s.startsAt + byMs, moved: true }
-  );
-  return {
-    ...meeting,
-    startsAt: meeting.startsAt + byMs,
-    endsAt: meeting.endsAt + byMs,
-    moved: true,
-    sessions,
-  };
+      // A meeting exists to hold its running order, so its window is that span.
+      const startsAt = Math.min(...own.map((s) => s.startsAt));
+      const endsAt = Math.max(...own.map(endOf));
+      return {
+        ...meeting,
+        sessions: own,
+        startsAt,
+        endsAt,
+        moved: startsAt !== meeting.baseStartsAt || endsAt !== meeting.baseEndsAt,
+      };
+    })
+    .sort((a, b) => a.startsAt - b.startsAt);
 };
 
 /**
- * Push later meetings out of the way, keeping the gap they already have.
+ * Settle collisions by moving things later, never earlier.
  *
- * A day is usually shaped deliberately - a long break for lunch, a short
- * one between talks - so an existing gap is preserved and only a gap that
- * has become too small is opened back up to the minimum. Meetings are never
- * pulled earlier: running late does not mean the afternoon starts sooner.
+ * Anything already settled - a session that has run, or any session inside
+ * a meeting that is under way - is an obstacle rather than a participant:
+ * it holds its time and the movable sessions go round it.
+ *
+ * A session forced to move goes to the earliest point it legally can, which
+ * is the nearest free time rather than a shuffle of the whole day. Gaps the
+ * organizer left survive as long as nothing collides with them; once
+ * something does, the day closes up to the minimum.
  */
-const separate = (meetings: PlannedMeeting[]): PlannedMeeting[] => {
-  const out = [...meetings];
+const resolve = (
+  sessions: PlannedSession[],
+  underway: Set<string>,
+  anchoredId?: string
+): PlannedSession[] => {
+  const fixedBy = (s: PlannedSession) => isSettled(s) || underway.has(s.meetingId);
+
+  const fixed = sessions.filter(fixedBy).sort((a, b) => a.startsAt - b.startsAt);
+  const movable = sessions.filter((s) => !fixedBy(s)).sort((a, b) => {
+    if (a.startsAt !== b.startsAt) return a.startsAt - b.startsAt;
+    // On a tie the session just placed by hand takes the earlier slot.
+    if (a.id === anchoredId) return -1;
+    if (b.id === anchoredId) return 1;
+    return 0;
+  });
+
+  const placed: PlannedSession[] = [];
+  let previousEnd: number | null = null;
+
+  movable.forEach((session) => {
+    const length = session.durationMinutes * MS;
+    let startsAt = session.startsAt;
+
+    if (previousEnd !== null) {
+      startsAt = Math.max(startsAt, previousEnd + GAP_MINUTES * MS);
+    }
+
+    // Step past anything immovable this would land on, and keep stepping:
+    // clearing one obstacle can walk it straight into the next.
+    let clear = false;
+    while (!clear) {
+      clear = true;
+      for (const block of fixed) {
+        const blockEnd = endOf(block);
+        const clashes =
+          startsAt < blockEnd + GAP_MINUTES * MS &&
+          startsAt + length + GAP_MINUTES * MS > block.startsAt;
+        if (clashes) {
+          startsAt = blockEnd + GAP_MINUTES * MS;
+          clear = false;
+        }
+      }
+    }
+
+    placed.push({ ...session, startsAt });
+    previousEnd = startsAt + length;
+  });
+
+  return [...placed, ...fixed]
+    .sort((a, b) => a.startsAt - b.startsAt)
+    .map((s) => ({
+      ...s,
+      moved: s.startsAt !== s.baseStartsAt || s.durationMinutes !== s.baseDurationMinutes,
+    }));
+};
+
+/** Push meetings apart if a reflow left them touching. */
+const separate = (plan: PlannedMeeting[]): PlannedMeeting[] => {
+  const out = [...plan];
   for (let i = 1; i < out.length; i += 1) {
-    const previousEnd = out[i - 1].endsAt;
-    const earliest = previousEnd + MEETING_GAP_MINUTES * MS;
+    const earliest = out[i - 1].endsAt + GAP_MINUTES * MS;
     if (out[i].startsAt < earliest && !isUnderway(out[i])) {
-      out[i] = shiftMeeting(out[i], earliest - out[i].startsAt);
+      const shift = earliest - out[i].startsAt;
+      out[i] = {
+        ...out[i],
+        startsAt: out[i].startsAt + shift,
+        endsAt: out[i].endsAt + shift,
+        moved: true,
+        sessions: out[i].sessions.map((s) =>
+          isSettled(s)
+            ? s
+            : { ...s, startsAt: s.startsAt + shift, moved: true }
+        ),
+      };
     }
   }
   return out;
 };
 
 /**
- * Move one session and let the rest of the day follow.
+ * Move a session to a new start, or change how long it runs.
  *
- * Everything after it in the same meeting shifts by the same amount, which
- * keeps the gaps the organizer put between talks. The meeting's window then
- * resettles, and later meetings are pushed only as far as they must be.
+ * Asking for a time another session already starts at is read as swapping
+ * the two: the organizer is reordering the day, not stacking it. Any other
+ * time places the session there and lets whatever it lands on give way.
  */
-export const reflow = (
+export const applyEdit = (
   plan: PlannedMeeting[],
   sessionId: string,
   change: { startsAt?: number; durationMinutes?: number }
 ): PlannedMeeting[] => {
-  const meetingIndex = plan.findIndex((m) => m.sessions.some((s) => s.id === sessionId));
-  if (meetingIndex < 0) return plan;
-
-  const meeting = plan[meetingIndex];
-  const index = meeting.sessions.findIndex((s) => s.id === sessionId);
-  const target = meeting.sessions[index];
+  const sessions = allSessions(plan);
+  const target = sessions.find((s) => s.id === sessionId);
+  if (!target || isSettled(target)) return plan;
 
   const nextStart = change.startsAt ?? target.startsAt;
   const nextDuration = Math.max(5, change.durationMinutes ?? target.durationMinutes);
 
-  // Moving the start carries the rest along; stretching only pushes what
-  // comes after, because the sessions before it have not moved.
-  const shiftMs =
-    (nextStart - target.startsAt) + (nextDuration - target.durationMinutes) * MS;
+  // Two sessions trading places: only those two move.
+  const occupant =
+    change.startsAt !== undefined
+      ? sessions.find(
+          (s) => s.id !== sessionId && !isSettled(s) && s.startsAt === nextStart
+        )
+      : undefined;
 
-  const sessions = meeting.sessions.map((session, i) => {
-    if (i < index) return session;
-    if (i === index) {
-      const moved =
-        session.moved || nextStart !== session.startsAt || nextDuration !== session.durationMinutes;
-      return { ...session, startsAt: nextStart, durationMinutes: nextDuration, moved };
-    }
-    // What has already happened keeps the time it happened at.
-    if (shiftMs === 0 || isSettled(session)) return session;
-    return { ...session, startsAt: session.startsAt + shiftMs, moved: true };
-  });
+  if (occupant) {
+    const swapped = sessions.map((s) => {
+      if (s.id === target.id) return { ...s, startsAt: occupant.startsAt };
+      if (s.id === occupant.id) return { ...s, startsAt: target.startsAt };
+      return s;
+    });
+    return separate(regroup(plan, resolve(swapped, underwayMeetings(plan))));
+  }
 
-  const updated = [...plan];
-  updated[meetingIndex] = fitWindow({ ...meeting, sessions });
-  return separate(updated);
+  const edited = sessions.map((s) =>
+    s.id === sessionId ? { ...s, startsAt: nextStart, durationMinutes: nextDuration } : s
+  );
+  return separate(regroup(plan, resolve(edited, underwayMeetings(plan), sessionId)));
 };
+
+/** Kept for callers written against the older name. */
+export const reflow = applyEdit;
 
 /** Move a whole meeting, running order and all. */
 export const reflowMeeting = (
@@ -164,18 +245,18 @@ export const reflowMeeting = (
   meetingId: string,
   startsAt: number
 ): PlannedMeeting[] => {
-  const index = plan.findIndex((m) => m.id === meetingId);
-  if (index < 0) return plan;
+  const meeting = plan.find((m) => m.id === meetingId);
+  if (!meeting || isUnderway(meeting)) return plan;
 
-  const shiftMs = startsAt - plan[index].startsAt;
-  if (shiftMs === 0) return plan;
+  const shift = startsAt - meeting.startsAt;
+  if (shift === 0) return plan;
 
-  const updated = [...plan];
-  updated[index] = shiftMeeting(plan[index], shiftMs);
-  return separate(updated);
+  const sessions = allSessions(plan).map((s) =>
+    s.meetingId === meetingId && !isSettled(s) ? { ...s, startsAt: s.startsAt + shift } : s
+  );
+  return separate(regroup(plan, resolve(sessions, underwayMeetings(plan))));
 };
 
-/** Everything that now differs from what the server holds. */
 export const pendingChanges = (plan: PlannedMeeting[]) => ({
   sessions: plan.flatMap((m) => m.sessions.filter((s) => s.moved)),
   meetings: plan.filter((m) => m.moved),
