@@ -1,9 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { EventProgramme } from '../../types';
+import { EventProgramme, MeetingDraft, SessionDraft } from '../../types';
 import { useOrganizer } from '../i18n';
 import { Btn, Card, Chip, Empty, Head, Panel } from '../ui';
+import { Modal } from '../OrganizerShell';
+import {
+  MeetingDraftFields, emptyMeeting, toApiMeeting, toLocalInput as toLocalDay,
+} from '../MeetingDraftFields';
 import {
   MEETING_GAP_MINUTES, PlannedMeeting, PlannedSession,
   applyEdit, countChanges, hallsInUse, pendingChanges, reflowMeeting, setHall, toPlan,
@@ -47,6 +51,9 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
   const [saving, setSaving] = useState(false);
   /** The session currently being removed, so only its own control locks. */
   const [removing, setRemoving] = useState<string | null>(null);
+  const [newMeeting, setNewMeeting] = useState(false);
+  /** The meeting a session is being added to, if any. */
+  const [addingTo, setAddingTo] = useState<PlannedMeeting | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -240,19 +247,22 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
         actions={
           <>
             {changes > 0 && (
-              <Btn onClick={revert} disabled={saving}>
-                {t({ ne: 'फिर्ता', en: 'Discard' })}
-              </Btn>
+              <>
+                <Btn onClick={revert} disabled={saving}>
+                  {t({ ne: 'फिर्ता', en: 'Discard' })}
+                </Btn>
+                <Btn tone="solid" onClick={save} disabled={saving}>
+                  {saving
+                    ? t({ ne: 'सेभ हुँदै…', en: 'Saving…' })
+                    : t({
+                        ne: `${num(changes)} परिवर्तन सेभ गर्नुहोस्`,
+                        en: `Save ${changes} change${changes === 1 ? '' : 's'}`,
+                      })}
+                </Btn>
+              </>
             )}
-            <Btn tone="amber" onClick={save} disabled={changes === 0 || saving}>
-              {saving
-                ? t({ ne: 'सेभ हुँदै…', en: 'Saving…' })
-                : changes > 0
-                ? t({
-                    ne: `${num(changes)} परिवर्तन सेभ गर्नुहोस्`,
-                    en: `Save ${changes} change${changes === 1 ? '' : 's'}`,
-                  })
-                : t({ ne: 'सेभ गर्न केही छैन', en: 'Nothing to save' })}
+            <Btn tone="amber" onClick={() => setNewMeeting(true)}>
+              {t({ ne: '+ बैठक बनाउनुहोस्', en: '+ Create meeting' })}
             </Btn>
           </>
         }
@@ -340,6 +350,10 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
                       </span>
                     }
                     actions={
+                      <>
+                      <Btn sm onClick={() => setAddingTo(meeting)}>
+                        {t({ ne: '+ सत्र', en: '+ Session' })}
+                      </Btn>
                       <input
                         type="datetime-local"
                         value={toLocalInput(meeting.startsAt)}
@@ -350,6 +364,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
                         }}
                         className="border border-navy-800/15 rounded-md px-2 py-1 text-[12.5px] bg-white"
                       />
+                      </>
                     }
                   >
                     {meeting.sessions.length === 0 ? (
@@ -378,6 +393,249 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
           </div>
         </>
       )}
+
+      {newMeeting && (
+        <NewMeetingModal
+          events={events}
+          defaultEventId={eventId}
+          onClose={() => setNewMeeting(false)}
+          onCreated={async () => { setNewMeeting(false); await load(); onChanged(); }}
+        />
+      )}
+
+      {addingTo && (
+        <NewSessionModal
+          meeting={addingTo}
+          onClose={() => setAddingTo(null)}
+          onCreated={async () => { setAddingTo(null); await load(); onChanged(); }}
+        />
+      )}
     </>
+  );
+};
+
+/**
+ * Create a meeting, inside a programme or on its own.
+ *
+ * The event is a choice rather than a requirement: a one-off briefing is a
+ * meeting too, and does not need a day built around it.
+ */
+const NewMeetingModal: React.FC<{
+  events: EventProgramme[];
+  defaultEventId: string;
+  onClose: () => void;
+  onCreated: () => void;
+}> = ({ events, defaultEventId, onClose, onCreated }) => {
+  const { t } = useOrganizer();
+  const [eventId, setEventId] = useState<string>(defaultEventId ?? '');
+  const day =
+    events.find((e) => e.id === eventId)?.event_date ?? toLocalDay(new Date()).slice(0, 10);
+  const [meeting, setMeeting] = useState<MeetingDraft>(() => emptyMeeting(day, 9));
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    if (!meeting.title.trim()) {
+      toast.error(t({ ne: 'बैठकको नाम लेख्नुहोस्', en: 'Give the meeting a name' }));
+      return;
+    }
+    const named = meeting.sessions.filter((x) => x.title.trim());
+    if (named.length === 0) {
+      toast.error(
+        t({
+          ne: 'कम्तीमा एउटा सत्र चाहिन्छ',
+          en: 'A meeting needs at least one session',
+        })
+      );
+      return;
+    }
+    try {
+      setBusy(true);
+      const created = await apiClient.createMeetingWithSessions(
+        toApiMeeting(meeting),
+        eventId || null
+      );
+      toast.success(
+        t({
+          ne: `${created.title} बन्यो (${created.meeting_code})`,
+          en: `${created.title} created (${created.meeting_code})`,
+        })
+      );
+      onCreated();
+    } catch (e: any) {
+      const detail = e.response?.data;
+      toast.error(
+        typeof detail === 'object' && detail
+          ? Object.values(detail).flat().join(' ')
+          : t({ ne: 'बनाउन सकिएन', en: 'Could not create it' })
+      );
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <Modal
+      open
+      wide
+      onClose={onClose}
+      title={t({ ne: 'नयाँ बैठक', en: 'New meeting' })}
+      lede={t({
+        ne: 'बैठक कुनै कार्यक्रमभित्र राख्न सकिन्छ, वा एक्लै। सत्रचाहिँ कम्तीमा एउटा चाहिन्छ।',
+        en: 'A meeting can sit inside a programme or stand on its own. Either way it needs at least one session.',
+      })}
+      footer={
+        <>
+          <Btn onClick={onClose}>{t({ ne: 'रद्द', en: 'Cancel' })}</Btn>
+          <Btn tone="amber" onClick={save} disabled={busy}>
+            {busy ? t({ ne: 'बन्दै…', en: 'Creating…' }) : t({ ne: 'बनाउनुहोस्', en: 'Create' })}
+          </Btn>
+        </>
+      }
+    >
+      <label className="block text-[12px] text-[#6E7C8E] mb-1">
+        {t({ ne: 'कुन कार्यक्रमभित्र', en: 'Part of which programme' })}
+      </label>
+      <select
+        value={eventId}
+        onChange={(e) => setEventId(e.target.value)}
+        className="w-full border border-navy-800/15 rounded-lg px-2.5 py-2 text-[14px] bg-white mb-3.5"
+      >
+        <option value="">
+          {t({ ne: 'कुनै पनि होइन — एक्लै बैठक', en: 'None — a meeting on its own' })}
+        </option>
+        {events.map((e) => (
+          <option key={e.id} value={e.id}>
+            {e.title} · {new Date(e.event_date).toLocaleDateString()}
+          </option>
+        ))}
+      </select>
+
+      <MeetingDraftFields meeting={meeting} onChange={setMeeting} />
+    </Modal>
+  );
+};
+
+/** Add one more session to a meeting that already exists. */
+const NewSessionModal: React.FC<{
+  meeting: PlannedMeeting;
+  onClose: () => void;
+  onCreated: () => void;
+}> = ({ meeting, onClose, onCreated }) => {
+  const { t } = useOrganizer();
+
+  // A new session picks up where the last one finished, in the same hall.
+  const last = meeting.sessions[meeting.sessions.length - 1];
+  const [draft, setDraft] = useState<SessionDraft>(() => ({
+    title: '',
+    speaker_name: '',
+    hall: last?.hall ?? '',
+    starts_at: toLocalDay(
+      new Date(last ? last.startsAt + last.durationMinutes * 60000 : meeting.startsAt)
+    ),
+    duration_minutes: 30,
+  }));
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    if (!draft.title.trim()) {
+      toast.error(t({ ne: 'सत्रको नाम लेख्नुहोस्', en: 'Give the session a name' }));
+      return;
+    }
+    try {
+      setBusy(true);
+      await apiClient.createSession({
+        meeting: meeting.id,
+        title: draft.title.trim(),
+        speaker_name: draft.speaker_name,
+        hall: draft.hall,
+        starts_at: new Date(draft.starts_at).toISOString(),
+        duration_minutes: draft.duration_minutes,
+      });
+      toast.success(t({ ne: 'सत्र थपियो', en: 'Session added' }));
+      onCreated();
+    } catch (e: any) {
+      toast.error(e.response?.data?.error ?? t({ ne: 'थप्न सकिएन', en: 'Could not add it' }));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={t({ ne: 'सत्र थप्नुहोस्', en: 'Add a session' })}
+      lede={meeting.title}
+      footer={
+        <>
+          <Btn onClick={onClose}>{t({ ne: 'रद्द', en: 'Cancel' })}</Btn>
+          <Btn tone="amber" onClick={save} disabled={busy}>
+            {busy ? t({ ne: 'थप्दै…', en: 'Adding…' }) : t({ ne: 'थप्नुहोस्', en: 'Add' })}
+          </Btn>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-2.5">
+        <div>
+          <label className="block text-[12px] text-[#6E7C8E] mb-1">
+            {t({ ne: 'सत्रको नाम', en: 'Session name' })}
+          </label>
+          <input
+            value={draft.title}
+            onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
+            className="w-full border border-navy-800/15 rounded-lg px-2.5 py-2 text-[14px]"
+          />
+        </div>
+
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          <div>
+            <label className="block text-[12px] text-[#6E7C8E] mb-1">
+              {t({ ne: 'वक्ता', en: 'Speaker' })}
+            </label>
+            <input
+              value={draft.speaker_name ?? ''}
+              onChange={(e) => setDraft((d) => ({ ...d, speaker_name: e.target.value }))}
+              className="w-full border border-navy-800/15 rounded-lg px-2.5 py-2 text-[14px]"
+            />
+          </div>
+          <div>
+            <label className="block text-[12px] text-[#6E7C8E] mb-1">
+              {t({ ne: 'हल', en: 'Hall' })}
+            </label>
+            <input
+              list="manch-halls"
+              value={draft.hall ?? ''}
+              onChange={(e) => setDraft((d) => ({ ...d, hall: e.target.value }))}
+              className="w-full border border-navy-800/15 rounded-lg px-2.5 py-2 text-[14px]"
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-2.5 sm:grid-cols-[minmax(0,1fr)_110px]">
+          <div>
+            <label className="block text-[12px] text-[#6E7C8E] mb-1">
+              {t({ ne: 'सुरु', en: 'Starts' })}
+            </label>
+            <input
+              type="datetime-local"
+              value={draft.starts_at}
+              onChange={(e) => setDraft((d) => ({ ...d, starts_at: e.target.value }))}
+              className="w-full border border-navy-800/15 rounded-lg px-2.5 py-2 text-[13.5px]"
+            />
+          </div>
+          <div>
+            <label className="block text-[12px] text-[#6E7C8E] mb-1">
+              {t({ ne: 'मिनेट', en: 'Minutes' })}
+            </label>
+            <input
+              type="number"
+              min={5}
+              step={5}
+              value={draft.duration_minutes}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, duration_minutes: Number(e.target.value) || 30 }))
+              }
+              className="w-full border border-navy-800/15 rounded-lg px-2.5 py-2 text-[14px] text-center"
+            />
+          </div>
+        </div>
+      </div>
+    </Modal>
   );
 };

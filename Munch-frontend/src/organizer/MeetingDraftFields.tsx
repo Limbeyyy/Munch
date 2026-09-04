@@ -10,12 +10,14 @@ export const toLocalInput = (d: Date) =>
 export const emptyMeeting = (date: string, hour = 9): MeetingDraft => {
   const start = new Date(`${date}T00:00:00`);
   start.setHours(hour, 0, 0, 0);
-  return {
+  const draft: MeetingDraft = {
     title: '',
     scheduled_start: toLocalInput(start),
     duration_minutes: 120,
     sessions: [],
   };
+  // A meeting is its running order, so it starts with a session to fill in.
+  return { ...draft, sessions: [emptySession(draft)] };
 };
 
 export const emptySession = (meeting: MeetingDraft): SessionDraft => {
@@ -136,10 +138,10 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
         </div>
 
         {meeting.sessions.length === 0 ? (
-          <p className="text-[12.5px] text-[#6E7C8E]">
+          <p className="text-[12.5px] text-live">
             {t({
-              ne: 'सत्र नराखे पनि हुन्छ — पछि थप्न सकिन्छ।',
-              en: 'Sessions are optional — you can add them later.',
+              ne: 'कम्तीमा एउटा सत्र चाहिन्छ — बैठक भनेकै यही हो।',
+              en: 'At least one session is needed — that is what the meeting is.',
             })}
           </p>
         ) : (

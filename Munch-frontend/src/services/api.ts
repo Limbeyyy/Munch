@@ -219,6 +219,24 @@ class ApiClient {
     await this.client.delete(`/events/${eventId}/`);
   }
 
+  /**
+   * Create a meeting with the sessions that make it up.
+   *
+   * Pass an event to file it under a programme, or leave it out and the
+   * meeting stands on its own. Either way it must bring at least one
+   * session, which the server enforces.
+   */
+  async createMeetingWithSessions(
+    meeting: MeetingDraft,
+    eventId?: string | null
+  ): Promise<EventMeeting> {
+    const response = await this.client.post('/meetings/with_sessions/', {
+      ...meeting,
+      ...(eventId ? { event: eventId } : {}),
+    });
+    return response.data;
+  }
+
   /** Add a meeting, with its running order, to an event that already exists. */
   async addMeetingToEvent(eventId: string, meeting: MeetingDraft): Promise<EventMeeting> {
     const response = await this.client.post(`/events/${eventId}/meetings/`, meeting);
@@ -237,6 +255,7 @@ class ApiClient {
     meeting: string;
     title: string;
     speaker_name?: string;
+    hall?: string;
     starts_at: string;
     duration_minutes: number;
   }): Promise<Session> {
