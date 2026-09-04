@@ -4,6 +4,7 @@ import { apiClient } from '../../services/api';
 import { EventProgramme, MeetingDraft, Session } from '../../types';
 import { useOrganizer } from '../i18n';
 import { Btn, Card, Chip, Empty, Head, Panel } from '../ui';
+import { SESSION_STATE_LABEL, SESSION_STATE_TONE, sessionState } from '../sessionState';
 import { Modal } from '../OrganizerShell';
 import {
   MeetingDraftFields,
@@ -143,10 +144,10 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
     }
   };
 
-  const sessionChip = (s: Session) =>
-    s.status === 'live' ? <Chip tone="live">{t({ ne: 'मञ्चमा', en: 'On stage' })}</Chip>
-    : s.status === 'done' ? <Chip tone="ok">{t({ ne: 'सकियो', en: 'Done' })}</Chip>
-    : <Chip tone="draft">{t({ ne: 'आउँदै', en: 'Upcoming' })}</Chip>;
+  const sessionChip = (s: Session) => {
+    const state = sessionState(s);
+    return <Chip tone={SESSION_STATE_TONE[state]}>{t(SESSION_STATE_LABEL[state])}</Chip>;
+  };
 
   return (
     <>
@@ -272,7 +273,7 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
                                              onClick={() => runSession(s, 'end', meeting.meeting_code)}>
                                           {t({ ne: 'सकाउने', en: 'End' })}
                                         </Btn>
-                                      ) : s.status === 'scheduled' ? (
+                                      ) : s.status === 'scheduled' || s.status === 'skipped' ? (
                                         <Btn sm tone="solid" disabled={busy === s.id}
                                              onClick={() => runSession(s, 'start', meeting.meeting_code)}>
                                           {t({ ne: 'मञ्चमा', en: 'On stage' })}

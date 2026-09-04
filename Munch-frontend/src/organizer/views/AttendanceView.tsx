@@ -6,6 +6,7 @@ import {
 } from '../../types';
 import { useOrganizer } from '../i18n';
 import { BarRow, Btn, Card, Chip, Empty, Head, Kpi, Panel, Tabs } from '../ui';
+import { sessionState } from '../sessionState';
 
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -283,9 +284,25 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
                               <div className="ps-2 pb-2">
                                 {rows.length === 0 ? (
                                   <p className="text-[12.5px] text-[#6E7C8E]">
-                                    {session.status === 'done'
-                                      ? t({ ne: 'यो सत्रमा कोही दर्ता भएन।', en: 'Nobody was recorded at this session.' })
-                                      : t({ ne: 'सत्र सकिएपछि दर्ता हुन्छ।', en: 'Recorded when the session ends.' })}
+                                    {(() => {
+                                      const state = sessionState(session);
+                                      if (state === 'finished') {
+                                        return t({
+                                          ne: 'यो सत्रमा कोही दर्ता भएन।',
+                                          en: 'Nobody was recorded at this session.',
+                                        });
+                                      }
+                                      if (state === 'never-started') {
+                                        return t({
+                                          ne: 'यो सत्र सुरु नै भएन।',
+                                          en: 'This session never started.',
+                                        });
+                                      }
+                                      return t({
+                                        ne: 'सत्र सकिएपछि दर्ता हुन्छ।',
+                                        en: 'Recorded when the session ends.',
+                                      });
+                                    })()}
                                   </p>
                                 ) : (
                                   <div className="flex flex-wrap gap-2">

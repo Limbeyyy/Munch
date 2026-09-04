@@ -4,6 +4,7 @@ import { apiClient } from '../../services/api';
 import { EventMeeting, EventProgramme, MeetingParticipant, Session } from '../../types';
 import { Pair, useOrganizer } from '../i18n';
 import { Card, Chip, Empty, Head, Panel, Tabs } from '../ui';
+import { SESSION_STATE_LABEL, SESSION_STATE_TONE, sessionState } from '../sessionState';
 
 type Role = 'host' | 'co_host' | 'presenter' | 'attendee';
 
@@ -215,12 +216,11 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
                           {session.hall && <span className="text-[#6E7C8E]"> · {session.hall}</span>}
                           <span className="block text-[11.5px] text-[#6E7C8E] mt-0.5">
                             {meeting.title}
-                            {session.status === 'live' && (
-                              <span className="ms-1.5"><Chip tone="live">{t({ ne: 'मञ्चमा', en: 'On stage' })}</Chip></span>
-                            )}
-                            {session.status === 'done' && (
-                              <span className="ms-1.5"><Chip tone="ok">{t({ ne: 'सकियो', en: 'Done' })}</Chip></span>
-                            )}
+                            <span className="ms-1.5">
+                              <Chip tone={SESSION_STATE_TONE[sessionState(session)]}>
+                                {t(SESSION_STATE_LABEL[sessionState(session)])}
+                              </Chip>
+                            </span>
                           </span>
                         </div>
                       ))}

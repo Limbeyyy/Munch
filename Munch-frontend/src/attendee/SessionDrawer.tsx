@@ -4,6 +4,7 @@ import { apiClient } from '../services/api';
 import { Artifact, TranscriptionSegment } from '../types';
 import { useOrganizer } from '../organizer/i18n';
 import { Btn, Chip, Tabs } from '../organizer/ui';
+import { SESSION_STATE_LABEL, sessionState } from '../organizer/sessionState';
 import { SpineItem, clock } from './Spine';
 
 const formatSize = (bytes?: number | null) => {
@@ -116,11 +117,7 @@ export const SessionDrawer: React.FC<Props> = ({ item, onClose, guestToken }) =>
                 {session.speaker_name || t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' })}
               </div>
               <div className="text-xs text-[#AFC6E6]">
-                {session.status === 'live'
-                  ? t({ ne: 'अहिले मञ्चमा', en: 'On stage now' })
-                  : session.status === 'done'
-                  ? t({ ne: 'सकियो', en: 'Finished' })
-                  : t({ ne: 'सुरु हुन बाँकी', en: 'Not started' })}
+                {t(SESSION_STATE_LABEL[sessionState(session)])}
               </div>
             </div>
           </div>
@@ -144,10 +141,15 @@ export const SessionDrawer: React.FC<Props> = ({ item, onClose, guestToken }) =>
           ) : tab === 'transcript' ? (
             segments.length === 0 ? (
               <p className="text-[#6E7C8E] text-[13.5px]">
-                {session.status === 'scheduled'
+                {sessionState(session) === 'upcoming'
                   ? t({
                       ne: 'सत्र सुरु भएपछि हलको यन्त्रबाट पाठ आउन थाल्छ।',
                       en: 'Text starts arriving from the hall device once the session begins.',
+                    })
+                  : sessionState(session) === 'never-started'
+                  ? t({
+                      ne: 'यो सत्र सुरु नै भएन, त्यसैले केही रेकर्ड भएन।',
+                      en: 'This session never started, so nothing was recorded.',
                     })
                   : t({ ne: 'यो सत्रको ट्रान्सक्रिप्ट छैन।', en: 'No transcript for this session.' })}
               </p>
@@ -230,10 +232,15 @@ export const SessionDrawer: React.FC<Props> = ({ item, onClose, guestToken }) =>
           ) : (
             present.length === 0 ? (
               <p className="text-[#6E7C8E] text-[13.5px]">
-                {t({
-                  ne: 'सत्र सकिएपछि उपस्थिति दर्ता हुन्छ।',
-                  en: 'Attendance is recorded when the session ends.',
-                })}
+                {sessionState(session) === 'never-started'
+                  ? t({
+                      ne: 'यो सत्र सुरु नै नभएकाले कसैको उपस्थिति दर्ता भएन।',
+                      en: 'This session never started, so nobody was recorded at it.',
+                    })
+                  : t({
+                      ne: 'सत्र सकिएपछि उपस्थिति दर्ता हुन्छ।',
+                      en: 'Attendance is recorded when the session ends.',
+                    })}
               </p>
             ) : (
               <>

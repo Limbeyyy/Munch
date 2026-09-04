@@ -4,6 +4,7 @@ import { apiClient } from '../../services/api';
 import { EventProgramme, MeetingDraft, SessionDraft } from '../../types';
 import { useOrganizer } from '../i18n';
 import { Btn, Card, Chip, Empty, Head, Panel } from '../ui';
+import { SESSION_STATE_LABEL, SESSION_STATE_TONE, sessionState } from '../sessionState';
 import { Modal } from '../OrganizerShell';
 import {
   MeetingDraftFields, emptyMeeting, toApiMeeting, toLocalInput as toLocalDay,
@@ -157,11 +158,13 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
     } finally { setRemoving(null); }
   };
 
-  const statusChip = (status: PlannedSession['status']) => {
-    if (status === 'live') return <Chip tone="live">{t({ ne: 'सुरु भयो', en: 'Started' })}</Chip>;
-    if (status === 'done') return <Chip tone="ok">{t({ ne: 'सकियो', en: 'Finished' })}</Chip>;
-    if (status === 'skipped') return <Chip tone="draft">{t({ ne: 'छाडियो', en: 'Skipped' })}</Chip>;
-    return <Chip tone="warn">{t({ ne: 'आउँदै', en: 'Upcoming' })}</Chip>;
+  const statusChip = (session: PlannedSession) => {
+    const state = sessionState({
+      status: session.status,
+      starts_at: new Date(session.startsAt).toISOString(),
+      duration_minutes: session.durationMinutes,
+    });
+    return <Chip tone={SESSION_STATE_TONE[state]}>{t(SESSION_STATE_LABEL[state])}</Chip>;
   };
 
   const sessionRow = (meeting: PlannedMeeting, session: PlannedSession) => {
@@ -217,7 +220,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
           {clock(session.startsAt)}–{clock(session.startsAt + session.durationMinutes * 60000)}
         </span>
 
-        <span className="text-end">{statusChip(session.status)}</span>
+        <span className="text-end">{statusChip(session)}</span>
 
         <span className="text-end">
           {session.status !== 'live' && (

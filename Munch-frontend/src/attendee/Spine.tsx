@@ -2,6 +2,9 @@ import React from 'react';
 import { EventMeeting, Session } from '../types';
 import { useOrganizer } from '../organizer/i18n';
 import { Chip } from '../organizer/ui';
+import {
+  SESSION_STATE_LABEL, SESSION_STATE_TONE, isPast, sessionState,
+} from '../organizer/sessionState';
 
 export const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -45,8 +48,8 @@ export const Spine: React.FC<Props> = ({ items, onOpen, compact }) => {
       />
       {items.map((item) => {
         const { session } = item;
-        const state =
-          session.status === 'live' ? 'live' : session.status === 'done' ? 'past' : 'next';
+        const state = sessionState(session);
+        const shape = state === 'live' ? 'live' : isPast(state) ? 'past' : 'next';
 
         return (
           <article
@@ -60,9 +63,9 @@ export const Spine: React.FC<Props> = ({ items, onOpen, compact }) => {
             <div className="grid place-items-center pt-[15px]">
               <i
                 className={`block rounded-full border-2 z-[1] ${
-                  state === 'live'
+                  shape === 'live'
                     ? 'w-3.5 h-3.5 bg-amber border-amber ring-[5px] ring-amber/20'
-                    : state === 'past'
+                    : shape === 'past'
                     ? 'w-[11px] h-[11px] bg-navy-500 border-navy-500'
                     : 'w-[11px] h-[11px] bg-cream border-navy-500'
                 }`}
@@ -72,9 +75,9 @@ export const Spine: React.FC<Props> = ({ items, onOpen, compact }) => {
             <button
               onClick={() => onOpen(item)}
               className={`w-full text-start border rounded-[14px] px-4 py-3 transition hover:border-navy-500 hover:translate-x-0.5 ${
-                state === 'next'
+                shape === 'next'
                   ? 'bg-transparent border-dashed border-navy-800/15'
-                  : state === 'past'
+                  : shape === 'past'
                   ? 'bg-white/[.62] border-navy-800/15'
                   : 'bg-white border-navy-800/15'
               }`}
@@ -88,13 +91,12 @@ export const Spine: React.FC<Props> = ({ items, onOpen, compact }) => {
               </p>
 
               <div className="flex gap-1.5 flex-wrap mt-2.5 items-center">
-                {state === 'live' && <Chip tone="live">{t({ ne: 'लाइभ', en: 'Live' })}</Chip>}
-                {state === 'past' && <Chip tone="ok">{t({ ne: 'सकियो', en: 'Finished' })}</Chip>}
-                {state === 'next' && <Chip>{t({ ne: 'आउँदै', en: 'Upcoming' })}</Chip>}
+                <Chip tone={SESSION_STATE_TONE[state]}>{t(SESSION_STATE_LABEL[state])}</Chip>
                 {item.attended === true && (
                   <Chip tone="ok">{t({ ne: 'तपाईं उपस्थित', en: 'You attended' })}</Chip>
                 )}
-                {item.attended === false && state === 'past' && (
+                {/* Missing a session only means something if it happened. */}
+                {item.attended === false && state === 'finished' && (
                   <Chip tone="warn">{t({ ne: 'तपाईंले छुटाउनुभयो', en: 'You missed this' })}</Chip>
                 )}
                 {session.attendance_count > 0 && (

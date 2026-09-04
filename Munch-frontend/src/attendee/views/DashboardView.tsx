@@ -2,6 +2,7 @@ import React from 'react';
 import { EventMeeting, EventProgramme } from '../../types';
 import { useOrganizer } from '../../organizer/i18n';
 import { Btn, Card } from '../../organizer/ui';
+import { sessionState } from '../../organizer/sessionState';
 import { Spine, SpineItem, clock } from '../Spine';
 
 interface Props {
@@ -22,8 +23,11 @@ export const DashboardView: React.FC<Props> = ({
 }) => {
   const { t, num } = useOrganizer();
 
-  const done = items.filter((i) => i.session.status === 'done');
-  const upcoming = items.filter((i) => i.session.status === 'scheduled').slice(0, 3);
+  // Attendance can only be judged on sessions that actually ran.
+  const done = items.filter((i) => sessionState(i.session) === 'finished');
+  const upcoming = items
+    .filter((i) => sessionState(i.session) === 'upcoming')
+    .slice(0, 3);
   const attendedCount = done.filter((i) => attendedIds.has(i.session.id)).length;
   const missed = done.filter((i) => !attendedIds.has(i.session.id));
 

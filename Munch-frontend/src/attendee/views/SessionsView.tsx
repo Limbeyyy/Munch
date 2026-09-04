@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { useOrganizer } from '../../organizer/i18n';
 import { Card, Chip, Tabs } from '../../organizer/ui';
+import {
+  SESSION_STATE_LABEL, SESSION_STATE_TONE, isPast, sessionState,
+} from '../../organizer/sessionState';
 import { SpineItem, clock } from '../Spine';
 
 interface Props {
@@ -14,9 +17,13 @@ export const SessionsView: React.FC<Props> = ({ items, attendedIds, onOpen }) =>
   const { t, num } = useOrganizer();
   const [tab, setTab] = useState('past');
 
-  const past = items.filter((i) => i.session.status === 'done');
-  const missed = past.filter((i) => !attendedIds.has(i.session.id));
-  const upcoming = items.filter((i) => i.session.status !== 'done');
+  // A session that never ran is over too, so it belongs with the past -
+  // but nobody missed it, because there was nothing to miss.
+  const past = items.filter((i) => isPast(sessionState(i.session)));
+  const missed = past.filter(
+    (i) => sessionState(i.session) === 'finished' && !attendedIds.has(i.session.id)
+  );
+  const upcoming = items.filter((i) => !isPast(sessionState(i.session)));
   const shown = tab === 'past' ? past : tab === 'missed' ? missed : upcoming;
 
   return (
@@ -35,7 +42,7 @@ export const SessionsView: React.FC<Props> = ({ items, attendedIds, onOpen }) =>
         active={tab}
         onChange={setTab}
         tabs={[
-          { id: 'past', label: { ne: `सकिएका (${num(past.length)})`, en: `Finished (${past.length})` } },
+          { id: 'past', label: { ne: `भइसकेका (${num(past.length)})`, en: `Over (${past.length})` } },
           { id: 'missed', label: { ne: `छुटेका (${num(missed.length)})`, en: `You missed (${missed.length})` } },
           { id: 'upcoming', label: { ne: `आउँदै (${num(upcoming.length)})`, en: `Coming up (${upcoming.length})` } },
         ]}
@@ -47,7 +54,7 @@ export const SessionsView: React.FC<Props> = ({ items, attendedIds, onOpen }) =>
             {tab === 'missed'
               ? t({ ne: 'तपाईंले कुनै सत्र छुटाउनुभएको छैन।', en: 'You have not missed a session.' })
               : tab === 'past'
-              ? t({ ne: 'अझै कुनै सत्र सकिएको छैन।', en: 'No session has finished yet.' })
+              ? t({ ne: 'अझै कुनै सत्र भइसकेको छैन।', en: 'Nothing has happened yet.' })
               : t({ ne: 'यसपछि केही तालिकामा छैन।', en: 'Nothing more is scheduled.' })}
           </p>
         </Card>
@@ -55,6 +62,7 @@ export const SessionsView: React.FC<Props> = ({ items, attendedIds, onOpen }) =>
         <div className="grid gap-3.5" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))' }}>
           {shown.map((item) => {
             const { session, meeting } = item;
+            const state = sessionState(session);
             const was = attendedIds.has(session.id);
             return (
               <button
@@ -69,7 +77,7 @@ export const SessionsView: React.FC<Props> = ({ items, attendedIds, onOpen }) =>
                     </span>
                     <span>·</span>
                     <span className="truncate">{session.hall || meeting.title}</span>
-                    {session.status === 'done' && !was && (
+                    {state === 'finished' && !was && (
                       <span className="ms-auto"><Chip tone="warn">{t({ ne: 'छुट्यो', en: 'Missed' })}</Chip></span>
                     )}
                   </div>
@@ -90,12 +98,11 @@ export const SessionsView: React.FC<Props> = ({ items, attendedIds, onOpen }) =>
                 </div>
 
                 <div className="px-4 py-2.5 bg-cream flex gap-1.5 flex-wrap mt-auto">
-                  {session.status === 'live' && <Chip tone="live">{t({ ne: 'लाइभ', en: 'Live' })}</Chip>}
+                  <Chip tone={SESSION_STATE_TONE[state]}>{t(SESSION_STATE_LABEL[state])}</Chip>
                   {was && <Chip tone="ok">{t({ ne: 'तपाईं उपस्थित', en: 'You were there' })}</Chip>}
                   {session.attendance_count > 0 && (
                     <Chip>{num(session.attendance_count)} {t({ ne: 'उपस्थित', en: 'present' })}</Chip>
                   )}
-                  <Chip>{t({ ne: 'ट्रान्सक्रिप्ट', en: 'Transcript' })}</Chip>
                 </div>
               </button>
             );
