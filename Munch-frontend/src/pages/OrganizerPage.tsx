@@ -103,9 +103,7 @@ const OrganizerInner: React.FC = () => {
                 onChanged={load}
               />
             )}
-            {view === 'agenda' && (
-              <AgendaView meetings={meetings} onChanged={load} onOpenSession={setDrawer} />
-            )}
+            {view === 'agenda' && <AgendaView onChanged={load} />}
             {view === 'content' && <ContentView meetings={meetings} />}
             {view === 'attendance' && <AttendanceView meetings={meetings} />}
             {view === 'people' && <PeopleView meetings={meetings} currentUserId={user?.id} />}

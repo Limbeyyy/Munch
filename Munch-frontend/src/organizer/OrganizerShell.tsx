@@ -25,7 +25,7 @@ export const NAV: NavItem[] = [
     icon: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-2.7 1.1v.3a2 2 0 11-4 0v-.2a1.6 1.6 0 00-2.8-1.1l-.1.1a2 2 0 11-2.8-2.8l.1-.1A1.6 1.6 0 003.7 15H3.4a2 2 0 110-4h.2a1.6 1.6 0 001.1-2.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 002.7-1.1V4a2 2 0 114 0v.2a1.6 1.6 0 002.7 1.1l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 001.1 2.7h.3a2 2 0 110 4h-.2z' },
   { id: 'events', group: 2, label: { ne: 'कार्यक्रम', en: 'Programme' },
     icon: 'M4 5h16M4 5v14a2 2 0 002 2h12a2 2 0 002-2V5M9 10h6M9 14h6M7 3v4M17 3v4' },
-  { id: 'agenda', group: 2, label: { ne: 'एजेन्डा', en: 'Agenda' },
+  { id: 'agenda', group: 2, label: { ne: 'सत्रहरू', en: 'Sessions' },
     icon: 'M8 2v4M16 2v4M3 9h18M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z' },
   { id: 'content', group: 2, label: { ne: 'सामग्री र सारांश', en: 'Files and summaries' },
     icon: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M9 13h6M9 17h6' },

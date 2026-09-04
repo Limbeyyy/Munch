@@ -1,297 +1,319 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { Meeting } from '../../types';
+import { EventProgramme } from '../../types';
 import { useOrganizer } from '../i18n';
-import { Btn, Chip, Empty, Head, Panel, Tabs } from '../ui';
-import { Modal } from '../OrganizerShell';
+import { Btn, Card, Chip, Empty, Head, Panel } from '../ui';
+import {
+  MEETING_GAP_MINUTES, PlannedMeeting, PlannedSession,
+  countChanges, pendingChanges, reflow, reflowMeeting, toPlan,
+} from '../schedule';
 
-interface Props {
-  meetings: Meeting[];
-  onChanged: () => void;
-  onOpenSession: (meeting: Meeting) => void;
-}
+const clock = (ms: number) =>
+  new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-const dayKey = (iso: string) => new Date(iso).toISOString().slice(0, 10);
-const toLocalInput = (iso: string) => {
-  const d = new Date(iso);
-  const off = d.getTimezoneOffset();
-  return new Date(d.getTime() - off * 60000).toISOString().slice(0, 16);
+/** A local value for <input type="datetime-local">. */
+const toLocalInput = (ms: number) => {
+  const d = new Date(ms);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 };
 
+const gapBefore = (plan: PlannedMeeting[], index: number) =>
+  index === 0 ? null : Math.round((plan[index].startsAt - plan[index - 1].endsAt) / 60000);
+
+interface Props {
+  onChanged: () => void;
+}
+
 /**
- * The running order. Times are edited in place, and moving one session
- * offers to move everything after it on the same day.
+ * The running order, edited as sessions.
+ *
+ * Changing a start or a length reflows the rest of the day at once, so the
+ * organizer sees the consequence before deciding to keep it. Nothing is
+ * written until they say so.
  */
-export const AgendaView: React.FC<Props> = ({ meetings, onChanged, onOpenSession }) => {
+export const AgendaView: React.FC<Props> = ({ onChanged }) => {
   const { t, num } = useOrganizer();
-  const [saving, setSaving] = useState<string | null>(null);
-  const [shiftOpen, setShiftOpen] = useState(false);
-  const [shiftFrom, setShiftFrom] = useState('');
-  const [shiftMins, setShiftMins] = useState(15);
 
-  const sorted = useMemo(
-    () => [...meetings].sort((a, b) => +new Date(a.scheduled_start) - +new Date(b.scheduled_start)),
-    [meetings]
-  );
+  const [events, setEvents] = useState<EventProgramme[]>([]);
+  const [eventId, setEventId] = useState('');
+  const [plan, setPlan] = useState<PlannedMeeting[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  const days = useMemo(() => {
-    const seen: string[] = [];
-    sorted.forEach((m) => {
-      const k = dayKey(m.scheduled_start);
-      if (!seen.includes(k)) seen.push(k);
-    });
-    return seen;
-  }, [sorted]);
+  const load = useCallback(async () => {
+    try {
+      const list = await apiClient.listEvents();
+      setEvents(list);
+      const chosen = list.find((e) => e.id === eventId) ?? list[0];
+      setEventId(chosen?.id ?? '');
+      setPlan(chosen ? toPlan(chosen.meetings) : []);
+    } catch {
+      toast.error(t({ ne: 'कार्यक्रम ल्याउन सकिएन', en: 'Could not load the programme' }));
+    } finally {
+      setLoading(false);
+    }
+  }, [eventId, t]);
 
-  const [day, setDay] = useState(days[0] ?? '');
-  const activeDay = days.includes(day) ? day : days[0] ?? '';
-  const rows = sorted.filter((m) => dayKey(m.scheduled_start) === activeDay);
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** Save a new start, keeping the session's original length. */
-  const setStart = async (meeting: Meeting, localValue: string) => {
-    const newStart = new Date(localValue);
-    if (Number.isNaN(newStart.getTime())) return;
-    const length = +new Date(meeting.scheduled_end) - +new Date(meeting.scheduled_start);
-    const shiftMs = +newStart - +new Date(meeting.scheduled_start);
+  const event = events.find((e) => e.id === eventId) ?? null;
+  const changes = countChanges(plan);
+
+  const pickEvent = (id: string) => {
+    if (changes > 0 && !window.confirm(
+      t({ ne: 'नसेभ गरिएका परिवर्तन हराउँछन्। अघि बढ्ने?', en: 'Unsaved changes will be lost. Carry on?' })
+    )) return;
+    setEventId(id);
+    const chosen = events.find((e) => e.id === id);
+    setPlan(chosen ? toPlan(chosen.meetings) : []);
+  };
+
+  const revert = () => {
+    setPlan(event ? toPlan(event.meetings) : []);
+  };
+
+  /** Write every row the reflow touched, then reload from the server. */
+  const save = async () => {
+    const { sessions, meetings } = pendingChanges(plan);
+    if (sessions.length === 0 && meetings.length === 0) return;
 
     try {
-      setSaving(meeting.id);
-      await apiClient.updateMeeting(meeting.id, {
-        scheduled_start: newStart.toISOString(),
-        scheduled_end: new Date(+newStart + length).toISOString(),
-      });
+      setSaving(true);
+      const results = await Promise.allSettled([
+        ...sessions.map((s) =>
+          apiClient.updateSession(s.id, {
+            starts_at: new Date(s.startsAt).toISOString(),
+            duration_minutes: s.durationMinutes,
+          })
+        ),
+        ...meetings.map((m) =>
+          apiClient.updateMeeting(m.id, {
+            scheduled_start: new Date(m.startsAt).toISOString(),
+            scheduled_end: new Date(m.endsAt).toISOString(),
+          })
+        ),
+      ]);
 
-      // Moving one session usually means the rest of the day moves too.
-      const later = rows.filter(
-        (m) => +new Date(m.scheduled_start) > +new Date(meeting.scheduled_start)
-      );
-      if (shiftMs !== 0 && later.length > 0) {
-        const mins = Math.round(shiftMs / 60000);
-        const ok = window.confirm(
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      if (failed > 0) {
+        toast.error(
           t({
-            ne: `पछिका ${num(later.length)} सत्र पनि ${num(Math.abs(mins))} मिनेट ${mins > 0 ? 'पछाडि' : 'अगाडि'} सार्ने?`,
-            en: `Move the ${later.length} later session${later.length === 1 ? '' : 's'} by ${Math.abs(mins)} minutes too?`,
+            ne: `${num(failed)} परिवर्तन सेभ भएन`,
+            en: `${failed} change${failed === 1 ? '' : 's'} could not be saved`,
           })
         );
-        if (ok) await shiftAll(later, mins);
+      } else {
+        toast.success(
+          t({
+            ne: `${num(sessions.length + meetings.length)} परिवर्तन सेभ भयो`,
+            en: `${sessions.length + meetings.length} change${sessions.length + meetings.length === 1 ? '' : 's'} saved`,
+          })
+        );
       }
-      onChanged();
-    } catch (e: any) {
-      toast.error(e.response?.data?.error ?? t({ ne: 'समय बदल्न सकिएन', en: 'Could not change the time' }));
-    } finally { setSaving(null); }
-  };
 
-  /** Save a new length, keeping the start where it is. */
-  const setDuration = async (meeting: Meeting, minutes: number) => {
-    if (!minutes || minutes < 5) return;
-    try {
-      setSaving(meeting.id);
-      await apiClient.updateMeeting(meeting.id, {
-        scheduled_end: new Date(+new Date(meeting.scheduled_start) + minutes * 60000).toISOString(),
-      });
+      const list = await apiClient.listEvents();
+      setEvents(list);
+      const chosen = list.find((e) => e.id === eventId);
+      setPlan(chosen ? toPlan(chosen.meetings) : []);
       onChanged();
     } catch {
-      toast.error(t({ ne: 'अवधि बदल्न सकिएन', en: 'Could not change the length' }));
-    } finally { setSaving(null); }
+      toast.error(t({ ne: 'सेभ गर्न सकिएन', en: 'Could not save' }));
+    } finally { setSaving(false); }
   };
 
-  const shiftAll = async (list: Meeting[], minutes: number) => {
-    await Promise.allSettled(
-      list.map((m) =>
-        apiClient.updateMeeting(m.id, {
-          scheduled_start: new Date(+new Date(m.scheduled_start) + minutes * 60000).toISOString(),
-          scheduled_end: new Date(+new Date(m.scheduled_end) + minutes * 60000).toISOString(),
-        })
-      )
+  const sessionRow = (meeting: PlannedMeeting, session: PlannedSession) => {
+    const locked = session.status === 'done';
+    return (
+      <div
+        key={session.id}
+        className={`grid gap-2.5 items-center px-4 py-2.5 border-b border-navy-800/[.08] last:border-0 ${
+          session.moved ? 'bg-amber/[.08]' : ''
+        }`}
+        style={{ gridTemplateColumns: 'minmax(0,1fr) 172px 92px 92px' }}
+      >
+        <div className="min-w-0">
+          <p className="text-[13.5px] font-medium truncate">{session.title}</p>
+          <p className="text-[12px] text-[#6E7C8E] truncate">
+            {session.speaker_name || t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' })}
+            {session.status === 'live' && (
+              <span className="ms-1.5"><Chip tone="live">{t({ ne: 'मञ्चमा', en: 'On stage' })}</Chip></span>
+            )}
+            {session.status === 'done' && (
+              <span className="ms-1.5"><Chip tone="ok">{t({ ne: 'सकियो', en: 'Done' })}</Chip></span>
+            )}
+          </p>
+        </div>
+
+        <input
+          type="datetime-local"
+          value={toLocalInput(session.startsAt)}
+          disabled={locked}
+          onChange={(e) => {
+            const next = new Date(e.target.value).getTime();
+            if (!Number.isNaN(next)) setPlan((p) => reflow(p, session.id, { startsAt: next }));
+          }}
+          className="border border-navy-800/15 rounded-md px-2 py-1 text-[13px] bg-white disabled:opacity-50"
+        />
+
+        <input
+          type="number"
+          min={5}
+          step={5}
+          value={session.durationMinutes}
+          disabled={locked}
+          onChange={(e) =>
+            setPlan((p) => reflow(p, session.id, { durationMinutes: Number(e.target.value) || 5 }))
+          }
+          className="border border-navy-800/15 rounded-md px-2 py-1 text-[13px] text-center bg-white disabled:opacity-50"
+        />
+
+        <span className="text-[12.5px] text-[#6E7C8E] tabular-nums text-end">
+          {clock(session.startsAt)}–{clock(session.startsAt + session.durationMinutes * 60000)}
+        </span>
+      </div>
     );
   };
-
-  const applyShift = async () => {
-    const index = rows.findIndex((m) => m.id === shiftFrom);
-    if (index < 0) return;
-    try {
-      await shiftAll(rows.slice(index), shiftMins);
-      toast.success(
-        t({
-          ne: `${num(Math.abs(shiftMins))} मिनेट ${shiftMins >= 0 ? 'पछाडि' : 'अगाडि'} सारियो`,
-          en: `Moved by ${Math.abs(shiftMins)} minutes`,
-        })
-      );
-      setShiftOpen(false);
-      onChanged();
-    } catch {
-      toast.error(t({ ne: 'सार्न सकिएन', en: 'Could not shift the times' }));
-    }
-  };
-
-  const statusChip = (m: Meeting) =>
-    m.status === 'active' ? <Chip tone="live">{t({ ne: 'चलिरहेको', en: 'Live' })}</Chip>
-    : m.status === 'ended' ? <Chip tone="ok">{t({ ne: 'सकियो', en: 'Finished' })}</Chip>
-    : <Chip tone="draft">{t({ ne: 'आउँदै', en: 'Upcoming' })}</Chip>;
 
   return (
     <>
       <Head
-        title={{ ne: 'एजेन्डा', en: 'Agenda' }}
+        title={{ ne: 'सत्रहरू', en: 'Sessions' }}
         lede={{
-          ne: 'समय सिधै फिल्डमै लेख्नुहोस्। एउटा सत्र सारे पछिका सबै सार्न सोधिन्छ।',
-          en: 'Type times in place. Move one session and Manch offers to move the rest.',
+          ne: 'सुरु वा अवधि फेर्दा बाँकी दिन आफैँ मिल्छ। बैठकबीच कम्तीमा १५ मिनेटको खाली ठाउँ रहन्छ।',
+          en: `Change a start or a length and the rest of the day follows. Meetings keep at least ${MEETING_GAP_MINUTES} minutes between them.`,
         }}
         actions={
-          <Btn onClick={() => { setShiftFrom(rows[0]?.id ?? ''); setShiftOpen(true); }} disabled={rows.length === 0}>
-            {t({ ne: 'समय सार्नुहोस्', en: 'Shift times' })}
-          </Btn>
+          <>
+            {changes > 0 && (
+              <Btn onClick={revert} disabled={saving}>
+                {t({ ne: 'फिर्ता', en: 'Discard' })}
+              </Btn>
+            )}
+            <Btn tone="amber" onClick={save} disabled={changes === 0 || saving}>
+              {saving
+                ? t({ ne: 'सेभ हुँदै…', en: 'Saving…' })
+                : changes > 0
+                ? t({
+                    ne: `${num(changes)} परिवर्तन सेभ गर्नुहोस्`,
+                    en: `Save ${changes} change${changes === 1 ? '' : 's'}`,
+                  })
+                : t({ ne: 'सेभ गर्न केही छैन', en: 'Nothing to save' })}
+            </Btn>
+          </>
         }
       />
 
-      {days.length > 1 && (
-        <Tabs
-          active={activeDay}
-          onChange={setDay}
-          tabs={days.map((d, i) => ({
-            id: d,
-            label: {
-              ne: `दिन ${num(i + 1)} · ${new Date(d).toLocaleDateString('ne-NP', { month: 'short', day: 'numeric' })}`,
-              en: `Day ${i + 1} · ${new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`,
-            },
-          }))}
-        />
-      )}
+      {loading ? (
+        <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>
+      ) : events.length === 0 ? (
+        <Card className="text-center py-10">
+          <p className="text-[#6E7C8E]">
+            {t({
+              ne: 'अझै कुनै कार्यक्रम छैन। कार्यक्रम पानाबाट बनाउनुहोस्।',
+              en: 'No programme yet. Build one from the Programme page.',
+            })}
+          </p>
+        </Card>
+      ) : (
+        <>
+          {events.length > 1 && (
+            <select
+              value={eventId}
+              onChange={(e) => pickEvent(e.target.value)}
+              className="w-full max-w-md border border-navy-800/15 rounded-[9px] px-3 py-2 bg-white text-[14px] mb-4"
+            >
+              {events.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.title} · {new Date(e.event_date).toLocaleDateString()}
+                </option>
+              ))}
+            </select>
+          )}
 
-      <Panel>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[720px]">
-            <thead>
-              <tr className="bg-[#FBFAF6]">
-                {[
-                  { ne: 'सुरु', en: 'Start' },
-                  { ne: 'मिनेट', en: 'Mins' },
-                  { ne: 'सत्र', en: 'Session' },
-                  { ne: 'आयोजक', en: 'Host' },
-                  { ne: 'कोड', en: 'Code' },
-                  { ne: 'अवस्था', en: 'Status' },
-                  { ne: '', en: '' },
-                ].map((h, i) => (
-                  <th key={i} className="text-left text-xs text-[#6E7C8E] font-medium px-3 py-2.5 border-b border-navy-800/15">
-                    {t(h)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 && (
-                <tr><td colSpan={7}><Empty>{t({ ne: 'यो दिनमा कुनै सत्र छैन।', en: 'No sessions on this day.' })}</Empty></td></tr>
-              )}
-              {rows.map((m) => {
-                const minutes = Math.round(
-                  (+new Date(m.scheduled_end) - +new Date(m.scheduled_start)) / 60000
-                );
-                const locked = m.status === 'ended';
-                return (
-                  <tr key={m.id} className="hover:bg-[#FBFAF6]">
-                    <td className="px-3 py-2.5 border-b border-navy-800/[.08]">
+          {changes > 0 && (
+            <div className="mb-4 bg-amber/[.12] border border-amber/40 rounded-[10px] px-4 py-3 text-[13px] text-ink-2">
+              {t({
+                ne: `${num(changes)} पङ्क्ति सर्‍यो — पहेँलोमा देखिएका। सेभ नगरेसम्म सर्भरमा केही बदलिँदैन।`,
+                en: `${changes} row${changes === 1 ? '' : 's'} moved, shown in amber. Nothing reaches the server until you save.`,
+              })}
+            </div>
+          )}
+
+          <div className="flex flex-col gap-3.5">
+            {plan.length === 0 && (
+              <Panel><Empty>{t({ ne: 'यो कार्यक्रममा बैठक छैन।', en: 'This event has no meetings.' })}</Empty></Panel>
+            )}
+
+            {plan.map((meeting, index) => {
+              const gap = gapBefore(plan, index);
+              return (
+                <div key={meeting.id}>
+                  {gap !== null && (
+                    <p
+                      className={`text-[12px] mb-1.5 ps-1 ${
+                        gap < MEETING_GAP_MINUTES ? 'text-live' : 'text-[#6E7C8E]'
+                      }`}
+                    >
+                      {t({
+                        ne: `↕ ${num(gap)} मिनेटको खाली ठाउँ`,
+                        en: `↕ ${gap} minute gap`,
+                      })}
+                    </p>
+                  )}
+
+                  <Panel
+                    title={
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className="text-[15.5px] font-semibold truncate">{meeting.title}</span>
+                        <span className="text-[12px] font-mono text-navy-700">{meeting.meetingCode}</span>
+                      </span>
+                    }
+                    aside={
+                      <span className="flex items-center gap-2 text-[12.5px] text-[#6E7C8E]">
+                        <span className="tabular-nums">
+                          {clock(meeting.startsAt)}–{clock(meeting.endsAt)}
+                        </span>
+                        {meeting.moved && <Chip tone="warn">{t({ ne: 'सर्‍यो', en: 'Moved' })}</Chip>}
+                        <Chip>{num(meeting.sessions.length)} {t({ ne: 'सत्र', en: 'sessions' })}</Chip>
+                      </span>
+                    }
+                    actions={
                       <input
                         type="datetime-local"
-                        defaultValue={toLocalInput(m.scheduled_start)}
-                        disabled={locked || saving === m.id}
-                        onBlur={(e) => {
-                          if (e.target.value !== toLocalInput(m.scheduled_start)) setStart(m, e.target.value);
+                        value={toLocalInput(meeting.startsAt)}
+                        title={t({ ne: 'पूरा बैठक सार्नुहोस्', en: 'Move the whole meeting' })}
+                        onChange={(e) => {
+                          const next = new Date(e.target.value).getTime();
+                          if (!Number.isNaN(next)) setPlan((p) => reflowMeeting(p, meeting.id, next));
                         }}
-                        className="border border-navy-800/15 rounded-md px-2 py-1 text-[13px] disabled:opacity-50"
+                        className="border border-navy-800/15 rounded-md px-2 py-1 text-[12.5px] bg-white"
                       />
-                    </td>
-                    <td className="px-3 py-2.5 border-b border-navy-800/[.08]">
-                      <input
-                        type="number"
-                        min={5}
-                        step={5}
-                        defaultValue={minutes}
-                        disabled={locked || saving === m.id}
-                        onBlur={(e) => {
-                          const v = Number(e.target.value);
-                          if (v !== minutes) setDuration(m, v);
-                        }}
-                        className="w-20 border border-navy-800/15 rounded-md px-2 py-1 text-[13px] text-center disabled:opacity-50"
-                      />
-                    </td>
-                    <td className="px-3 py-2.5 border-b border-navy-800/[.08]">
-                      <button
-                        onClick={() => onOpenSession(m)}
-                        className="text-left font-medium text-[13.5px] hover:text-navy-700 underline-offset-4 hover:underline"
-                      >
-                        {m.title}
-                      </button>
-                    </td>
-                    <td className="px-3 py-2.5 border-b border-navy-800/[.08] text-[12.5px] text-[#6E7C8E]">
-                      {m.host?.email}
-                    </td>
-                    <td className="px-3 py-2.5 border-b border-navy-800/[.08] text-[13px] font-mono">
-                      {m.meeting_code}
-                    </td>
-                    <td className="px-3 py-2.5 border-b border-navy-800/[.08]">{statusChip(m)}</td>
-                    <td className="px-3 py-2.5 border-b border-navy-800/[.08] text-right">
-                      <Btn sm onClick={() => onOpenSession(m)}>{t({ ne: 'खोल्नुहोस्', en: 'Open' })}</Btn>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
-
-      <p className="text-[12.5px] text-[#6E7C8E] mt-2.5">
-        {t({
-          ne: 'सुझाव: सत्रको नाममा क्लिक गर्दा त्यसैको विवरण, सामग्री र उपस्थिति खुल्छ।',
-          en: "Tip: clicking a session name opens its details, files and attendance.",
-        })}
-      </p>
-
-      <Modal
-        open={shiftOpen}
-        onClose={() => setShiftOpen(false)}
-        title={t({ ne: 'समय सार्नुहोस्', en: 'Shift times' })}
-        lede={t({
-          ne: 'कार्यक्रम ढिलो भयो? एउटा ठाउँबाट पछिका सबै सत्र सार्नुहोस्।',
-          en: 'Running late? Move every session after a point in one go.',
-        })}
-        footer={
-          <>
-            <Btn onClick={() => setShiftOpen(false)}>{t({ ne: 'रद्द', en: 'Cancel' })}</Btn>
-            <Btn tone="amber" onClick={applyShift}>{t({ ne: 'सार्नुहोस्', en: 'Shift' })}</Btn>
-          </>
-        }
-      >
-        <label className="block text-[12.5px] text-[#6E7C8E] mb-1.5">
-          {t({ ne: 'कुन सत्रदेखि', en: 'Starting from' })}
-        </label>
-        <select
-          value={shiftFrom}
-          onChange={(e) => setShiftFrom(e.target.value)}
-          className="w-full border border-navy-800/15 rounded-[9px] px-3 py-2 bg-white text-[14px] mb-3"
-        >
-          {rows.map((m) => (
-            <option key={m.id} value={m.id}>
-              {new Date(m.scheduled_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {m.title}
-            </option>
-          ))}
-        </select>
-
-        <label className="block text-[12.5px] text-[#6E7C8E] mb-1.5">
-          {t({ ne: 'कति मिनेट', en: 'By how many minutes' })}
-        </label>
-        <div className="flex gap-2 items-center">
-          <Btn sm onClick={() => setShiftMins((v) => v - 5)}>−5</Btn>
-          <input
-            type="number"
-            value={shiftMins}
-            onChange={(e) => setShiftMins(Number(e.target.value) || 0)}
-            className="flex-1 border border-navy-800/15 rounded-[9px] px-3 py-2 text-center"
-          />
-          <Btn sm onClick={() => setShiftMins((v) => v + 5)}>+5</Btn>
-        </div>
-      </Modal>
+                    }
+                  >
+                    {meeting.sessions.length === 0 ? (
+                      <Empty>{t({ ne: 'यो बैठकमा सत्र छैन।', en: 'No sessions in this meeting.' })}</Empty>
+                    ) : (
+                      <>
+                        <div
+                          className="grid gap-2.5 px-4 py-2 bg-[#FBFAF6] border-b border-navy-800/15 text-xs text-[#6E7C8E] font-medium"
+                          style={{ gridTemplateColumns: 'minmax(0,1fr) 172px 92px 92px' }}
+                        >
+                          <span>{t({ ne: 'सत्र', en: 'Session' })}</span>
+                          <span>{t({ ne: 'सुरु', en: 'Starts' })}</span>
+                          <span className="text-center">{t({ ne: 'मिनेट', en: 'Mins' })}</span>
+                          <span className="text-end">{t({ ne: 'अवधि', en: 'Runs' })}</span>
+                        </div>
+                        {meeting.sessions.map((s) => sessionRow(meeting, s))}
+                      </>
+                    )}
+                  </Panel>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
     </>
   );
 };
