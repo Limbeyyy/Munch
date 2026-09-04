@@ -18,7 +18,7 @@ class SessionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Session
         fields = [
-            'id', 'meeting', 'title', 'description', 'speaker_name',
+            'id', 'meeting', 'title', 'description', 'speaker_name', 'hall',
             'starts_at', 'duration_minutes', 'ends_at', 'position',
             'status', 'started_at', 'ended_at', 'attendance_count',
             'created_at', 'updated_at',
@@ -38,7 +38,7 @@ class SessionWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Session
         fields = [
-            'title', 'description', 'speaker_name',
+            'title', 'description', 'speaker_name', 'hall',
             'starts_at', 'duration_minutes', 'position',
         ]
 
@@ -162,6 +162,7 @@ def build_meeting(event, data):
             title=s['title'],
             description=s.get('description', ''),
             speaker_name=s.get('speaker_name', ''),
+            hall=s.get('hall', ''),
             starts_at=s['starts_at'],
             duration_minutes=s.get('duration_minutes', 30),
             position=s.get('position', index),
