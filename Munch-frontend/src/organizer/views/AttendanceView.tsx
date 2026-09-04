@@ -1,82 +1,152 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { AttendanceReport, Meeting } from '../../types';
+import {
+  AttendanceReport, EventMeeting, EventProgramme, Session, SessionAttendanceRow,
+} from '../../types';
 import { useOrganizer } from '../i18n';
-import { BarRow, Btn, Chip, Empty, Head, Kpi, Panel, Tabs } from '../ui';
+import { BarRow, Btn, Card, Chip, Empty, Head, Kpi, Panel, Tabs } from '../ui';
 
-interface Props { meetings: Meeting[]; }
+const clock = (iso: string) =>
+  new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-/** Attendance drawn from invitations, participants and admitted guests. */
-export const AttendanceView: React.FC<Props> = ({ meetings }) => {
+interface Person {
+  id: string;
+  name: string;
+  isGuest: boolean;
+  /** Sessions this person was present at, by session id. */
+  sessions: Set<string>;
+}
+
+/** One meeting, with who came and which parts of it they sat through. */
+interface MeetingRoll {
+  meeting: EventMeeting;
+  sessions: Session[];
+  /** Present at each session, by session id. */
+  bySession: Record<string, SessionAttendanceRow[]>;
+  /** Everyone who attended at least one of its sessions. */
+  people: Person[];
+  report?: AttendanceReport;
+}
+
+export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
   const { t, num } = useOrganizer();
-  const [tab, setTab] = useState('bysess');
-  const [selected, setSelected] = useState<string>(meetings[0]?.id ?? '');
-  const [report, setReport] = useState<AttendanceReport | null>(null);
-  const [reports, setReports] = useState<Record<string, AttendanceReport>>({});
+
+  const [events, setEvents] = useState<EventProgramme[]>([]);
+  const [eventId, setEventId] = useState('');
+  const [rolls, setRolls] = useState<MeetingRoll[]>([]);
+  const [tab, setTab] = useState('sessions');
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<'all' | 'in' | 'out'>('all');
-  const [loading, setLoading] = useState(false);
+  const [openSessions, setOpenSessions] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    if (!selected && meetings[0]) setSelected(meetings[0].id);
-  }, [meetings, selected]);
-
-  useEffect(() => {
-    if (!selected) return;
-    setLoading(true);
     apiClient
-      .getAttendance(selected)
-      .then(setReport)
-      .catch(() => toast.error(t({ ne: 'उपस्थिति ल्याउन सकिएन', en: 'Could not load attendance' })))
+      .listEvents()
+      .then((list) => {
+        setEvents(list);
+        setEventId((prev) => prev || list[0]?.id || '');
+      })
+      .catch(() => toast.error(t({ ne: 'कार्यक्रम ल्याउन सकिएन', en: 'Could not load the events' })))
       .finally(() => setLoading(false));
-  }, [selected, t]);
+  }, [t]);
 
-  // Turnout per session needs every meeting's figures, fetched once.
-  useEffect(() => {
-    let cancelled = false;
-    Promise.allSettled(
-      meetings.map((m) => apiClient.getAttendance(m.id).then((r) => [m.id, r] as const))
-    ).then((results) => {
-      if (cancelled) return;
-      const next: Record<string, AttendanceReport> = {};
-      results.forEach((r) => { if (r.status === 'fulfilled') next[r.value[0]] = r.value[1]; });
-      setReports(next);
-    });
-    return () => { cancelled = true; };
-  }, [meetings]);
+  const event = events.find((e) => e.id === eventId) ?? null;
 
-  const people = useMemo(() => {
-    if (!report) return [];
+  /** Read every session's attendance, then roll it up per meeting. */
+  const load = useCallback(async () => {
+    if (!event) { setRolls([]); return; }
+    setLoading(true);
+
+    const built = await Promise.all(
+      event.meetings.map(async (meeting) => {
+        const sessions = [...meeting.sessions].sort(
+          (a, b) => +new Date(a.starts_at) - +new Date(b.starts_at)
+        );
+
+        const results = await Promise.allSettled(
+          sessions.map((s) =>
+            apiClient.getSessionAttendance(s.id).then((rows) => [s.id, rows] as const)
+          )
+        );
+
+        const bySession: Record<string, SessionAttendanceRow[]> = {};
+        results.forEach((r) => {
+          if (r.status === 'fulfilled') bySession[r.value[0]] = r.value[1];
+        });
+
+        // Somebody who sat through one session of four still attended the
+        // meeting, so the roll is the union rather than the intersection.
+        const byPerson: Record<string, Person> = {};
+        Object.entries(bySession).forEach(([sessionId, rows]) => {
+          rows.forEach((row) => {
+            const key = row.person_id || row.name;
+            if (!byPerson[key]) {
+              byPerson[key] = {
+                id: key, name: row.name, isGuest: row.is_guest, sessions: new Set(),
+              };
+            }
+            byPerson[key].sessions.add(sessionId);
+          });
+        });
+
+        const report = await apiClient.getAttendance(meeting.id).catch(() => undefined);
+
+        return {
+          meeting,
+          sessions,
+          bySession,
+          people: Object.values(byPerson).sort((a, b) => b.sessions.size - a.sessions.size),
+          report,
+        } as MeetingRoll;
+      })
+    );
+
+    setRolls(built.sort(
+      (a, b) => +new Date(a.meeting.scheduled_start) - +new Date(b.meeting.scheduled_start)
+    ));
+    setLoading(false);
+  }, [event]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const totals = useMemo(() => {
+    const invited = rolls.reduce((n, r) => n + (r.report?.expected_from_invites ?? 0), 0);
+    const inRoom = rolls.reduce((n, r) => n + (r.report?.active_count ?? 0), 0);
+    const guests = rolls.reduce((n, r) => n + r.people.filter((p) => p.isGuest).length, 0);
+
+    // Across the whole programme, one person is one person.
+    const everyone = new Set<string>();
+    rolls.forEach((r) => r.people.forEach((p) => everyone.add(p.id)));
+
+    return { invited, inRoom, guests, attended: everyone.size };
+  }, [rolls]);
+
+  /** Everyone across the event, with what they sat through. */
+  const across = useMemo(() => {
+    const byPerson: Record<string, Person & { meetings: Set<string> }> = {};
+    rolls.forEach((roll) =>
+      roll.people.forEach((p) => {
+        if (!byPerson[p.id]) {
+          byPerson[p.id] = { ...p, sessions: new Set(), meetings: new Set() };
+        }
+        p.sessions.forEach((s) => byPerson[p.id].sessions.add(s));
+        byPerson[p.id].meetings.add(roll.meeting.id);
+      })
+    );
     const q = query.trim().toLowerCase();
-    const attended = report.attended.map((a: any) => ({
-      name: a.name ?? a.email ?? '—',
-      detail: a.is_guest
-        ? t({ ne: 'पाहुना', en: 'Guest' })
-        : a.email ?? '',
-      joined: a.joined_at,
-      present: true,
-      guest: !!a.is_guest,
-    }));
-    const missing = report.did_not_attend.map((d) => ({
-      name: d.email,
-      detail: t({ ne: 'निम्तो पठाइएको', en: 'Invited' }),
-      joined: null as string | null,
-      present: false,
-      guest: false,
-    }));
-    return [...attended, ...missing].filter((p) => {
-      const hit = `${p.name}${p.detail}`.toLowerCase().includes(q);
-      if (filter === 'in') return hit && p.present;
-      if (filter === 'out') return hit && !p.present;
-      return hit;
-    });
-  }, [report, query, filter, t]);
+    return Object.values(byPerson)
+      .filter((p) => !q || p.name.toLowerCase().includes(q))
+      .sort((a, b) => b.sessions.size - a.sessions.size);
+  }, [rolls, query]);
+
+  const totalSessions = rolls.reduce((n, r) => n + r.sessions.length, 0);
 
   const exportCSV = () => {
-    if (!report) return;
-    const head = ['name', 'detail', 'joined_at', 'attended'];
-    const rows = people.map((p) => [p.name, p.detail, p.joined ?? '', p.present ? 'yes' : 'no']);
+    const head = ['person', 'guest', 'meetings_attended', 'sessions_attended', 'of_sessions'];
+    const rows = across.map((p) => [
+      p.name, p.isGuest ? 'yes' : 'no', p.meetings.size, p.sessions.size, totalSessions,
+    ]);
     const csv = [head, ...rows]
       .map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(','))
       .join('\n');
@@ -87,156 +157,299 @@ export const AttendanceView: React.FC<Props> = ({ meetings }) => {
     toast.success(t({ ne: 'CSV डाउनलोड भयो', en: 'CSV downloaded' }));
   };
 
+  const nameChip = (p: Person) => (
+    <span
+      key={p.id}
+      className="inline-flex items-center gap-2 bg-white border border-navy-800/15 rounded-full ps-1 pe-3 py-1"
+    >
+      <span className="w-6 h-6 rounded-full bg-navy-700 text-white grid place-items-center text-[11px] font-semibold">
+        {p.name.charAt(0).toUpperCase()}
+      </span>
+      <span className="text-[13px]">{p.name}</span>
+      {p.isGuest && <Chip>{t({ ne: 'पाहुना', en: 'Guest' })}</Chip>}
+    </span>
+  );
+
   return (
     <>
       <Head
         title={{ ne: 'उपस्थिति', en: 'Attendance' }}
         lede={{
-          ne: 'निम्तो पठाइएका, भित्रिएका र पाहुना — सबैको हिसाब यहीँ।',
-          en: 'Who was invited, who arrived and which guests were let in.',
+          ne: 'कुन सत्रमा को थियो, र बैठकभरि कति जना आए।',
+          en: 'Who was at each session, and who came to the meeting at all.',
         }}
-        actions={<Btn onClick={exportCSV} disabled={!report}>{t({ ne: 'CSV निकाल्नुहोस्', en: 'Export CSV' })}</Btn>}
+        actions={
+          <Btn onClick={exportCSV} disabled={across.length === 0}>
+            {t({ ne: 'CSV निकाल्नुहोस्', en: 'Export CSV' })}
+          </Btn>
+        }
       />
 
-      <div className="mb-4">
-        <label className="block text-[12.5px] text-[#6E7C8E] mb-1.5">
-          {t({ ne: 'कुन सत्र', en: 'Which session' })}
-        </label>
-        <select
-          value={selected}
-          onChange={(e) => setSelected(e.target.value)}
-          className="w-full max-w-md border border-navy-800/15 rounded-[9px] px-3 py-2 bg-white text-[14px]"
-        >
-          {meetings.map((m) => (
-            <option key={m.id} value={m.id}>{m.title} · {m.meeting_code}</option>
-          ))}
-        </select>
-      </div>
-
-      {report && (
-        <div className="mb-4">
-          <Kpi
-            items={[
-              { value: num(report.expected_from_invites), label: { ne: 'निम्तो पठाइएको', en: 'Invited' } },
-              { value: num(report.attended_count), label: { ne: 'आएका', en: 'Attended' } },
-              { value: num(report.active_count), label: { ne: 'अहिले हलमा', en: 'In the room now' } },
-              { value: num(report.invited_who_did_not), label: { ne: 'नआएका', en: 'Did not arrive' } },
-              { value: num(report.guests_admitted), label: { ne: 'पाहुना', en: 'Guests' } },
-            ]}
-          />
-        </div>
-      )}
-
-      <Tabs
-        active={tab}
-        onChange={setTab}
-        tabs={[
-          { id: 'bysess', label: { ne: 'सत्र अनुसार', en: 'By session' } },
-          { id: 'people', label: { ne: 'व्यक्ति अनुसार', en: 'By person' } },
-        ]}
-      />
-
-      {tab === 'bysess' && (
-        <Panel title={t({ ne: 'कुन सत्रमा कति जना', en: 'Turnout per session' })}>
-          <div className="px-4 py-3">
-            {meetings.length === 0 ? (
-              <Empty>{t({ ne: 'कुनै सत्र छैन।', en: 'No sessions yet.' })}</Empty>
-            ) : (
-              meetings.map((m) => {
-                const r = reports[m.id];
-                const expected = r?.expected_from_invites || r?.attended_count || 0;
-                const pct = expected ? Math.round(((r?.attended_count ?? 0) / expected) * 100) : 0;
-                return (
-                  <BarRow
-                    key={m.id}
-                    label={m.title}
-                    pct={pct}
-                    right={r ? `${num(pct)}%` : '—'}
-                  />
-                );
-              })
-            )}
-            <p className="text-[12.5px] text-[#6E7C8E] mt-2.5">
-              {t({
-                ne: '७०% भन्दा कम भएका सत्र पहेँलोमा देखिन्छन्।',
-                en: 'Sessions under 70% show in amber.',
-              })}
-            </p>
-          </div>
-        </Panel>
-      )}
-
-      {tab === 'people' && (
-        <Panel
-          title={t({ ne: 'नामको सूची', en: 'Name list' })}
-          actions={
-            <div className="flex gap-2 flex-wrap">
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={t({ ne: 'नाम वा इमेल खोज्नुहोस्', en: 'Search name or email' })}
-                className="border border-navy-800/15 rounded-[9px] px-3 py-1.5 text-[13px] min-w-[200px]"
-              />
+      {events.length === 0 && !loading ? (
+        <Card className="text-center py-10">
+          <p className="text-[#6E7C8E]">
+            {t({ ne: 'अझै कुनै कार्यक्रम छैन।', en: 'No events yet.' })}
+          </p>
+        </Card>
+      ) : (
+        <>
+          {events.length > 1 && (
+            <div className="mb-4">
+              <label className="block text-[12.5px] text-[#6E7C8E] mb-1.5">
+                {t({ ne: 'कुन कार्यक्रम', en: 'Which event' })}
+              </label>
               <select
-                value={filter}
-                onChange={(e) => setFilter(e.target.value as any)}
-                className="border border-navy-800/15 rounded-[9px] px-2 py-1.5 text-[13px] bg-white"
+                value={eventId}
+                onChange={(e) => setEventId(e.target.value)}
+                className="w-full max-w-md border border-navy-800/15 rounded-[9px] px-3 py-2 bg-white text-[14px]"
               >
-                <option value="all">{t({ ne: 'सबै', en: 'Everyone' })}</option>
-                <option value="in">{t({ ne: 'आएका', en: 'Attended' })}</option>
-                <option value="out">{t({ ne: 'नआएका', en: 'Did not arrive' })}</option>
+                {events.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.title} · {new Date(e.event_date).toLocaleDateString()}
+                  </option>
+                ))}
               </select>
             </div>
-          }
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse min-w-[560px]">
-              <thead>
-                <tr className="bg-[#FBFAF6]">
-                  {[
-                    { ne: 'नाम', en: 'Name' },
-                    { ne: 'विवरण', en: 'Detail' },
-                    { ne: 'भित्रिएको', en: 'Joined' },
-                    { ne: 'अवस्था', en: 'Status' },
-                  ].map((h) => (
-                    <th key={h.en} className="text-left text-xs text-[#6E7C8E] font-medium px-3 py-2.5 border-b border-navy-800/15">
-                      {t(h)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {loading && (
-                  <tr><td colSpan={4} className="px-3 py-5 text-[12.5px] text-[#6E7C8E]">
-                    {t({ ne: 'ल्याउँदै…', en: 'Loading…' })}
-                  </td></tr>
-                )}
-                {!loading && people.length === 0 && (
-                  <tr><td colSpan={4} className="px-3 py-5 text-[12.5px] text-[#6E7C8E]">
-                    {t({ ne: 'कोही भेटिएन।', en: 'Nobody matched.' })}
-                  </td></tr>
-                )}
-                {people.map((p, i) => (
-                  <tr key={`${p.name}-${i}`} className="hover:bg-[#FBFAF6]">
-                    <td className="px-3 py-2.5 border-b border-navy-800/[.08] text-[13.5px] font-medium">
-                      {p.name}
-                      {p.guest && <span className="ml-2"><Chip>{t({ ne: 'पाहुना', en: 'Guest' })}</Chip></span>}
-                    </td>
-                    <td className="px-3 py-2.5 border-b border-navy-800/[.08] text-[12.5px] text-[#6E7C8E]">{p.detail}</td>
-                    <td className="px-3 py-2.5 border-b border-navy-800/[.08] text-[13px] tabular-nums">
-                      {p.joined ? new Date(p.joined).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
-                    </td>
-                    <td className="px-3 py-2.5 border-b border-navy-800/[.08]">
-                      {p.present
-                        ? <Chip tone="ok">{t({ ne: 'आएको', en: 'Attended' })}</Chip>
-                        : <Chip tone="draft">{t({ ne: 'नआएको', en: 'Not arrived' })}</Chip>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          )}
+
+          <div className="mb-4">
+            <Kpi
+              items={[
+                { value: num(totals.invited), label: { ne: 'निम्तो पठाइएको', en: 'Invited' } },
+                { value: num(totals.attended), label: { ne: 'आएका', en: 'Came' } },
+                { value: num(totals.inRoom), label: { ne: 'अहिले हलमा', en: 'In the room now' } },
+                { value: num(totalSessions), label: { ne: 'सत्र', en: 'Sessions' } },
+                { value: num(totals.guests), label: { ne: 'पाहुना', en: 'Guests' } },
+              ]}
+            />
           </div>
-        </Panel>
+
+          <Tabs
+            active={tab}
+            onChange={setTab}
+            tabs={[
+              { id: 'sessions', label: { ne: 'सत्र अनुसार', en: 'By session' } },
+              { id: 'meetings', label: { ne: 'बैठक अनुसार', en: 'By meeting' } },
+              { id: 'people', label: { ne: 'व्यक्ति अनुसार', en: 'By person' } },
+            ]}
+          />
+
+          {loading ? (
+            <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>
+          ) : tab === 'sessions' ? (
+            <div className="flex flex-col gap-3.5">
+              {rolls.length === 0 && (
+                <Panel><Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No meetings.' })}</Empty></Panel>
+              )}
+              {rolls.map((roll) => (
+                <Panel
+                  key={roll.meeting.id}
+                  title={roll.meeting.title}
+                  aside={
+                    <span className="text-[12.5px] text-[#6E7C8E]">
+                      {t({
+                        ne: `${num(roll.sessions.length)} सत्र · ${num(roll.people.length)} जना आए`,
+                        en: `${roll.sessions.length} sessions · ${roll.people.length} came`,
+                      })}
+                    </span>
+                  }
+                >
+                  <div className="px-4 py-3">
+                    {roll.sessions.length === 0 ? (
+                      <Empty>{t({ ne: 'यो बैठकमा सत्र छैन।', en: 'No sessions in this meeting.' })}</Empty>
+                    ) : (
+                      roll.sessions.map((session) => {
+                        const rows = roll.bySession[session.id] ?? [];
+                        // Measured against the people who came to this
+                        // meeting at all: it says who stayed for what.
+                        const roll_ = Math.max(1, roll.people.length);
+                        const pct = Math.round((rows.length / roll_) * 100);
+                        const shown = !!openSessions[session.id];
+
+                        return (
+                          <div key={session.id} className="border-b border-navy-800/[.08] last:border-0 py-1.5">
+                            <button
+                              onClick={() => setOpenSessions((v) => ({ ...v, [session.id]: !shown }))}
+                              className="w-full text-start"
+                            >
+                              <BarRow
+                                label={`${clock(session.starts_at)}  ${session.title}${session.hall ? ` · ${session.hall}` : ''}`}
+                                pct={pct}
+                                right={`${num(rows.length)}/${num(roll.people.length)}`}
+                              />
+                            </button>
+
+                            {shown && (
+                              <div className="ps-2 pb-2">
+                                {rows.length === 0 ? (
+                                  <p className="text-[12.5px] text-[#6E7C8E]">
+                                    {session.status === 'done'
+                                      ? t({ ne: 'यो सत्रमा कोही दर्ता भएन।', en: 'Nobody was recorded at this session.' })
+                                      : t({ ne: 'सत्र सकिएपछि दर्ता हुन्छ।', en: 'Recorded when the session ends.' })}
+                                  </p>
+                                ) : (
+                                  <div className="flex flex-wrap gap-2">
+                                    {rows.map((row) =>
+                                      nameChip({
+                                        id: row.person_id || row.id,
+                                        name: row.name,
+                                        isGuest: row.is_guest,
+                                        sessions: new Set(),
+                                      })
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                    <p className="text-[12.5px] text-[#6E7C8E] mt-2.5">
+                      {t({
+                        ne: 'पङ्क्तिमा क्लिक गर्दा त्यो सत्रमा को थिए भन्ने देखिन्छ।',
+                        en: 'Click a row to see who was at that session.',
+                      })}
+                    </p>
+                  </div>
+                </Panel>
+              ))}
+            </div>
+          ) : tab === 'meetings' ? (
+            <div className="flex flex-col gap-3.5">
+              {rolls.map((roll) => (
+                <Panel
+                  key={roll.meeting.id}
+                  title={roll.meeting.title}
+                  aside={
+                    <span className="flex items-center gap-2 text-[12.5px] text-[#6E7C8E]">
+                      {clock(roll.meeting.scheduled_start)}–{clock(roll.meeting.scheduled_end)}
+                      <Chip tone={roll.people.length > 0 ? 'ok' : 'draft'}>
+                        {t({
+                          ne: `${num(roll.people.length)} जना आए`,
+                          en: `${roll.people.length} came`,
+                        })}
+                      </Chip>
+                    </span>
+                  }
+                >
+                  <div className="px-4 py-3">
+                    <p className="text-[12.5px] text-[#6E7C8E] mb-2.5">
+                      {t({
+                        ne: `${num(roll.sessions.length)} सत्रमध्ये एउटामा भए पनि उपस्थित भएका सबै यहाँ गनिन्छन्।`,
+                        en: `Anyone present at even one of the ${roll.sessions.length} sessions counts as having attended.`,
+                      })}
+                    </p>
+
+                    {roll.people.length === 0 ? (
+                      <Empty>{t({ ne: 'यो बैठकमा कोही आएन।', en: 'Nobody attended this meeting.' })}</Empty>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full border-collapse min-w-[460px]">
+                          <thead>
+                            <tr className="bg-[#FBFAF6]">
+                              {[
+                                { ne: 'नाम', en: 'Name' },
+                                { ne: 'कति सत्र', en: 'Sessions attended' },
+                                { ne: 'कुन सत्र', en: 'Which' },
+                              ].map((h, i) => (
+                                <th key={i} className="text-left text-xs text-[#6E7C8E] font-medium px-3 py-2 border-b border-navy-800/15">
+                                  {t(h)}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {roll.people.map((p) => (
+                              <tr key={p.id} className="hover:bg-[#FBFAF6]">
+                                <td className="px-3 py-2 border-b border-navy-800/[.08] text-[13.5px] font-medium">
+                                  {p.name}
+                                  {p.isGuest && <span className="ms-2"><Chip>{t({ ne: 'पाहुना', en: 'Guest' })}</Chip></span>}
+                                </td>
+                                <td className="px-3 py-2 border-b border-navy-800/[.08] text-[13px] tabular-nums">
+                                  {num(p.sessions.size)}/{num(roll.sessions.length)}
+                                </td>
+                                <td className="px-3 py-2 border-b border-navy-800/[.08]">
+                                  <span className="inline-flex gap-1">
+                                    {roll.sessions.map((s) => (
+                                      <i
+                                        key={s.id}
+                                        title={s.title}
+                                        className={`w-2.5 h-2.5 rounded-sm block ${
+                                          p.sessions.has(s.id) ? 'bg-ok' : 'bg-[#E3D9C6]'
+                                        }`}
+                                      />
+                                    ))}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </Panel>
+              ))}
+            </div>
+          ) : (
+            <Panel
+              title={t({ ne: 'कार्यक्रमभरिका सहभागी', en: 'Everyone across the event' })}
+              actions={
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={t({ ne: 'नाम खोज्नुहोस्', en: 'Search a name' })}
+                  className="border border-navy-800/15 rounded-[9px] px-3 py-1.5 text-[13px] min-w-[200px]"
+                />
+              }
+            >
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse min-w-[520px]">
+                  <thead>
+                    <tr className="bg-[#FBFAF6]">
+                      {[
+                        { ne: 'नाम', en: 'Name' },
+                        { ne: 'बैठक', en: 'Meetings' },
+                        { ne: 'सत्र', en: 'Sessions' },
+                        { ne: 'अवस्था', en: 'Status' },
+                      ].map((h, i) => (
+                        <th key={i} className="text-left text-xs text-[#6E7C8E] font-medium px-3 py-2.5 border-b border-navy-800/15">
+                          {t(h)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {across.length === 0 && (
+                      <tr><td colSpan={4} className="px-3 py-5 text-[12.5px] text-[#6E7C8E]">
+                        {t({ ne: 'कोही भेटिएन।', en: 'Nobody matched.' })}
+                      </td></tr>
+                    )}
+                    {across.map((p) => (
+                      <tr key={p.id} className="hover:bg-[#FBFAF6]">
+                        <td className="px-3 py-2.5 border-b border-navy-800/[.08] text-[13.5px] font-medium">
+                          {p.name}
+                        </td>
+                        <td className="px-3 py-2.5 border-b border-navy-800/[.08] text-[13px] tabular-nums">
+                          {num(p.meetings.size)}/{num(rolls.length)}
+                        </td>
+                        <td className="px-3 py-2.5 border-b border-navy-800/[.08] text-[13px] tabular-nums">
+                          {num(p.sessions.size)}/{num(totalSessions)}
+                        </td>
+                        <td className="px-3 py-2.5 border-b border-navy-800/[.08]">
+                          {p.isGuest
+                            ? <Chip>{t({ ne: 'पाहुना', en: 'Guest' })}</Chip>
+                            : <Chip tone="ok">{t({ ne: 'सहभागी', en: 'Participant' })}</Chip>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Panel>
+          )}
+        </>
       )}
     </>
   );

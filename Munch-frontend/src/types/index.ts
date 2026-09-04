@@ -494,6 +494,8 @@ export interface MeetingDraft {
 export interface SessionAttendanceRow {
   id: string;
   session: string;
+  /** Who this is, across sessions - two people may share a name. */
+  person_id: string;
   name: string;
   is_guest: boolean;
   marked_manually: boolean;
