@@ -65,7 +65,7 @@ class EventViewSet(viewsets.ModelViewSet):
         serializer = MeetingWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        meeting = build_meeting(event, serializer.validated_data)
+        meeting = build_meeting(serializer.validated_data, event=event)
         from src.apps.meetings.event_serializers import MeetingSummarySerializer
 
         return Response(

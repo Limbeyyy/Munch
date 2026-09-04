@@ -791,6 +791,44 @@ class MeetingViewSet(viewsets.ModelViewSet):
         deliver_moderated_message(meeting, message, decision)
         return Response(ChatMessageSerializer(message).data)
 
+    @action(detail=False, methods=['post'], url_path='with_sessions')
+    def with_sessions(self, request):
+        """Create a meeting together with the sessions that make it up.
+
+        The meeting may belong to a programme or stand on its own - pass an
+        event to attach it, leave it out and it stands alone. Either way it
+        arrives with its running order, because a meeting with nothing in it
+        is not yet a meeting.
+        """
+        from src.apps.meetings.event_serializers import (
+            MeetingSummarySerializer, MeetingWriteSerializer, build_meeting,
+        )
+        from src.apps.meetings.models import Event
+
+        serializer = MeetingWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        event = None
+        event_id = data.pop('event', None)
+        if event_id:
+            event = Event.objects.filter(id=event_id, organizer=request.user).first()
+            if event is None:
+                return Response(
+                    {'error': 'No such event, or it is not yours'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+        meeting = build_meeting(data, event=event, host=request.user)
+        logger.info(
+            f"Created meeting {meeting.meeting_code} "
+            f"({'in ' + str(event.id) if event else 'standalone'})"
+        )
+        return Response(
+            MeetingSummarySerializer(meeting).data,
+            status=status.HTTP_201_CREATED
+        )
+
     @action(
         detail=True,
         methods=['get', 'post'],

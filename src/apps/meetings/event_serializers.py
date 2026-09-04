@@ -70,9 +70,16 @@ class MeetingWriteSerializer(serializers.Serializer):
     description = serializers.CharField(required=False, allow_blank=True, default='')
     scheduled_start = serializers.DateTimeField()
     duration_minutes = serializers.IntegerField(min_value=5, default=60)
-    sessions = SessionWriteSerializer(many=True, required=False, default=list)
+    sessions = SessionWriteSerializer(many=True)
+    # Only set when the meeting belongs to a programme; a standalone
+    # meeting is created the same way, just without one.
+    event = serializers.UUIDField(required=False, allow_null=True)
 
     def validate_sessions(self, sessions):
+        if not sessions:
+            raise serializers.ValidationError(
+                'A meeting needs at least one session - it is what the meeting is for.'
+            )
         if len(sessions) > 50:
             raise serializers.ValidationError('A meeting can hold at most 50 sessions.')
         return sessions
@@ -101,7 +108,11 @@ class EventSerializer(serializers.ModelSerializer):
 
 
 class EventCreateSerializer(serializers.ModelSerializer):
-    """Create a whole programme in one request."""
+    """Create a whole programme in one request.
+
+    The meetings are optional here - a programme can be set up first and
+    filled in later - but any meeting given must bring its sessions.
+    """
     meetings = MeetingWriteSerializer(many=True, required=False, default=list)
 
     class Meta:
@@ -121,20 +132,25 @@ class EventCreateSerializer(serializers.ModelSerializer):
         )
 
         for meeting_data in meetings_data:
-            build_meeting(event, meeting_data)
+            build_meeting(meeting_data, event=event)
 
         return event
 
 
-def build_meeting(event, data):
-    """Create one meeting under an event, along with its sessions.
+def build_meeting(data, *, event=None, host=None):
+    """Create one meeting, along with the sessions that make it up.
 
-    The meeting's window is stretched to cover its sessions when they run
-    past the length the organizer typed, so a session can never fall
-    outside the meeting that contains it.
+    A meeting may sit inside a programme or stand on its own; the only
+    difference is whether an event is passed. Its window is stretched to
+    cover its sessions when they run past the length the organizer typed,
+    so a session can never fall outside the meeting that contains it.
     """
     from src.apps.meetings.models import Meeting as MeetingModel
     from src.apps.meetings.services.meeting_service import MeetingService
+
+    owner = host or (event.organizer if event else None)
+    if owner is None:
+        raise ValueError('A meeting needs a host, or an event to take one from.')
 
     sessions_data = data.get('sessions') or []
     start = data['scheduled_start']
@@ -148,7 +164,7 @@ def build_meeting(event, data):
 
     meeting = MeetingModel.objects.create(
         event=event,
-        host=event.organizer,
+        host=owner,
         title=data['title'],
         description=data.get('description', ''),
         scheduled_start=start,
