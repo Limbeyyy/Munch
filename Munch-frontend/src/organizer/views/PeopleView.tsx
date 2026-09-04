@@ -1,65 +1,125 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { Meeting, MeetingParticipant } from '../../types';
-import { useOrganizer } from '../i18n';
-import { Chip, Empty, Head, Panel, Tabs } from '../ui';
-
-interface Props { meetings: Meeting[]; currentUserId?: string; }
+import { EventMeeting, EventProgramme, MeetingParticipant, Session } from '../../types';
+import { Pair, useOrganizer } from '../i18n';
+import { Card, Chip, Empty, Head, Panel, Tabs } from '../ui';
 
 type Role = 'host' | 'co_host' | 'presenter' | 'attendee';
 
-const ROLE_LABEL: Record<Role, { ne: string; en: string }> = {
+const ROLE_LABEL: Record<Role, Pair> = {
   host: { ne: 'आयोजक', en: 'Host' },
   co_host: { ne: 'सह-आयोजक', en: 'Co-host' },
   presenter: { ne: 'प्रस्तोता', en: 'Presenter' },
   attendee: { ne: 'सहभागी', en: 'Attendee' },
 };
 
-/** Who is in the event and what each of them is allowed to do. */
-export const PeopleView: React.FC<Props> = ({ meetings, currentUserId }) => {
+const clock = (iso: string) =>
+  new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+const nameOf = (
+  user?: { first_name?: string; last_name?: string; email?: string } | null
+) => {
+  if (!user) return '—';
+  return [user.first_name, user.last_name].filter(Boolean).join(' ').trim()
+    || user.email
+    || '—';
+};
+
+interface Props { meetings: any[]; currentUserId?: string; }
+
+/**
+ * Who is speaking, and who is running the room.
+ *
+ * These are two different lists. A speaker is named on a session and often
+ * has no account at all; a team member holds a role in a meeting and may
+ * never speak. Treating them as one list was why neither read properly.
+ */
+export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
   const { t, num } = useOrganizer();
+
+  const [events, setEvents] = useState<EventProgramme[]>([]);
+  const [eventId, setEventId] = useState('');
   const [tab, setTab] = useState('speakers');
-  const [selected, setSelected] = useState(meetings[0]?.id ?? '');
-  const [participants, setParticipants] = useState<MeetingParticipant[]>([]);
+  const [participants, setParticipants] = useState<Record<string, MeetingParticipant[]>>({});
   const [changing, setChanging] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const meeting = meetings.find((m) => m.id === selected) ?? meetings[0];
+  useEffect(() => {
+    apiClient
+      .listEvents()
+      .then((list) => {
+        setEvents(list);
+        setEventId((prev) => prev || list[0]?.id || '');
+      })
+      .catch(() => toast.error(t({ ne: 'कार्यक्रम ल्याउन सकिएन', en: 'Could not load the events' })))
+      .finally(() => setLoading(false));
+  }, [t]);
 
-  const load = React.useCallback(async () => {
-    if (!meeting) return;
-    try {
-      setParticipants(await apiClient.getParticipants(meeting.id));
-    } catch {
-      toast.error(t({ ne: 'सूची ल्याउन सकिएन', en: 'Could not load the list' }));
-    }
-  }, [meeting, t]);
+  const event = events.find((e) => e.id === eventId) ?? null;
 
-  useEffect(() => { load(); }, [load]);
+  const loadParticipants = useCallback(async () => {
+    if (!event) { setParticipants({}); return; }
+    const results = await Promise.allSettled(
+      event.meetings.map((m) =>
+        apiClient.getParticipants(m.id).then((rows) => [m.id, rows] as const)
+      )
+    );
+    const next: Record<string, MeetingParticipant[]> = {};
+    results.forEach((r) => { if (r.status === 'fulfilled') next[r.value[0]] = r.value[1]; });
+    setParticipants(next);
+  }, [event]);
 
-  const isHost = !!meeting && meeting.host?.id === currentUserId;
+  useEffect(() => { loadParticipants(); }, [loadParticipants]);
 
-  const changeRole = async (participant: MeetingParticipant, role: Role) => {
-    if (!meeting || role === participant.role) return;
+  /** Speakers come from the running order, not from anybody's account. */
+  const speakers = useMemo(() => {
+    if (!event) return [];
+    const order: string[] = [];
+    const byName: Record<string, { session: Session; meeting: EventMeeting }[]> = {};
 
+    event.meetings.forEach((meeting) =>
+      [...meeting.sessions]
+        .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at))
+        .forEach((session) => {
+          const name = session.speaker_name?.trim();
+          if (!name) return;
+          if (!byName[name]) { byName[name] = []; order.push(name); }
+          byName[name].push({ session, meeting });
+        })
+    );
+    return order.map((name) => ({ name, slots: byName[name] }));
+  }, [event]);
+
+  const unnamed = useMemo(() => {
+    if (!event) return [];
+    return event.meetings.flatMap((meeting) =>
+      meeting.sessions
+        .filter((s) => !s.speaker_name?.trim())
+        .map((session) => ({ session, meeting }))
+    );
+  }, [event]);
+
+  const changeRole = async (meeting: EventMeeting, p: MeetingParticipant, role: Role) => {
+    if (role === p.role || !p.user) return;
     if (role === 'host') {
       const ok = window.confirm(
         t({
-          ne: `${participant.user.email} लाई आयोजक बनाउने?\n\nतपाईं सह-आयोजक हुनुहुनेछ र आयोजकका नियन्त्रण गुमाउनुहुनेछ।`,
-          en: `Make ${participant.user.email} the host?\n\nYou become a co-host and lose the organizer controls.`,
+          ne: `${nameOf(p.user)} लाई “${meeting.title}” को आयोजक बनाउने?\n\nतपाईं सह-आयोजक हुनुहुनेछ।`,
+          en: `Make ${nameOf(p.user)} the host of “${meeting.title}”?\n\nYou become a co-host.`,
         })
       );
       if (!ok) return;
     }
-
     try {
-      setChanging(participant.id);
-      await apiClient.updateParticipantRole(meeting.id, participant.user.id, role);
-      await load();
+      setChanging(p.id);
+      await apiClient.updateParticipantRole(meeting.id, p.user.id, role);
+      await loadParticipants();
+      const label = t(ROLE_LABEL[role]);
       toast.success(
         t({
-          ne: `${participant.user.email} अब ${ROLE_LABEL[role].ne}`,
-          en: `${participant.user.email} is now ${ROLE_LABEL[role].en.toLowerCase()}`,
+          ne: `${nameOf(p.user)} अब ${label}`,
+          en: `${nameOf(p.user)} is now ${label.toLowerCase()}`,
         })
       );
     } catch (e: any) {
@@ -67,125 +127,231 @@ export const PeopleView: React.FC<Props> = ({ meetings, currentUserId }) => {
     } finally { setChanging(null); }
   };
 
-  const speakers = participants.filter((p) => ['host', 'co_host', 'presenter'].includes(p.role));
-  const rows = tab === 'speakers' ? speakers : participants;
+  const teamCount = Object.values(participants).reduce((n, rows) => n + rows.length, 0);
 
   return (
     <>
       <Head
         title={{ ne: 'वक्ता र टोली', en: 'Speakers and team' }}
         lede={{
-          ne: 'भूमिका फेर्दा त्यही बेला लागू हुन्छ — प्रस्तोताले सिधा सन्देश पाउँछन्।',
-          en: 'Roles apply straight away — presenters can be messaged directly.',
+          ne: 'वक्ता सत्रमा तोकिन्छन् — खाता नभए पनि हुन्छ। टोली भनेको कोठा चलाउने भूमिका हो।',
+          en: 'Speakers are named on sessions and need no account. The team is who runs the room.',
         }}
       />
 
-      {meetings.length > 1 && (
-        <div className="mb-4">
-          <label className="block text-[12.5px] text-[#6E7C8E] mb-1.5">
-            {t({ ne: 'कुन सत्र', en: 'Which session' })}
-          </label>
-          <select
-            value={meeting?.id ?? ''}
-            onChange={(e) => setSelected(e.target.value)}
-            className="w-full max-w-md border border-navy-800/15 rounded-[9px] px-3 py-2 bg-white text-[14px]"
-          >
-            {meetings.map((m) => (
-              <option key={m.id} value={m.id}>{m.title} · {m.meeting_code}</option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      <Tabs
-        active={tab}
-        onChange={setTab}
-        tabs={[
-          { id: 'speakers', label: { ne: `वक्ता (${num(speakers.length)})`, en: `Speakers (${speakers.length})` } },
-          { id: 'team', label: { ne: `सबै सहभागी (${num(participants.length)})`, en: `Everyone (${participants.length})` } },
-        ]}
-      />
-
-      <Panel>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[620px]">
-            <thead>
-              <tr className="bg-[#FBFAF6]">
-                {[
-                  { ne: 'नाम', en: 'Name' },
-                  { ne: 'भूमिका', en: 'Role' },
-                  { ne: 'अवस्था', en: 'Status' },
-                  { ne: 'भित्रिएको', en: 'Joined' },
-                  { ne: 'भूमिका बदल्ने', en: 'Change role' },
-                ].map((h, i) => (
-                  <th key={i} className="text-left text-xs text-[#6E7C8E] font-medium px-3 py-2.5 border-b border-navy-800/15">
-                    {t(h)}
-                  </th>
+      {!loading && events.length === 0 ? (
+        <Card className="text-center py-10">
+          <p className="text-[#6E7C8E]">
+            {t({ ne: 'अझै कुनै कार्यक्रम छैन।', en: 'No events yet.' })}
+          </p>
+        </Card>
+      ) : (
+        <>
+          {events.length > 1 && (
+            <div className="mb-4">
+              <label className="block text-[12.5px] text-[#6E7C8E] mb-1.5">
+                {t({ ne: 'कुन कार्यक्रम', en: 'Which event' })}
+              </label>
+              <select
+                value={eventId}
+                onChange={(e) => setEventId(e.target.value)}
+                className="w-full max-w-md border border-navy-800/15 rounded-[9px] px-3 py-2 bg-white text-[14px]"
+              >
+                {events.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.title} · {new Date(e.event_date).toLocaleDateString()}
+                  </option>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 && (
-                <tr><td colSpan={5}><Empty>{t({ ne: 'अहिलेसम्म कोही छैन।', en: 'Nobody here yet.' })}</Empty></td></tr>
-              )}
-              {rows.map((p) => (
-                <tr key={p.id} className="hover:bg-[#FBFAF6]">
-                  <td className="px-3 py-2.5 border-b border-navy-800/[.08]">
-                    <div className="flex items-center gap-2.5">
-                      <span className="w-8 h-8 rounded-full bg-navy-700 text-white grid place-items-center text-xs font-semibold flex-none">
-                        {(p.user?.email ?? '?').charAt(0).toUpperCase()}
-                      </span>
-                      <span className="text-[13.5px] font-medium truncate">{p.user?.email}</span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5 border-b border-navy-800/[.08]">
-                    <Chip tone={p.role === 'host' ? 'ok' : p.role === 'attendee' ? 'draft' : 'default'}>
-                      {t(ROLE_LABEL[p.role as Role])}
-                    </Chip>
-                  </td>
-                  <td className="px-3 py-2.5 border-b border-navy-800/[.08]">
-                    {p.is_active
-                      ? <Chip tone="live">{t({ ne: 'हलमा', en: 'In the room' })}</Chip>
-                      : <Chip tone="draft">{t({ ne: 'बाहिर', en: 'Away' })}</Chip>}
-                  </td>
-                  <td className="px-3 py-2.5 border-b border-navy-800/[.08] text-[13px] tabular-nums">
-                    {p.joined_at
-                      ? new Date(p.joined_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                      : '—'}
-                  </td>
-                  <td className="px-3 py-2.5 border-b border-navy-800/[.08]">
-                    <select
-                      value={p.role}
-                      disabled={!isHost || changing === p.id || p.user?.id === currentUserId}
-                      onChange={(e) => changeRole(p, e.target.value as Role)}
-                      title={
-                        !isHost
-                          ? t({ ne: 'आयोजकले मात्र भूमिका बदल्न सक्छन्', en: 'Only the host can change roles' })
-                          : p.user?.id === currentUserId
-                          ? t({ ne: 'आफ्नो भूमिका आफैँ बदल्न मिल्दैन', en: 'You cannot change your own role' })
-                          : undefined
-                      }
-                      className="border border-navy-800/15 rounded-md px-2 py-1 text-[13px] bg-white disabled:opacity-50"
-                    >
-                      {(Object.keys(ROLE_LABEL) as Role[]).map((r) => (
-                        <option key={r} value={r}>{t(ROLE_LABEL[r])}</option>
-                      ))}
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
+              </select>
+            </div>
+          )}
 
-      {!isHost && meeting && (
-        <p className="text-[12.5px] text-[#6E7C8E] mt-2.5">
-          {t({
-            ne: 'यो सत्रका आयोजक तपाईं नभएकाले भूमिका हेर्न मात्र मिल्छ।',
-            en: 'You are not the host of this session, so roles are read-only here.',
-          })}
-        </p>
+          <Tabs
+            active={tab}
+            onChange={setTab}
+            tabs={[
+              { id: 'speakers', label: { ne: `वक्ता (${num(speakers.length)})`, en: `Speakers (${speakers.length})` } },
+              { id: 'team', label: { ne: `टोली (${num(teamCount)})`, en: `Team (${teamCount})` } },
+            ]}
+          />
+
+          {loading ? (
+            <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>
+          ) : tab === 'speakers' ? (
+            <>
+              {speakers.length === 0 ? (
+                <Card className="text-center py-10">
+                  <p className="text-[#6E7C8E] max-w-md mx-auto">
+                    {t({
+                      ne: 'कुनै सत्रमा वक्ता तोकिएको छैन। सत्रहरू पानाबाट नाम राख्नुहोस्।',
+                      en: 'No session names a speaker yet. Add them from the Sessions page.',
+                    })}
+                  </p>
+                </Card>
+              ) : (
+                <div className="grid gap-3.5" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))' }}>
+                  {speakers.map(({ name, slots }) => (
+                    <Card key={name} className="flex flex-col gap-3">
+                      <div className="flex gap-3 items-center">
+                        <span className="w-12 h-12 rounded-full bg-navy-700 text-white grid place-items-center text-[17px] font-bold flex-none">
+                          {name.charAt(0).toUpperCase()}
+                        </span>
+                        <div className="min-w-0">
+                          <h3 className="text-[16px] font-semibold truncate">{name}</h3>
+                          <p className="text-[12.5px] text-[#6E7C8E]">
+                            {t({
+                              ne: `${num(slots.length)} सत्र`,
+                              en: `${slots.length} session${slots.length === 1 ? '' : 's'}`,
+                            })}
+                          </p>
+                        </div>
+                      </div>
+
+                      {slots.map(({ session, meeting }) => (
+                        <div key={session.id} className="bg-cream rounded-lg px-3 py-2 text-[12.5px] text-ink-2">
+                          <span className="tabular-nums">{clock(session.starts_at)}</span>
+                          {' · '}
+                          {session.title}
+                          {session.hall && <span className="text-[#6E7C8E]"> · {session.hall}</span>}
+                          <span className="block text-[11.5px] text-[#6E7C8E] mt-0.5">
+                            {meeting.title}
+                            {session.status === 'live' && (
+                              <span className="ms-1.5"><Chip tone="live">{t({ ne: 'मञ्चमा', en: 'On stage' })}</Chip></span>
+                            )}
+                            {session.status === 'done' && (
+                              <span className="ms-1.5"><Chip tone="ok">{t({ ne: 'सकियो', en: 'Done' })}</Chip></span>
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                    </Card>
+                  ))}
+                </div>
+              )}
+
+              {unnamed.length > 0 && (
+                <div className="mt-4 bg-amber/[.12] border border-amber/40 rounded-[10px] px-4 py-3">
+                  <p className="text-[13px] text-ink-2">
+                    {t({
+                      ne: `${num(unnamed.length)} सत्रमा वक्ताको नाम छैन।`,
+                      en: `${unnamed.length} session${unnamed.length === 1 ? ' has' : 's have'} no speaker named.`,
+                    })}
+                  </p>
+                  <p className="text-[12.5px] text-[#6E7C8E] mt-1">
+                    {unnamed.slice(0, 6).map(({ session }) => session.title).join(' · ')}
+                    {unnamed.length > 6 && ' …'}
+                  </p>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="flex flex-col gap-3.5">
+              {(event?.meetings.length ?? 0) === 0 && (
+                <Panel><Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No meetings.' })}</Empty></Panel>
+              )}
+
+              {event?.meetings.map((meeting) => {
+                const rows = participants[meeting.id] ?? [];
+                const isHost = meeting.id && rows.some(
+                  (p) => p.role === 'host' && p.user?.id === currentUserId
+                );
+
+                return (
+                  <Panel
+                    key={meeting.id}
+                    title={meeting.title}
+                    aside={
+                      <span className="text-[12.5px] text-[#6E7C8E]">
+                        {t({
+                          ne: `${num(rows.length)} जना`,
+                          en: `${rows.length} ${rows.length === 1 ? 'person' : 'people'}`,
+                        })}
+                      </span>
+                    }
+                  >
+                    {rows.length === 0 ? (
+                      <Empty>
+                        {t({
+                          ne: 'यो बैठकमा अझै कोही भित्रिएको छैन।',
+                          en: 'Nobody has joined this meeting yet.',
+                        })}
+                      </Empty>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full border-collapse min-w-[560px]">
+                          <thead>
+                            <tr className="bg-[#FBFAF6]">
+                              {[
+                                { ne: 'नाम', en: 'Name' },
+                                { ne: 'भूमिका', en: 'Role' },
+                                { ne: 'अवस्था', en: 'Status' },
+                                { ne: 'भूमिका बदल्ने', en: 'Change role' },
+                              ].map((h, i) => (
+                                <th key={i} className="text-left text-xs text-[#6E7C8E] font-medium px-3 py-2.5 border-b border-navy-800/15">
+                                  {t(h)}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.map((p) => (
+                              <tr key={p.id} className="hover:bg-[#FBFAF6]">
+                                <td className="px-3 py-2.5 border-b border-navy-800/[.08]">
+                                  <div className="flex items-center gap-2.5">
+                                    <span className="w-8 h-8 rounded-full bg-navy-700 text-white grid place-items-center text-xs font-semibold flex-none">
+                                      {nameOf(p.user).charAt(0).toUpperCase()}
+                                    </span>
+                                    <span className="text-[13.5px] font-medium truncate">{nameOf(p.user)}</span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2.5 border-b border-navy-800/[.08]">
+                                  <Chip tone={p.role === 'host' ? 'ok' : p.role === 'attendee' ? 'draft' : 'default'}>
+                                    {t(ROLE_LABEL[p.role as Role])}
+                                  </Chip>
+                                </td>
+                                <td className="px-3 py-2.5 border-b border-navy-800/[.08]">
+                                  {p.is_active
+                                    ? <Chip tone="live">{t({ ne: 'हलमा', en: 'In the room' })}</Chip>
+                                    : <Chip tone="draft">{t({ ne: 'बाहिर', en: 'Away' })}</Chip>}
+                                </td>
+                                <td className="px-3 py-2.5 border-b border-navy-800/[.08]">
+                                  <select
+                                    value={p.role}
+                                    disabled={!isHost || changing === p.id || p.user?.id === currentUserId}
+                                    onChange={(e) => changeRole(meeting, p, e.target.value as Role)}
+                                    title={
+                                      !isHost
+                                        ? t({ ne: 'यो बैठकका आयोजकले मात्र बदल्न सक्छन्', en: "Only this meeting's host can change roles" })
+                                        : p.user?.id === currentUserId
+                                        ? t({ ne: 'आफ्नो भूमिका आफैँ बदल्न मिल्दैन', en: 'You cannot change your own role' })
+                                        : undefined
+                                    }
+                                    className="border border-navy-800/15 rounded-md px-2 py-1 text-[13px] bg-white disabled:opacity-50"
+                                  >
+                                    {(Object.keys(ROLE_LABEL) as Role[]).map((r) => (
+                                      <option key={r} value={r}>{t(ROLE_LABEL[r])}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </Panel>
+                );
+              })}
+
+              <p className="text-[12.5px] text-[#6E7C8E]">
+                {t({
+                  ne: 'भूमिका बैठकपिच्छे हुन्छ — कोही एउटा बैठकमा प्रस्तोता र अर्कोमा सहभागी हुन सक्छन्।',
+                  en: 'Roles belong to a meeting: somebody can present at one and simply attend another.',
+                })}
+              </p>
+            </div>
+          )}
+        </>
       )}
     </>
   );
