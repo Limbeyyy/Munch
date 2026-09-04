@@ -96,6 +96,11 @@ export interface Artifact {
   file_size?: number | null;
   metadata?: Record<string, any>;
   sync_status: 'pending' | 'syncing' | 'synced' | 'failed';
+  /** The part of the running order this was shared during, if any. */
+  session?: string | null;
+  session_title?: string | null;
+  /** False while its session is still to come, or still running. */
+  is_released?: boolean;
   created_at: string;
 }
 

@@ -109,6 +109,15 @@ export const ContentView: React.FC<Props> = ({ meetings }) => {
         ]}
       />
 
+      {tab === 'files' && (
+        <div className="mb-3.5 bg-[#EEF3FA] border border-navy-500/20 rounded-[10px] px-4 py-3 text-[13px] text-ink-2">
+          {t({
+            ne: 'सत्र चलिरहेकै बेला साझा गरिएको फाइल त्यो सत्र नसकिँदासम्म सहभागीले पढ्न पाउँदैनन् — तपाईंले भने सधैँ देख्नुहुन्छ।',
+            en: 'A file shared during a session stays out of the room\u2019s reach until that session ends. You always see it; they do not.',
+          })}
+        </div>
+      )}
+
       <div className="flex flex-col gap-3.5">
         {meetings.length === 0 && (
           <Panel><Empty>{t({ ne: 'कुनै सत्र छैन।', en: 'No sessions yet.' })}</Empty></Panel>
@@ -175,6 +184,23 @@ export const ContentView: React.FC<Props> = ({ meetings }) => {
                               <span className="block text-[13.5px] truncate">{f.display_name}</span>
                               <span className="text-[12.5px] text-[#6E7C8E]">{formatSize(f.file_size)}</span>
                             </span>
+                            {f.is_released === false && (
+                              <span className="flex-none">
+                                <Chip tone="lock">
+                                  {f.session_title
+                                    ? t({
+                                        ne: `“${f.session_title}” सकिएपछि खुल्छ`,
+                                        en: `Opens when “${f.session_title}” ends`,
+                                      })
+                                    : t({ ne: 'सत्रपछि खुल्छ', en: 'Opens after the session' })}
+                                </Chip>
+                              </span>
+                            )}
+                            {f.is_released !== false && f.session_title && (
+                              <span className="flex-none">
+                                <Chip tone="ok">{f.session_title}</Chip>
+                              </span>
+                            )}
                             {f.web_view_link && (
                               <a
                                 href={f.web_view_link}
