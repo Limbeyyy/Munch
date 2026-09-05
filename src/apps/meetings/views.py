@@ -352,11 +352,18 @@ class MeetingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Idempotent: rejoining must not restart the clock.
-        if meeting.started_at is None:
+        # Rejoining must not restart the clock, but opening a meeting today
+        # that was last opened yesterday is a new run, not a rejoin. The
+        # thing that tells them apart is whether it is running now - not
+        # whether it has ever run, which stays true for ever and left the
+        # counter measuring from a sitting that finished a day ago.
+        if meeting.status != Meeting.Status.ACTIVE:
             meeting.started_at = timezone.now()
+            meeting.ended_at = None
             meeting.status = Meeting.Status.ACTIVE
-            meeting.save(update_fields=['started_at', 'status', 'updated_at'])
+            meeting.save(
+                update_fields=['started_at', 'ended_at', 'status', 'updated_at']
+            )
 
             MeetingEvent.objects.create(
                 meeting=meeting,

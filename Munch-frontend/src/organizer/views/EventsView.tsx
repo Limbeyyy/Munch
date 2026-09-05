@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { EventProgramme, MeetingDraft, Session } from '../../types';
+import { confirmSpacing } from '../confirmSpacing';
+import { errorText } from '../errors';
 import { useOrganizer } from '../i18n';
 import { Btn, Card, Chip, Empty, Head, Panel } from '../ui';
 import { SESSION_STATE_LABEL, SESSION_STATE_TONE, sessionState } from '../sessionState';
@@ -91,6 +93,22 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
     try {
       setBusy(session.id);
       if (action === 'start') {
+        // A slot that has already run out cannot simply be opened late:
+        // the schedule is what everyone else is reading, so it has to be
+        // corrected first. The server refuses this too - this is just the
+        // same answer given before the trip.
+        const over = +new Date(session.starts_at) + session.duration_minutes * 60000;
+        if (Date.now() > over) {
+          toast.error(
+            t({
+              ne: `“${session.title}” को समय ${new Date(over).toLocaleString()} मै सकियो। सुरु गर्नुअघि नयाँ समय दिनुहोस्।`,
+              en: `“${session.title}” was due to finish at ${new Date(over).toLocaleString()}. Give it a new time before starting it.`,
+            })
+          );
+          setBusy(null);
+          return;
+        }
+
         // Starting a session opens the meeting for everyone, so doing it
         // ahead of its own slot is worth asking about.
         const due = new Date(session.starts_at);
@@ -124,7 +142,7 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
       await load();
       onChanged();
     } catch (e: any) {
-      toast.error(e.response?.data?.error ?? t({ ne: 'गर्न सकिएन', en: 'That did not work' }));
+      toast.error(errorText(e, t({ ne: 'गर्न सकिएन', en: 'That did not work' })));
     } finally { setBusy(null); }
   };
 
@@ -483,13 +501,21 @@ const NewEventModal: React.FC<{ onClose: () => void; onCreated: () => void }> = 
       );
       return;
     }
+
+
+    // The gap is mandatory, so a running order typed too tight is put right
+    // here - with the organizer agreeing to the new times - rather than
+    // being bounced back by the server.
+    const plan = confirmSpacing(named, window.confirm);
+    if (!plan) return;
+
     try {
       setBusy(true);
       const created = await apiClient.createEvent({
         title: title.trim(),
         venue: venue.trim(),
         event_date: date,
-        meetings: named.map(toApiMeeting),
+        meetings: plan.map(toApiMeeting),
       });
       toast.success(
         t({
@@ -499,12 +525,7 @@ const NewEventModal: React.FC<{ onClose: () => void; onCreated: () => void }> = 
       );
       onCreated();
     } catch (e: any) {
-      const detail = e.response?.data;
-      toast.error(
-        typeof detail === 'object' && detail
-          ? Object.values(detail).flat().join(' ')
-          : t({ ne: 'बनाउन सकिएन', en: 'Could not create it' })
-      );
+      toast.error(errorText(e, t({ ne: 'बनाउन सकिएन', en: 'Could not create it' })));
     } finally { setBusy(false); }
   };
 
@@ -613,9 +634,15 @@ const AddMeetingModal: React.FC<{
       );
       return;
     }
+    // The gap is mandatory, so a running order typed too tight is put right
+    // here - with the organizer agreeing to the new times - rather than
+    // being bounced back by the server.
+    const plan = confirmSpacing([meeting], window.confirm);
+    if (!plan) return;
+
     try {
       setBusy(true);
-      const created = await apiClient.addMeetingToEvent(event.id, toApiMeeting(meeting));
+      const created = await apiClient.addMeetingToEvent(event.id, toApiMeeting(plan[0]));
       toast.success(
         t({
           ne: `${created.title} थपियो (${created.meeting_code})`,
@@ -624,12 +651,7 @@ const AddMeetingModal: React.FC<{
       );
       onAdded();
     } catch (e: any) {
-      const detail = e.response?.data;
-      toast.error(
-        typeof detail === 'object' && detail
-          ? Object.values(detail).flat().join(' ')
-          : t({ ne: 'थप्न सकिएन', en: 'Could not add it' })
-      );
+      toast.error(errorText(e, t({ ne: 'थप्न सकिएन', en: 'Could not add it' })));
     } finally { setBusy(false); }
   };
 
