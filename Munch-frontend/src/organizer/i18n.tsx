@@ -54,6 +54,16 @@ export const OrganizerProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       // Preferences simply will not persist.
     }
     document.documentElement.lang = lang;
+
+    // Accessibility is applied at the document root rather than on a
+    // wrapper, for two reasons: the styling has to reach dialogs and
+    // anything else rendered outside the panel, and it has to outrank the
+    // explicit sizes and faint greys the design sets on individual
+    // elements. The rules themselves live in index.css.
+    const root = document.documentElement;
+    root.toggleAttribute('data-a11y-big', a11y.big);
+    root.toggleAttribute('data-a11y-contrast', a11y.contrast);
+    root.toggleAttribute('data-a11y-calm', a11y.calm);
   }, [lang, a11y]);
 
   const value = useMemo<Ctx>(

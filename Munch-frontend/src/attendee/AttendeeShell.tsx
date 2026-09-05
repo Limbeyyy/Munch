@@ -45,15 +45,16 @@ export const AttendeeShell: React.FC<Props> = ({
   view, onNavigate, counts = {}, who, eventTitle, eventDetail,
   onSwitchToOrganizer, onLeave, children,
 }) => {
-  const { t, lang, setLang, a11y } = useOrganizer();
+  const { t, lang, setLang } = useOrganizer();
   const online = typeof navigator === 'undefined' ? true : navigator.onLine;
 
   const initials = who.name.trim().charAt(0).toUpperCase() || '?';
 
   return (
     <div
-      className={`min-h-screen bg-cream text-ink font-sans ${a11y.big ? 'text-[16.5px]' : 'text-[15px]'}
-        ${a11y.calm ? '[&_*]:!transition-none [&_*]:!animate-none' : ''}`}
+      // Accessibility is applied at the document root now, so the shell
+      // only has to state its own base size.
+      className="min-h-screen bg-cream text-ink font-sans text-[15px]"
     >
       <div className="lg:grid min-h-screen" style={{ gridTemplateColumns: '246px minmax(0,1fr)' }}>
         {/* Rail */}

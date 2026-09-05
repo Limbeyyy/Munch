@@ -15,3 +15,81 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+/* ---------------------------------------------------------------------------
+   Accessibility
+
+   Driven by attributes the app sets on <html> (see organizer/i18n.tsx), so
+   every panel is covered by one set of rules - organizer, attendee, and
+   anything drawn on top of them - rather than each shell having to
+   reimplement the settings for itself.
+   --------------------------------------------------------------------------- */
+
+/* Larger text.
+
+   The design sets sizes in px on individual elements, so inheriting a
+   bigger base size changes nothing. Scaling the whole document is what
+   actually enlarges it, and it keeps the layout in proportion instead of
+   letting bigger type overflow the boxes drawn around it. */
+html[data-a11y-big] body {
+  zoom: 1.15;
+}
+
+/* Stronger borders and text.
+
+   The quiet greys and hairline rules that make the panel calm are the
+   first thing to disappear on a dim screen or in bright sun. These target
+   the exact values the design uses, so nothing else shifts. */
+html[data-a11y-contrast] .text-\[\#6E7C8E\] {
+  color: #33455C;
+}
+
+html[data-a11y-contrast] [class*="border-navy-800"],
+html[data-a11y-contrast] [class*="border-navy-900"],
+html[data-a11y-contrast] [class*="divide-navy-800"] {
+  border-color: #1B2C44 !important;
+}
+
+html[data-a11y-contrast] table th,
+html[data-a11y-contrast] table td {
+  border-color: #1B2C44 !important;
+}
+
+html[data-a11y-contrast] input,
+html[data-a11y-contrast] select,
+html[data-a11y-contrast] textarea {
+  border-color: #1B2C44 !important;
+}
+
+/* A focus ring that is actually visible, for anyone working by keyboard. */
+html[data-a11y-contrast] :focus-visible {
+  outline: 3px solid #B4790E;
+  outline-offset: 2px;
+}
+
+/* Reduce motion.
+
+   Global rather than scoped, so a dialog or a toast cannot animate its way
+   round the setting. */
+html[data-a11y-calm] *,
+html[data-a11y-calm] *::before,
+html[data-a11y-calm] *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+html[data-a11y-calm] {
+  scroll-behavior: auto !important;
+}
+
+/* Somebody who has asked their system for less motion has already answered
+   this question; honour it without making them find the setting. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
