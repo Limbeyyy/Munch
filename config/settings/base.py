@@ -9,17 +9,21 @@ AUTH_USER_MODEL = 'accounts.User'
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# The repository root, where the .env files actually sit. BASE_DIR points at
+# the config package, so it is the wrong place to look for them.
+ROOT_DIR = BASE_DIR.parent
+
 # Initialize environ
 env = environ.Env()
 # Determine which .env file to load
 env_file = os.environ.get('DJANGO_ENV', 'dev')   # default to 'dev'
-env_filename = f'.env.{env_file}'
+env_path = ROOT_DIR / f'.env.{env_file}'
 
 # If the file doesn't exist, fallback to .env
-if not os.path.exists(os.path.join(BASE_DIR, env_filename)):
-    env_filename = '.env'
+if not env_path.exists():
+    env_path = ROOT_DIR / '.env'
 
-environ.Env.read_env(os.path.join(BASE_DIR, env_filename))
+environ.Env.read_env(str(env_path))
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env('SECRET_KEY')
