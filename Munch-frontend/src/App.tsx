@@ -23,10 +23,17 @@ import { BillingPage } from './pages/BillingPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { SettingsPage } from './pages/SettingsPage';
 
+/**
+ * A page that needs somebody signed in.
+ *
+ * The guard waits for the stored session to be read before judging it.
+ * Acting on `isAuthenticated` while it still only means "not asked yet" is
+ * what sent people to the login page for the crime of refreshing.
+ */
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, isLoading } = useAuthStore();
+  const { isAuthenticated, isLoading, ready } = useAuthStore();
 
-  if (isLoading) {
+  if (!ready || isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p>Loading...</p>
