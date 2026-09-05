@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
+import { forgetPortal, markFreshSignIn } from './HomeRedirect';
 import { apiClient } from '../services/api';
 
 export const LoginPage: React.FC = () => {
@@ -32,7 +33,11 @@ export const LoginPage: React.FC = () => {
         const redirectUri = `${window.location.origin}/login`;
         await googleLogin(code, redirectUri);
         toast.success('Logged in successfully!');
-        navigate('/dashboard');
+        // Signing in afresh is where the host-or-attendee question belongs,
+        // so drop any earlier answer and let the chooser at "/" ask again.
+        forgetPortal();
+        markFreshSignIn();
+        navigate('/');
       } catch (error: any) {
         toast.error('Login failed: ' + error.message);
       }

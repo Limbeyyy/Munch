@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { Meeting } from '../../types';
+import { Meeting, UserRoles } from '../../types';
 import { useOrganizer } from '../i18n';
-import { Btn, Card, Head, Switch, Tabs } from '../ui';
+import { BarRow, Btn, Card, Head, Switch, Tabs } from '../ui';
 
 interface Props { meetings: Meeting[]; }
 
@@ -14,6 +14,11 @@ export const SettingsView: React.FC<Props> = ({ meetings }) => {
   const [selected, setSelected] = useState(meetings[0]?.id ?? '');
   const [settings, setSettings] = useState({ chat_enabled: false, direct_messages_enabled: false });
   const [saving, setSaving] = useState(false);
+  const [roles, setRoles] = useState<UserRoles | null>(null);
+
+  useEffect(() => {
+    apiClient.getMyRoles().then(setRoles).catch(() => undefined);
+  }, []);
 
   const meeting = meetings.find((m) => m.id === selected) ?? meetings[0];
 
@@ -50,6 +55,7 @@ export const SettingsView: React.FC<Props> = ({ meetings }) => {
           { id: 'rules', label: { ne: 'च्याट नियम', en: 'Chat rules' } },
           { id: 'device', label: { ne: 'हलको यन्त्र', en: 'Hall device' } },
           { id: 'acc', label: { ne: 'पहुँच', en: 'Accessibility' } },
+          { id: 'plan', label: { ne: 'योजना', en: 'Plan' } },
         ]}
       />
 
@@ -175,6 +181,93 @@ Authorization: Bearer <ingest token>
           </div>
         </Card>
       )}
+
+      {tab === 'plan' && <PlanPanel roles={roles} />}
     </>
+  );
+};
+
+/**
+ * What the host is paying for, and how much of it is spent.
+ *
+ * The three numbers here are the ones a host actually runs into, so they are
+ * shown as they are used rather than as a feature list; the pricing page is
+ * one click away for whoever needs more room.
+ */
+const PlanPanel: React.FC<{ roles: UserRoles | null }> = ({ roles }) => {
+  const { t, num } = useOrganizer();
+
+  if (!roles?.plan || !roles.usage) {
+    return (
+      <Card className="max-w-[760px]">
+        <p className="text-[13px] text-[#6E7C8E]">
+          {t({ ne: 'योजनाको विवरण ल्याउँदै…', en: 'Fetching your plan…' })}
+        </p>
+      </Card>
+    );
+  }
+
+  const { plan, usage } = roles;
+  // A per-meeting ceiling has no single figure to spend, so it is stated
+  // rather than drawn as a bar.
+  const rows: { label: string; used: number | null; cap: number | null }[] = [
+    { label: t({ ne: 'कार्यक्रम', en: 'Events' }), used: usage.events, cap: plan.limits.events },
+    { label: t({ ne: 'बैठक', en: 'Meetings' }), used: usage.meetings, cap: plan.limits.meetings },
+    {
+      label: t({ ne: 'प्रति बैठक सत्र', en: 'Sessions per meeting' }),
+      used: null,
+      cap: plan.limits.sessions_per_meeting,
+    },
+  ];
+
+  return (
+    <Card className="max-w-[760px]">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-[15px] font-semibold text-navy-900">
+            {plan.name}
+            {!plan.paid && (
+              <span className="ml-2 text-[12px] font-normal text-[#6E7C8E]">
+                {t({ ne: 'निःशुल्क परीक्षण', en: 'free trial' })}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-[12.5px] text-[#6E7C8E]">
+            {plan.paid
+              ? t({ ne: 'तपाईंको सदस्यता सक्रिय छ।', en: 'Your subscription is active.' })
+              : t({
+                  ne: 'परीक्षणमा २ कार्यक्रम, प्रत्येकमा २ बैठक, प्रत्येकमा २ सत्र।',
+                  en: 'The trial covers 2 events, 2 meetings each, 2 sessions each.',
+                })}
+          </p>
+        </div>
+        <Btn onClick={() => window.open('/pricing', '_blank')}>
+          {t({ ne: 'योजना हेर्नुहोस्', en: 'See plans' })}
+        </Btn>
+      </div>
+
+      <div className="mt-5 space-y-3">
+        {rows.map((row) =>
+          row.cap === null ? (
+            <div key={row.label} className="flex justify-between text-[13px]">
+              <span className="text-navy-900">{row.label}</span>
+              <span className="text-[#6E7C8E]">{t({ ne: 'असीमित', en: 'Unlimited' })}</span>
+            </div>
+          ) : row.used === null ? (
+            <div key={row.label} className="flex justify-between text-[13px]">
+              <span className="text-navy-900">{row.label}</span>
+              <span className="text-[#6E7C8E]">{t({ ne: 'सम्म', en: 'up to' })} {num(row.cap)}</span>
+            </div>
+          ) : (
+            <BarRow
+              key={row.label}
+              label={row.label}
+              pct={Math.min(100, Math.round((row.used / row.cap) * 100))}
+              right={`${num(row.used)} / ${num(row.cap)}`}
+            />
+          )
+        )}
+      </div>
+    </Card>
   );
 };

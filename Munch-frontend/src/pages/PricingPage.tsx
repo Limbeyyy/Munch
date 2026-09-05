@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { apiClient } from '../services/api';
+import { rememberPortal } from './HomeRedirect';
 
 type Lang = 'en' | 'np';
 type Currency = 'USD' | 'NPR';
@@ -134,7 +136,15 @@ export const PricingPage: React.FC = () => {
       return;
     }
     if (plan.id === 'free') {
-      navigate('/login');
+      // Someone already signed in can take up the trial here and now; anyone
+      // else has to sign in before there is an account to attach it to.
+      apiClient
+        .startHosting()
+        .then(() => {
+          rememberPortal('host');
+          navigate('/organizer');
+        })
+        .catch(() => navigate('/login'));
       return;
     }
     toast(
