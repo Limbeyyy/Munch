@@ -286,7 +286,7 @@ export const MeetingRoomPage: React.FC = () => {
       setParticipants(participants);
     } catch (error: any) {
       toast.error('Failed to load meeting: ' + error.message);
-      navigate('/dashboard');
+      navigate('/');
     } finally {
       setIsLoading(false);
     }
@@ -399,7 +399,7 @@ export const MeetingRoomPage: React.FC = () => {
             : 'The host ended the meeting',
           { icon: '👋' }
         );
-        navigate('/dashboard');
+        navigate('/');
       } else if (data.type === 'chat_settings_update') {
         setChatSettings({
           chat_enabled: data.chat_enabled,
@@ -565,7 +565,7 @@ export const MeetingRoomPage: React.FC = () => {
     try {
       await apiClient.endMeeting(currentMeeting.id);
       toast.success('Meeting ended');
-      navigate('/dashboard');
+      navigate('/');
     } catch (error: any) {
       toast.error(
         error.response?.data?.error ?? 'Failed to end meeting: ' + error.message
@@ -581,7 +581,7 @@ export const MeetingRoomPage: React.FC = () => {
     } catch {
       // Leaving is best-effort; navigate away regardless.
     }
-    navigate('/dashboard');
+    navigate('/');
   };
 
   if (isLoading) {
