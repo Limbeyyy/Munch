@@ -228,6 +228,31 @@ class ApiClient {
    * meeting stands on its own. Either way it must bring at least one
    * session, which the server enforces.
    */
+  /** Who has been asked to a programme, and how many have turned up. */
+  async getEventInvites(eventId: string): Promise<{
+    invited: { email: string; meetings: number; joined: boolean; invited_at: string }[];
+    total_invited: number;
+    total_joined: number;
+  }> {
+    const response = await this.client.get(`/events/${eventId}/invites/`);
+    return response.data;
+  }
+
+  /**
+   * Invite people to a programme by email.
+   *
+   * The invitation covers every meeting in the event, and is what lets
+   * them see it at all once they sign in with that address.
+   */
+  async inviteToEvent(eventId: string, emails: string[]): Promise<{
+    invited: { email: string; meetings: number; joined: boolean }[];
+    total_invited: number;
+    total_joined: number;
+  }> {
+    const response = await this.client.post(`/events/${eventId}/invites/`, { emails });
+    return response.data;
+  }
+
   async createMeetingWithSessions(
     meeting: MeetingDraft,
     eventId?: string | null

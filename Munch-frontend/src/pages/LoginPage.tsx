@@ -16,6 +16,16 @@ export const LoginPage: React.FC = () => {
   const [guestPhone, setGuestPhone] = useState('');
   const [isKnocking, setIsKnocking] = useState(false);
 
+  // A guest who scanned the QR at the door arrives with the code already
+  // in the address, so they only have to say who they are.
+  useEffect(() => {
+    const scanned = searchParams.get('join');
+    if (scanned) {
+      setGuestCode(scanned.toUpperCase());
+      setShowGuest(true);
+    }
+  }, [searchParams]);
+
   useEffect(() => {
     const handleGoogleCallback = async (code: string) => {
       try {

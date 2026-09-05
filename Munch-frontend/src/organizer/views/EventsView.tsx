@@ -37,6 +37,7 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
 
   const [newEvent, setNewEvent] = useState(false);
   const [addMeetingTo, setAddMeetingTo] = useState<EventProgramme | null>(null);
+  const [inviteTo, setInviteTo] = useState<EventProgramme | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -207,6 +208,9 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
                 }
                 actions={
                   <>
+                    <Btn sm onClick={() => setInviteTo(event)}>
+                      {t({ ne: 'निम्तो', en: 'Invite' })}
+                    </Btn>
                     <Btn sm onClick={() => setAddMeetingTo(event)}>
                       {t({ ne: '+ बैठक', en: '+ Meeting' })}
                     </Btn>
@@ -314,6 +318,10 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
         />
       )}
 
+      {inviteTo && (
+        <InviteModal event={inviteTo} onClose={() => setInviteTo(null)} />
+      )}
+
       {addMeetingTo && (
         <AddMeetingModal
           event={addMeetingTo}
@@ -322,6 +330,123 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
         />
       )}
     </>
+  );
+};
+
+/**
+ * Ask people to a programme by email.
+ *
+ * The address is what ties an invitation to a person: when they sign in
+ * with it, the programme appears for them and nothing else does.
+ */
+const InviteModal: React.FC<{ event: EventProgramme; onClose: () => void }> = ({
+  event, onClose,
+}) => {
+  const { t, num } = useOrganizer();
+  const [raw, setRaw] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [invited, setInvited] = useState<
+    { email: string; meetings: number; joined: boolean }[]
+  >([]);
+  const [counts, setCounts] = useState({ total_invited: 0, total_joined: 0 });
+
+  const load = React.useCallback(async () => {
+    try {
+      const data = await apiClient.getEventInvites(event.id);
+      setInvited(data.invited);
+      setCounts({ total_invited: data.total_invited, total_joined: data.total_joined });
+    } catch {
+      // The list is a convenience; inviting still works without it.
+    }
+  }, [event.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const send = async () => {
+    // People paste addresses in whatever shape their own list is in.
+    const emails = raw
+      .split(/[\s,;]+/)
+      .map((e) => e.trim().toLowerCase())
+      .filter((e) => e.includes('@'));
+
+    if (emails.length === 0) {
+      toast.error(t({ ne: 'कम्तीमा एउटा इमेल राख्नुहोस्', en: 'Give at least one email address' }));
+      return;
+    }
+    try {
+      setBusy(true);
+      const result = await apiClient.inviteToEvent(event.id, emails);
+      toast.success(
+        t({
+          ne: `${num(result.total_invited)} जनालाई निम्तो`,
+          en: `${result.total_invited} invited to this event`,
+        })
+      );
+      setRaw('');
+      await load();
+    } catch (e: any) {
+      toast.error(e.response?.data?.error ?? t({ ne: 'पठाउन सकिएन', en: 'Could not invite them' }));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={t({ ne: 'निम्तो पठाउनुहोस्', en: 'Invite people' })}
+      lede={t({
+        ne: `${event.title} — निम्तो यसभित्रका सबै बैठकमा लागू हुन्छ।`,
+        en: `${event.title} — an invitation covers every meeting in the day.`,
+      })}
+      footer={
+        <>
+          <Btn onClick={onClose}>{t({ ne: 'बन्द', en: 'Close' })}</Btn>
+          <Btn tone="amber" onClick={send} disabled={busy}>
+            {busy ? t({ ne: 'पठाउँदै…', en: 'Inviting…' }) : t({ ne: 'निम्तो दिनुहोस्', en: 'Invite' })}
+          </Btn>
+        </>
+      }
+    >
+      <label className="block text-[12px] text-[#6E7C8E] mb-1">
+        {t({ ne: 'इमेल ठेगाना', en: 'Email addresses' })}
+      </label>
+      <textarea
+        rows={3}
+        value={raw}
+        onChange={(e) => setRaw(e.target.value)}
+        placeholder="someone@example.com, another@example.com"
+        className="w-full border border-navy-800/15 rounded-[10px] px-3 py-2 text-[14px]"
+      />
+      <p className="text-[12px] text-[#6E7C8E] mt-1.5">
+        {t({
+          ne: 'यही ठेगानाबाट साइन इन गरेपछि मात्र उनीहरूले यो कार्यक्रम देख्छन् — अरूको देख्दैनन्।',
+          en: 'Signing in with that address is what shows them this programme, and only this one.',
+        })}
+      </p>
+
+      {invited.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-navy-800/[.08]">
+          <p className="text-[12.5px] text-[#6E7C8E] mb-2">
+            {t({
+              ne: `${num(counts.total_invited)} निम्तो · ${num(counts.total_joined)} जना आइसके`,
+              en: `${counts.total_invited} invited · ${counts.total_joined} have joined`,
+            })}
+          </p>
+          <div className="max-h-40 overflow-y-auto flex flex-col gap-1">
+            {invited.map((row) => (
+              <div key={row.email} className="flex items-center gap-2 text-[13px]">
+                <span className="truncate">{row.email}</span>
+                <span className="ms-auto flex-none">
+                  {row.joined
+                    ? <Chip tone="ok">{t({ ne: 'आइसके', en: 'Joined' })}</Chip>
+                    : <Chip tone="draft">{t({ ne: 'पर्खिँदै', en: 'Not yet' })}</Chip>}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 };
 

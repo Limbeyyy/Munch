@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { apiClient } from '../services/api';
 import toast from 'react-hot-toast';
 
+const API_ROOT = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
+
 interface Props {
   meetingId: string;
   meetingCode: string;
@@ -32,7 +34,11 @@ export const ShareMeetingDialog: React.FC<Props> = ({
   const [raw, setRaw] = useState('');
   const [isSending, setIsSending] = useState(false);
 
+  // Anyone with an account opens the room directly; a guest scanning the
+  // QR is sent to the join form instead, since they have no account.
   const link = `${window.location.origin}/meeting/${meetingCode}`;
+  const guestLink = `${window.location.origin}/login?join=${meetingCode}`;
+  const [showQr, setShowQr] = useState(false);
   const parsed = splitEmails(raw);
   const invalid = parsed.filter((e) => !EMAIL_RE.test(e));
   const valid = parsed.filter((e) => EMAIL_RE.test(e));
@@ -119,6 +125,30 @@ export const ShareMeetingDialog: React.FC<Props> = ({
           >
             Copy
           </button>
+        </div>
+
+        {/* For the door: a guest scans this and lands on the join form
+            with the code already filled in. */}
+        <div className="mb-5">
+          <button
+            onClick={() => setShowQr((v) => !v)}
+            className="text-sm text-blue-700 underline underline-offset-4"
+          >
+            {showQr ? 'Hide the QR code' : 'Show a QR code for the door'}
+          </button>
+
+          {showQr && (
+            <div className="mt-3 flex flex-col items-center gap-2">
+              <img
+                src={`${API_ROOT}/meetings/${meetingCode}/qr/?url=${encodeURIComponent(guestLink)}`}
+                alt={`QR code to join meeting ${meetingCode}`}
+                className="w-44 h-44 bg-white p-2 border border-gray-200 rounded-xl"
+              />
+              <p className="text-xs text-gray-500">
+                Scanning opens the join form. Guests still wait for you to let them in.
+              </p>
+            </div>
+          )}
         </div>
 
         <label className="block text-sm font-medium mb-1">
