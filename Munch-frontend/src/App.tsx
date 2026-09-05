@@ -10,7 +10,6 @@ import { AttendeePage } from './pages/AttendeePage';
 import { HomeRedirect } from './pages/HomeRedirect';
 import { GuestWaitingPage } from './pages/GuestWaitingPage';
 import { GuestMeetingPage } from './pages/GuestMeetingPage';
-import { DashboardPage } from './pages/DashboardPage';
 import { MeetingRoomPage } from './pages/MeetingRoomPage';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { OrganizationsPage } from './pages/OrganizationsPage';

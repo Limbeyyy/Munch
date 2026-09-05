@@ -132,6 +132,15 @@ const AttendeeInner: React.FC = () => {
 
   const enterRoom = (meeting: EventMeeting) => navigate(`/meeting/${meeting.meeting_code}`);
 
+  /** Go straight to a room whose code somebody was given. */
+  const joinByCode = () => {
+    const code = window.prompt(
+      t({ ne: 'बैठकको कोड लेख्नुहोस्', en: 'Enter the meeting code' })
+    );
+    const trimmed = code?.trim().toUpperCase();
+    if (trimmed) navigate(`/meeting/${trimmed}`);
+  };
+
   return (
     <>
       <AttendeeShell
@@ -179,7 +188,7 @@ const AttendeeInner: React.FC = () => {
               })}
             </p>
             <button
-              onClick={() => navigate('/dashboard')}
+              onClick={joinByCode}
               className="mt-4 px-4 py-2 rounded-[10px] bg-amber text-[#20160A] font-semibold text-sm"
             >
               {t({ ne: 'कोडबाट जोडिनुहोस्', en: 'Join with a code' })}
