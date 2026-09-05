@@ -62,23 +62,73 @@ class ApiClient {
     this.client.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
-        const originalRequest = error.config;
-        if (error.response?.status === 401 && originalRequest) {
-          if (this.refreshToken) {
-            try {
-              const response = await this.refreshAccessToken();
-              this.setTokens(response.access, this.refreshToken);
-              return this.client(originalRequest);
-            } catch {
-              this.logout();
-            }
-          }
+        const original = error.config as (typeof error.config & { _retried?: boolean });
+
+        // Only a 401 is worth renewing for, only once per request, and only
+        // if there is something to renew with. Retrying a request that
+        // already came back 401 on a fresh token would loop.
+        if (
+          error.response?.status !== 401 ||
+          !original ||
+          original._retried ||
+          !this.refreshToken
+        ) {
+          return Promise.reject(error);
         }
-        return Promise.reject(error);
+
+        try {
+          await this.renewSession();
+        } catch {
+          // The session really is over. Drop the tokens so the app stops
+          // pretending otherwise, and let the caller see the 401.
+          this.clearTokens();
+          return Promise.reject(error);
+        }
+
+        original._retried = true;
+        return this.client(original);
       }
     );
 
     this.loadTokens();
+  }
+
+  /**
+   * Get a new access token, once, however many requests are waiting.
+   *
+   * Refresh tokens rotate and the one they replace is revoked, so several
+   * requests each renewing on their own would race: the first would
+   * succeed and retire the token the others were about to present. They
+   * all wait on the same attempt instead.
+   */
+  private renewing: Promise<void> | null = null;
+
+  private renewSession(): Promise<void> {
+    if (this.renewing) return this.renewing;
+
+    this.renewing = (async () => {
+      const presented = this.refreshToken;
+      // A bare client: the refresh call must not carry the expired token,
+      // and must not come back through this interceptor.
+      const { data } = await axios.post(
+        `${API_BASE_URL}/auth/token_refresh/`,
+        { refresh: presented },
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+      // Rotation hands back a new refresh token, and the old one is dead
+      // the moment it does. Keeping the old one was why sessions ended
+      // after a single renewal.
+      this.setTokens(data.access, data.refresh ?? presented);
+    })().finally(() => {
+      this.renewing = null;
+    });
+
+    return this.renewing;
+  }
+
+  /** Whether there is a stored session worth trying to restore. */
+  hasSession(): boolean {
+    return !!this.refreshToken;
   }
 
   private loadTokens() {
@@ -98,13 +148,6 @@ class ApiClient {
     this.refreshToken = null;
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
-  }
-
-  private async refreshAccessToken(): Promise<{ access: string }> {
-    const response = await this.client.post('/auth/token_refresh/', {
-      refresh: this.refreshToken,
-    });
-    return response.data;
   }
 
   // Auth endpoints

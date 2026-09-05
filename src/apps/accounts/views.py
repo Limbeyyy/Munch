@@ -111,13 +111,10 @@ class AuthViewSet(viewsets.GenericViewSet):
         result = account_service.handle_google_callback(code, redirect_uri, state)
         
         if result.get('user'):
-            # Generate JWT tokens
-            from rest_framework_simplejwt.tokens import RefreshToken
-            refresh = RefreshToken.for_user(result['user'])
-            
+            from src.apps.accounts.tokens import issue_tokens
+
             return Response({
-                'access': str(refresh.access_token),
-                'refresh': str(refresh),
+                **issue_tokens(result['user']),
                 'user': UserSerializer(result['user']).data,
                 'google_connected': True
             })
@@ -125,15 +122,42 @@ class AuthViewSet(viewsets.GenericViewSet):
         return Response({'error': result.get('error', 'Authentication failed')}, 
                        status=status.HTTP_400_BAD_REQUEST)
     
+    @action(detail=False, methods=['post'], url_path='token_refresh')
+    def token_refresh(self, request):
+        """Trade a refresh token for a new access token.
+
+        This is what keeps somebody on the page they are on when their
+        short access token runs out. It is not a way round the session
+        cap: a refresh token from a sign-in older than the ceiling is
+        refused here however valid the token itself still looks.
+        """
+        from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+
+        from src.apps.accounts.tokens import SessionRefreshSerializer
+
+        serializer = SessionRefreshSerializer(data=request.data)
+        try:
+            serializer.is_valid(raise_exception=True)
+        except TokenError as error:
+            raise InvalidToken(str(error))
+
+        return Response(serializer.validated_data)
+
     @action(detail=False, methods=['post'])
     def logout(self, request):
         """Logout user"""
-        try:
-            refresh_token = request.data.get('refresh')
-            if refresh_token:
-                from rest_framework_simplejwt.tokens import RefreshToken
-                token = RefreshToken(refresh_token)
-                token.blacklist()
-        except:
-            pass
-        return Response({'message': 'Logged out successfully'})
+        revoked = False
+        refresh_token = request.data.get('refresh')
+        if refresh_token:
+            from rest_framework_simplejwt.exceptions import TokenError
+            from rest_framework_simplejwt.tokens import RefreshToken
+
+            try:
+                RefreshToken(refresh_token).blacklist()
+                revoked = True
+            except TokenError:
+                # Already expired or already revoked: the session is over
+                # either way, which is what the caller asked for.
+                pass
+
+        return Response({'message': 'Logged out successfully', 'revoked': revoked})

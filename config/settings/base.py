@@ -50,6 +50,9 @@ INSTALLED_APPS = [
     # Third-party apps
     'rest_framework',
     'rest_framework_simplejwt',
+    # Needed for rotation to actually retire the token it replaces, and for
+    # logout to revoke rather than merely forget.
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'allauth',
     'allauth.account',
@@ -270,9 +273,14 @@ REST_FRAMEWORK = {
 }
 
 # JWT Settings
+#: How long somebody stays signed in before having to log in again. The
+#: access token is deliberately short: it is renewed behind the scenes, and
+#: this is the ceiling that renewal cannot push past.
+AUTH_SESSION_HOURS = 8
+
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'REFRESH_TOKEN_LIFETIME': timedelta(hours=AUTH_SESSION_HOURS),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': True,
