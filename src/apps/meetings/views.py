@@ -868,6 +868,13 @@ class MeetingViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
+        from src.apps.accounts.plans import check_can_add_meeting, check_session_count
+        from src.apps.accounts.roles import ensure_host
+
+        check_can_add_meeting(request.user, event)
+        check_session_count(request.user, len(data.get('sessions') or []))
+        ensure_host(request.user)
+
         meeting = build_meeting(data, event=event, host=request.user)
         logger.info(
             f"Created meeting {meeting.meeting_code} "

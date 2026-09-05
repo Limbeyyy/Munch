@@ -54,8 +54,22 @@ class EventViewSet(viewsets.ModelViewSet):
         return EventCreateSerializer if self.action == 'create' else EventSerializer
 
     def create(self, request, *args, **kwargs):
+        from src.apps.accounts.plans import check_can_create_event, check_session_count
+        from src.apps.accounts.roles import ensure_host
+
+        check_can_create_event(request.user)
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        for meeting in serializer.validated_data.get('meetings') or []:
+            check_session_count(
+                request.user,
+                len(meeting.get('sessions') or []),
+                f'"{meeting.get("title", "a meeting")}"',
+            )
+
+        # Opening a programme is the decision to host; record it once it sticks.
+        ensure_host(request.user)
         event = serializer.save()
         logger.info(f"Created event {event.id} with {event.meetings.count()} meetings")
         return Response(
@@ -136,10 +150,16 @@ class EventViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def meetings(self, request, pk=None):
         """Add a meeting, with its sessions, to an existing event."""
+        from src.apps.accounts.plans import check_can_add_meeting, check_session_count
+
         event = self.get_object()
+        check_can_add_meeting(request.user, event)
 
         serializer = MeetingWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        check_session_count(
+            request.user, len(serializer.validated_data.get('sessions') or [])
+        )
 
         meeting = build_meeting(serializer.validated_data, event=event)
         from src.apps.meetings.event_serializers import MeetingSummarySerializer
