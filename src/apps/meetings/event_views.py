@@ -3,6 +3,7 @@ import logging
 
 from django.db.models import Prefetch
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -16,6 +17,14 @@ from src.apps.meetings.event_serializers import (
     SessionAttendanceSerializer,
     SessionSerializer,
     build_meeting,
+)
+from src.apps.meetings.lifecycle import (
+    broadcast as _broadcast,
+    deadline_passed,
+    scheduled_end,
+    sweep_expired,
+    close_session as _close_session,
+    session_is_over as _session_is_over,
 )
 from src.apps.meetings.models import (
     ContactRequest,
@@ -37,6 +46,11 @@ class EventViewSet(viewsets.ModelViewSet):
         # ones they were invited into or have joined. Meetings and sessions
         # are prefetched because the list view always renders the tree.
         from src.apps.meetings.access import events_visible_to
+        from src.apps.meetings.access import sessions_visible_to
+
+        # Close anything that overran before drawing the programme, so the
+        # tree never shows a session as live past the time it was given.
+        sweep_expired(Session.objects.filter(sessions_visible_to(self.request.user)))
 
         return (
             Event.objects.filter(events_visible_to(self.request.user))
@@ -184,6 +198,11 @@ class SessionViewSet(viewsets.ModelViewSet):
             .select_related('meeting')
         )
 
+        # Anything left on stage past its slot is closed before the running
+        # order is handed out, so nobody reads a session as live when its
+        # time ran out an hour ago.
+        sweep_expired(queryset)
+
         # A meeting is addressed by its id or its room code, and only one of
         # those parses as a UUID.
         meeting_ref = self.request.query_params.get('meeting')
@@ -212,7 +231,49 @@ class SessionViewSet(viewsets.ModelViewSet):
             from rest_framework.exceptions import PermissionDenied
 
             raise PermissionDenied('Only the host can add sessions')
+
+        from src.apps.accounts.plans import check_can_add_sessions
+        from src.apps.meetings.scheduling import check_slot
+
+        check_can_add_sessions(self.request.user, meeting)
+
+        # A session being added has to fit the day as it stands. Moving one
+        # that already exists is the other case, and that one shifts the
+        # rest instead of being refused - see perform_update.
+        check_slot(
+            meeting,
+            serializer.validated_data['starts_at'],
+            serializer.validated_data.get('duration_minutes', 30),
+        )
         serializer.save()
+
+    def perform_update(self, serializer):
+        """Move a session, and carry the rest of the day along with it.
+
+        This is the agenda's behaviour applied wherever a session is
+        edited: the order and the durations stand, the fifteen-minute gap
+        stands, and everything after the change slides forward as far as it
+        must. The shift is worked out and written in one locked
+        transaction, so simultaneous edits cannot leave an overlap behind.
+        """
+        session = serializer.instance
+        if str(session.meeting.host_id) != str(self.request.user.id):
+            from rest_framework.exceptions import PermissionDenied
+
+            raise PermissionDenied('Only the host can change the running order')
+
+        from src.apps.meetings.scheduling import reschedule
+
+        session = serializer.save()
+
+        timing = {
+            field: getattr(session, field)
+            for field in ('starts_at', 'duration_minutes', 'hall')
+            if field in serializer.validated_data
+        }
+        if timing:
+            reschedule(session.meeting, {session.id: timing}, anchored_id=session.id)
+            session.refresh_from_db()
 
     def perform_destroy(self, instance):
         if str(instance.meeting.host_id) != str(self.request.user.id):
@@ -220,6 +281,59 @@ class SessionViewSet(viewsets.ModelViewSet):
 
             raise PermissionDenied('Only the host can remove sessions')
         instance.delete()
+
+    @action(detail=False, methods=['post'])
+    def reschedule(self, request):
+        """Save a whole rearranged day in one go.
+
+        The agenda works out the new times as the organizer drags things
+        about, and sends the finished plan here. Applying it as one locked
+        transaction is what keeps two organizers saving at the same moment
+        from interleaving into an overlap - and the server re-settles the
+        plan on arrival, so a hand-made request cannot smuggle in an
+        overlap the agenda would never have produced.
+        """
+        from src.apps.meetings.scheduling import reschedule as apply_reschedule
+
+        changes = request.data.get('changes') or []
+        if not isinstance(changes, list) or not changes:
+            return Response(
+                {'error': 'Send the sessions to move under "changes".'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        wanted = {}
+        for change in changes:
+            session = self.get_queryset().filter(id=change.get('id')).first()
+            if session is None:
+                return Response(
+                    {'error': f"No session {change.get('id')} in your programme"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            if str(session.meeting.host_id) != str(request.user.id):
+                return Response(
+                    {'error': 'Only the host can change the running order'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            wanted[session] = change
+
+        meeting = next(iter(wanted)).meeting
+        edits = {}
+        for session, change in wanted.items():
+            edit = {}
+            if change.get('starts_at'):
+                edit['starts_at'] = parse_datetime(change['starts_at'])
+            if change.get('duration_minutes') is not None:
+                edit['duration_minutes'] = int(change['duration_minutes'])
+            if change.get('hall') is not None:
+                edit['hall'] = change['hall']
+            edits[session.id] = edit
+
+        moved = apply_reschedule(meeting, edits)
+        return Response({
+            'moved': SessionSerializer(moved, many=True).data,
+            'moved_count': len(moved),
+        })
 
     @action(detail=True, methods=['post'])
     def start(self, request, pk=None):
@@ -237,12 +351,40 @@ class SessionViewSet(viewsets.ModelViewSet):
         if session.status == Session.Status.LIVE:
             return Response(SessionSerializer(session).data)
 
+        # A slot that has already been and gone cannot simply be opened
+        # late: the schedule is what everyone else is reading, so it has to
+        # be corrected before the session can run. Starting early is a
+        # different matter and only warrants the warning the organizer
+        # panel already gives.
+        if deadline_passed(session):
+            from src.apps.meetings.scheduling import earliest_start
+
+            over_at = scheduled_end(session)
+            soonest = earliest_start(session.meeting, exclude_id=session.id)
+            return Response(
+                {
+                    'error': (
+                        f'"{session.title}" was scheduled to finish at '
+                        f'{timezone.localtime(over_at):%d %b %H:%M}. '
+                        'Give it a new time before starting it.'
+                    ),
+                    'code': 'deadline_passed',
+                    'scheduled_end': over_at.isoformat(),
+                    'earliest_start': soonest.isoformat() if soonest else None,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
         now = timezone.now()
         for other in session.meeting.sessions.filter(status=Session.Status.LIVE):
             _close_session(other, now)
 
+        # A new run, not a rejoin: anything already on stage returned
+        # further up, so reaching here means the clock starts now. Keeping
+        # an older stamp would have the room counting from a sitting that
+        # finished long ago.
         session.status = Session.Status.LIVE
-        session.started_at = session.started_at or now
+        session.started_at = now
         session.ended_at = None
         session.save(update_fields=['status', 'started_at', 'ended_at', 'updated_at'])
 
@@ -250,8 +392,9 @@ class SessionViewSet(viewsets.ModelViewSet):
         # opens with it rather than waiting to be started separately.
         meeting = session.meeting
         if meeting.status != Meeting.Status.ACTIVE:
+            # Not running, so this opens it afresh and the clock starts now.
             meeting.status = Meeting.Status.ACTIVE
-            meeting.started_at = meeting.started_at or now
+            meeting.started_at = now
             meeting.ended_at = None
             meeting.save(update_fields=['status', 'started_at', 'ended_at', 'updated_at'])
 
@@ -461,75 +604,3 @@ def _match_existing_participant(meeting, email):
         invite.joined_at = participant.joined_at
         invite.joined_user = participant.user
         invite.save(update_fields=['joined_at', 'joined_user'])
-
-
-def _session_is_over(session):
-    """Whether the speaking is done and the room has moved on."""
-    from django.utils import timezone as tz
-
-    if session.status in (Session.Status.DONE, Session.Status.SKIPPED):
-        return True
-    if session.status == Session.Status.LIVE:
-        return False
-    return tz.now() > session.starts_at + tz.timedelta(minutes=session.duration_minutes)
-
-
-def _close_session(session, now):
-    """Mark a session done and snapshot who was in the room.
-
-    Presence is taken from the meeting at the moment the session ends,
-    which is the only point where the room's membership is settled.
-    """
-    session.status = Session.Status.DONE
-    session.ended_at = now
-    if not session.started_at:
-        session.started_at = now
-    session.save(update_fields=['status', 'started_at', 'ended_at', 'updated_at'])
-
-    recorded = 0
-    active_users = session.meeting.participants.filter(
-        is_active=True, user__isnull=False
-    ).values_list('user_id', flat=True)
-    for user_id in active_users:
-        _, created = SessionAttendance.objects.get_or_create(
-            session=session, user_id=user_id
-        )
-        recorded += int(created)
-
-    admitted_guests = session.meeting.guests.filter(status='admitted').values_list(
-        'id', flat=True
-    )
-    for guest_id in admitted_guests:
-        _, created = SessionAttendance.objects.get_or_create(
-            session=session, guest_id=guest_id
-        )
-        recorded += int(created)
-
-    return recorded
-
-
-def _broadcast(meeting_code, session, event_type):
-    """Tell the room the running order moved on. Best effort."""
-    try:
-        from asgiref.sync import async_to_sync
-        from channels.layers import get_channel_layer
-
-        layer = get_channel_layer()
-        if layer is None:
-            return
-        async_to_sync(layer.group_send)(
-            f'meeting_{meeting_code}',
-            {
-                'type': 'state_update',
-                'user_id': '',
-                'user_name': '',
-                'state': {
-                    event_type: True,
-                    'session_id': str(session.id),
-                    'session_title': session.title,
-                },
-                'timestamp': timezone.now().isoformat(),
-            },
-        )
-    except Exception as e:
-        logger.warning(f"Could not broadcast {event_type} for {meeting_code}: {e}")

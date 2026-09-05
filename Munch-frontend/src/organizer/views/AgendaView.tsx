@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { EventProgramme, MeetingDraft, SessionDraft } from '../../types';
+import { confirmSpacing } from '../confirmSpacing';
+import { errorText } from '../errors';
 import { useOrganizer } from '../i18n';
 import { Btn, Card, Chip, Empty, Head, Panel } from '../ui';
 import { SESSION_STATE_LABEL, SESSION_STATE_TONE, sessionState } from '../sessionState';
@@ -11,7 +13,7 @@ import {
   toApiMeeting, toLocalInput as toLocalDay,
 } from '../MeetingDraftFields';
 import {
-  MEETING_GAP_MINUTES, PlannedMeeting, PlannedSession,
+  GAP_MINUTES, MEETING_GAP_MINUTES, PlannedMeeting, PlannedSession,
   applyEdit, countChanges, hallsInUse, pendingChanges, reflowMeeting, setHall, toPlan,
 } from '../schedule';
 
@@ -96,46 +98,35 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
 
     try {
       setSaving(true);
-      const results = await Promise.allSettled([
-        ...sessions.map((s) =>
-          apiClient.updateSession(s.id, {
+      // The whole rearrangement goes in one transaction. Meeting windows
+      // follow their running order on the server, so they are not sent
+      // separately - and cannot end up disagreeing with it.
+      if (sessions.length > 0) {
+        await apiClient.rescheduleSessions(
+          sessions.map((s) => ({
+            id: s.id,
             starts_at: new Date(s.startsAt).toISOString(),
             duration_minutes: s.durationMinutes,
             hall: s.hall,
-          })
-        ),
-        ...meetings.map((m) =>
-          apiClient.updateMeeting(m.id, {
-            scheduled_start: new Date(m.startsAt).toISOString(),
-            scheduled_end: new Date(m.endsAt).toISOString(),
-          })
-        ),
-      ]);
-
-      const failed = results.filter((r) => r.status === 'rejected').length;
-      if (failed > 0) {
-        toast.error(
-          t({
-            ne: `${num(failed)} परिवर्तन सेभ भएन`,
-            en: `${failed} change${failed === 1 ? '' : 's'} could not be saved`,
-          })
-        );
-      } else {
-        toast.success(
-          t({
-            ne: `${num(sessions.length + meetings.length)} परिवर्तन सेभ भयो`,
-            en: `${sessions.length + meetings.length} change${sessions.length + meetings.length === 1 ? '' : 's'} saved`,
-          })
+          }))
         );
       }
+
+      const changed = sessions.length + meetings.length;
+      toast.success(
+        t({
+          ne: `${num(changed)} परिवर्तन सेभ भयो`,
+          en: `${changed} change${changed === 1 ? '' : 's'} saved`,
+        })
+      );
 
       const list = await apiClient.listEvents();
       setEvents(list);
       const chosen = list.find((e) => e.id === eventId);
       setPlan(chosen ? toPlan(chosen.meetings) : []);
       onChanged();
-    } catch {
-      toast.error(t({ ne: 'सेभ गर्न सकिएन', en: 'Could not save' }));
+    } catch (e: any) {
+      toast.error(errorText(e, t({ ne: 'सेभ गर्न सकिएन', en: 'Could not save' })));
     } finally { setSaving(false); }
   };
 
@@ -462,10 +453,17 @@ const NewMeetingModal: React.FC<{
       );
       return;
     }
+
+    // The gap is mandatory, so a running order typed too tight is put right
+    // here - with the organizer agreeing to the new times - rather than
+    // being bounced back by the server.
+    const plan = confirmSpacing([meeting], window.confirm);
+    if (!plan) return;
+
     try {
       setBusy(true);
       const created = await apiClient.createMeetingWithSessions(
-        toApiMeeting(meeting),
+        toApiMeeting(plan[0]),
         eventId || null
       );
       toast.success(
@@ -476,12 +474,7 @@ const NewMeetingModal: React.FC<{
       );
       onCreated();
     } catch (e: any) {
-      const detail = e.response?.data;
-      toast.error(
-        typeof detail === 'object' && detail
-          ? Object.values(detail).flat().join(' ')
-          : t({ ne: 'बनाउन सकिएन', en: 'Could not create it' })
-      );
+      toast.error(errorText(e, t({ ne: 'बनाउन सकिएन', en: 'Could not create it' })));
     } finally { setBusy(false); }
   };
 
@@ -535,7 +528,8 @@ const NewSessionModal: React.FC<{
 }> = ({ meeting, onClose, onCreated }) => {
   const { t } = useOrganizer();
 
-  // A new session picks up where the last one finished, in the same hall.
+  // A new session picks up after the last one has finished and the
+  // mandatory gap has passed, in the same hall.
   const last = meeting.sessions[meeting.sessions.length - 1];
   const [draft, setDraft] = useState<SessionDraft>(() => ({
     title: '',
@@ -545,7 +539,11 @@ const NewSessionModal: React.FC<{
     speaker_visibility: 'private',
     hall: last?.hall ?? '',
     starts_at: toLocalDay(
-      new Date(last ? last.startsAt + last.durationMinutes * 60000 : meeting.startsAt)
+      new Date(
+        last
+          ? last.startsAt + (last.durationMinutes + GAP_MINUTES) * 60000
+          : meeting.startsAt
+      )
     ),
     duration_minutes: 30,
   }));
@@ -581,7 +579,7 @@ const NewSessionModal: React.FC<{
       toast.success(t({ ne: 'सत्र थपियो', en: 'Session added' }));
       onCreated();
     } catch (e: any) {
-      toast.error(e.response?.data?.error ?? t({ ne: 'थप्न सकिएन', en: 'Could not add it' }));
+      toast.error(errorText(e, t({ ne: 'थप्न सकिएन', en: 'Could not add it' })));
     } finally { setBusy(false); }
   };
 

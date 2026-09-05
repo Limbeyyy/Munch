@@ -34,6 +34,7 @@ import {
   SessionAttendanceRow,
   SpeakerContact,
   ContactRequestRow,
+  UserRoles,
 } from '../types';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
@@ -123,6 +124,31 @@ class ApiClient {
 
   async getCurrentUser(): Promise<User> {
     const response = await this.client.get('/users/profile/');
+    return response.data;
+  }
+
+  /** What this person may do here: host, attend, or both. */
+  async getMyRoles(): Promise<UserRoles> {
+    const response = await this.client.get('/users/roles/');
+    return response.data;
+  }
+
+  /** Take up the free trial and become a host. */
+  async startHosting(): Promise<UserRoles> {
+    const response = await this.client.post('/users/start_hosting/');
+    return response.data;
+  }
+
+  /**
+   * Save a rearranged day in one request.
+   *
+   * One transaction rather than a patch per session, so a second organizer
+   * saving at the same moment cannot interleave into an overlap.
+   */
+  async rescheduleSessions(
+    changes: { id: string; starts_at?: string; duration_minutes?: number; hall?: string }[]
+  ): Promise<{ moved: Session[]; moved_count: number }> {
+    const response = await this.client.post('/sessions/reschedule/', { changes });
     return response.data;
   }
 

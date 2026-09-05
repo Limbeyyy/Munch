@@ -535,3 +535,36 @@ export interface ContactRequestRow {
   created_at: string;
   decided_at: string | null;
 }
+
+
+/** The ceiling a plan puts on what a host may run. `null` means no ceiling. */
+export interface PlanLimits {
+  events: number | null;
+  meetings: number | null;
+  meetings_per_event: number | null;
+  sessions_per_meeting: number | null;
+  attendees: number | null;
+}
+
+export interface HostPlan {
+  id: string;
+  name: string;
+  paid: boolean;
+  limits: PlanLimits;
+}
+
+/**
+ * Which portal a signed-in person belongs in.
+ *
+ * Guests never appear here: they reach a meeting by code or QR without an
+ * account, so there is nothing to describe.
+ */
+export interface UserRoles {
+  is_host: boolean;
+  is_attendee: boolean;
+  can_start_hosting: boolean;
+  portals: Array<'host' | 'attendee'>;
+  plan: HostPlan | null;
+  usage: { events: number; meetings: number; sessions: number } | null;
+  subscription: { status: string; current_period_end: string | null } | null;
+}

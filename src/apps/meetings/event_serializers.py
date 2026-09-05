@@ -191,7 +191,14 @@ def build_meeting(data, *, event=None, host=None):
     if owner is None:
         raise ValueError('A meeting needs a host, or an event to take one from.')
 
-    sessions_data = data.get('sessions') or []
+    from src.apps.meetings.scheduling import normalise_running_order
+
+    # The order the organizer typed is kept; the times are spaced out so the
+    # mandatory gap holds from the moment the meeting exists rather than
+    # having to be corrected afterwards.
+    sessions_data = normalise_running_order(
+        data.get('sessions') or [], first_start=data['scheduled_start']
+    )
     start = data['scheduled_start']
     end = start + timezone.timedelta(minutes=data.get('duration_minutes', 60))
 
@@ -228,6 +235,13 @@ def build_meeting(data, *, event=None, host=None):
         for index, s in enumerate(sessions_data)
     ])
 
+    # A new meeting has to fit the day it joins, not just itself: if it
+    # lands on an existing one, the later meetings give way. Same rule the
+    # agenda applies when a session is dragged about.
+    from src.apps.meetings.scheduling import reschedule
+
+    reschedule(meeting, {})
+    meeting.refresh_from_db()
     return meeting
 
 
