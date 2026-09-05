@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { EventMeeting, EventProgramme, MeetingParticipant, Session } from '../../types';
 import { Pair, useOrganizer } from '../i18n';
+import { ContactRequests } from '../ContactRequests';
 import { Card, Chip, Empty, Head, Panel, Tabs } from '../ui';
 import { SESSION_STATE_LABEL, SESSION_STATE_TONE, sessionState } from '../sessionState';
 
@@ -27,6 +28,18 @@ const nameOf = (
     || '—';
 };
 
+interface Slot { session: Session; meeting: EventMeeting; }
+
+/** One person, and every session of theirs in this programme. */
+interface Speaker {
+  key: string;
+  name: string;
+  email: string;
+  phone: string;
+  slots: Slot[];
+  visibility: 'public' | 'private' | 'mixed';
+}
+
 interface Props { meetings: any[]; currentUserId?: string; }
 
 /**
@@ -44,6 +57,8 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
   const [tab, setTab] = useState('speakers');
   const [participants, setParticipants] = useState<Record<string, MeetingParticipant[]>>({});
   const [changing, setChanging] = useState<string | null>(null);
+  const [settingVisibility, setSettingVisibility] = useState<string | null>(null);
+  const [pendingRequests, setPendingRequests] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -73,11 +88,28 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
 
   useEffect(() => { loadParticipants(); }, [loadParticipants]);
 
-  /** Speakers come from the running order, not from anybody's account. */
-  const speakers = useMemo(() => {
+  // Only the count, so the tab can say how many are waiting. The list
+  // itself is the shared component's business.
+  useEffect(() => {
+    if (!eventId) { setPendingRequests(0); return; }
+    apiClient
+      .listContactRequests({ event: eventId, status: 'pending' })
+      .then((rows) => setPendingRequests(rows.length))
+      .catch(() => setPendingRequests(0));
+  }, [eventId, tab]);
+
+  /**
+   * Speakers come from the running order, not from anybody's account.
+   *
+   * One speaker is one person, however many sessions they hold. Two people
+   * who happen to share a name are told apart by their email, which is the
+   * thing that actually identifies a contact; only where no email was
+   * given does the name have to stand in for one.
+   */
+  const speakers = useMemo((): Speaker[] => {
     if (!event) return [];
     const order: string[] = [];
-    const byName: Record<string, { session: Session; meeting: EventMeeting }[]> = {};
+    const byPerson: Record<string, Slot[]> = {};
 
     event.meetings.forEach((meeting) =>
       [...meeting.sessions]
@@ -85,11 +117,30 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
         .forEach((session) => {
           const name = session.speaker_name?.trim();
           if (!name) return;
-          if (!byName[name]) { byName[name] = []; order.push(name); }
-          byName[name].push({ session, meeting });
+          const email = session.speaker_contact?.email?.trim().toLowerCase();
+          const key = email || `name:${name.toLowerCase()}`;
+          if (!byPerson[key]) { byPerson[key] = []; order.push(key); }
+          byPerson[key].push({ session, meeting });
         })
     );
-    return order.map((name) => ({ name, slots: byName[name] }));
+
+    return order.map((key) => {
+      const slots = byPerson[key];
+      const first = slots[0].session;
+      const states = Array.from(
+        new Set(slots.map((s) => s.session.speaker_visibility))
+      );
+      return {
+        key,
+        name: first.speaker_name.trim(),
+        email: first.speaker_contact?.email ?? '',
+        phone: first.speaker_contact?.phone ?? '',
+        slots,
+        // A speaker held public on one session and private on another is
+        // neither: the card says so rather than picking one at random.
+        visibility: states.length === 1 ? states[0] : 'mixed',
+      };
+    });
   }, [event]);
 
   const unnamed = useMemo(() => {
@@ -126,6 +177,44 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
     } catch (e: any) {
       toast.error(e.response?.data?.error ?? t({ ne: 'भूमिका बदल्न सकिएन', en: 'Could not change the role' }));
     } finally { setChanging(null); }
+  };
+
+  /**
+   * List a speaker publicly, or take them back off the list.
+   *
+   * Every session this person holds moves together, because the setting
+   * describes the person rather than one appearance. The server is what
+   * actually enforces it; this reloads so the card shows what was stored
+   * rather than what was clicked.
+   */
+  const setVisibility = async (speaker: Speaker, visibility: 'public' | 'private') => {
+    if (speaker.visibility === visibility) return;
+    try {
+      setSettingVisibility(speaker.key);
+      await apiClient.setSpeakerVisibility(
+        speaker.slots.map((s) => s.session.id),
+        visibility
+      );
+      const list = await apiClient.listEvents();
+      setEvents(list);
+      toast.success(
+        visibility === 'public'
+          ? t({
+              ne: `${speaker.name} को सम्पर्क सबैले देख्न सक्छन्`,
+              en: `${speaker.name}'s details are open to attendees`,
+            })
+          : t({
+              ne: `${speaker.name} को सम्पर्क अब अनुरोध गरेर मात्र`,
+              en: `${speaker.name}'s details now go through you`,
+            })
+      );
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.error ?? t({ ne: 'बदल्न सकिएन', en: 'Could not change it' })
+      );
+    } finally {
+      setSettingVisibility(null);
+    }
   };
 
   const teamCount = Object.values(participants).reduce((n, rows) => n + rows.length, 0);
@@ -173,11 +262,19 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
             tabs={[
               { id: 'speakers', label: { ne: `वक्ता (${num(speakers.length)})`, en: `Speakers (${speakers.length})` } },
               { id: 'team', label: { ne: `टोली (${num(teamCount)})`, en: `Team (${teamCount})` } },
+              {
+                id: 'contacts',
+                label: pendingRequests > 0
+                  ? { ne: `सम्पर्क अनुरोध (${num(pendingRequests)})`, en: `Contact requests (${pendingRequests})` }
+                  : { ne: 'सम्पर्क अनुरोध', en: 'Contact requests' },
+              },
             ]}
           />
 
           {loading ? (
             <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>
+          ) : tab === 'contacts' ? (
+            <ContactRequests eventId={eventId || undefined} refreshMs={15000} />
           ) : tab === 'speakers' ? (
             <>
               {speakers.length === 0 ? (
@@ -190,41 +287,14 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
                   </p>
                 </Card>
               ) : (
-                <div className="grid gap-3.5" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))' }}>
-                  {speakers.map(({ name, slots }) => (
-                    <Card key={name} className="flex flex-col gap-3">
-                      <div className="flex gap-3 items-center">
-                        <span className="w-12 h-12 rounded-full bg-navy-700 text-white grid place-items-center text-[17px] font-bold flex-none">
-                          {name.charAt(0).toUpperCase()}
-                        </span>
-                        <div className="min-w-0">
-                          <h3 className="text-[16px] font-semibold truncate">{name}</h3>
-                          <p className="text-[12.5px] text-[#6E7C8E]">
-                            {t({
-                              ne: `${num(slots.length)} सत्र`,
-                              en: `${slots.length} session${slots.length === 1 ? '' : 's'}`,
-                            })}
-                          </p>
-                        </div>
-                      </div>
-
-                      {slots.map(({ session, meeting }) => (
-                        <div key={session.id} className="bg-cream rounded-lg px-3 py-2 text-[12.5px] text-ink-2">
-                          <span className="tabular-nums">{clock(session.starts_at)}</span>
-                          {' · '}
-                          {session.title}
-                          {session.hall && <span className="text-[#6E7C8E]"> · {session.hall}</span>}
-                          <span className="block text-[11.5px] text-[#6E7C8E] mt-0.5">
-                            {meeting.title}
-                            <span className="ms-1.5">
-                              <Chip tone={SESSION_STATE_TONE[sessionState(session)]}>
-                                {t(SESSION_STATE_LABEL[sessionState(session)])}
-                              </Chip>
-                            </span>
-                          </span>
-                        </div>
-                      ))}
-                    </Card>
+                <div className="grid gap-3.5" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))' }}>
+                  {speakers.map((speaker) => (
+                    <SpeakerCard
+                      key={speaker.key}
+                      speaker={speaker}
+                      busy={settingVisibility === speaker.key}
+                      onSetVisibility={(v) => setVisibility(speaker, v)}
+                    />
                   ))}
                 </div>
               )}
@@ -354,5 +424,126 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
         </>
       )}
     </>
+  );
+};
+
+
+/**
+ * One speaker, with what the organizer knows about them.
+ *
+ * The card carries this speaker's own details - name, how to reach them,
+ * the sessions they hold - drawn from their own sessions rather than from
+ * anything shared with the card next to it.
+ *
+ * The visibility control is a single choice with two values, not two
+ * switches, so "both at once" is not a state the interface can reach.
+ */
+const SpeakerCard: React.FC<{
+  speaker: Speaker;
+  busy: boolean;
+  onSetVisibility: (visibility: 'public' | 'private') => void;
+}> = ({ speaker, busy, onSetVisibility }) => {
+  const { t, num } = useOrganizer();
+  const { name, email, phone, slots, visibility } = speaker;
+
+  const CHOICES: { id: 'public' | 'private'; label: Pair }[] = [
+    { id: 'public', label: { ne: 'सार्वजनिक', en: 'Public' } },
+    { id: 'private', label: { ne: 'निजी', en: 'Private' } },
+  ];
+
+  return (
+    <Card className="flex flex-col gap-3">
+      <div className="flex gap-3 items-center">
+        <span className="w-12 h-12 rounded-full bg-navy-700 text-white grid place-items-center text-[17px] font-bold flex-none">
+          {name.charAt(0).toUpperCase()}
+        </span>
+        <div className="min-w-0">
+          <h3 className="text-[16px] font-semibold truncate">{name}</h3>
+          <p className="text-[12.5px] text-[#6E7C8E]">
+            {t({
+              ne: `${num(slots.length)} सत्र`,
+              en: `${slots.length} session${slots.length === 1 ? '' : 's'}`,
+            })}
+          </p>
+        </div>
+      </div>
+
+      {(email || phone) && (
+        <div className="text-[12.5px] text-ink-2 leading-relaxed">
+          {email && <div className="truncate" title={email}>{email}</div>}
+          {phone && <div className="tabular-nums">{phone}</div>}
+        </div>
+      )}
+
+      <div>
+        <p className="text-[11.5px] text-[#6E7C8E] mb-1.5">
+          {t({ ne: 'सम्पर्क कसले देख्ने', en: 'Contact visibility' })}
+        </p>
+        <div className="inline-flex rounded-lg border border-navy-800/15 overflow-hidden">
+          {CHOICES.map((choice) => {
+            const on = visibility === choice.id;
+            return (
+              <button
+                key={choice.id}
+                type="button"
+                disabled={busy}
+                aria-pressed={on}
+                onClick={() => onSetVisibility(choice.id)}
+                className={`px-3 py-1.5 text-[12.5px] transition disabled:opacity-60 ${
+                  on
+                    ? 'bg-navy-700 text-white font-medium'
+                    : 'bg-white text-ink-2 hover:bg-cream'
+                }`}
+              >
+                {t(choice.label)}
+              </button>
+            );
+          })}
+        </div>
+
+        <p className="text-[11.5px] text-[#6E7C8E] mt-1.5">
+          {visibility === 'public'
+            ? t({
+                ne: 'सत्र सकिएपछि सहभागीहरूले सम्पर्क देख्न सक्छन्।',
+                en: 'Attendees can see the contact once the session is over.',
+              })
+            : visibility === 'private'
+            ? t({
+                ne: 'सहभागीले अनुरोध गर्नुपर्छ, र तपाईंले अनुमति दिनुपर्छ।',
+                en: 'Attendees must ask, and you decide.',
+              })
+            : t({
+                ne: 'यिनका सत्रहरूमा फरक-फरक छ — कुनै एउटा छान्नुहोस्।',
+                en: 'Their sessions disagree — pick one to settle them.',
+              })}
+        </p>
+      </div>
+
+      {slots.map(({ session, meeting }) => (
+        <div key={session.id} className="bg-cream rounded-lg px-3 py-2 text-[12.5px] text-ink-2">
+          <span className="tabular-nums">{clock(session.starts_at)}</span>
+          {' · '}
+          {session.title}
+          {session.hall && <span className="text-[#6E7C8E]"> · {session.hall}</span>}
+          <span className="block text-[11.5px] text-[#6E7C8E] mt-0.5">
+            {meeting.title}
+            <span className="ms-1.5">
+              <Chip tone={SESSION_STATE_TONE[sessionState(session)]}>
+                {t(SESSION_STATE_LABEL[sessionState(session)])}
+              </Chip>
+            </span>
+            {visibility === 'mixed' && (
+              <span className="ms-1.5">
+                <Chip tone={session.speaker_visibility === 'public' ? 'ok' : 'draft'}>
+                  {session.speaker_visibility === 'public'
+                    ? t({ ne: 'सार्वजनिक', en: 'Public' })
+                    : t({ ne: 'निजी', en: 'Private' })}
+                </Chip>
+              </span>
+            )}
+          </span>
+        </div>
+      ))}
+    </Card>
   );
 };

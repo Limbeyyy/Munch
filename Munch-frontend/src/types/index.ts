@@ -430,6 +430,11 @@ export interface Session {
   hall: string;
   /** Whether attendees may simply read the speaker's details, or must ask. */
   speaker_visibility: 'public' | 'private';
+  /**
+   * The speaker's details, sent only to the host of the meeting.
+   * Null for everybody else, who read them through the contact endpoint.
+   */
+  speaker_contact?: { email: string; phone: string } | null;
   starts_at: string;
   duration_minutes: number;
   ends_at: string;
