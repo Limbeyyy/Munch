@@ -35,6 +35,7 @@ def _require_speaker_details(attrs):
 class SessionSerializer(serializers.ModelSerializer):
     ends_at = serializers.DateTimeField(read_only=True)
     attendance_count = serializers.SerializerMethodField()
+    speaker_contact = serializers.SerializerMethodField()
 
     def validate(self, attrs):
         # Only on the way in. A patch that leaves the speaker alone should
@@ -48,12 +49,13 @@ class SessionSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'meeting', 'title', 'description', 'speaker_name', 'hall',
             'speaker_email', 'speaker_phone', 'speaker_visibility',
+            'speaker_contact',
             'starts_at', 'duration_minutes', 'ends_at', 'position',
             'status', 'started_at', 'ended_at', 'attendance_count',
             'created_at', 'updated_at',
         ]
         read_only_fields = [
-            'id', 'ends_at', 'started_at', 'ended_at',
+            'id', 'ends_at', 'started_at', 'ended_at', 'speaker_contact',
             'attendance_count', 'created_at', 'updated_at',
         ]
         # Writable, but never read back with the session: who may see a
@@ -65,6 +67,23 @@ class SessionSerializer(serializers.ModelSerializer):
 
     def get_attendance_count(self, obj):
         return obj.attendance.count()
+
+    def get_speaker_contact(self, obj):
+        """The speaker's details, for the host of this meeting and nobody else.
+
+        The organizer needs to see what they typed - it is their own
+        programme - and needs it on the card that offers to make it public.
+        Everyone else reads the details through the session's own contact
+        endpoint, which weighs up visibility and approvals; this field is
+        blank for them however they ask.
+        """
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if user is None or not user.is_authenticated:
+            return None
+        if str(obj.meeting.host_id) != str(user.id):
+            return None
+        return {'email': obj.speaker_email, 'phone': obj.speaker_phone}
 
 
 class SessionWriteSerializer(serializers.ModelSerializer):

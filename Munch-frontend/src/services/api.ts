@@ -358,7 +358,26 @@ class ApiClient {
   }
 
   /** Requests waiting on the host, for one meeting or the whole programme. */
-  async listContactRequests(params: { meeting?: string; status?: string } = {}): Promise<ContactRequestRow[]> {
+  /**
+   * List a speaker publicly, or take them back off the list.
+   *
+   * A speaker is one person across however many sessions they hold, so
+   * every session of theirs moves together.
+   */
+  async setSpeakerVisibility(
+    sessionIds: string[],
+    visibility: 'public' | 'private'
+  ): Promise<{ visibility: string; sessions: Session[]; changed: number }> {
+    const response = await this.client.post('/sessions/set_visibility/', {
+      session_ids: sessionIds,
+      visibility,
+    });
+    return response.data;
+  }
+
+  async listContactRequests(
+    params: { meeting?: string; event?: string; status?: string } = {}
+  ): Promise<ContactRequestRow[]> {
     const response = await this.client.get('/sessions/contact_requests/', { params });
     return response.data;
   }

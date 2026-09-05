@@ -461,6 +461,64 @@ class SessionViewSet(viewsets.ModelViewSet):
 
         return Response(body)
 
+    @action(detail=False, methods=['post'], url_path='set_visibility')
+    def set_visibility(self, request):
+        """List a speaker publicly, or take them back off the list.
+
+        A speaker is one person across however many sessions they appear
+        in, so the organizer's card sets all of them at once rather than
+        making them find each session. Public and private are one field
+        with two values, not two switches - they cannot both be on.
+
+        Turning a speaker private takes effect at once: the contact
+        endpoint reads the stored visibility every time, so nothing stays
+        readable on the strength of having been public a moment ago.
+        Approvals already given stand, because an approval is a decision
+        about a person, not about the setting that prompted it.
+        """
+        wanted = request.data.get('visibility')
+        if wanted not in Session.SpeakerVisibility.values:
+            return Response(
+                {'error': "visibility must be 'public' or 'private'"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ids = request.data.get('session_ids') or []
+        if not isinstance(ids, list) or not ids:
+            return Response(
+                {'error': 'Name the sessions under "session_ids".'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        sessions = list(self.get_queryset().filter(id__in=ids))
+        if len(sessions) != len(set(str(i) for i in ids)):
+            return Response(
+                {'error': 'One of those sessions is not in your programme'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        for session in sessions:
+            if str(session.meeting.host_id) != str(request.user.id):
+                return Response(
+                    {'error': 'Only the host can change a speaker\'s visibility'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        changed = [s for s in sessions if s.speaker_visibility != wanted]
+        for session in changed:
+            session.speaker_visibility = wanted
+            session.save(update_fields=['speaker_visibility', 'updated_at'])
+
+        logger.info(
+            f"Speaker visibility set to {wanted} on {len(changed)} session(s)"
+        )
+        return Response({
+            'visibility': wanted,
+            'sessions': SessionSerializer(
+                sessions, many=True, context=self.get_serializer_context()
+            ).data,
+            'changed': len(changed),
+        })
+
     @action(detail=True, methods=['post'], url_path='request_contact')
     def request_contact(self, request, pk=None):
         """Ask the host to pass on a private speaker's details."""
@@ -541,11 +599,19 @@ class SessionViewSet(viewsets.ModelViewSet):
             else:
                 requests = requests.filter(session__meeting_id=meeting_ref)
 
+        event_id = request.query_params.get('event')
+        if event_id:
+            requests = requests.filter(session__meeting__event_id=event_id)
+
         state = request.query_params.get('status')
         if state:
             requests = requests.filter(status=state)
 
-        return Response(ContactRequestSerializer(requests, many=True).data)
+        return Response(
+            ContactRequestSerializer(
+                requests.order_by('-created_at'), many=True
+            ).data
+        )
 
     @action(detail=True, methods=['get'])
     def attendance(self, request, pk=None):
