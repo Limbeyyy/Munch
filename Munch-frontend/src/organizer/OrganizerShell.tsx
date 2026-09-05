@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { Pair, useOrganizer } from './i18n';
 import { Btn, Ic } from './ui';
@@ -57,7 +56,6 @@ interface Props {
 export const OrganizerShell: React.FC<Props> = ({
   view, onNavigate, badges = {}, eventName, onOpenA11y, children,
 }) => {
-  const navigate = useNavigate();
   const { logout } = useAuthStore();
   const { lang, setLang, t, a11y } = useOrganizer();
   const [railOpen, setRailOpen] = useState(false);
@@ -70,8 +68,9 @@ export const OrganizerShell: React.FC<Props> = ({
 
   return (
     <div
-      className={`min-h-screen bg-cream text-ink font-sans ${a11y.big ? 'text-[16.5px]' : 'text-[14.5px]'}
-        ${a11y.calm ? '[&_*]:!transition-none [&_*]:!animate-none' : ''}`}
+      // Accessibility is applied at the document root now, so the shell
+      // only has to state its own base size.
+      className="min-h-screen bg-cream text-ink font-sans text-[14.5px]"
     >
       {/* Top bar */}
       <header className="sticky top-0 z-40 bg-navy-900 text-white flex items-center gap-3 px-4 py-2">
@@ -134,12 +133,6 @@ export const OrganizerShell: React.FC<Props> = ({
             <Ic d="M12 4.5v.01M4 8h16M12 8v6M12 14l-3 6M12 14l3 6" />
           </button>
 
-          <button
-            onClick={() => navigate('/app')}
-            className="hidden md:inline-flex px-3 py-1.5 rounded-lg border border-white/35 text-[13px] hover:bg-white/10"
-          >
-            {t({ ne: 'सहभागीले देख्ने रूप', en: 'Attendee view' })}
-          </button>
           <button
             onClick={logout}
             className="px-3 py-1.5 rounded-lg border border-white/25 text-[13px] hover:bg-white/10"
