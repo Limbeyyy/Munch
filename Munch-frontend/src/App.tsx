@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from './store/authStore';
+import { apiClient } from './services/api';
 import { LoginPage } from './pages/LoginPage';
 import { PricingPage } from './pages/PricingPage';
 import { OrganizerPage } from './pages/OrganizerPage';
@@ -48,14 +49,43 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
-function App() {
-  const { getCurrentUser, isAuthenticated } = useAuthStore();
+/**
+ * The organizer panel, kept to the people who actually host.
+ *
+ * Being invited to a programme now puts it in your lists, so the panel has
+ * to ask the server what standing you hold rather than infer it from what
+ * you can see.
+ */
+const HostRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [allowed, setAllowed] = React.useState<boolean | null>(null);
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      getCurrentUser();
-    }
-  }, [isAuthenticated, getCurrentUser]);
+    let cancelled = false;
+    apiClient
+      .getMyRoles()
+      .then((roles) => { if (!cancelled) setAllowed(roles.is_host); })
+      .catch(() => { if (!cancelled) setAllowed(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (allowed === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p>Loading...</p>
+      </div>
+    );
+  }
+  return allowed ? <>{children}</> : <Navigate to="/" replace />;
+};
+
+function App() {
+  const { getCurrentUser } = useAuthStore();
+
+  // Once, on startup. Restoring the session is not something to retry on
+  // every render, and the store settles `ready` whichever way it goes.
+  useEffect(() => {
+    getCurrentUser();
+  }, [getCurrentUser]);
 
   return (
     <>
@@ -68,18 +98,12 @@ function App() {
           <Route path="/guest/waiting" element={<GuestWaitingPage />} />
           <Route path="/guest/meeting" element={<GuestMeetingPage />} />
           <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <DashboardPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
             path="/organizer"
             element={
               <ProtectedRoute>
-                <OrganizerPage />
+                <HostRoute>
+                  <OrganizerPage />
+                </HostRoute>
               </ProtectedRoute>
             }
           />

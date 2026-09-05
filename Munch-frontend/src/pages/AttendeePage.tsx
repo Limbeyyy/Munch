@@ -6,6 +6,7 @@ import { useAuthStore } from '../store/authStore';
 import { EventMeeting, EventProgramme } from '../types';
 import { OrganizerProvider, useOrganizer } from '../organizer/i18n';
 import { Card, Tabs } from '../organizer/ui';
+import { rememberPortal } from './HomeRedirect';
 import { AttendeeShell } from '../attendee/AttendeeShell';
 import { Spine, SpineItem } from '../attendee/Spine';
 import { SessionDrawer } from '../attendee/SessionDrawer';
@@ -38,12 +39,19 @@ const AttendeeInner: React.FC = () => {
   const [day, setDay] = useState('');
   const [canOrganize, setCanOrganize] = useState(false);
 
+  useEffect(() => {
+    // Only actual host standing earns the organizer panel — being invited to
+    // someone else's programme puts it in the list without granting it.
+    apiClient
+      .getMyRoles()
+      .then((roles) => setCanOrganize(roles.is_host))
+      .catch(() => setCanOrganize(false));
+  }, []);
+
   const load = useCallback(async () => {
     try {
       const list = await apiClient.listEvents();
       setEvents(list);
-      // Somebody who runs a programme gets the organizer panel offered.
-      setCanOrganize(list.length > 0);
       setEventId((prev) => prev || list[0]?.id || '');
     } catch {
       toast.error(t({ ne: 'कार्यक्रम ल्याउन सकिएन', en: 'Could not load the programme' }));
@@ -150,7 +158,11 @@ const AttendeeInner: React.FC = () => {
               ].filter(Boolean).join(' · ')
             : undefined
         }
-        onSwitchToOrganizer={canOrganize ? () => navigate('/organizer') : undefined}
+        onSwitchToOrganizer={
+          canOrganize
+            ? () => { rememberPortal('host'); navigate('/organizer'); }
+            : undefined
+        }
         onLeave={logout}
       >
         {loading ? (
