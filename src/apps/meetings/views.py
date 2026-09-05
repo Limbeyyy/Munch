@@ -1,4 +1,7 @@
 import logging
+
+from django.core.exceptions import ValidationError
+from rest_framework.permissions import AllowAny
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action, permission_classes
 from rest_framework.response import Response
@@ -178,11 +181,13 @@ class MeetingViewSet(viewsets.ModelViewSet):
         if self.action == 'join':
             return Meeting.objects.all()
 
-        user = self.request.user
-        return Meeting.objects.filter(
-            models.Q(host=user) |
-            models.Q(participants__user=user, participants__is_active=True)
-        ).distinct()
+        from src.apps.meetings.access import meetings_visible_to
+
+        return (
+            Meeting.objects.filter(meetings_visible_to(self.request.user))
+            .distinct()
+            .order_by('-scheduled_start')
+        )
 
     def get_object(self):
         """Get object by meeting_code or pk"""
@@ -282,6 +287,12 @@ class MeetingViewSet(viewsets.ModelViewSet):
                 role=serializer.validated_data.get('role', MeetingParticipant.Role.ATTENDEE)
             )
             
+            # Somebody arriving on an invitation has now accepted it, which
+            # is what makes the expected headcount mean anything.
+            meeting.invites.filter(
+                email__iexact=request.user.email, joined_at__isnull=True
+            ).update(joined_at=participant.joined_at, joined_user=request.user)
+
             # Record attendance to Drive. Optional: joining must not fail if
             # Drive is unavailable.
             try:
@@ -790,6 +801,44 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
         deliver_moderated_message(meeting, message, decision)
         return Response(ChatMessageSerializer(message).data)
+
+    @action(detail=True, methods=['get'], url_path='qr', permission_classes=[AllowAny])
+    def qr(self, request, pk=None):
+        """The join link as a QR square, for a door or a projector.
+
+        Served openly: it encodes the same link the host hands out, and a
+        code alone still gets a guest no further than the waiting room.
+        """
+        import io
+
+        import qrcode
+        import qrcode.image.svg
+        from django.http import HttpResponse
+
+        meeting = Meeting.objects.filter(meeting_code=pk).first()
+        if meeting is None:
+            try:
+                meeting = Meeting.objects.filter(pk=pk).first()
+            except (ValueError, ValidationError):
+                meeting = None
+        if meeting is None:
+            return Response(
+                {'error': 'Meeting not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        target = request.query_params.get('url') or (
+            f"{request.scheme}://{request.get_host()}/login?join={meeting.meeting_code}"
+        )
+
+        image = qrcode.make(target, image_factory=qrcode.image.svg.SvgPathImage, box_size=12)
+        buffer = io.BytesIO()
+        image.save(buffer)
+
+        response = HttpResponse(buffer.getvalue(), content_type='image/svg+xml')
+        # The code does not change, so a scanner may keep the square.
+        response['Cache-Control'] = 'public, max-age=3600'
+        return response
 
     @action(detail=False, methods=['post'], url_path='with_sessions')
     def with_sessions(self, request):

@@ -33,10 +33,14 @@ class EventViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # An organizer sees the programmes they run. Meetings and sessions
+        # An organizer sees the programmes they run; everyone else sees the
+        # ones they were invited into or have joined. Meetings and sessions
         # are prefetched because the list view always renders the tree.
+        from src.apps.meetings.access import events_visible_to
+
         return (
-            Event.objects.filter(organizer=self.request.user)
+            Event.objects.filter(events_visible_to(self.request.user))
+            .distinct()
             .prefetch_related(
                 Prefetch(
                     'meetings',
@@ -58,6 +62,76 @@ class EventViewSet(viewsets.ModelViewSet):
             EventSerializer(event, context=self.get_serializer_context()).data,
             status=status.HTTP_201_CREATED,
         )
+
+    @action(detail=True, methods=['get', 'post'])
+    def invites(self, request, pk=None):
+        """Who has been asked to this programme.
+
+        An invitation is to the event, so it reaches every meeting inside
+        it: being asked to the day should not mean being asked to each
+        room separately. Meetings added later are covered when the invite
+        list is next read.
+        """
+        from src.apps.meetings.models import MeetingInvite
+        from src.apps.meetings.serializers import MeetingInviteSerializer
+
+        event = self.get_object()
+        if str(event.organizer_id) != str(request.user.id):
+            return Response(
+                {'error': 'Only the organizer can invite people to this event'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if request.method == 'POST':
+            emails = request.data.get('emails') or []
+            if isinstance(emails, str):
+                emails = [emails]
+            emails = [e.strip().lower() for e in emails if e and e.strip()]
+            if not emails:
+                return Response(
+                    {'error': 'Give at least one email address'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if len(emails) > 500:
+                return Response(
+                    {'error': 'That is more than 500 addresses in one go'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            added = 0
+            for meeting in event.meetings.all():
+                for email in emails:
+                    _, created = MeetingInvite.objects.get_or_create(
+                        meeting=meeting,
+                        email=email,
+                        defaults={'invited_by': request.user},
+                    )
+                    added += int(created)
+                    _match_existing_participant(meeting, email)
+
+            logger.info(f"Invited {len(emails)} address(es) to event {event.id}")
+
+        invites = MeetingInvite.objects.filter(meeting__event=event).select_related(
+            'meeting', 'joined_user'
+        )
+
+        # One row per person, since the invitation was to the day.
+        by_email = {}
+        for invite in invites:
+            row = by_email.setdefault(invite.email, {
+                'email': invite.email,
+                'meetings': 0,
+                'joined': False,
+                'invited_at': invite.created_at,
+            })
+            row['meetings'] += 1
+            row['joined'] = row['joined'] or invite.joined_at is not None
+
+        return Response({
+            'invited': sorted(by_email.values(), key=lambda r: r['email']),
+            'total_invited': len(by_email),
+            'total_joined': sum(1 for r in by_email.values() if r['joined']),
+        })
 
     @action(detail=True, methods=['post'])
     def meetings(self, request, pk=None):
@@ -81,14 +155,14 @@ class SessionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # Visible to the people who can already see the meeting: its host,
-        # and anyone taking part in it.
-        from django.db.models import Q
+        # A session is visible to whoever may see the meeting holding it.
+        from src.apps.meetings.access import sessions_visible_to
 
-        user = self.request.user
-        queryset = Session.objects.filter(
-            Q(meeting__host=user) | Q(meeting__participants__user=user)
-        ).distinct().select_related('meeting')
+        queryset = (
+            Session.objects.filter(sessions_visible_to(self.request.user))
+            .distinct()
+            .select_related('meeting')
+        )
 
         # A meeting is addressed by its id or its room code, and only one of
         # those parses as a UUID.
@@ -344,6 +418,29 @@ class SessionViewSet(viewsets.ModelViewSet):
             SessionAttendance.objects.filter(**lookup).delete()
 
         return Response({'present': bool(present)})
+
+
+def _match_existing_participant(meeting, email):
+    """Tie an invitation to somebody who had already joined.
+
+    Inviting an address after the person walked in should still count as
+    them having turned up.
+    """
+    from src.apps.meetings.models import MeetingInvite
+
+    invite = MeetingInvite.objects.filter(
+        meeting=meeting, email__iexact=email, joined_at__isnull=True
+    ).first()
+    if invite is None:
+        return
+
+    participant = meeting.participants.filter(
+        user__email__iexact=email
+    ).select_related('user').first()
+    if participant:
+        invite.joined_at = participant.joined_at
+        invite.joined_user = participant.user
+        invite.save(update_fields=['joined_at', 'joined_user'])
 
 
 def _session_is_over(session):
