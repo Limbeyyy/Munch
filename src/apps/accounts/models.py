@@ -120,3 +120,51 @@ class GoogleConnectionScope(models.Model):
 
     def __str__(self):
         return f"{self.scope} for {self.connection.user.email}"
+
+class HostAccount(models.Model):
+    """Marks a user as a host, and says what they are paying for.
+
+    Its presence is what makes someone a host: choosing to host for the first
+    time creates one on the free trial. The plan named here only counts while
+    the subscription is live — a lapsed one falls back to free rather than
+    locking the host out of what they already run.
+    """
+    class Plan(models.TextChoices):
+        FREE = 'free', 'Free'
+        STARTER = 'starter', 'Starter'
+        GROWTH = 'growth', 'Growth'
+        BUSINESS = 'business', 'Business'
+        ENTERPRISE = 'enterprise', 'Enterprise'
+
+    class Status(models.TextChoices):
+        TRIAL = 'trial', 'Trial'
+        ACTIVE = 'active', 'Active'
+        CANCELED = 'canceled', 'Canceled'
+        EXPIRED = 'expired', 'Expired'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='host_account')
+
+    plan = models.CharField(max_length=20, choices=Plan.choices, default=Plan.FREE)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.TRIAL)
+
+    started_at = models.DateTimeField(auto_now_add=True)
+    current_period_end = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'host_accounts'
+
+    def __str__(self):
+        return f"{self.user.email} - {self.plan}"
+
+    @property
+    def is_current(self) -> bool:
+        """Whether the paid plan is still in force."""
+        from django.utils import timezone
+
+        if self.status not in (self.Status.TRIAL, self.Status.ACTIVE):
+            return False
+        if self.current_period_end and self.current_period_end < timezone.now():
+            return False
+        return True

@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, GoogleConnection
+from .models import User, GoogleConnection, HostAccount
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
@@ -29,3 +29,12 @@ class GoogleConnectionAdmin(admin.ModelAdmin):
     list_filter = ('provider', 'is_active')
     search_fields = ('user__email', 'provider_subject')
     readonly_fields = ('_access_token', '_refresh_token', 'created_at', 'updated_at')
+
+
+@admin.register(HostAccount)
+class HostAccountAdmin(admin.ModelAdmin):
+    """Who hosts, and what they are paying for."""
+    list_display = ('user', 'plan', 'status', 'current_period_end', 'started_at')
+    list_filter = ('plan', 'status')
+    search_fields = ('user__email',)
+    ordering = ('-started_at',)

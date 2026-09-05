@@ -37,6 +37,30 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
             serializer.save()
             return Response(serializer.data)
     
+    @action(detail=False, methods=['get'])
+    def roles(self, request):
+        """Say whether this person hosts, attends, or both, and on what plan.
+
+        The sign-in chooser reads this to decide which portals to offer, and
+        the organizer dashboard reads the plan to show what is left of it.
+        """
+        from src.apps.accounts.roles import roles_payload
+
+        return Response(roles_payload(request.user))
+
+    @action(detail=False, methods=['post'])
+    def start_hosting(self, request):
+        """Take up the free trial. Hosting again later is a no-op, not an error."""
+        from src.apps.accounts.models import HostAccount
+        from src.apps.accounts.roles import roles_payload
+
+        HostAccount.objects.get_or_create(
+            user=request.user,
+            defaults={'plan': HostAccount.Plan.FREE, 'status': HostAccount.Status.TRIAL},
+        )
+        request.user.refresh_from_db()
+        return Response(roles_payload(request.user))
+
     @action(detail=False, methods=['post'])
     @rate_limit(requests=5, period=60)
     def disconnect_google(self, request):
