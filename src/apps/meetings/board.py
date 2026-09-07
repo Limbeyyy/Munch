@@ -17,6 +17,15 @@ LET_THROUGH = [
 ]
 
 
+def _answerer(message):
+    """Who answered, by the name the room would recognise."""
+    person = message.answered_by
+    if person is None:
+        return ''
+    full = f"{person.first_name} {person.last_name}".strip()
+    return full or person.email
+
+
 def _entry(message):
     return {
         'id': str(message.id),
@@ -24,6 +33,10 @@ def _entry(message):
         'asked_by': message.sender_label,
         'asker_is_guest': message.guest_sender_id is not None,
         'was_direct': message.is_direct,
+        # A question without its answer is half an exchange.
+        'answer': message.answer,
+        'answered_by': _answerer(message),
+        'answered_at': message.answered_at,
         # Who a question was put to, shown at the host's request: on a
         # board of questions it usually says which speaker is meant to
         # answer. It appears only for a message the host chose to publish.
@@ -36,7 +49,8 @@ def board_for(meeting) -> dict:
     sorted_messages = (
         ChatMessage.objects.filter(meeting=meeting, moderation_status__in=LET_THROUGH)
         .exclude(topic=ChatMessage.Topic.NONE)
-        .select_related('sender', 'guest_sender', 'recipient', 'guest_recipient')
+        .select_related('sender', 'guest_sender', 'recipient', 'guest_recipient',
+                        'answered_by')
         .order_by('created_at')
     )
     return {

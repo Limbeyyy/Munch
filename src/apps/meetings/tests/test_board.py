@@ -451,3 +451,111 @@ class ReviewedMessagesTests(TestCase):
             f'{API}/meetings/{self.meeting.id}/reviewed_messages/'
         )
         self.assertEqual(response.status_code, 403)
+
+
+class AnsweringTests(TestCase):
+    """A question on the board, and the answer that completes it."""
+
+    def setUp(self):
+        self.host = make_host('host@example.com')
+        self.asker = make_host('asker@example.com')
+        self.event = make_event(self.host)
+        self.meeting = make_meeting(self.host, self.event, start=timezone.now())
+        make_session(self.meeting, timezone.now(), 60)
+        MeetingParticipant.objects.create(
+            meeting=self.meeting, user=self.asker, role='attendee'
+        )
+        self.host_client = signed_in(self.host)
+        self.asker_client = signed_in(self.asker)
+
+        self.question = ChatMessage.objects.create(
+            meeting=self.meeting, sender=self.asker, recipient=self.host,
+            body='How is the grant released?',
+            moderation_status=ChatMessage.Moderation.APPROVED,
+            topic=ChatMessage.Topic.FAQ,
+        )
+
+    def answer(self, text, client=None):
+        return (client or self.host_client).post(
+            f'{API}/meetings/{self.meeting.id}/answer_message/',
+            {'message_id': str(self.question.id), 'answer': text},
+            format='json',
+        )
+
+    def board(self, client=None):
+        return (client or self.asker_client).get(
+            f'{API}/meetings/{self.meeting.id}/board/'
+        ).json()
+
+    def test_a_question_starts_unanswered(self):
+        self.assertEqual(self.board()['faq'][0]['answer'], '')
+
+    def test_the_host_answers_it(self):
+        response = self.answer('Straight to municipalities from 17 September.')
+
+        self.assertEqual(response.status_code, 200)
+        entry = self.board()['faq'][0]
+        self.assertEqual(entry['answer'], 'Straight to municipalities from 17 September.')
+
+    def test_the_answer_says_who_gave_it(self):
+        self.answer('Straight to municipalities.')
+
+        self.assertEqual(self.board()['faq'][0]['answered_by'], self.host.email)
+
+    def test_everyone_reading_the_board_sees_the_answer(self):
+        self.answer('Straight to municipalities.')
+
+        for client in (self.host_client, self.asker_client):
+            self.assertEqual(
+                self.board(client)['faq'][0]['answer'], 'Straight to municipalities.'
+            )
+
+    def test_an_answer_can_be_corrected_later(self):
+        self.answer('First attempt.')
+
+        self.answer('Corrected: from 17 September.')
+
+        self.assertEqual(self.board()['faq'][0]['answer'], 'Corrected: from 17 September.')
+
+    def test_clearing_the_answer_clears_who_gave_it(self):
+        self.answer('First attempt.')
+
+        self.answer('   ')
+
+        entry = self.board()['faq'][0]
+        self.assertEqual(entry['answer'], '')
+        self.assertEqual(entry['answered_by'], '')
+
+    def test_a_suggestion_can_be_answered_too(self):
+        self.question.topic = ChatMessage.Topic.SUGGESTION
+        self.question.save(update_fields=['topic'])
+
+        self.answer('Noted - a second desk goes in tomorrow.')
+
+        self.assertEqual(
+            self.board()['suggestions'][0]['answer'],
+            'Noted - a second desk goes in tomorrow.',
+        )
+
+    def test_something_not_on_the_board_cannot_be_answered(self):
+        # An answer the room cannot see would be talking to nobody.
+        off = ChatMessage.objects.create(
+            meeting=self.meeting, sender=self.asker, recipient=self.host,
+            body='A private word',
+            moderation_status=ChatMessage.Moderation.APPROVED,
+        )
+
+        response = self.host_client.post(
+            f'{API}/meetings/{self.meeting.id}/answer_message/',
+            {'message_id': str(off.id), 'answer': 'Not visible'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()['code'], 'not_on_board')
+
+    def test_only_the_host_answers(self):
+        response = self.answer('Mine to answer', client=self.asker_client)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.board()['faq'][0]['answer'], '')

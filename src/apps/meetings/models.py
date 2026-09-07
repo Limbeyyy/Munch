@@ -275,6 +275,20 @@ class ChatMessage(models.Model):
         help_text="Questions and suggestions the host has put on the board",
     )
 
+    # The answer given from the front of the room. A question on the board
+    # without one is only half of an exchange, and the answer is usually
+    # what the rest of the room actually came for. Written whenever it
+    # suits - mid-meeting, or days later.
+    answer = models.TextField(blank=True)
+    answered_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        related_name='answered_chat_messages',
+        null=True,
+        blank=True,
+    )
+    answered_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         db_table = 'meeting_chat_messages'
         ordering = ['created_at']
