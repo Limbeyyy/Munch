@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
+import { ACTIVE_POLL_MS, QUEUE_POLL_MS } from '../../services/polling';
 import { ChatMessage, ChatPerson, ChatSettings, EventMeeting } from '../../types';
 import { useOrganizer } from '../../organizer/i18n';
 import { Btn, Card, Chip, Tabs } from '../../organizer/ui';
+import { MessageBoard } from '../../organizer/MessageBoard';
+import { DiscussionHub } from './DiscussionHub';
 import { HubSocket, openHubSocket } from '../HubSocket';
 
 interface Props {
@@ -23,7 +26,7 @@ export const HubView: React.FC<Props> = ({ meetings, guestToken, myName }) => {
   const [meetingId, setMeetingId] = useState(meetings[0]?.id ?? '');
   const meeting = meetings.find((m) => m.id === meetingId) ?? meetings[0];
 
-  const [tab, setTab] = useState<'room' | 'direct'>('room');
+  const [tab, setTab] = useState<'room' | 'direct' | 'board' | 'discuss'>('room');
   const [settings, setSettings] = useState<ChatSettings>({
     chat_enabled: false, direct_messages_enabled: false,
   });
@@ -69,7 +72,7 @@ export const HubView: React.FC<Props> = ({ meetings, guestToken, myName }) => {
 
   useEffect(() => {
     load();
-    const id = setInterval(load, 8000);
+    const id = setInterval(load, ACTIVE_POLL_MS);
     return () => clearInterval(id);
   }, [load]);
 
@@ -151,14 +154,26 @@ export const HubView: React.FC<Props> = ({ meetings, guestToken, myName }) => {
 
       <Tabs
         active={tab}
-        onChange={(id) => setTab(id as 'room' | 'direct')}
+        onChange={(id) => setTab(id as 'room' | 'direct' | 'board' | 'discuss')}
         tabs={[
           { id: 'room', label: { ne: 'कोठाको कुराकानी', en: 'The room' } },
           { id: 'direct', label: { ne: 'वक्तालाई सिधा', en: 'A word with a speaker' } },
+          { id: 'discuss', label: { ne: 'सहभागी हब', en: 'Discussion' } },
+          { id: 'board', label: { ne: 'प्रश्न र सुझाव', en: 'Questions & suggestions' } },
         ]}
       />
 
-      {!settings.chat_enabled ? (
+      {/* The board is what the organizer chose to put up, so it is readable
+          whether or not the chat itself is open. */}
+      {tab === 'discuss' ? (
+        <DiscussionHub meetings={meetings} guestToken={guestToken} />
+      ) : tab === 'board' ? (
+        <MessageBoard
+          meetingId={guestToken ? undefined : meeting?.id}
+          guestToken={guestToken}
+          refreshMs={QUEUE_POLL_MS}
+        />
+      ) : !settings.chat_enabled ? (
         <Card className="text-center py-10">
           <p className="text-[#6E7C8E]">
             {t({
