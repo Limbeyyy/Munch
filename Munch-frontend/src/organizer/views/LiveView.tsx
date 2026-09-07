@@ -2,7 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { AttendanceReport, ChatMessage, Meeting, MeetingParticipant } from '../../types';
+import { ACTIVE_POLL_MS } from '../../services/polling';
+import {
+  AttendanceReport, ChatMessage, GuestAttendee, Meeting, MeetingParticipant,
+} from '../../types';
 import { useOrganizer } from '../i18n';
 import { Btn, Chip, Card, Empty, Head, Kpi, Panel, Switch } from '../ui';
 
@@ -36,24 +39,54 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
   const [pending, setPending] = useState<ChatMessage[]>([]);
   const [elapsed, setElapsed] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [knocking, setKnocking] = useState<GuestAttendee[]>([]);
+  const [deciding, setDeciding] = useState<string | null>(null);
+
+  /**
+   * Let somebody in, or turn them away.
+   *
+   * A guest can knock from the moment the room opens, whether or not
+   * anybody is here to answer. The requests wait in this list rather than
+   * in a notification that has already gone, so a host arriving late still
+   * finds everyone who came early.
+   */
+  const decideGuest = async (guest: GuestAttendee, admit: boolean) => {
+    if (!current) return;
+    try {
+      setDeciding(guest.id);
+      await apiClient.admitGuest(current.id, guest.id, admit ? 'admit' : 'deny');
+      setKnocking((prev) => prev.filter((g) => g.id !== guest.id));
+      toast.success(
+        admit
+          ? t({ ne: `${guest.full_name} भित्रिए`, en: `${guest.full_name} is in` })
+          : t({ ne: 'अनुरोध अस्वीकृत', en: 'Request declined' })
+      );
+    } catch {
+      toast.error(t({ ne: 'गर्न सकिएन', en: 'That did not work' }));
+    } finally { setDeciding(null); }
+  };
 
   // Everything on this screen belongs to the meeting that is running.
   useEffect(() => {
     if (!current) return;
     let cancelled = false;
     const load = async () => {
-      const [p, a, q] = await Promise.allSettled([
+      const [p, a, q, g] = await Promise.allSettled([
         apiClient.getParticipants(current.id),
         apiClient.getAttendance(current.id),
         apiClient.getPendingMessages(current.id),
+        apiClient.getGuests(current.id),
       ]);
       if (cancelled) return;
       if (p.status === 'fulfilled') setParticipants(p.value);
       if (a.status === 'fulfilled') setAttendance(a.value);
       if (q.status === 'fulfilled') setPending(q.value);
+      if (g.status === 'fulfilled') {
+        setKnocking(g.value.filter((guest) => guest.status === 'pending'));
+      }
     };
     load();
-    const id = setInterval(load, 10000);
+    const id = setInterval(load, ACTIVE_POLL_MS);
     return () => { cancelled = true; clearInterval(id); };
   }, [current]);
 
@@ -229,6 +262,56 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
               },
             ]}
           />
+
+          {/* Guests knock from the moment the room opens, whether or not
+              anybody is here to answer. They wait here rather than in a
+              notification that has already gone. */}
+          <Panel
+            title={t({ ne: 'भित्र आउन अनुरोध', en: 'Asking to come in' })}
+            aside={
+              knocking.length > 0
+                ? <Chip tone="warn">{num(knocking.length)} {t({ ne: 'पर्खिरहेका', en: 'waiting' })}</Chip>
+                : <span className="text-[12.5px] text-[#6E7C8E]">
+                    {t({ ne: 'कोही पर्खिरहेको छैन', en: 'Nobody waiting' })}
+                  </span>
+            }
+          >
+            <div className="px-4">
+              {knocking.length === 0 ? (
+                <Empty>
+                  {t({
+                    ne: 'पाहुनाले बैठक कोडबाट अनुरोध पठाएपछि यहाँ देखिन्छ — ढिलो आए पनि सूची यहीँ रहन्छ।',
+                    en: 'A guest who used the meeting code appears here. The list keeps them, however late you arrive.',
+                  })}
+                </Empty>
+              ) : (
+                knocking.map((guest) => (
+                  <div
+                    key={guest.id}
+                    className="flex items-center gap-3 py-3 border-b border-navy-800/[.08] last:border-0"
+                  >
+                    <span className="w-8 h-8 rounded-full bg-navy-700 text-white grid place-items-center text-xs font-semibold flex-none">
+                      {guest.full_name.charAt(0).toUpperCase()}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[13.5px] font-medium truncate">{guest.full_name}</p>
+                      <p className="text-[12.5px] text-[#6E7C8E]">{guest.phone}</p>
+                    </div>
+                    <span className="ml-auto flex gap-1.5 flex-none">
+                      <Btn sm tone="solid" disabled={deciding === guest.id}
+                           onClick={() => decideGuest(guest, true)}>
+                        {t({ ne: 'भित्र', en: 'Let in' })}
+                      </Btn>
+                      <Btn sm tone="danger" disabled={deciding === guest.id}
+                           onClick={() => decideGuest(guest, false)}>
+                        {t({ ne: 'अस्वीकार', en: 'Decline' })}
+                      </Btn>
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </Panel>
 
           <Panel
             title={t({ ne: 'सन्देशको लाइन', en: 'Message queue' })}

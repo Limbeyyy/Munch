@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useMeetingStore } from '../store/meetingStore';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../services/api';
+import { RESOURCE_POLL_MS } from '../services/polling';
 import {
   Artifact, AttendanceReport, ChatMessage, ChatSettings,
   GuestAttendee, MeetingParticipant,
@@ -11,7 +12,6 @@ import toast from 'react-hot-toast';
 import { ShareMeetingDialog } from '../components/ShareMeetingDialog';
 import { LiveTranscriptStage } from '../components/LiveTranscriptStage';
 
-const RESOURCE_POLL_MS = 8000;
 
 const formatFileSize = (bytes?: number | null): string => {
   if (!bytes) return '—';
@@ -67,6 +67,7 @@ export const MeetingRoomPage: React.FC = () => {
   const [waitingGuests, setWaitingGuests] = useState<GuestAttendee[]>([]);
   const [decidingGuest, setDecidingGuest] = useState<string | null>(null);
   const [showShare, setShowShare] = useState(false);
+  const [showEndChoice, setShowEndChoice] = useState(false);
   const [showAttendance, setShowAttendance] = useState(false);
   const [attendance, setAttendance] = useState<AttendanceReport | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -282,10 +283,30 @@ export const MeetingRoomPage: React.FC = () => {
       setIsLoading(true);
       const meeting = await apiClient.getMeeting(meetingCode!);
       setMeeting(meeting);
+
+      // The room opens a quarter of an hour before its hour. Coming
+      // earlier is not an error to shout about - say when to come back.
+      if (meeting.entry && !meeting.entry.is_open) {
+        const opens = new Date(meeting.entry.opens_at);
+        toast(
+          `This room opens at ${opens.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. It is too early to go in.`,
+          { icon: '\u23F1\uFE0F', duration: 6000 }
+        );
+        navigate('/');
+        return;
+      }
+
       const participants = await apiClient.getParticipants(meeting.id);
       setParticipants(participants);
     } catch (error: any) {
-      toast.error('Failed to load meeting: ' + error.message);
+      const refusal = error.response?.data;
+      if (refusal?.code === 'too_early') {
+        toast(refusal.error, { icon: '\u23F1\uFE0F', duration: 6000 });
+      } else if (error.response?.status === 404) {
+        toast.error('No meeting with that code.');
+      } else {
+        toast.error('Failed to load meeting: ' + error.message);
+      }
       navigate('/');
     } finally {
       setIsLoading(false);
@@ -553,15 +574,30 @@ export const MeetingRoomPage: React.FC = () => {
   }, [meetingId, startedAt]);
 
   /** Host only: closes the meeting for everyone. */
+  /** Host only: call the meeting begun. The room was already open. */
+  const startMeeting = async () => {
+    if (!currentMeeting) return;
+    try {
+      const started = await apiClient.startMeeting(currentMeeting.id);
+      setMeeting({ ...currentMeeting, ...started });
+      toast.success('The meeting is under way');
+    } catch (error: any) {
+      toast.error(
+        error.response?.data?.error ?? 'Could not start the meeting'
+      );
+    }
+  };
+
+  /**
+   * Host only: end it for everyone.
+   *
+   * Kept apart from leaving, which is the other thing a host might mean.
+   * The two are asked about rather than guessed at, because one of them
+   * empties the hall.
+   */
   const endMeeting = async () => {
     if (!currentMeeting) return;
-    const ok = window.confirm(
-      'End this meeting for everyone?\n\n' +
-      'Nobody will be able to rejoin. To step out yourself without ending ' +
-      'it, close this tab instead.'
-    );
-    if (!ok) return;
-
+    setShowEndChoice(false);
     try {
       await apiClient.endMeeting(currentMeeting.id);
       toast.success('Meeting ended');
@@ -606,6 +642,47 @@ export const MeetingRoomPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
+      {showEndChoice && currentMeeting && (
+        <div className="fixed inset-0 z-50 bg-black/60 grid place-items-center p-4">
+          <div className="bg-white text-gray-900 rounded-2xl max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold">What would you like to do?</h3>
+            <p className="mt-1 text-sm text-gray-600">
+              Leaving and ending are different things, so this asks rather
+              than guesses.
+            </p>
+
+            <button
+              onClick={endMeeting}
+              className="mt-5 w-full text-left rounded-xl border border-red-200 hover:border-red-400 p-4"
+            >
+              <span className="block font-semibold text-red-700">End the meeting</span>
+              <span className="block text-sm text-gray-600 mt-0.5">
+                It closes for everybody. Speakers, attendees and guests are
+                all shown out, and nobody can rejoin.
+              </span>
+            </button>
+
+            <button
+              onClick={() => { setShowEndChoice(false); leaveMeeting(); }}
+              className="mt-3 w-full text-left rounded-xl border border-gray-200 hover:border-gray-400 p-4"
+            >
+              <span className="block font-semibold">Just leave</span>
+              <span className="block text-sm text-gray-600 mt-0.5">
+                The meeting carries on without you — its speakers, attendees
+                and guests stay where they are.
+              </span>
+            </button>
+
+            <button
+              onClick={() => setShowEndChoice(false)}
+              className="mt-4 w-full py-2 text-sm text-gray-600 hover:text-gray-900"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {showShare && currentMeeting && (
         <ShareMeetingDialog
           meetingId={currentMeeting.id}
@@ -825,9 +902,27 @@ export const MeetingRoomPage: React.FC = () => {
               )}
             </button>
 
-            {isHost ? (
+            {/* A host who has gathered early sees Start once the hour
+                comes; once it is under way, ending is a decision with two
+                meanings, so it asks which. */}
+            {isHost && !startedAt && currentMeeting.entry?.can_start ? (
               <button
-                onClick={endMeeting}
+                onClick={startMeeting}
+                className="px-6 py-2 bg-green-600 hover:bg-green-700 rounded-lg font-semibold"
+              >
+                Start Meeting
+              </button>
+            ) : isHost && !startedAt ? (
+              <button
+                onClick={leaveMeeting}
+                className="px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-semibold"
+                title={`Starts at ${new Date(currentMeeting.scheduled_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+              >
+                Leave
+              </button>
+            ) : isHost ? (
+              <button
+                onClick={() => setShowEndChoice(true)}
                 className="px-6 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-semibold"
               >
                 End Meeting

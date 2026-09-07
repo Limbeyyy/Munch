@@ -180,13 +180,20 @@ def meeting_segments(request, meeting_ref):
         guest = resolve_guest(guest_token)
         allowed = bool(guest and guest.is_admitted and guest.meeting_id == meeting.id)
     else:
+        from src.apps.meetings.entry import is_open
+
         user = request.user
+        # Somebody who has just walked in with the code is not a
+        # participant yet, and the room's own transcript is the first thing
+        # the page asks for. Holding the code and the room being open is
+        # what earns it - the same test the door itself applies.
         allowed = bool(
             user
             and user.is_authenticated
             and (
                 str(user.id) == str(meeting.host_id)
                 or meeting.participants.filter(user=user).exists()
+                or is_open(meeting)
             )
         )
 
