@@ -264,11 +264,18 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle',
     ],
+    # Rates, not daily budgets. A dashboard that keeps its counts fresh
+    # makes a steady trickle of requests all day; a per-day cap turns that
+    # into a hard stop after a few minutes of ordinary use, which is what
+    # these used to do. Per-minute limits still bound abuse - the point of
+    # a throttle - without counting honest work against a ceiling.
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '100/day',
-        'user': '1000/day',
+        'anon': '120/min',
+        'user': '240/min',
+        # These two are abuse controls on specific actions rather than
+        # general traffic, and are meant to be felt. They stay as they are.
         'meeting_create': '50/hour',
-            'guest_knock': '20/hour',
+        'guest_knock': '20/hour',
     },
 }
 

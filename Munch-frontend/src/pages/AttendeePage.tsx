@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
+import { LIST_POLL_MS } from '../services/polling';
 import { useAuthStore } from '../store/authStore';
 import { EventMeeting, EventProgramme } from '../types';
 import { OrganizerProvider, useOrganizer } from '../organizer/i18n';
@@ -65,7 +66,7 @@ const AttendeeInner: React.FC = () => {
   // The organizer decides what is on stage, so the attendee's view has to
   // follow it rather than wait for a reload.
   useEffect(() => {
-    const id = setInterval(load, 8000);
+    const id = setInterval(load, LIST_POLL_MS);
     return () => clearInterval(id);
   }, [load]);
 

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../services/api';
+import { RESOURCE_POLL_MS } from '../services/polling';
 import { ChatMessage, ChatPerson, ChatSettings, GuestResource } from '../types';
 import toast from 'react-hot-toast';
 import { LiveTranscriptStage } from '../components/LiveTranscriptStage';
@@ -10,7 +11,6 @@ const API_BASE = (
   process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1'
 ).replace(/\/api\/v1\/?$/, '');
 
-const RESOURCE_POLL_MS = 10000;
 
 const formatFileSize = (bytes?: number | null): string => {
   if (!bytes) return '—';
