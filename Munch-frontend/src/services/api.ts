@@ -35,6 +35,15 @@ import {
   SpeakerContact,
   ContactRequestRow,
   UserRoles,
+  HubBoard,
+  HubKind,
+  HubPost,
+  SessionSummary,
+  MeetingBoard,
+  MessageTopic,
+  ProgrammeRoles,
+  RoleGrantRow,
+  RoleScope,
 } from '../types';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
@@ -192,6 +201,137 @@ class ApiClient {
     changes: { id: string; starts_at?: string; duration_minutes?: number; hall?: string }[]
   ): Promise<{ moved: Session[]; moved_count: number }> {
     const response = await this.client.post('/sessions/reschedule/', { changes });
+    return response.data;
+  }
+
+  /** Who helps run a programme, and over how much of it. */
+  async getProgrammeRoles(eventId: string): Promise<ProgrammeRoles> {
+    const response = await this.client.get(`/events/${eventId}/roles/`);
+    return response.data;
+  }
+
+  /**
+   * Give somebody a role over one part of the programme.
+   *
+   * The scope decides how far it reaches: the whole event, one meeting, or
+   * a single session. Nothing spreads to a sibling.
+   */
+  async grantRole(
+    eventId: string,
+    grant: { email: string; role: 'co_host' | 'presenter'; scope: RoleScope; scope_id?: string }
+  ): Promise<RoleGrantRow> {
+    const response = await this.client.post(`/events/${eventId}/roles/`, grant);
+    return response.data;
+  }
+
+  async revokeRole(eventId: string, grantId: string): Promise<void> {
+    await this.client.delete(`/events/${eventId}/roles/`, { data: { id: grantId } });
+  }
+
+  /** The questions and suggestions the host has put up. */
+  async getMeetingBoard(meetingId: string): Promise<MeetingBoard> {
+    const response = await this.client.get(`/meetings/${meetingId}/board/`);
+    return response.data;
+  }
+
+  /** The same board, for a guest holding a meeting token. */
+  async getGuestBoard(token: string): Promise<MeetingBoard> {
+    const response = await this.client.get('/meetings/guest/board/', {
+      params: { token },
+    });
+    return response.data;
+  }
+
+  /**
+   * Put a message on the board, or take it off.
+   *
+   * This publishes: everyone in the meeting reads the board, so a direct
+   * message sorted onto it stops being private.
+   */
+  async sortMessage(
+    meetingId: string,
+    messageId: string,
+    topic: MessageTopic
+  ): Promise<ChatMessage> {
+    const response = await this.client.post(`/meetings/${meetingId}/sort_message/`, {
+      message_id: messageId,
+      topic,
+    });
+    return response.data;
+  }
+
+  /**
+   * A session's summary. Unwritten, this comes back as a draft of the
+   * transcript, which is what somebody writing one starts from.
+   */
+  async getSessionSummary(sessionId: string): Promise<SessionSummary> {
+    const response = await this.client.get(`/sessions/${sessionId}/summary/`);
+    return response.data;
+  }
+
+  async saveSessionSummary(sessionId: string, body: string): Promise<SessionSummary> {
+    const response = await this.client.put(`/sessions/${sessionId}/summary/`, { body });
+    return response.data;
+  }
+
+  /** Let a summary out to everyone who was in the session. */
+  async publishSessionSummary(sessionId: string): Promise<SessionSummary> {
+    const response = await this.client.post(`/sessions/${sessionId}/publish_summary/`);
+    return response.data;
+  }
+
+  /**
+   * Direct messages the host has let through, split by who sent them.
+   *
+   * The record of what was passed on: account holders are answered in one
+   * place and guests in another.
+   */
+  async getReviewedMessages(
+    meetingId: string
+  ): Promise<{ from_users: ChatMessage[]; from_guests: ChatMessage[] }> {
+    const response = await this.client.get(`/meetings/${meetingId}/reviewed_messages/`);
+    return response.data;
+  }
+
+  /**
+   * The attendee hub. Guests pass their token; account holders their JWT.
+   */
+  async getHub(meetingCode: string, guestToken?: string): Promise<HubBoard> {
+    const response = await this.client.get(`/meetings/${meetingCode}/hub/`, {
+      params: guestToken ? { guest_token: guestToken } : undefined,
+    });
+    return response.data;
+  }
+
+  async addHubPost(
+    meetingCode: string,
+    post: {
+      kind: HubKind;
+      body: string;
+      category?: string;
+      anonymous?: boolean;
+      session?: string;
+    },
+    guestToken?: string
+  ): Promise<HubPost> {
+    const response = await this.client.post(`/meetings/${meetingCode}/hub/`, {
+      ...post,
+      ...(guestToken ? { guest_token: guestToken } : {}),
+    });
+    return response.data;
+  }
+
+  /** Vote a post up or down. Pressing the same way again takes it back. */
+  async voteHubPost(
+    meetingCode: string,
+    postId: string,
+    value: 1 | -1,
+    guestToken?: string
+  ): Promise<HubPost> {
+    const response = await this.client.post(
+      `/meetings/${meetingCode}/hub/${postId}/vote/`,
+      { value, ...(guestToken ? { guest_token: guestToken } : {}) }
+    );
     return response.data;
   }
 
@@ -607,14 +747,21 @@ class ApiClient {
   }
 
   /** Approve, decline or remove a held message. Host only. */
+  /**
+   * Let a held message through, turn it down, or discard it.
+   *
+   * A topic may be given alongside an approval, which puts the message on
+   * the board in the same breath - which is when the host has just read it.
+   */
   async moderateMessage(
     meetingId: string,
     messageId: string,
-    decision: 'approve' | 'decline' | 'remove'
+    decision: 'approve' | 'decline' | 'remove',
+    topic?: MessageTopic
   ): Promise<ChatMessage> {
     const response = await this.client.post(
       `/meetings/${meetingId}/moderate_message/`,
-      { message_id: messageId, decision }
+      { message_id: messageId, decision, ...(topic ? { topic } : {}) }
     );
     return response.data;
   }
