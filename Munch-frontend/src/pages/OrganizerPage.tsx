@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
 import { LIST_POLL_MS, QUEUE_POLL_MS } from '../services/polling';
+import {
+  MEETING_STATE_LABEL, MEETING_STATE_TONE, meetingState,
+} from '../organizer/sessionState';
 import { useAuthStore } from '../store/authStore';
 import { Meeting } from '../types';
 import { OrganizerProvider, useOrganizer } from '../organizer/i18n';
@@ -242,7 +245,9 @@ const SessionDrawer: React.FC<{
         </div>
 
         <div className="border-t border-navy-800/15 bg-white px-5 py-3 flex gap-2 items-center">
-          <Chip tone={meeting.status === 'active' ? 'live' : 'draft'}>{meeting.status}</Chip>
+          <Chip tone={MEETING_STATE_TONE[meetingState(meeting)]}>
+            {t(MEETING_STATE_LABEL[meetingState(meeting)])}
+          </Chip>
           <span className="ml-auto flex gap-2">
             <Btn sm onClick={onShare}>{t({ ne: 'लिङ्क बाँड्नुहोस्', en: 'Share link' })}</Btn>
             <Btn sm tone="solid" onClick={onEnter}>{t({ ne: 'कोठामा जानुहोस्', en: 'Enter room' })}</Btn>

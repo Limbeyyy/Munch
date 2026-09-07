@@ -6,7 +6,10 @@ import {
 import { Pair, useOrganizer } from './i18n';
 import { Modal } from './OrganizerShell';
 import { Btn, Chip, Empty, Tabs } from './ui';
-import { SESSION_STATE_LABEL, SESSION_STATE_TONE, sessionState } from './sessionState';
+import {
+  MEETING_STATE_LABEL, MEETING_STATE_TONE, meetingState,
+  SESSION_STATE_LABEL, SESSION_STATE_TONE, sessionState,
+} from './sessionState';
 
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -161,11 +164,9 @@ export const MeetingOverview: React.FC<{
                 </span>
               </Line>
               <Line label={{ ne: 'अवस्था', en: 'State' }}>
-                {meeting.status === 'active'
-                  ? <Chip tone="live">{t({ ne: 'चलिरहेको', en: 'Live' })}</Chip>
-                  : meeting.status === 'ended'
-                  ? <Chip tone="ok">{t({ ne: 'सकियो', en: 'Finished' })}</Chip>
-                  : <Chip tone="draft">{t({ ne: 'आउँदै', en: 'Upcoming' })}</Chip>}
+                <Chip tone={MEETING_STATE_TONE[meetingState(meeting)]}>
+                  {t(MEETING_STATE_LABEL[meetingState(meeting)])}
+                </Chip>
               </Line>
             </div>
           </div>
@@ -192,8 +193,8 @@ export const MeetingOverview: React.FC<{
                     </span>
                   </span>
                   <span className="ml-auto flex-none">
-                    <Chip tone={SESSION_STATE_TONE[sessionState(session)]}>
-                      {t(SESSION_STATE_LABEL[sessionState(session)])}
+                    <Chip tone={SESSION_STATE_TONE[sessionState(session, Date.now(), meeting)]}>
+                      {t(SESSION_STATE_LABEL[sessionState(session, Date.now(), meeting)])}
                     </Chip>
                   </span>
                 </div>

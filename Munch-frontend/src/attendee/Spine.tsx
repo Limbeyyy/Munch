@@ -47,8 +47,10 @@ export const Spine: React.FC<Props> = ({ items, onOpen, compact }) => {
         aria-hidden="true"
       />
       {items.map((item) => {
-        const { session } = item;
-        const state = sessionState(session);
+        const { session, meeting } = item;
+        // The meeting matters: an overrun session inside one still
+        // running is overdue, not never started.
+        const state = sessionState(session, Date.now(), meeting);
         const shape = state === 'live' ? 'live' : isPast(state) ? 'past' : 'next';
 
         return (

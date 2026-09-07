@@ -118,7 +118,7 @@ export const SessionDrawer: React.FC<Props> = ({ item, onClose, guestToken }) =>
                 {session.speaker_name || t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' })}
               </div>
               <div className="text-xs text-[#AFC6E6]">
-                {t(SESSION_STATE_LABEL[sessionState(session)])}
+                {t(SESSION_STATE_LABEL[sessionState(session, Date.now(), meeting)])}
               </div>
             </div>
 
@@ -148,12 +148,12 @@ export const SessionDrawer: React.FC<Props> = ({ item, onClose, guestToken }) =>
           ) : tab === 'transcript' ? (
             segments.length === 0 ? (
               <p className="text-[#6E7C8E] text-[13.5px]">
-                {sessionState(session) === 'upcoming'
+                {sessionState(session, Date.now(), meeting) === 'upcoming'
                   ? t({
                       ne: 'सत्र सुरु भएपछि हलको यन्त्रबाट पाठ आउन थाल्छ।',
                       en: 'Text starts arriving from the hall device once the session begins.',
                     })
-                  : sessionState(session) === 'never-started'
+                  : sessionState(session, Date.now(), meeting) === 'never-started'
                   ? t({
                       ne: 'यो सत्र सुरु नै भएन, त्यसैले केही रेकर्ड भएन।',
                       en: 'This session never started, so nothing was recorded.',
@@ -239,7 +239,7 @@ export const SessionDrawer: React.FC<Props> = ({ item, onClose, guestToken }) =>
           ) : (
             present.length === 0 ? (
               <p className="text-[#6E7C8E] text-[13.5px]">
-                {sessionState(session) === 'never-started'
+                {sessionState(session, Date.now(), meeting) === 'never-started'
                   ? t({
                       ne: 'यो सत्र सुरु नै नभएकाले कसैको उपस्थिति दर्ता भएन।',
                       en: 'This session never started, so nobody was recorded at it.',
