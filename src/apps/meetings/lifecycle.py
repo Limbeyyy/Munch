@@ -79,6 +79,25 @@ def close_session(session, now):
     return recorded
 
 
+def has_more_to_run(meeting, now=None) -> bool:
+    """Whether anything in this meeting could still happen.
+
+    Something on stage, or a session whose slot has not yet run out. A
+    session nobody ever started and whose time has been and gone does not
+    count - it is missed, not pending, and waiting for it would keep the
+    meeting open for ever.
+    """
+    now = now or timezone.now()
+
+    if meeting.sessions.filter(status=Session.Status.LIVE).exists():
+        return True
+
+    for session in meeting.sessions.filter(status=Session.Status.SCHEDULED):
+        if now <= scheduled_end(session):
+            return True
+    return False
+
+
 def close_meeting_if_spent(meeting, now=None):
     """Close a meeting once nothing in it is still running and its time is up.
 
@@ -88,7 +107,9 @@ def close_meeting_if_spent(meeting, now=None):
     now = now or timezone.now()
     if meeting.status != Meeting.Status.ACTIVE:
         return False
-    if meeting.sessions.filter(status=Session.Status.LIVE).exists():
+    # A meeting is over when its running order is, not when its own window
+    # happens to run out. A session still to come is still to come.
+    if has_more_to_run(meeting, now):
         return False
     if meeting.scheduled_end and now < meeting.scheduled_end:
         return False
