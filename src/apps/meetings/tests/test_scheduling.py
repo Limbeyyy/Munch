@@ -206,3 +206,102 @@ class ReflowTests(TestCase):
 
     def test_a_settled_day_is_left_alone(self):
         self.assertEqual(reschedule(self.meeting, {}), [])
+
+
+class ReopeningTests(TestCase):
+    """A meeting whose sessions are moved into the future is not over.
+
+    The reported failure: the sessions were rescheduled to the afternoon,
+    the meeting's own window stayed in the morning, and the door stayed
+    shut saying the meeting had already ended.
+    """
+
+    def setUp(self):
+        self.host = make_host()
+        self.event = make_event(self.host)
+        self.past = timezone.now() - timezone.timedelta(hours=4)
+        self.meeting = make_meeting(self.host, self.event, start=self.past, minutes=75)
+        self.session = make_session(self.meeting, self.past, 30, 'Only session')
+
+    def reloaded(self):
+        return Meeting.objects.get(id=self.meeting.id)
+
+    def end_it(self):
+        self.meeting.status = Meeting.Status.ENDED
+        self.meeting.started_at = self.past
+        self.meeting.ended_at = self.past + timezone.timedelta(minutes=30)
+        self.meeting.save()
+
+    def test_the_window_follows_a_session_moved_into_the_future(self):
+        self.end_it()
+        later = timezone.now() + timezone.timedelta(hours=4)
+
+        reschedule(self.meeting, {self.session.id: {'starts_at': later}},
+                   anchored_id=self.session.id)
+
+        moved = self.reloaded()
+        self.assertEqual(moved.scheduled_start, later)
+        self.assertEqual(moved.scheduled_end, later + timezone.timedelta(minutes=30))
+
+    def test_an_ended_meeting_comes_back_as_scheduled(self):
+        self.end_it()
+        later = timezone.now() + timezone.timedelta(hours=4)
+
+        reschedule(self.meeting, {self.session.id: {'starts_at': later}},
+                   anchored_id=self.session.id)
+
+        self.assertEqual(self.reloaded().status, Meeting.Status.SCHEDULED)
+
+    def test_reopening_clears_the_clock_from_the_old_sitting(self):
+        self.end_it()
+        later = timezone.now() + timezone.timedelta(hours=4)
+
+        reschedule(self.meeting, {self.session.id: {'starts_at': later}},
+                   anchored_id=self.session.id)
+
+        moved = self.reloaded()
+        self.assertIsNone(moved.started_at)
+        self.assertIsNone(moved.ended_at)
+
+    def test_the_door_opens_again(self):
+        from src.apps.meetings.entry import is_open
+
+        self.end_it()
+        self.assertFalse(is_open(self.reloaded()))
+
+        reschedule(
+            self.meeting,
+            {self.session.id: {'starts_at': timezone.now() + timezone.timedelta(minutes=10)}},
+            anchored_id=self.session.id,
+        )
+
+        self.assertTrue(is_open(self.reloaded()))
+
+    def test_touching_an_old_meeting_does_not_resurrect_it(self):
+        # Its sessions are still in the past, so nothing here says it is
+        # going to happen again.
+        self.end_it()
+        earlier = self.past - timezone.timedelta(hours=1)
+
+        reschedule(self.meeting, {self.session.id: {'starts_at': earlier}},
+                   anchored_id=self.session.id)
+
+        self.assertEqual(self.reloaded().status, Meeting.Status.ENDED)
+
+    def test_a_meeting_under_way_keeps_its_window(self):
+        # Moving it out from under a room full of people would be worse
+        # than a window that no longer matches.
+        self.meeting.status = Meeting.Status.ACTIVE
+        self.meeting.started_at = self.past
+        self.meeting.save()
+        original = self.meeting.scheduled_start
+
+        reschedule(
+            self.meeting,
+            {self.session.id: {'starts_at': timezone.now() + timezone.timedelta(hours=4)}},
+            anchored_id=self.session.id,
+        )
+
+        still = self.reloaded()
+        self.assertEqual(still.scheduled_start, original)
+        self.assertEqual(still.status, Meeting.Status.ACTIVE)
