@@ -10,6 +10,7 @@ from rest_framework import serializers
 
 from src.apps.meetings.models import (
     RoleGrant,
+    SessionSummary,
     ContactRequest, Event, Meeting, Session, SessionAttendance,
 )
 
@@ -323,6 +324,7 @@ class ContactRequestSerializer(serializers.ModelSerializer):
     def get_asker_is_guest(self, obj):
         return obj.guest_id is not None
 
+
 class RoleGrantSerializer(serializers.ModelSerializer):
     """A role as the host sees it in the list."""
     scope = serializers.CharField(read_only=True)
@@ -351,3 +353,21 @@ class RoleGrantSerializer(serializers.ModelSerializer):
         """Whether the address has turned into a real account yet."""
         return obj.user_id is not None
 
+
+class SessionSummarySerializer(serializers.ModelSerializer):
+    """A summary as the host reviews it, and as attendees read it."""
+    session_title = serializers.CharField(source='session.title', read_only=True)
+    is_published = serializers.BooleanField(read_only=True)
+    saved = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SessionSummary
+        fields = [
+            'session', 'session_title', 'body', 'status', 'is_published',
+            'saved', 'published_at', 'updated_at',
+        ]
+        read_only_fields = fields
+
+    def get_saved(self, obj):
+        """False only for the draft offered before anything was written."""
+        return True

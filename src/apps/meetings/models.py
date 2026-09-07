@@ -731,3 +731,48 @@ class RoleGrant(models.Model):
 
     def __str__(self):
         return f"{self.email} as {self.role} on this {self.scope}"
+
+
+class SessionSummary(models.Model):
+    """What a session came to, in the host's words.
+
+    The transcript is the raw record and stays untouched. This is the short
+    account somebody writes from it - usually starting from the transcript,
+    then cut down to the decisions and the numbers that matter.
+
+    It is held back until the host publishes it. A summary is the thing
+    attendees quote afterwards, so an unreviewed one going out would be
+    worse than none at all.
+    """
+    class Status(models.TextChoices):
+        NEEDS_APPROVAL = 'needs_approval', 'Needs approval'
+        PUBLISHED = 'published', 'Published'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.OneToOneField(
+        'meetings.Session', on_delete=models.CASCADE, related_name='summary'
+    )
+
+    body = models.TextField(blank=True)
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.NEEDS_APPROVAL
+    )
+
+    updated_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='edited_summaries',
+    )
+    published_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'session_summaries'
+        ordering = ['session__starts_at']
+
+    @property
+    def is_published(self) -> bool:
+        return self.status == self.Status.PUBLISHED
+
+    def __str__(self):
+        return f"Summary of {self.session.title} ({self.status})"

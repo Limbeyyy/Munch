@@ -4,6 +4,8 @@ Allows for future provider swapping (S3, OneDrive, etc)
 """
 import io
 import logging
+
+from django.conf import settings
 from typing import Optional, List, Dict, Any
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -26,10 +28,23 @@ class GoogleDriveAdapter:
     ]
 
     def __init__(self, user_id: str):
-        """Initialize adapter with user's Google connection"""
+        """Note whose Drive this is. Connecting waits until it is used.
+
+        Plenty of work touches artifacts without touching Drive - listing
+        what was uploaded is a database read. Connecting in the constructor
+        made every one of those fail whenever Drive was unreachable or
+        unconfigured, which is a large blast radius for a dependency the
+        caller may not need at all.
+        """
         self.user_id = user_id
-        self.service = None
-        self._get_service()
+        self._service = None
+
+    @property
+    def service(self):
+        """The Drive client, built on first use."""
+        if self._service is None:
+            self._get_service()
+        return self._service
 
     def _get_service(self):
         """Get authenticated Drive service"""
@@ -47,11 +62,11 @@ class GoogleDriveAdapter:
                 token=connection.access_token,
                 refresh_token=connection.refresh_token,
                 token_uri='https://oauth2.googleapis.com/token',
-                client_id='YOUR_CLIENT_ID',
-                client_secret='YOUR_CLIENT_SECRET'
+                client_id=settings.GOOGLE_CLIENT_ID,
+                client_secret=settings.GOOGLE_CLIENT_SECRET
             )
 
-            self.service = build('drive', 'v3', credentials=creds)
+            self._service = build('drive', 'v3', credentials=creds)
 
         except GoogleConnection.DoesNotExist:
             raise DriveException(f"No Google connection found for user {self.user_id}")
@@ -69,8 +84,8 @@ class GoogleDriveAdapter:
                 token=connection.access_token,
                 refresh_token=connection.refresh_token,
                 token_uri='https://oauth2.googleapis.com/token',
-                client_id='YOUR_CLIENT_ID',
-                client_secret='YOUR_CLIENT_SECRET'
+                client_id=settings.GOOGLE_CLIENT_ID,
+                client_secret=settings.GOOGLE_CLIENT_SECRET
             )
 
             creds.refresh(Request())
