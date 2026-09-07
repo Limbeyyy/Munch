@@ -19,11 +19,12 @@ export const SessionsView: React.FC<Props> = ({ items, attendedIds, onOpen }) =>
 
   // A session that never ran is over too, so it belongs with the past -
   // but nobody missed it, because there was nothing to miss.
-  const past = items.filter((i) => isPast(sessionState(i.session)));
+  const past = items.filter((i) => isPast(sessionState(i.session, Date.now(), i.meeting)));
   const missed = past.filter(
-    (i) => sessionState(i.session) === 'finished' && !attendedIds.has(i.session.id)
+    (i) => sessionState(i.session, Date.now(), i.meeting) === 'finished'
+      && !attendedIds.has(i.session.id)
   );
-  const upcoming = items.filter((i) => !isPast(sessionState(i.session)));
+  const upcoming = items.filter((i) => !isPast(sessionState(i.session, Date.now(), i.meeting)));
   const shown = tab === 'past' ? past : tab === 'missed' ? missed : upcoming;
 
   return (
@@ -62,7 +63,7 @@ export const SessionsView: React.FC<Props> = ({ items, attendedIds, onOpen }) =>
         <div className="grid gap-3.5" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))' }}>
           {shown.map((item) => {
             const { session, meeting } = item;
-            const state = sessionState(session);
+            const state = sessionState(session, Date.now(), meeting);
             const was = attendedIds.has(session.id);
             return (
               <button

@@ -4,6 +4,7 @@ import { apiClient } from '../../services/api';
 import { Artifact, Meeting, TranscriptionSegment } from '../../types';
 import { MeetingOverview } from '../MeetingOverview';
 import { SummaryApprovals } from '../SummaryApprovals';
+import { MEETING_STATE_LABEL, MEETING_STATE_TONE, meetingState } from '../sessionState';
 import { useOrganizer } from '../i18n';
 import { Btn, Chip, Empty, Head, Panel, Tabs } from '../ui';
 
@@ -135,11 +136,9 @@ export const ContentView: React.FC<Props> = ({ meetings }) => {
               key={meeting.id}
               title={<span className="text-[14.5px]">{meeting.title}</span>}
               aside={
-                meeting.status === 'active'
-                  ? <Chip tone="live">{t({ ne: 'चलिरहेको', en: 'Live' })}</Chip>
-                  : meeting.status === 'ended'
-                  ? <Chip tone="ok">{t({ ne: 'सकियो', en: 'Finished' })}</Chip>
-                  : <Chip tone="draft">{t({ ne: 'आउँदै', en: 'Upcoming' })}</Chip>
+                <Chip tone={MEETING_STATE_TONE[meetingState(meeting)]}>
+                  {t(MEETING_STATE_LABEL[meetingState(meeting)])}
+                </Chip>
               }
               actions={
                 tab === 'files' ? (

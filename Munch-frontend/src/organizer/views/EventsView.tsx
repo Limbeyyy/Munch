@@ -8,7 +8,10 @@ import { confirmSpacing } from '../confirmSpacing';
 import { errorText } from '../errors';
 import { useOrganizer } from '../i18n';
 import { Btn, Card, Chip, Empty, Head, Panel } from '../ui';
-import { SESSION_STATE_LABEL, SESSION_STATE_TONE, sessionState } from '../sessionState';
+import {
+  MEETING_STATE_LABEL, MEETING_STATE_TONE, meetingState,
+  SESSION_STATE_LABEL, SESSION_STATE_TONE, sessionState,
+} from '../sessionState';
 import { Modal } from '../OrganizerShell';
 import {
   MeetingDraftFields,
@@ -167,8 +170,10 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
     }
   };
 
-  const sessionChip = (s: Session) => {
-    const state = sessionState(s);
+  /** A session's chip. It needs its meeting: an overrun session inside a
+      meeting still running is overdue, not never started. */
+  const sessionChip = (s: Session, holder?: { status: string }) => {
+    const state = sessionState(s, Date.now(), holder);
     return <Chip tone={SESSION_STATE_TONE[state]}>{t(SESSION_STATE_LABEL[state])}</Chip>;
   };
 
@@ -263,9 +268,9 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
                               <span className="text-[12.5px] font-mono text-navy-700">
                                 {meeting.meeting_code}
                               </span>
-                              {meeting.status === 'active' && (
-                                <Chip tone="live">{t({ ne: 'चलिरहेको', en: 'Live' })}</Chip>
-                              )}
+                              <Chip tone={MEETING_STATE_TONE[meetingState(meeting)]}>
+                                {t(MEETING_STATE_LABEL[meetingState(meeting)])}
+                              </Chip>
                               {/* A QR is a way into a room, and a meeting is
                                   the only thing that has one - so this is
                                   where sharing belongs. */}
@@ -301,7 +306,7 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
                                       </span>
                                     </span>
                                     <span className="ml-auto flex items-center gap-1.5 flex-none">
-                                      {sessionChip(s)}
+                                      {sessionChip(s, meeting)}
                                       {s.status === 'live' ? (
                                         <Btn sm tone="danger" disabled={busy === s.id}
                                              onClick={() => runSession(s, 'end', meeting.meeting_code)}>

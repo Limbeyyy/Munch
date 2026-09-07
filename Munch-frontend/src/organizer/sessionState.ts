@@ -8,7 +8,8 @@ import { Pair } from './i18n';
  * calling that "upcoming" a week later is simply wrong: its slot came and
  * went without it happening.
  */
-export type SessionState = 'upcoming' | 'live' | 'finished' | 'never-started' | 'skipped';
+export type SessionState =
+  | 'upcoming' | 'live' | 'finished' | 'never-started' | 'skipped' | 'overdue';
 
 interface Timed {
   status: string;
@@ -16,19 +17,73 @@ interface Timed {
   duration_minutes: number;
 }
 
-export const sessionState = (session: Timed, now: number = Date.now()): SessionState => {
+/** Just enough of the meeting to know whether the day is done with it. */
+interface Holder {
+  status: string;
+}
+
+/**
+ * What a session's state reads as.
+ *
+ * The stored status says what was done to a session, not what became of
+ * it. A session nobody ever put on stage stays 'scheduled' for ever, and
+ * calling that "upcoming" a week later is simply wrong.
+ *
+ * But "never started" is a final judgement, and it cannot be made while
+ * the meeting is still going: a session whose slot has slipped can still
+ * be put on stage, and saying otherwise while the host is in the room
+ * contradicts the meeting's own state. Pass the meeting and an overrun
+ * session reads as overdue until the meeting itself is over.
+ */
+export const sessionState = (
+  session: Timed,
+  now: number = Date.now(),
+  meeting?: Holder
+): SessionState => {
   if (session.status === 'live') return 'live';
   if (session.status === 'done') return 'finished';
   if (session.status === 'skipped') return 'skipped';
 
-  // Still scheduled. Whether that means "yet to come" or "never happened"
-  // depends only on whether its slot has passed.
   const endsAt = +new Date(session.starts_at) + session.duration_minutes * 60000;
-  return now > endsAt ? 'never-started' : 'upcoming';
+  if (now <= endsAt) return 'upcoming';
+
+  // Its slot has passed. Whether that is the end of the story depends on
+  // whether the meeting holding it has finished.
+  if (meeting && meeting.status !== 'ended') return 'overdue';
+  return 'never-started';
+};
+
+export type MeetingState = 'upcoming' | 'live' | 'finished' | 'never-started';
+
+interface TimedMeeting {
+  status: string;
+  scheduled_end: string;
+  started_at?: string | null;
+}
+
+/**
+ * What a meeting's state reads as.
+ *
+ * Six screens worked this out for themselves and none of them knew that a
+ * meeting can end without ever having run - closed automatically when its
+ * time ran out, with nobody having opened it. That reads as "Finished",
+ * which claims something happened. It did not.
+ */
+export const meetingState = (
+  meeting: TimedMeeting,
+  now: number = Date.now()
+): MeetingState => {
+  if (meeting.status === 'active') return 'live';
+  if (meeting.status === 'ended') {
+    return meeting.started_at ? 'finished' : 'never-started';
+  }
+  // Still scheduled: yet to come, or its window went by without it.
+  return now > +new Date(meeting.scheduled_end) ? 'never-started' : 'upcoming';
 };
 
 export const SESSION_STATE_LABEL: Record<SessionState, Pair> = {
   upcoming: { ne: 'आउँदै', en: 'Upcoming' },
+  overdue: { ne: 'समय नाघ्यो', en: 'Overdue' },
   live: { ne: 'सुरु भयो', en: 'Started' },
   finished: { ne: 'सकियो', en: 'Finished' },
   'never-started': { ne: 'सुरु नै भएन', en: 'Never started' },
@@ -41,6 +96,7 @@ export const SESSION_STATE_TONE: Record<
   'default' | 'ok' | 'live' | 'warn' | 'draft' | 'lock'
 > = {
   upcoming: 'warn',
+  overdue: 'warn',
   live: 'live',
   finished: 'ok',
   'never-started': 'draft',
@@ -50,3 +106,20 @@ export const SESSION_STATE_TONE: Record<
 /** A session that is over, whether it ran or not. */
 export const isPast = (state: SessionState) =>
   state === 'finished' || state === 'never-started' || state === 'skipped';
+
+export const MEETING_STATE_LABEL: Record<MeetingState, Pair> = {
+  upcoming: { ne: 'आउँदै', en: 'Upcoming' },
+  live: { ne: 'चलिरहेको', en: 'Live' },
+  finished: { ne: 'सकियो', en: 'Finished' },
+  'never-started': { ne: 'सुरु नै भएन', en: 'Never started' },
+};
+
+export const MEETING_STATE_TONE: Record<
+  MeetingState,
+  'default' | 'ok' | 'live' | 'warn' | 'draft' | 'lock'
+> = {
+  upcoming: 'draft',
+  live: 'live',
+  finished: 'ok',
+  'never-started': 'draft',
+};

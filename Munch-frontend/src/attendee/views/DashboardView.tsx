@@ -24,9 +24,9 @@ export const DashboardView: React.FC<Props> = ({
   const { t, num } = useOrganizer();
 
   // Attendance can only be judged on sessions that actually ran.
-  const done = items.filter((i) => sessionState(i.session) === 'finished');
+  const done = items.filter((i) => sessionState(i.session, Date.now(), i.meeting) === 'finished');
   const upcoming = items
-    .filter((i) => sessionState(i.session) === 'upcoming')
+    .filter((i) => sessionState(i.session, Date.now(), i.meeting) === 'upcoming')
     .slice(0, 3);
   const attendedCount = done.filter((i) => attendedIds.has(i.session.id)).length;
   const missed = done.filter((i) => !attendedIds.has(i.session.id));
