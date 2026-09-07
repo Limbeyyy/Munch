@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { EventProgramme, MeetingDraft, Session } from '../../types';
+import { LIST_POLL_MS } from '../../services/polling';
+import { EventMeeting, EventProgramme, MeetingDraft, Session } from '../../types';
+import { ShareMeetingDialog } from '../../components/ShareMeetingDialog';
 import { confirmSpacing } from '../confirmSpacing';
 import { errorText } from '../errors';
 import { useOrganizer } from '../i18n';
@@ -40,6 +42,7 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
   const [newEvent, setNewEvent] = useState(false);
   const [addMeetingTo, setAddMeetingTo] = useState<EventProgramme | null>(null);
   const [inviteTo, setInviteTo] = useState<EventProgramme | null>(null);
+  const [sharing, setSharing] = useState<EventMeeting | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -61,7 +64,7 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
   // Whoever is watching this page did not necessarily make the change: a
   // session put on stage from another screen has to show up here too.
   useEffect(() => {
-    const id = setInterval(load, 8000);
+    const id = setInterval(load, LIST_POLL_MS);
     return () => clearInterval(id);
   }, [load]);
 
@@ -263,6 +266,14 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
                               {meeting.status === 'active' && (
                                 <Chip tone="live">{t({ ne: 'चलिरहेको', en: 'Live' })}</Chip>
                               )}
+                              {/* A QR is a way into a room, and a meeting is
+                                  the only thing that has one - so this is
+                                  where sharing belongs. */}
+                              <span className="ml-auto flex-none">
+                                <Btn sm onClick={() => setSharing(meeting)}>
+                                  {t({ ne: 'लिंक र QR', en: 'Link & QR' })}
+                                </Btn>
+                              </span>
                             </div>
 
                             <div className="px-3.5 py-2">
@@ -338,6 +349,14 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
 
       {inviteTo && (
         <InviteModal event={inviteTo} onClose={() => setInviteTo(null)} />
+      )}
+
+      {sharing && (
+        <ShareMeetingDialog
+          meetingId={sharing.id}
+          meetingCode={sharing.meeting_code}
+          onClose={() => setSharing(null)}
+        />
       )}
 
       {addMeetingTo && (

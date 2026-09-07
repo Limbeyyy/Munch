@@ -28,6 +28,7 @@ from src.apps.meetings.lifecycle import (
 )
 from src.apps.meetings.models import (
     RoleGrant,
+    SessionSummary,
     ContactRequest,
     Event,
     Meeting,
@@ -700,6 +701,93 @@ class SessionViewSet(viewsets.ModelViewSet):
                 requests.order_by('-created_at'), many=True
             ).data
         )
+
+    @action(detail=True, methods=['get', 'put'], url_path='summary')
+    def summary(self, request, pk=None):
+        """Read or rewrite a session's summary.
+
+        A summary that has never been written comes back as a draft of the
+        transcript, which is what somebody writing one starts from. It is
+        not saved until they save it - an empty session should not acquire
+        a summary just because a page was opened.
+        """
+        from src.apps.meetings.event_serializers import SessionSummarySerializer
+
+        session = self.get_object()
+        is_host = str(session.meeting.host_id) == str(request.user.id)
+        existing = SessionSummary.objects.filter(session=session).first()
+
+        if request.method == 'GET':
+            if existing is None:
+                if not is_host:
+                    return Response(
+                        {'error': 'There is no summary for this session yet'},
+                        status=status.HTTP_404_NOT_FOUND,
+                    )
+                return Response({
+                    'session': str(session.id),
+                    'session_title': session.title,
+                    'body': _transcript_of(session),
+                    'status': SessionSummary.Status.NEEDS_APPROVAL,
+                    'is_published': False,
+                    'saved': False,
+                    'published_at': None,
+                })
+
+            # A draft is the host's working copy; nobody else reads it.
+            if not existing.is_published and not is_host:
+                return Response(
+                    {'error': 'This summary has not been published yet'},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            return Response(SessionSummarySerializer(existing).data)
+
+        denied = self._require_host(session)
+        if denied:
+            return denied
+
+        body = request.data.get('body')
+        if body is None:
+            return Response(
+                {'error': 'Send the summary under "body".'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        summary, _ = SessionSummary.objects.get_or_create(session=session)
+        summary.body = body
+        summary.updated_by = request.user
+        # Editing a published summary sends it back for approval: what is
+        # public should always be something somebody signed off on.
+        if summary.is_published:
+            summary.status = SessionSummary.Status.NEEDS_APPROVAL
+            summary.published_at = None
+        summary.save()
+        return Response(SessionSummarySerializer(summary).data)
+
+    @action(detail=True, methods=['post'], url_path='publish_summary')
+    def publish_summary(self, request, pk=None):
+        """Let a summary out to everyone who was in the session. Host only."""
+        from src.apps.meetings.event_serializers import SessionSummarySerializer
+
+        session = self.get_object()
+        denied = self._require_host(session)
+        if denied:
+            return denied
+
+        summary = SessionSummary.objects.filter(session=session).first()
+        if summary is None or not summary.body.strip():
+            return Response(
+                {'error': 'Write the summary before publishing it'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        summary.status = SessionSummary.Status.PUBLISHED
+        summary.published_at = timezone.now()
+        summary.updated_by = request.user
+        summary.save(update_fields=['status', 'published_at', 'updated_by', 'updated_at'])
+
+        logger.info(f"Summary published for session {session.id}")
+        return Response(SessionSummarySerializer(summary).data)
 
     @action(detail=True, methods=['get'])
     def attendance(self, request, pk=None):

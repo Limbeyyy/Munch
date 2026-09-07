@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { Artifact, Meeting, TranscriptionSegment } from '../../types';
+import { MeetingOverview } from '../MeetingOverview';
+import { SummaryApprovals } from '../SummaryApprovals';
 import { useOrganizer } from '../i18n';
 import { Btn, Chip, Empty, Head, Panel, Tabs } from '../ui';
 
@@ -37,6 +39,7 @@ export const ContentView: React.FC<Props> = ({ meetings }) => {
   const [resources, setResources] = useState<Record<string, Artifact[]>>({});
   const [transcripts, setTranscripts] = useState<Record<string, TranscriptionSegment[]>>({});
   const [uploading, setUploading] = useState<string | null>(null);
+  const [opened, setOpened] = useState<Meeting | null>(null);
 
   const loadResources = React.useCallback(async () => {
     const results = await Promise.allSettled(
@@ -105,7 +108,7 @@ export const ContentView: React.FC<Props> = ({ meetings }) => {
         onChange={setTab}
         tabs={[
           { id: 'files', label: { ne: 'सत्रका फाइल', en: 'Session files' } },
-          { id: 'transcripts', label: { ne: 'ट्रान्सक्रिप्ट', en: 'Transcripts' } },
+          { id: 'transcripts', label: { ne: 'सारांश स्वीकृति', en: 'Summary approvals' } },
         ]}
       />
 
@@ -140,6 +143,12 @@ export const ContentView: React.FC<Props> = ({ meetings }) => {
               }
               actions={
                 tab === 'files' ? (
+                <>
+                {/* Everything about this meeting, gathered to read rather
+                    than to edit. The tabs here own the editing. */}
+                <Btn sm onClick={() => setOpened(meeting)}>
+                  {t({ ne: 'खोल्नुहोस्', en: 'Open' })}
+                </Btn>
                   <label className="inline-flex items-center gap-2 rounded-[7px] border border-navy-800/15 bg-white px-2.5 py-1 text-[12.5px] font-medium cursor-pointer hover:border-navy-500">
                     {uploading === meeting.id
                       ? t({ ne: 'थप्दै…', en: 'Adding…' })
@@ -155,9 +164,13 @@ export const ContentView: React.FC<Props> = ({ meetings }) => {
                       }}
                     />
                   </label>
+                </>
                 ) : (
-                  <Btn sm disabled={segments.length === 0} onClick={() => downloadTranscript(meeting)}>
-                    {t({ ne: 'डाउनलोड', en: 'Download' })}
+                  // Summaries are approved one at a time, so the actions
+                  // belong beside each summary rather than up here.
+                  <Btn sm disabled={segments.length === 0}
+                       onClick={() => downloadTranscript(meeting)}>
+                    {t({ ne: 'ट्रान्सक्रिप्ट डाउनलोड', en: 'Download transcript' })}
                   </Btn>
                 )
               }
@@ -218,38 +231,16 @@ export const ContentView: React.FC<Props> = ({ meetings }) => {
                   )
                 )}
 
-                {tab === 'transcripts' && (
-                  segments.length === 0 ? (
-                    <p className="text-[12.5px] text-[#6E7C8E]">
-                      {t({
-                        ne: 'ट्रान्सक्रिप्ट छैन — हलको यन्त्रले पाठ पठाएपछि यहाँ देखिन्छ।',
-                        en: 'No transcript yet — lines appear once the hall device sends text.',
-                      })}
-                    </p>
-                  ) : (
-                    <>
-                      <p className="text-[12.5px] text-[#6E7C8E] mb-2">
-                        {t({
-                          ne: `${num(segments.length)} पङ्क्ति रेकर्ड भयो`,
-                          en: `${segments.length} line${segments.length === 1 ? '' : 's'} recorded`,
-                        })}
-                      </p>
-                      <div className="font-read text-[14px] leading-[1.8] text-ink-2 max-h-64 overflow-y-auto max-w-[70ch]">
-                        {segments.slice(-40).map((s, i) => (
-                          <p key={i}>
-                            <span className="text-[#6E7C8E] text-[12.5px] mr-2">{s.speaker_name}:</span>
-                            {s.text}
-                          </p>
-                        ))}
-                      </div>
-                    </>
-                  )
-                )}
+                {tab === 'transcripts' && <SummaryApprovals meeting={meeting} />}
               </div>
             </Panel>
           );
         })}
       </div>
+
+      {opened && (
+        <MeetingOverview meeting={opened} onClose={() => setOpened(null)} />
+      )}
     </>
   );
 };
