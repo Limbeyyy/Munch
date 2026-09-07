@@ -74,9 +74,15 @@ class MeetingService:
 
         existing = MeetingParticipant.objects.filter(meeting=meeting, user=user).first()
 
-        # The host always keeps the host role, however they arrive.
-        if str(user.id) == str(meeting.host_id):
-            role = MeetingParticipant.Role.HOST
+        # The host always keeps the host role, however they arrive, and
+        # anyone the host named as a co-host arrives as one rather than as
+        # an attendee somebody has to promote by hand.
+        from src.apps.meetings.roles import claim_grants, participant_role_for
+
+        claim_grants(user)
+        assigned = participant_role_for(meeting, user)
+        if assigned != MeetingParticipant.Role.ATTENDEE:
+            role = assigned
 
         if existing:
             if not existing.is_active:
