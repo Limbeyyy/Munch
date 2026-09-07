@@ -187,6 +187,8 @@ def guest_status(request):
         meeting = MeetingService.end_meeting(meeting.id)
         guest.meeting = meeting
 
+    from src.apps.meetings.lifecycle import session_room_state
+
     return Response({
         'guest': GuestAttendeeSerializer(guest).data,
         'meeting': {
@@ -197,6 +199,9 @@ def guest_status(request):
                 guest.meeting.started_at.isoformat()
                 if guest.meeting.started_at else None
             ),
+            # The room is a session; its clock and its closing time come
+            # from whatever is on stage, not from the whole morning.
+            'current_session': session_room_state(guest.meeting),
         },
     })
 

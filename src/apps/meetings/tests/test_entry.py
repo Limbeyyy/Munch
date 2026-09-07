@@ -216,6 +216,39 @@ class CodeIsACredentialTests(TestCase):
     def test_a_wrong_code_still_finds_nothing(self):
         self.assertEqual(self.client.get(f'{API}/meetings/NOP-E00/').status_code, 404)
 
+    def test_a_code_holder_reaches_the_room_only_after_joining(self):
+        """The reported failure: the room page read but never joined.
+
+        Looking the meeting up works on the strength of the code, but
+        everything the room needs - who is here, the chat rules, the files
+        - belongs to members. Entering a room is joining it, and until the
+        page did that the room came up empty with a wall of 404s.
+        """
+        member_endpoints = [
+            f'{API}/meetings/{self.meeting.id}/participants/',
+            f'{API}/meetings/{self.meeting.id}/chat_settings/',
+            f'{API}/meetings/{self.meeting.id}/resources/',
+        ]
+        for path in member_endpoints:
+            self.assertEqual(self.client.get(path).status_code, 404, path)
+
+        self.assertEqual(
+            self.client.post(f'{API}/meetings/{self.meeting.meeting_code}/join/').status_code,
+            200,
+        )
+
+        for path in member_endpoints:
+            self.assertEqual(self.client.get(path).status_code, 200, path)
+
+    def test_joining_records_them_as_present(self):
+        self.client.post(f'{API}/meetings/{self.meeting.meeting_code}/join/')
+
+        present = MeetingParticipant.objects.get(
+            meeting=self.meeting, user=self.visitor
+        )
+        self.assertEqual(present.role, MeetingParticipant.Role.ATTENDEE)
+        self.assertTrue(present.is_active)
+
     def test_a_code_holder_cannot_change_the_meeting(self):
         # Reading is what a code earns. Editing still needs to be the host.
         response = self.client.patch(
