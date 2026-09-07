@@ -293,22 +293,46 @@ def reschedule(meeting, changes, anchored_id=None):
 
 
 def _restretch_meetings(sessions):
-    """A meeting exists to hold its running order, so its window is that span."""
+    """A meeting exists to hold its running order, so its window is that span.
+
+    A meeting under way is left alone: moving the window out from under a
+    room full of people would be worse than a window that no longer matches.
+
+    An ended one is not left alone. Moving its sessions into the future is
+    how somebody says the meeting is going to happen after all, and a
+    window still sitting in the past would keep the door shut against the
+    very schedule that was just corrected. It is put back to scheduled, and
+    the clock from the old sitting is cleared so the room does not count
+    from a meeting that finished hours ago.
+    """
     by_meeting = {}
     for session in sessions:
         by_meeting.setdefault(session.meeting_id, []).append(session)
 
+    now = timezone.now()
     for meeting_id, own in by_meeting.items():
         meeting = own[0].meeting
-        if meeting.status in (Meeting.Status.ACTIVE, Meeting.Status.ENDED):
+        if meeting.status == Meeting.Status.ACTIVE:
             continue
+
         starts_at = min(s.starts_at for s in own)
         ends_at = max(
             s.starts_at + timezone.timedelta(minutes=s.duration_minutes) for s in own
         )
+
+        changed = []
         if meeting.scheduled_start != starts_at or meeting.scheduled_end != ends_at:
             meeting.scheduled_start = starts_at
             meeting.scheduled_end = ends_at
-            meeting.save(
-                update_fields=['scheduled_start', 'scheduled_end', 'updated_at']
-            )
+            changed += ['scheduled_start', 'scheduled_end']
+
+        # Only a window that has genuinely moved into the future reopens a
+        # meeting; touching an old one should not bring it back to life.
+        if meeting.status == Meeting.Status.ENDED and ends_at > now:
+            meeting.status = Meeting.Status.SCHEDULED
+            meeting.started_at = None
+            meeting.ended_at = None
+            changed += ['status', 'started_at', 'ended_at']
+
+        if changed:
+            meeting.save(update_fields=changed + ['updated_at'])
