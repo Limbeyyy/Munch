@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
+import { LIST_POLL_MS, QUEUE_POLL_MS } from '../services/polling';
 import { useAuthStore } from '../store/authStore';
 import { Meeting } from '../types';
 import { OrganizerProvider, useOrganizer } from '../organizer/i18n';
@@ -49,7 +50,7 @@ const OrganizerInner: React.FC = () => {
   // Meeting state changes when a session goes on stage, which may happen
   // on another screen, so the rail's counts and badges keep up.
   useEffect(() => {
-    const id = setInterval(load, 8000);
+    const id = setInterval(load, LIST_POLL_MS);
     return () => clearInterval(id);
   }, [load]);
 
@@ -69,7 +70,7 @@ const OrganizerInner: React.FC = () => {
       );
     };
     count();
-    const id = setInterval(count, 15000);
+    const id = setInterval(count, QUEUE_POLL_MS);
     return () => { cancelled = true; clearInterval(id); };
   }, [meetings]);
 
