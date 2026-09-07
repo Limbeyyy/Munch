@@ -991,6 +991,50 @@ class MeetingViewSet(viewsets.ModelViewSet):
         message.save(update_fields=['topic'])
         return Response(ChatMessageSerializer(message).data)
 
+    @action(detail=True, methods=['post'], url_path='answer_message')
+    def answer_message(self, request, pk=None):
+        """Answer a question on the board, or change the answer. Host only.
+
+        Written whenever it suits - from the front of the room while the
+        question is live, or days later when somebody has actually found
+        out. Only what is already on the board can be answered: an answer
+        the room cannot see would be talking to nobody.
+        """
+        meeting = self.get_object()
+
+        if str(request.user.id) != str(meeting.host_id):
+            return Response(
+                {'error': 'Only the host answers from the board'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        message = ChatMessage.objects.filter(
+            meeting=meeting, id=request.data.get('message_id')
+        ).select_related('sender', 'guest_sender', 'answered_by').first()
+        if message is None:
+            return Response(
+                {'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND
+            )
+        if message.topic == ChatMessage.Topic.NONE:
+            return Response(
+                {
+                    'error': 'Put it on the board before answering it.',
+                    'code': 'not_on_board',
+                },
+                status=status.HTTP_409_CONFLICT
+            )
+
+        answer = (request.data.get('answer') or '').strip()
+        message.answer = answer
+        # Clearing the answer clears who gave it, rather than leaving a
+        # name attached to nothing.
+        message.answered_by = request.user if answer else None
+        message.answered_at = timezone.now() if answer else None
+        message.save(update_fields=['answer', 'answered_by', 'answered_at'])
+
+        logger.info(f"Board answer {'written' if answer else 'cleared'} on {message.id}")
+        return Response(ChatMessageSerializer(message).data)
+
     @action(detail=True, methods=['get'], url_path='board')
     def board(self, request, pk=None):
         """The questions and suggestions the host has put up.

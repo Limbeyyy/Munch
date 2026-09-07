@@ -103,7 +103,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
             'id', 'body', 'created_at', 'is_direct',
             'sender_id', 'sender_name', 'sender_email', 'sender_is_guest',
             'recipient_id', 'recipient_name', 'recipient_is_guest',
-            'moderation_status', 'topic',
+            'moderation_status', 'topic', 'answer',
         ]
         read_only_fields = fields
 
