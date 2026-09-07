@@ -211,6 +211,32 @@ def guest_leave(request):
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
+def guest_board(request):
+    """The questions and suggestions the host has put up, for a guest.
+
+    A guest can ask, so a guest can read what was asked. Mirrors the
+    account-holder endpoint exactly - only what the host sorted, and only
+    the asker named.
+    """
+    guest = resolve_guest(request.query_params.get('token', ''))
+    if guest is None:
+        return Response(
+            {'error': 'Invalid or expired guest session'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+    if not guest.is_admitted:
+        return Response(
+            {'error': 'You have not been admitted to this meeting'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    from src.apps.meetings.board import board_for
+
+    return Response(board_for(guest.meeting))
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
 def guest_chat(request):
     """Chat history and settings for an admitted guest.
 

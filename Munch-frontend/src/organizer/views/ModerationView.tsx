@@ -1,9 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
+import { ACTIVE_POLL_MS, QUEUE_POLL_MS } from '../../services/polling';
 import {
-  ChatMessage, EventProgramme, GuestAttendee, Meeting, Session,
+  ChatMessage, EventProgramme, GuestAttendee, Meeting, MessageTopic, Session,
 } from '../../types';
+import { Modal } from '../OrganizerShell';
+import { MessageBoard } from '../MessageBoard';
+import { ReviewedMessages } from '../ReviewedMessages';
 import { useOrganizer } from '../i18n';
 import { Btn, Chip, Empty, Head, Panel, Tabs } from '../ui';
 
@@ -41,10 +45,14 @@ interface Props { meetings: Meeting[]; }
 export const ModerationView: React.FC<Props> = ({ meetings }) => {
   const { t, num } = useOrganizer();
 
-  const [tab, setTab] = useState<'messages' | 'guests'>('messages');
+  const [tab, setTab] = useState<'messages' | 'guests' | 'board'>('messages');
+  const [boardMeeting, setBoardMeeting] = useState('');
+  const [accepting, setAccepting] = useState<Row | null>(null);
   const [events, setEvents] = useState<EventProgramme[]>([]);
   const [pending, setPending] = useState<Record<string, ChatMessage[]>>({});
   const [waiting, setWaiting] = useState<Record<string, GuestAttendee[]>>({});
+  const [reviewedUsers, setReviewedUsers] = useState<ChatMessage[]>([]);
+  const [reviewedGuests, setReviewedGuests] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
 
   const [query, setQuery] = useState('');
@@ -69,22 +77,31 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
         id: m.id,
         pending: await apiClient.getPendingMessages(m.id).catch(() => [] as ChatMessage[]),
         waiting: await apiClient.getGuests(m.id).catch(() => [] as GuestAttendee[]),
+        reviewed: await apiClient
+          .getReviewedMessages(m.id)
+          .catch(() => ({ from_users: [], from_guests: [] })),
       }))
     );
     const nextPending: Record<string, ChatMessage[]> = {};
     const nextWaiting: Record<string, GuestAttendee[]> = {};
+    const fromUsers: ChatMessage[] = [];
+    const fromGuests: ChatMessage[] = [];
     results.forEach((r) => {
       if (r.status !== 'fulfilled') return;
       nextPending[r.value.id] = r.value.pending;
       nextWaiting[r.value.id] = r.value.waiting.filter((g) => g.status === 'pending');
+      fromUsers.push(...r.value.reviewed.from_users);
+      fromGuests.push(...r.value.reviewed.from_guests);
     });
     setPending(nextPending);
     setWaiting(nextWaiting);
+    setReviewedUsers(fromUsers);
+    setReviewedGuests(fromGuests);
   }, [liveKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     load();
-    const id = setInterval(load, 10000);
+    const id = setInterval(load, ACTIVE_POLL_MS);
     return () => clearInterval(id);
   }, [load]);
 
@@ -183,13 +200,32 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
     return order.map((key) => ({ key, ...byKey[key] }));
   }, [visible]);
 
+  /**
+   * Let a held message through, turn it down, or discard it.
+   *
+   * A topic delivers it and puts it on the board in one step, which is when
+   * the host has just read it and knows what it is. The board is read by
+   * everyone in the meeting, so sorting a direct message onto it is asked
+   * about first.
+   */
   const decideMessage = async (
-    row: Row, action: 'approve' | 'decline' | 'remove'
+    row: Row,
+    action: 'approve' | 'decline' | 'remove',
+    topic?: MessageTopic
   ) => {
     if (!row.message) return;
+    if (topic && row.message.is_direct) {
+      const ok = window.confirm(
+        t({
+          ne: 'यो सिधा सन्देश हो। बोर्डमा राख्दा बैठकका सबैले पढ्न सक्छन्।\n\nराख्ने?',
+          en: 'This was sent privately. Putting it on the board lets everybody in the meeting read it.\n\nPut it up?',
+        })
+      );
+      if (!ok) return;
+    }
     try {
       setBusy(row.id);
-      await apiClient.moderateMessage(row.meeting.id, row.message.id, action);
+      await apiClient.moderateMessage(row.meeting.id, row.message.id, action, topic);
       setPending((prev) => ({
         ...prev,
         [row.meeting.id]: (prev[row.meeting.id] ?? []).filter((m) => m.id !== row.id),
@@ -236,13 +272,47 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
 
       <Tabs
         active={tab}
-        onChange={(id) => setTab(id as 'messages' | 'guests')}
+        onChange={(id) => setTab(id as 'messages' | 'guests' | 'board')}
         tabs={[
           { id: 'messages', label: { ne: `सन्देश (${num(messageCount)})`, en: `Messages (${messageCount})` } },
           { id: 'guests', label: { ne: `पाहुना (${num(guestCount)})`, en: `Guests (${guestCount})` } },
+          { id: 'board', label: { ne: 'प्रश्न र सुझाव', en: 'Questions & suggestions' } },
         ]}
       />
 
+      {tab === 'board' ? (
+        <div className="flex flex-col gap-3.5">
+          {meetings.length === 0 ? (
+            <Panel><Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No meetings.' })}</Empty></Panel>
+          ) : (
+            <>
+              {/* One board at a time. Drawing every meeting's board at
+                  once meant polling all of them at once, which is a lot of
+                  traffic for boards nobody is looking at. */}
+              {meetings.length > 1 && (
+                <div>
+                  <label className="block text-[12.5px] text-[#6E7C8E] mb-1.5">
+                    {t({ ne: 'कुन बैठक', en: 'Which meeting' })}
+                  </label>
+                  <select
+                    value={boardMeeting}
+                    onChange={(e) => setBoardMeeting(e.target.value)}
+                    className="w-full max-w-md border border-navy-800/15 rounded-[9px] px-3 py-2 bg-white text-[14px]"
+                  >
+                    {meetings.map((m) => (
+                      <option key={m.id} value={m.id}>{m.title}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <MessageBoard
+                meetingId={boardMeeting || meetings[0].id}
+                refreshMs={QUEUE_POLL_MS}
+              />
+            </>
+          )}
+        </div>
+      ) : (
       <>
       {/* Search */}
       <div className="flex items-center gap-2 flex-wrap mb-3.5">
@@ -335,14 +405,24 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
                           </span>
                           <div className="min-w-0">
                             <p className="text-[13.5px]">{item.message!.body}</p>
-                            <p className="text-[12.5px] text-[#6E7C8E] mt-0.5">
-                              {item.message!.sender_name} &rarr; {item.message!.recipient_name}
+                            <p className="text-[12.5px] text-[#6E7C8E] mt-0.5 flex items-center gap-1.5 flex-wrap">
+                              <span>{item.message!.sender_name}</span>
+                              {item.message!.is_direct ? (
+                                <Chip tone="draft">
+                                  {t({
+                                    ne: `सिधा — ${item.message!.recipient_name} लाई`,
+                                    en: `direct — to ${item.message!.recipient_name}`,
+                                  })}
+                                </Chip>
+                              ) : (
+                                <Chip>{t({ ne: 'सबैलाई', en: 'to the room' })}</Chip>
+                              )}
                             </p>
                           </div>
                           <span className="ml-auto flex gap-1.5 flex-none flex-wrap justify-end">
                             <Btn sm tone="solid" disabled={busy === item.id}
-                                 onClick={() => decideMessage(item, 'approve')}>
-                              {t({ ne: 'पठाउने', en: 'Deliver' })}
+                                 onClick={() => setAccepting(item)}>
+                              {t({ ne: 'स्वीकार', en: 'Accept' })}
                             </Btn>
                             <Btn sm disabled={busy === item.id}
                                  onClick={() => decideMessage(item, 'decline')}>
@@ -386,7 +466,68 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
       )}
 
       </>
+      )}
 
+      {accepting?.message && (
+        <Modal
+          open
+          onClose={() => setAccepting(null)}
+          title={t({ ne: 'कसरी स्वीकार गर्ने?', en: 'Accept it as what?' })}
+          lede={
+            accepting.message.is_direct
+              ? t({
+                  ne: `${accepting.message.sender_name} ले ${accepting.message.recipient_name} लाई सिधा पठाएको`,
+                  en: `${accepting.message.sender_name} sent this privately to ${accepting.message.recipient_name}`,
+                })
+              : t({
+                  ne: `${accepting.message.sender_name} ले सबैलाई`,
+                  en: `${accepting.message.sender_name}, to the room`,
+                })
+          }
+          footer={
+            <Btn onClick={() => setAccepting(null)}>
+              {t({ ne: 'रद्द', en: 'Cancel' })}
+            </Btn>
+          }
+        >
+          <p className="text-[13.5px] font-read bg-cream rounded-lg px-3 py-2.5">
+            {accepting.message.body}
+          </p>
+          <p className="text-[12.5px] text-[#6E7C8E] mt-3">
+            {accepting.message.is_direct
+              ? t({
+                  ne: 'प्रश्न वा सुझाव छान्दा सन्देश पठाइन्छ र बोर्डमा पनि राखिन्छ — बोर्ड बैठकका सबैले पढ्न सक्छन्।',
+                  en: 'Question or suggestion delivers it and also puts it on the board, which everybody in the meeting can read.',
+                })
+              : t({
+                  ne: 'यो सन्देश सबैलाई पठाइएको हो — कोठाले पहिल्यै पढिसक्यो, त्यसैले बोर्डमा जाँदैन।',
+                  en: 'This one went to the whole room, which has already read it, so it does not go on the board.',
+                })}
+          </p>
+          <div className="mt-3.5 flex gap-2 flex-wrap">
+            {/* Only what was said privately reaches the board. */}
+            {accepting.message.is_direct && (
+              <>
+                <Btn tone="solid" onClick={() => { const row = accepting; setAccepting(null); decideMessage(row, 'approve', 'faq'); }}>
+                  {t({ ne: 'प्रश्नका रूपमा', en: 'Accept as question' })}
+                </Btn>
+                <Btn tone="amber" onClick={() => { const row = accepting; setAccepting(null); decideMessage(row, 'approve', 'suggestion'); }}>
+                  {t({ ne: 'सुझावका रूपमा', en: 'Accept as suggestion' })}
+                </Btn>
+              </>
+            )}
+            <Btn tone={accepting.message.is_direct ? 'plain' : 'solid'}
+                 onClick={() => { const row = accepting; setAccepting(null); decideMessage(row, 'approve'); }}>
+              {accepting.message.is_direct
+                ? t({ ne: 'बोर्डमा नराखी पठाउने', en: 'Just deliver it' })
+                : t({ ne: 'पठाउने', en: 'Deliver it' })}
+            </Btn>
+          </div>
+        </Modal>
+      )}
+
+      {tab !== 'board' && (
+      <>
       {/* Paging, only once there is more than a page to show */}
       {pageCount > 1 && (
         <div className="flex items-center gap-2 mt-4 justify-center">
@@ -403,6 +544,26 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
             {t({ ne: 'अर्को', en: 'Next' })}
           </Btn>
         </div>
+      )}
+      {/* Out of the queue, into the record: what was passed on, and
+          whether it also went on the board. */}
+      <div className="mt-3.5">
+        <ReviewedMessages
+          messages={tab === 'guests' ? reviewedGuests : reviewedUsers}
+          empty={
+            tab === 'guests'
+              ? {
+                  ne: 'पाहुनाबाट आएको कुनै सिधा सन्देश अझै पठाइएको छैन।',
+                  en: 'No direct message from a guest has been passed on yet.',
+                }
+              : {
+                  ne: 'कुनै सिधा सन्देश अझै पठाइएको छैन।',
+                  en: 'No direct message has been passed on yet.',
+                }
+          }
+        />
+      </div>
+      </>
       )}
     </>
   );

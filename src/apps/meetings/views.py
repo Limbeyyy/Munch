@@ -756,6 +756,42 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
         return Response(ChatMessageSerializer(qs, many=True).data)
 
+    @action(detail=True, methods=['get'], url_path='reviewed_messages')
+    def reviewed_messages(self, request, pk=None):
+        """Direct messages the host has let through. Host only.
+
+        The record of what was passed on, which is what the moderation
+        dashboard shows once a message leaves the queue. Split by who sent
+        it, because an account holder and a guest are answered in different
+        places. Each carries whether it also went on the board.
+        """
+        meeting = self.get_object()
+
+        if str(request.user.id) != str(meeting.host_id):
+            return Response(
+                {'error': 'Only the host reviews messages'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        reviewed = ChatMessage.objects.filter(
+            meeting=meeting,
+            moderation_status=ChatMessage.Moderation.APPROVED,
+        ).exclude(
+            recipient__isnull=True, guest_recipient__isnull=True
+        ).select_related(
+            'sender', 'recipient', 'guest_sender', 'guest_recipient'
+        ).order_by('-moderated_at')
+
+        rows = ChatMessageSerializer(reviewed, many=True).data
+        return Response({
+            'from_users': [
+                row for row, m in zip(rows, reviewed) if m.guest_sender_id is None
+            ],
+            'from_guests': [
+                row for row, m in zip(rows, reviewed) if m.guest_sender_id is not None
+            ],
+        })
+
     @action(detail=True, methods=['post'], url_path='moderate_message')
     def moderate_message(self, request, pk=None):
         """Approve, decline or remove a held message. Host only.
@@ -804,10 +840,118 @@ class MeetingViewSet(viewsets.ModelViewSet):
         message.moderation_status = decisions[decision]
         message.moderated_by = request.user
         message.moderated_at = timezone.now()
-        message.save(update_fields=['moderation_status', 'moderated_by', 'moderated_at'])
+        changed = ['moderation_status', 'moderated_by', 'moderated_at']
+
+        # Sorting it onto the board can be done in the same breath as
+        # approving it, which is when the host has just read it.
+        topic = request.data.get('topic')
+        if topic and topic != ChatMessage.Topic.NONE and decision == 'approve':
+            if topic not in ChatMessage.Topic.values:
+                return Response(
+                    {'error': f'topic must be one of {sorted(ChatMessage.Topic.values)}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            # Same rule as sorting one afterwards: the board is for what
+            # was said privately, not for what the room already heard.
+            if not message.is_direct:
+                return Response(
+                    {
+                        'error': (
+                            'The board is for direct messages. This one was '
+                            'sent to the whole room.'
+                        ),
+                        'code': 'not_direct',
+                    },
+                    status=status.HTTP_409_CONFLICT
+                )
+            message.topic = topic
+            changed.append('topic')
+
+        message.save(update_fields=changed)
 
         deliver_moderated_message(meeting, message, decision)
         return Response(ChatMessageSerializer(message).data)
+
+    @action(detail=True, methods=['post'], url_path='sort_message')
+    def sort_message(self, request, pk=None):
+        """Put a message on the board as a question or a suggestion, or take
+        it off again. Host only.
+
+        This publishes. The board is read by everyone in the meeting, so a
+        direct message sorted onto it stops being private - which is why
+        only the host can do it, and only deliberately.
+        """
+        meeting = self.get_object()
+
+        if str(request.user.id) != str(meeting.host_id):
+            return Response(
+                {'error': 'Only the host sorts messages'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        topic = request.data.get('topic')
+        if topic not in ChatMessage.Topic.values:
+            return Response(
+                {'error': f'topic must be one of {sorted(ChatMessage.Topic.values)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        message = ChatMessage.objects.filter(
+            meeting=meeting, id=request.data.get('message_id')
+        ).select_related('sender', 'guest_sender').first()
+        if message is None:
+            return Response(
+                {'error': 'Message not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # A message the host has not let through cannot be published by
+        # sorting it - that would be a way round their own decision.
+        held = (
+            ChatMessage.Moderation.PENDING,
+            ChatMessage.Moderation.DECLINED,
+            ChatMessage.Moderation.REMOVED,
+        )
+        if topic != ChatMessage.Topic.NONE and message.moderation_status in held:
+            return Response(
+                {'error': 'Let the message through before putting it on the board'},
+                status=status.HTTP_409_CONFLICT
+            )
+
+        # Only what was said privately. A room message has already been
+        # read by everyone present, so putting it on the board adds
+        # nothing; the board is for the questions people brought to the
+        # host or a speaker rather than to the room.
+        if topic != ChatMessage.Topic.NONE and not message.is_direct:
+            return Response(
+                {
+                    'error': (
+                        'The board is for direct messages. This one was sent '
+                        'to the whole room, which has already read it.'
+                    ),
+                    'code': 'not_direct',
+                },
+                status=status.HTTP_409_CONFLICT
+            )
+
+        message.topic = topic
+        message.save(update_fields=['topic'])
+        return Response(ChatMessageSerializer(message).data)
+
+    @action(detail=True, methods=['get'], url_path='board')
+    def board(self, request, pk=None):
+        """The questions and suggestions the host has put up.
+
+        Read by attendees as well as the host - it is the point of sorting
+        them. Only what the host actually sorted appears, and only the
+        asker is named: who a direct message was addressed to is nobody
+        else's business, whatever became of the message.
+        """
+        meeting = self.get_object()
+
+        from src.apps.meetings.board import board_for
+
+        return Response(board_for(meeting))
 
     @action(detail=True, methods=['get'], url_path='qr', permission_classes=[AllowAny])
     def qr(self, request, pk=None):
