@@ -12,6 +12,7 @@ class MeetingSerializer(serializers.ModelSerializer):
     is_active = serializers.BooleanField(read_only=True)
     duration_seconds = serializers.IntegerField(read_only=True)
     entry = serializers.SerializerMethodField()
+    current_session = serializers.SerializerMethodField()
 
     class Meta:
         model = Meeting
@@ -22,7 +23,8 @@ class MeetingSerializer(serializers.ModelSerializer):
             'max_participants', 'allow_recording', 'require_authentication',
             'chat_enabled', 'direct_messages_enabled',
             'meeting_metadata', 'created_at', 'updated_at',
-            'participant_count', 'is_active', 'duration_seconds', 'entry'
+            'participant_count', 'is_active', 'duration_seconds', 'entry',
+            'current_session',
         ]
         read_only_fields = [
             'id', 'meeting_code', 'host', 'created_at', 'updated_at',
@@ -38,6 +40,12 @@ class MeetingSerializer(serializers.ModelSerializer):
         from src.apps.meetings.entry import entry_state
 
         return entry_state(obj)
+
+    def get_current_session(self, obj):
+        """The session the room is holding, which is what its clock counts."""
+        from src.apps.meetings.lifecycle import session_room_state
+
+        return session_room_state(obj)
 
     def get_participant_count(self, obj):
         return obj.get_participant_count()

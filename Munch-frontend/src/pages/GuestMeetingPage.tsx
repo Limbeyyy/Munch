@@ -48,6 +48,8 @@ export const GuestMeetingPage: React.FC = () => {
 
   const [elapsed, setElapsed] = useState(0);
   const [startedAt, setStartedAt] = useState<string | null>(null);
+  const [sessionTitle, setSessionTitle] = useState('');
+  const [sessionEndsAt, setSessionEndsAt] = useState<string | null>(null);
   // Guests read the transcript; only account holders can speak into it.
   const [transcript, setTranscript] = useState<TranscriptionSegment[]>([]);
 
@@ -133,18 +135,27 @@ export const GuestMeetingPage: React.FC = () => {
   }, [loadChat]);
 
   /*
-   * The clock belongs to the host. If the meeting has not started when we
-   * arrive, keep asking until it has, rather than waiting on the slower
-   * admission poll and showing "Not started" in the meantime.
+   * Which session the room is holding, and whether its clock has started.
+   *
+   * A room is a session, not a meeting: the clock counts the talk people
+   * are sitting through, not the whole morning. Kept polling rather than
+   * stopped once a clock appears, because the day moves on - the next
+   * session becomes this room's session in its turn.
    */
   useEffect(() => {
-    if (!token || startedAt) return;
+    if (!token) return;
 
     let cancelled = false;
     const fetchStart = async () => {
       try {
         const { meeting } = await apiClient.guestStatus(token);
-        if (!cancelled && meeting?.started_at) setStartedAt(meeting.started_at);
+        if (cancelled) return;
+        const running = (meeting as any)?.current_session;
+        // The title and the closing time are known as soon as the room has
+        // a session at all; the clock waits for it to go on stage.
+        setSessionTitle(running?.title ?? '');
+        setSessionEndsAt(running?.ends_at ?? null);
+        setStartedAt(running?.started_at ?? null);
       } catch {
         // Try again on the next tick.
       }
@@ -156,7 +167,7 @@ export const GuestMeetingPage: React.FC = () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [token, startedAt]);
+  }, [token]);
 
   // Live chat over the same socket that delivered the admission decision.
   useEffect(() => {
@@ -309,6 +320,23 @@ export const GuestMeetingPage: React.FC = () => {
 
 
   // Same clock as everyone else: anchored to the host's start timestamp.
+  /** The room shuts when its session is over; there is nothing left to be in. */
+  useEffect(() => {
+    if (!sessionEndsAt) return;
+    const shut = () => {
+      toast(
+        sessionTitle ? `“${sessionTitle}” has finished.` : 'This session has finished.',
+        { icon: '\u2705', duration: 5000 }
+      );
+      leave();
+    };
+    const remaining = +new Date(sessionEndsAt) - Date.now();
+    if (remaining <= 0) { shut(); return; }
+    const id = setTimeout(shut, remaining);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionEndsAt, sessionTitle]);
+
   useEffect(() => {
     if (!startedAt) {
       setElapsed(0);
@@ -341,9 +369,15 @@ export const GuestMeetingPage: React.FC = () => {
       </div>
 
       <div className="bg-gray-800 px-4 py-4 flex flex-wrap justify-center items-center gap-3">
-        <div className="mr-auto">
-          <h2 className="text-lg font-semibold">{meetingTitle}</h2>
-          <p className="text-xs text-gray-400">Code {meetingCode}</p>
+        {/* The session is what people are sitting through; the meeting is
+            the part of the day it belongs to. */}
+        <div className="mr-auto min-w-0">
+          <h2 className="text-lg font-semibold truncate">
+            {sessionTitle || meetingTitle}
+          </h2>
+          <p className="text-xs text-gray-400 truncate">
+            {sessionTitle ? `${meetingTitle} · ` : ''}Code {meetingCode}
+          </p>
         </div>
 
         <button

@@ -68,6 +68,7 @@ export const MeetingRoomPage: React.FC = () => {
   const [decidingGuest, setDecidingGuest] = useState<string | null>(null);
   const [showShare, setShowShare] = useState(false);
   const [showEndChoice, setShowEndChoice] = useState(false);
+  const [roomGuests, setRoomGuests] = useState<GuestAttendee[]>([]);
   const [showAttendance, setShowAttendance] = useState(false);
   const [attendance, setAttendance] = useState<AttendanceReport | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -79,7 +80,11 @@ export const MeetingRoomPage: React.FC = () => {
   // identity changes on every refetch and would otherwise tear down the
   // websocket, the camera and the timer.
   const meetingId = currentMeeting?.id ?? null;
-  const startedAt = currentMeeting?.started_at ?? null;
+  // A room is a session, not a meeting. The meeting may be a whole
+  // morning; what people are sitting through is one talk, and that is
+  // what the clock on the wall should count.
+  const session = currentMeeting?.current_session ?? null;
+  const startedAt = session?.started_at ?? null;
 
   useEffect(() => {
     meetingIdRef.current = meetingId;
@@ -119,10 +124,35 @@ export const MeetingRoomPage: React.FC = () => {
   const myRole = (participants as MeetingParticipant[])
     .find((p) => p.user?.id === user?.id)?.role;
 
-  /** Participants who can be addressed directly: hosts and presenters. */
-  const presenters = (participants as MeetingParticipant[]).filter(
+  /**
+   * Who can be written to privately.
+   *
+   * Attendees may write to whoever is running the room. Whoever is running
+   * it may write back to anybody in it, guests included - a reply you
+   * cannot send is not a conversation, and until now the guest side of a
+   * private thread simply had no return path: guests are not participants,
+   * so they never appeared in this list at all.
+   */
+  const organizers = (participants as MeetingParticipant[]).filter(
     (p) => p.user?.id !== user?.id && ['host', 'co_host', 'presenter'].includes(p.role)
   );
+  const others = (participants as MeetingParticipant[]).filter(
+    (p) => p.user?.id !== user?.id && !['host', 'co_host', 'presenter'].includes(p.role)
+  );
+
+  const canReplyToAnyone = isHost;
+  const dmTargets: { id: string; label: string }[] = [
+    ...organizers.map((p) => ({
+      id: p.user.id,
+      label: `${p.user.email} (${p.role.replace('_', '-')})`,
+    })),
+    ...(canReplyToAnyone
+      ? [
+          ...others.map((p) => ({ id: p.user.id, label: p.user.email })),
+          ...roomGuests.map((g) => ({ id: g.id, label: `${g.full_name} (guest)` })),
+        ]
+      : []),
+  ];
 
   const [changingRole, setChangingRole] = useState<string | null>(null);
 
@@ -230,6 +260,8 @@ export const MeetingRoomPage: React.FC = () => {
     try {
       const all = await apiClient.getGuests(id);
       setWaitingGuests(all.filter((g) => g.status === 'pending'));
+      // The ones already in the room are who the host can write back to.
+      setRoomGuests(all.filter((g) => g.status === 'admitted'));
     } catch {
       // Only the host may read this.
     }
@@ -295,6 +327,13 @@ export const MeetingRoomPage: React.FC = () => {
         navigate('/');
         return;
       }
+
+      // Walking into the room is joining it. Without this the page only
+      // ever reads: somebody holding a code is not a participant, so every
+      // member endpoint - participants, chat settings, files - answers 404
+      // and the room comes up empty. Joining also records that they were
+      // here, which is what attendance is counted from.
+      await apiClient.joinMeeting(meeting.meeting_code);
 
       const participants = await apiClient.getParticipants(meeting.id);
       setParticipants(participants);
@@ -540,19 +579,35 @@ export const MeetingRoomPage: React.FC = () => {
     }
   };
 
-  // The host starts the clock once; the server timestamp is then the single
-  // source of truth for everyone.
+  /**
+   * The room shuts when the session it is holding is over.
+   *
+   * A room is one session. Once that session's time is up there is nothing
+   * left to be in, so everybody is shown out rather than left sitting in a
+   * room whose clock has stopped meaning anything. The server closes the
+   * session itself; this is the room noticing.
+   */
   useEffect(() => {
-    if (!meetingId || !isHost || startedAt) return;
-    (async () => {
-      try {
-        const updated = await apiClient.startMeeting(meetingId);
-        setMeeting(updated);
-      } catch {
-        // A meeting that cannot be started still renders; the clock waits.
-      }
-    })();
-  }, [meetingId, isHost, startedAt, setMeeting]);
+    if (!session?.ends_at) return;
+
+    const shut = () => {
+      toast(
+        session.title
+          ? `“${session.title}” has finished.`
+          : 'This session has finished.',
+        { icon: '\u2705', duration: 5000 }
+      );
+      navigate('/');
+    };
+
+    if (session.is_over) { shut(); return; }
+
+    const remaining = +new Date(session.ends_at) - Date.now();
+    if (remaining <= 0) { shut(); return; }
+
+    const id = setTimeout(shut, remaining);
+    return () => clearTimeout(id);
+  }, [session?.ends_at, session?.is_over, session?.title, navigate]);
 
   // Session timer, anchored to the server's started_at so every participant
   // sees the same count, and leaving and returning resumes rather than resets.
@@ -866,7 +921,16 @@ export const MeetingRoomPage: React.FC = () => {
 
           {/* Controls */}
           <div className="bg-gray-800 px-4 py-4 flex justify-center items-center gap-4">
-            <h2 className="text-xl font-semibold mr-auto">{currentMeeting.title}</h2>
+            {/* The room is a session, so the session is what it is called.
+                The meeting stays underneath as the context it sits in. */}
+            <div className="mr-auto min-w-0">
+              <h2 className="text-xl font-semibold truncate">
+                {session?.title || currentMeeting.title}
+              </h2>
+              {session?.title && (
+                <p className="text-xs text-gray-400 truncate">{currentMeeting.title}</p>
+              )}
+            </div>
 
             <button
               onClick={() => setShowShare(true)}
@@ -1132,16 +1196,16 @@ export const MeetingRoomPage: React.FC = () => {
                 <div className="p-3 border-t border-gray-700 space-y-2">
                   {chatTab === 'private' &&
                     chatSettings.direct_messages_enabled &&
-                    presenters.length > 0 && (
+                    dmTargets.length > 0 && (
                     <select
                       value={dmTarget}
                       onChange={(e) => setDmTarget(e.target.value)}
                       className="w-full bg-gray-700 text-sm rounded px-2 py-1.5"
                     >
                       <option value="">Everyone in the room</option>
-                      {presenters.map((p) => (
-                        <option key={p.id} value={p.user.id}>
-                          Direct to {p.user.email} ({p.role.replace('_', '-')})
+                      {dmTargets.map((target) => (
+                        <option key={target.id} value={target.id}>
+                          Direct to {target.label}
                         </option>
                       ))}
                     </select>

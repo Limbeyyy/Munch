@@ -170,3 +170,82 @@ def broadcast(meeting_code, session, event_type):
         )
     except Exception as e:
         logger.warning(f"Could not broadcast {event_type} for {meeting_code}: {e}")
+
+
+def current_session(meeting, now=None):
+    """The session the room is actually in.
+
+    A room is a session, not a meeting. A meeting is a morning or an
+    afternoon and may run for hours; what people are sitting through is one
+    talk with its own start and its own end, and that is what the clock on
+    the wall should be counting.
+
+    Whatever is on stage, if anything is. Otherwise whatever the timetable
+    says is happening at this moment - somebody arriving during a slot has
+    arrived for that session even if the host has not pressed anything yet.
+    Nothing outside a slot: between sessions the room is between sessions.
+    """
+    now = now or timezone.now()
+
+    live = meeting.sessions.filter(status=Session.Status.LIVE).order_by('starts_at').first()
+    if live is not None:
+        return live
+
+    for session in meeting.sessions.order_by('starts_at'):
+        if session.starts_at <= now <= scheduled_end(session):
+            return session
+    return None
+
+
+def session_room_state(meeting, now=None) -> dict:
+    """What the room should show about the session it is holding.
+
+    Worked out here rather than in each client so the two rooms - the one
+    account holders use and the one guests use - cannot disagree about
+    whose clock is running or when the door shuts.
+    """
+    now = now or timezone.now()
+    session = current_session(meeting, now)
+
+    if session is None:
+        # Nothing is running. If a session has just been and gone, say so -
+        # somebody opening the page a minute late should be told the talk
+        # is over, not left sitting in a room whose clock never starts.
+        finished = (
+            meeting.sessions.filter(starts_at__lte=now)
+            .order_by('-starts_at').first()
+        )
+        if finished is not None and now > scheduled_end(finished):
+            return {
+                'id': str(finished.id),
+                'title': finished.title,
+                'starts_at': finished.starts_at.isoformat(),
+                'started_at': (
+                    finished.started_at.isoformat() if finished.started_at else None
+                ),
+                'ends_at': scheduled_end(finished).isoformat(),
+                'duration_minutes': finished.duration_minutes,
+                'status': finished.status,
+                'is_over': True,
+            }
+        # Nothing has run yet: the room is waiting, not finished.
+        return {
+            'id': None,
+            'title': '',
+            'started_at': None,
+            'ends_at': None,
+            'is_over': False,
+        }
+
+    return {
+        'id': str(session.id),
+        'title': session.title,
+        'starts_at': session.starts_at.isoformat(),
+        # The clock counts from when it actually went on stage, not from
+        # when it was meant to.
+        'started_at': session.started_at.isoformat() if session.started_at else None,
+        'ends_at': scheduled_end(session).isoformat(),
+        'duration_minutes': session.duration_minutes,
+        'status': session.status,
+        'is_over': session.status in (Session.Status.DONE, Session.Status.SKIPPED),
+    }
