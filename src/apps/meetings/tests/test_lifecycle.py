@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from src.apps.meetings.lifecycle import (
-    close_meeting_if_spent, deadline_passed, sweep_expired,
+    close_meeting_if_spent, deadline_passed, has_more_to_run, sweep_expired,
 )
 from src.apps.meetings.models import Meeting, Session
 from src.apps.meetings.tests.factories import (
@@ -174,3 +174,84 @@ class EndingTests(TestCase):
         make_session(meeting, self.now, 60, status=Session.Status.LIVE)
 
         self.assertFalse(close_meeting_if_spent(meeting))
+
+
+class RunningOrderDecidesTheEndTests(TestCase):
+    """A meeting is finished when its sessions are, not when its clock is.
+
+    The reported failure: a meeting read as finished while one of its
+    sessions was still to come, with the host's own On stage button sitting
+    right beside it.
+    """
+
+    def setUp(self):
+        self.host = make_host()
+        self.event = make_event(self.host)
+        self.began = timezone.now() - timezone.timedelta(hours=1)
+        self.meeting = make_meeting(self.host, self.event, start=self.began, minutes=30)
+        self.meeting.status = Meeting.Status.ACTIVE
+        self.meeting.started_at = self.began
+        self.meeting.save()
+        self.ran = make_session(self.meeting, self.began, 20, 'Already ran')
+        self.ran.status = Session.Status.DONE
+        self.ran.save(update_fields=['status'])
+
+    def reloaded(self):
+        return Meeting.objects.get(id=self.meeting.id)
+
+    def test_a_session_still_to_come_keeps_the_meeting_open(self):
+        make_session(
+            self.meeting, timezone.now() + timezone.timedelta(minutes=20), 30, 'Yet to run'
+        )
+
+        self.assertTrue(has_more_to_run(self.meeting))
+        self.assertFalse(close_meeting_if_spent(self.meeting))
+        self.assertEqual(self.reloaded().status, Meeting.Status.ACTIVE)
+
+    def test_a_session_in_its_slot_keeps_it_open(self):
+        make_session(
+            self.meeting, timezone.now() - timezone.timedelta(minutes=5), 30, 'Running now'
+        )
+
+        self.assertTrue(has_more_to_run(self.meeting))
+        self.assertFalse(close_meeting_if_spent(self.meeting))
+
+    def test_something_on_stage_keeps_it_open(self):
+        live = make_session(self.meeting, timezone.now(), 30, 'On stage')
+        live.status = Session.Status.LIVE
+        live.save(update_fields=['status'])
+
+        self.assertTrue(has_more_to_run(self.meeting))
+
+    def test_a_missed_session_does_not_keep_it_open_for_ever(self):
+        # Never started and its time long gone: missed, not pending.
+        make_session(
+            self.meeting, self.began - timezone.timedelta(hours=2), 30, 'Nobody ran it'
+        )
+
+        self.assertFalse(has_more_to_run(self.meeting))
+        self.assertTrue(close_meeting_if_spent(self.meeting))
+
+    def test_it_closes_once_the_running_order_is_done(self):
+        self.assertFalse(has_more_to_run(self.meeting))
+
+        self.assertTrue(close_meeting_if_spent(self.meeting))
+        self.assertEqual(self.reloaded().status, Meeting.Status.ENDED)
+
+    def test_reading_the_meeting_does_not_end_it_early(self):
+        from rest_framework.test import APIClient
+        from src.apps.accounts.tokens import issue_tokens
+
+        make_session(
+            self.meeting, timezone.now() + timezone.timedelta(minutes=20), 30, 'Yet to run'
+        )
+        client = APIClient()
+        client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {issue_tokens(self.host)['access']}"
+        )
+
+        # Its own window ran out an hour ago; the session has not.
+        response = client.get(f'{API}/meetings/{self.meeting.meeting_code}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotEqual(self.reloaded().status, Meeting.Status.ENDED)

@@ -5,6 +5,7 @@ import { apiClient } from '../../services/api';
 import { ACTIVE_POLL_MS } from '../../services/polling';
 import {
   AttendanceReport, ChatMessage, GuestAttendee, Meeting, MeetingParticipant,
+  Session,
 } from '../../types';
 import { useOrganizer } from '../i18n';
 import { Btn, Chip, Card, Empty, Head, Kpi, Panel, Switch } from '../ui';
@@ -28,11 +29,29 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
   const { t, num } = useOrganizer();
   const navigate = useNavigate();
 
+  // Which part of the day we are in. The desk itself is about the session
+  // inside it - that is what runs, and what is started and ended.
   const live = meetings.find((m) => m.status === 'active');
   const next = meetings
     .filter((m) => m.status === 'scheduled')
     .sort((a, b) => +new Date(a.scheduled_start) - +new Date(b.scheduled_start))[0];
   const current = live ?? next;
+
+  const [sessions, setSessions] = useState<Session[]>([]);
+
+  /**
+   * The session on the desk: whatever is on stage, or the next one due.
+   *
+   * A meeting is a morning; a session is the thing that starts, runs and
+   * ends. Everything on this screen used to say "session" and act on the
+   * meeting, which is why starting from here started the whole morning.
+   */
+  const onStage = sessions.find((x) => x.status === 'live');
+  const upNext = sessions
+    .filter((x) => x.status === 'scheduled')
+    .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at))[0];
+  const stage = onStage ?? upNext;
+  const isLive = !!onStage;
 
   const [participants, setParticipants] = useState<MeetingParticipant[]>([]);
   const [attendance, setAttendance] = useState<AttendanceReport | null>(null);
@@ -67,45 +86,49 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
   };
 
   // Everything on this screen belongs to the meeting that is running.
-  useEffect(() => {
+  const load = React.useCallback(async () => {
     if (!current) return;
-    let cancelled = false;
-    const load = async () => {
-      const [p, a, q, g] = await Promise.allSettled([
+      const [p, a, q, g, x] = await Promise.allSettled([
         apiClient.getParticipants(current.id),
         apiClient.getAttendance(current.id),
         apiClient.getPendingMessages(current.id),
         apiClient.getGuests(current.id),
+        apiClient.listSessions(current.id),
       ]);
-      if (cancelled) return;
       if (p.status === 'fulfilled') setParticipants(p.value);
       if (a.status === 'fulfilled') setAttendance(a.value);
       if (q.status === 'fulfilled') setPending(q.value);
       if (g.status === 'fulfilled') {
         setKnocking(g.value.filter((guest) => guest.status === 'pending'));
       }
-    };
+      if (x.status === 'fulfilled') setSessions(x.value);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.id]);
+
+  useEffect(() => {
     load();
     const id = setInterval(load, ACTIVE_POLL_MS);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [current]);
+    return () => clearInterval(id);
+  }, [load]);
 
   // The clock is anchored to the server's start time, so every screen agrees.
   useEffect(() => {
-    if (!live?.started_at) { setElapsed(0); return; }
-    const origin = new Date(live.started_at).getTime();
+    // The clock counts the session on stage, not the whole morning.
+    if (!onStage?.started_at) { setElapsed(0); return; }
+    const origin = new Date(onStage.started_at).getTime();
     const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - origin) / 1000)));
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [live?.started_at]);
+  }, [onStage?.started_at]);
 
   const start = async () => {
-    if (!current) return;
+    if (!stage) return;
     try {
       setBusy(true);
-      await apiClient.startMeeting(current.id);
+      await apiClient.startSession(stage.id);
       toast.success(t({ ne: 'सत्र सुरु भयो', en: 'Session started' }));
+      await load();
       onChanged();
     } catch (e: any) {
       toast.error(e.response?.data?.error ?? t({ ne: 'सुरु गर्न सकिएन', en: 'Could not start' }));
@@ -113,16 +136,17 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
   };
 
   const end = async () => {
-    if (!live) return;
+    if (!onStage) return;
     const ok = window.confirm(t({
-      ne: 'यो सत्र सबैका लागि अन्त्य गर्ने?',
-      en: 'End this session for everyone?',
+      ne: `“${onStage.title}” सबैका लागि सकाउने?`,
+      en: `End “${onStage.title}” for everyone?`,
     }));
     if (!ok) return;
     try {
       setBusy(true);
-      await apiClient.endMeeting(live.id);
+      await apiClient.endSession(onStage.id);
       toast.success(t({ ne: 'सत्र सकियो', en: 'Session ended' }));
+      await load();
       onChanged();
     } catch (e: any) {
       toast.error(e.response?.data?.error ?? t({ ne: 'अन्त्य गर्न सकिएन', en: 'Could not end' }));
@@ -167,7 +191,6 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
     );
   }
 
-  const isLive = current.status === 'active';
   const activeCount = participants.filter((p) => p.is_active).length;
   const upcoming = meetings.filter((m) => m.status === 'scheduled' && m.id !== current.id);
 
@@ -201,15 +224,27 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
                   : t({ ne: 'अर्को सत्र', en: 'Up next' })}
               </span>
               <span className="ml-auto text-[12.5px] text-[#AFC6E6]">
-                {new Date(current.scheduled_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                {' – '}
-                {new Date(current.scheduled_end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                {stage ? (() => {
+                  const from = new Date(stage.starts_at);
+                  const to = new Date(+from + stage.duration_minutes * 60000);
+                  const hm = (d: Date) =>
+                    d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                  return `${hm(from)} – ${hm(to)}`;
+                })() : '—'}
               </span>
             </div>
 
-            <h2 className="text-[21px] font-semibold mt-2.5 mb-1">{current.title}</h2>
+            <h2 className="text-[21px] font-semibold mt-2.5 mb-1">
+              {stage?.title ?? t({ ne: 'कुनै सत्र बाँकी छैन', en: 'No session left to run' })}
+            </h2>
             <p className="text-[13.5px] text-[#C9DAF1]">
-              {current.host?.email} &middot; {t({ ne: 'कोड', en: 'Code' })} {current.meeting_code}
+              {[
+                stage?.speaker_name,
+                stage?.hall,
+                current.title,
+              ].filter(Boolean).join(' · ')}
+              {' · '}
+              {t({ ne: 'कोड', en: 'Code' })} {current.meeting_code}
             </p>
 
             <div className="flex items-center gap-4 flex-wrap mt-4">
@@ -233,7 +268,7 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
                   >
                     {t({ ne: 'सत्र सकियो', en: 'End session' })}
                   </button>
-                ) : (
+                ) : stage ? (
                   <button
                     onClick={start}
                     disabled={busy}
@@ -241,7 +276,7 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
                   >
                     {t({ ne: 'सत्र सुरु गर्नुहोस्', en: 'Start session' })}
                   </button>
-                )}
+                ) : null}
               </div>
             </div>
           </div>
