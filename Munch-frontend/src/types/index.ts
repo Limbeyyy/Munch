@@ -16,6 +16,20 @@ export interface AuthTokens {
 
 // Meeting
 export interface Meeting {
+  /**
+   * The session the room is holding. A room is a session, not a meeting:
+   * the clock counts this, and the door shuts when it ends.
+   */
+  current_session?: {
+    id: string | null;
+    title: string;
+    starts_at?: string;
+    started_at: string | null;
+    ends_at: string | null;
+    duration_minutes?: number;
+    status?: string;
+    is_over: boolean;
+  };
   /** When the room opens, and whether it may be started yet. Server-decided. */
   entry?: {
     opens_at: string;
@@ -630,6 +644,10 @@ export interface BoardEntry {
   was_direct: boolean;
   /** Who a direct question was put to; null for a public one. */
   sent_to: string | null;
+  /** The answer from the front of the room; empty until one is written. */
+  answer: string;
+  answered_by: string;
+  answered_at: string | null;
   created_at: string;
 }
 
