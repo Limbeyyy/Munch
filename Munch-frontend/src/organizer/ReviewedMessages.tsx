@@ -1,7 +1,10 @@
 import React from 'react';
-import { ChatMessage } from '../types';
+import { ChatMessage, MessageTopic } from '../types';
 import { Pair, useOrganizer } from './i18n';
-import { Chip, Empty, Panel } from './ui';
+import { Btn, Chip, Empty, Panel } from './ui';
+
+/** A passed-on message, remembering which meeting it came from. */
+export type ReviewedRow = ChatMessage & { meetingId: string };
 
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -16,13 +19,18 @@ const TOPIC_LABEL: Record<'faq' | 'suggestion', Pair> = {
  *
  * A message leaves the queue when it is decided, but it should not vanish:
  * this is where it goes, so the host can see what they let through and
- * what they filed on the board. Room messages are not here - they were
- * never held, and everybody read them at the time.
+ * what they filed on the board - and file it now if they did not then. A
+ * host often only sees what a message really was once a few have come in.
+ *
+ * Room messages are not here. They were never held, everybody read them at
+ * the time, and the board is for what was said privately.
  */
 export const ReviewedMessages: React.FC<{
-  messages: ChatMessage[];
+  messages: ReviewedRow[];
   empty: Pair;
-}> = ({ messages, empty }) => {
+  busy?: string | null;
+  onSort: (message: ReviewedRow, topic: MessageTopic) => void;
+}> = ({ messages, empty, busy, onSort }) => {
   const { t, num } = useOrganizer();
 
   return (
@@ -61,13 +69,35 @@ export const ReviewedMessages: React.FC<{
                   </Chip>
                 </p>
               </div>
-              <span className="ml-auto flex-none">
+              {/* Sorting can happen after the fact. The host often only
+                  realises what a message really was once a few of them
+                  have come in. */}
+              <span className="ml-auto flex items-center gap-1.5 flex-none flex-wrap justify-end">
                 {message.topic && message.topic !== 'none' ? (
                   <Chip tone={message.topic === 'faq' ? 'ok' : 'warn'}>
                     {t(TOPIC_LABEL[message.topic])}
                   </Chip>
                 ) : (
                   <Chip>{t({ ne: 'पठाइयो', en: 'Delivered' })}</Chip>
+                )}
+
+                {message.topic !== 'faq' && (
+                  <Btn sm tone="solid" disabled={busy === message.id}
+                       onClick={() => onSort(message, 'faq')}>
+                    {t({ ne: 'प्रश्नमा सार्ने', en: 'Move to questions' })}
+                  </Btn>
+                )}
+                {message.topic !== 'suggestion' && (
+                  <Btn sm tone="amber" disabled={busy === message.id}
+                       onClick={() => onSort(message, 'suggestion')}>
+                    {t({ ne: 'सुझावमा सार्ने', en: 'Move to suggestions' })}
+                  </Btn>
+                )}
+                {message.topic && message.topic !== 'none' && (
+                  <Btn sm disabled={busy === message.id}
+                       onClick={() => onSort(message, 'none')}>
+                    {t({ ne: 'बोर्डबाट हटाउने', en: 'Take off the board' })}
+                  </Btn>
                 )}
               </span>
             </div>
