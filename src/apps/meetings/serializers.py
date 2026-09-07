@@ -11,7 +11,8 @@ class MeetingSerializer(serializers.ModelSerializer):
     participant_count = serializers.SerializerMethodField()
     is_active = serializers.BooleanField(read_only=True)
     duration_seconds = serializers.IntegerField(read_only=True)
-    
+    entry = serializers.SerializerMethodField()
+
     class Meta:
         model = Meeting
         fields = [
@@ -21,13 +22,23 @@ class MeetingSerializer(serializers.ModelSerializer):
             'max_participants', 'allow_recording', 'require_authentication',
             'chat_enabled', 'direct_messages_enabled',
             'meeting_metadata', 'created_at', 'updated_at',
-            'participant_count', 'is_active', 'duration_seconds'
+            'participant_count', 'is_active', 'duration_seconds', 'entry'
         ]
         read_only_fields = [
             'id', 'meeting_code', 'host', 'created_at', 'updated_at',
             'started_at', 'ended_at', 'drive_folder_id', 'drive_metadata_file_id'
         ]
     
+    def get_entry(self, obj):
+        """When the room opens and when it may be started.
+
+        Worked out on the server so the buttons a client draws cannot
+        disagree with the rules the door enforces.
+        """
+        from src.apps.meetings.entry import entry_state
+
+        return entry_state(obj)
+
     def get_participant_count(self, obj):
         return obj.get_participant_count()
 
@@ -92,7 +103,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
             'id', 'body', 'created_at', 'is_direct',
             'sender_id', 'sender_name', 'sender_email', 'sender_is_guest',
             'recipient_id', 'recipient_name', 'recipient_is_guest',
-            'moderation_status',
+            'moderation_status', 'topic',
         ]
         read_only_fields = fields
 

@@ -258,6 +258,22 @@ class ChatMessage(models.Model):
     )
     moderated_at = models.DateTimeField(null=True, blank=True)
 
+    class Topic(models.TextChoices):
+        # Most messages are just messages.
+        NONE = 'none', 'Not sorted'
+        FAQ = 'faq', 'Question'
+        SUGGESTION = 'suggestion', 'Suggestion'
+
+    # What the host decided this message really is. Sorting a message onto
+    # the board is a publishing decision, not a label: the board is read by
+    # everyone in the meeting, so a private message put on it stops being
+    # private. Nothing lands there without the host putting it there.
+    topic = models.CharField(
+        max_length=20,
+        choices=Topic.choices,
+        default=Topic.NONE,
+        help_text="Questions and suggestions the host has put on the board",
+    )
 
     class Meta:
         db_table = 'meeting_chat_messages'
@@ -267,6 +283,7 @@ class ChatMessage(models.Model):
             models.Index(fields=['meeting', 'recipient']),
             models.Index(fields=['meeting', 'guest_recipient']),
             models.Index(fields=['meeting', 'moderation_status']),
+            models.Index(fields=['meeting', 'topic']),
         ]
         constraints = [
             models.CheckConstraint(
