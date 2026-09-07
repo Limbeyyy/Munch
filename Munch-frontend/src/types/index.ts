@@ -16,6 +16,15 @@ export interface AuthTokens {
 
 // Meeting
 export interface Meeting {
+  /** When the room opens, and whether it may be started yet. Server-decided. */
+  entry?: {
+    opens_at: string;
+    scheduled_start: string;
+    is_open: boolean;
+    can_start: boolean;
+    entry_window_minutes: number;
+  };
+
   id: string;
   meeting_code: string;
   title: string;
@@ -337,6 +346,8 @@ export interface ChatMessage {
   recipient_id: string | null;
   recipient_name: string | null;
   recipient_is_guest: boolean;
+  /** Where the host filed it: on the board as a question, a suggestion, or not at all. */
+  topic?: MessageTopic;
 }
 
 export interface ChatPerson {
@@ -572,4 +583,104 @@ export interface UserRoles {
   plan: HostPlan | null;
   usage: { events: number; meetings: number; sessions: number } | null;
   subscription: { status: string; current_period_end: string | null } | null;
+}
+
+/** How far a role reaches, and how long it lasts. */
+export type RoleScope = 'event' | 'meeting' | 'session';
+
+/**
+ * A role the host has given somebody over one part of the programme.
+ *
+ * The scope is the whole point: a co-host of one meeting is nobody in the
+ * next one until the host says otherwise.
+ */
+export interface RoleGrantRow {
+  id: string;
+  email: string;
+  role: 'co_host' | 'presenter';
+  scope: RoleScope;
+  scope_id: string;
+  scope_title: string;
+  /** Whether that address has turned into a real account yet. */
+  accepted: boolean;
+  created_at: string;
+}
+
+/** Somebody presenting, read from the sessions that name them. */
+export interface ProgrammeSpeaker {
+  name: string;
+  email: string;
+  sessions: { id: string; title: string; meeting: string }[];
+}
+
+export interface ProgrammeRoles {
+  granted: RoleGrantRow[];
+  speakers: ProgrammeSpeaker[];
+}
+
+/** What the host decided a message really is. */
+export type MessageTopic = 'none' | 'faq' | 'suggestion';
+
+/** One message the host has put up for the room to read. */
+export interface BoardEntry {
+  id: string;
+  body: string;
+  asked_by: string;
+  asker_is_guest: boolean;
+  was_direct: boolean;
+  /** Who a direct question was put to; null for a public one. */
+  sent_to: string | null;
+  created_at: string;
+}
+
+export interface MeetingBoard {
+  faq: BoardEntry[];
+  suggestions: BoardEntry[];
+}
+
+/** A session's summary, and whether the host has let it out. */
+export interface SessionSummary {
+  session: string;
+  session_title: string;
+  body: string;
+  status: 'needs_approval' | 'published';
+  is_published: boolean;
+  /** False for the draft offered before anything has been written. */
+  saved: boolean;
+  published_at: string | null;
+  updated_at?: string;
+}
+
+/** What somebody put into the attendee hub. */
+export type HubKind = 'question' | 'idea' | 'suggestion';
+
+export type HubStatus = 'pending' | 'published' | 'declined' | 'looking' | 'addressed';
+
+export interface HubPost {
+  id: string;
+  kind: HubKind;
+  body: string;
+  category: string;
+  status: HubStatus;
+  anonymous: boolean;
+  author: string;
+  author_is_guest: boolean;
+  /** Whether this reader wrote it. */
+  mine: boolean;
+  session_id: string | null;
+  session_title: string | null;
+  /** Upvotes less downvotes. */
+  score: number;
+  /** How this reader voted: 1, -1, or 0 for not yet. */
+  my_vote: number;
+  answer: string;
+  answered_by: string;
+  created_at: string;
+}
+
+export interface HubBoard {
+  questions: HubPost[];
+  ideas: HubPost[];
+  /** Only ever this reader's own — suggestions go to the organizer alone. */
+  suggestions: HubPost[];
 }
