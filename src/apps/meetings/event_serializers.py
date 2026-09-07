@@ -9,6 +9,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from src.apps.meetings.models import (
+    RoleGrant,
     ContactRequest, Event, Meeting, Session, SessionAttendance,
 )
 
@@ -321,3 +322,32 @@ class ContactRequestSerializer(serializers.ModelSerializer):
 
     def get_asker_is_guest(self, obj):
         return obj.guest_id is not None
+
+class RoleGrantSerializer(serializers.ModelSerializer):
+    """A role as the host sees it in the list."""
+    scope = serializers.CharField(read_only=True)
+    scope_title = serializers.SerializerMethodField()
+    scope_id = serializers.SerializerMethodField()
+    accepted = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RoleGrant
+        fields = [
+            'id', 'email', 'role', 'scope', 'scope_id', 'scope_title',
+            'accepted', 'created_at',
+        ]
+
+    def get_scope_title(self, obj):
+        if obj.event_id:
+            return obj.event.title
+        if obj.meeting_id:
+            return obj.meeting.title
+        return f'{obj.session.title} ({obj.session.meeting.title})'
+
+    def get_scope_id(self, obj):
+        return str(obj.event_id or obj.meeting_id or obj.session_id)
+
+    def get_accepted(self, obj):
+        """Whether the address has turned into a real account yet."""
+        return obj.user_id is not None
+

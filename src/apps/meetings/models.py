@@ -258,6 +258,7 @@ class ChatMessage(models.Model):
     )
     moderated_at = models.DateTimeField(null=True, blank=True)
 
+
     class Meta:
         db_table = 'meeting_chat_messages'
         ordering = ['created_at']
@@ -603,3 +604,113 @@ class ContactRequest(models.Model):
     def __str__(self):
         who = self.user.email if self.user else (self.guest.full_name if self.guest else '?')
         return f"{who} -> {self.session.speaker_name} ({self.status})"
+
+
+class RoleGrant(models.Model):
+    """A role the host has given somebody, over one part of the programme.
+
+    Two things make this its own table rather than a column on
+    MeetingParticipant. It is addressed by email, so a co-host can be named
+    before they have ever signed in; and it is scoped, which a participant
+    row cannot be - that row only ever describes one meeting.
+
+    The scope is exactly one of event, meeting or session, and it decides
+    how far the role reaches and how long it lasts:
+
+    * on an event, for every meeting and session inside that programme;
+    * on a meeting, for that meeting and the sessions it holds;
+    * on a session, for that session alone.
+
+    Reach stops at the thing named. Somebody made co-host of the morning
+    meeting is not a co-host of the evening one, and nothing about being
+    co-host of one event carries into another. Giving them the role there
+    too is a decision the host makes again.
+
+    Speakers are not stored here. A session already names its speaker, and
+    naming them is what makes them its presenter; keeping a second copy
+    would only let the two drift apart.
+    """
+    class Role(models.TextChoices):
+        CO_HOST = 'co_host', 'Co-host'
+        PRESENTER = 'presenter', 'Presenter'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Who it is for. Held as an address because that is what the host knows
+    # at the time; the account is linked once it turns up.
+    email = models.EmailField()
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='role_grants',
+        null=True,
+        blank=True,
+    )
+
+    role = models.CharField(max_length=20, choices=Role.choices)
+
+    # Exactly one of these three is set - see the constraint below.
+    event = models.ForeignKey(
+        'meetings.Event', on_delete=models.CASCADE,
+        related_name='role_grants', null=True, blank=True,
+    )
+    meeting = models.ForeignKey(
+        Meeting, on_delete=models.CASCADE,
+        related_name='role_grants', null=True, blank=True,
+    )
+    session = models.ForeignKey(
+        'meetings.Session', on_delete=models.CASCADE,
+        related_name='role_grants', null=True, blank=True,
+    )
+
+    granted_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True,
+        related_name='granted_roles',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'role_grants'
+        ordering = ['-created_at']
+        constraints = [
+            models.CheckConstraint(
+                name='role_grant_has_exactly_one_scope',
+                check=(
+                    models.Q(event__isnull=False, meeting__isnull=True, session__isnull=True)
+                    | models.Q(event__isnull=True, meeting__isnull=False, session__isnull=True)
+                    | models.Q(event__isnull=True, meeting__isnull=True, session__isnull=False)
+                ),
+            ),
+            # The same person cannot hold the same role twice over the same
+            # thing. Given once is given.
+            models.UniqueConstraint(
+                fields=['email', 'role', 'event'],
+                condition=models.Q(event__isnull=False),
+                name='one_role_per_email_per_event',
+            ),
+            models.UniqueConstraint(
+                fields=['email', 'role', 'meeting'],
+                condition=models.Q(meeting__isnull=False),
+                name='one_role_per_email_per_meeting',
+            ),
+            models.UniqueConstraint(
+                fields=['email', 'role', 'session'],
+                condition=models.Q(session__isnull=False),
+                name='one_role_per_email_per_session',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['email']),
+            models.Index(fields=['event']),
+            models.Index(fields=['meeting']),
+            models.Index(fields=['session']),
+        ]
+
+    @property
+    def scope(self) -> str:
+        if self.event_id:
+            return 'event'
+        return 'meeting' if self.meeting_id else 'session'
+
+    def __str__(self):
+        return f"{self.email} as {self.role} on this {self.scope}"

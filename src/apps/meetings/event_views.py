@@ -27,6 +27,7 @@ from src.apps.meetings.lifecycle import (
     session_is_over as _session_is_over,
 )
 from src.apps.meetings.models import (
+    RoleGrant,
     ContactRequest,
     Event,
     Meeting,
@@ -160,6 +161,93 @@ class EventViewSet(viewsets.ModelViewSet):
             'total_invited': len(by_email),
             'total_joined': sum(1 for r in by_email.values() if r['joined']),
         })
+
+    @action(detail=True, methods=['get', 'post', 'delete'], url_path='roles')
+    def roles(self, request, pk=None):
+        """Who helps run this programme, and over how much of it.
+
+        A role is given at one scope - the whole event, one meeting, or one
+        session - and reaches exactly that far. Naming somebody a co-host of
+        the morning does not make them one in the evening; that is a
+        separate decision, taken here again.
+
+        Speakers are listed alongside but not stored here: a session names
+        its own speaker, and naming them is what makes them its presenter.
+        """
+        from src.apps.meetings.event_serializers import RoleGrantSerializer
+        from src.apps.meetings.roles import claim_grants, grants_in_event, speakers_of
+
+        event = self.get_object()
+        if str(event.organizer_id) != str(request.user.id):
+            return Response(
+                {'error': 'Only the organizer sets the roles'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if request.method == 'GET':
+            return Response({
+                'granted': RoleGrantSerializer(grants_in_event(event), many=True).data,
+                'speakers': [
+                    {
+                        'name': speaker['name'],
+                        'email': speaker['email'],
+                        'sessions': [
+                            {'id': str(s.id), 'title': s.title, 'meeting': s.meeting.title}
+                            for s in speaker['sessions']
+                        ],
+                    }
+                    for speaker in speakers_of(event)
+                ],
+            })
+
+        if request.method == 'DELETE':
+            removed, _ = grants_in_event(event).filter(
+                id=request.data.get('id')
+            ).delete()
+            if not removed:
+                return Response(
+                    {'error': 'No such role in this programme'},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        email = (request.data.get('email') or '').strip()
+        role = request.data.get('role')
+        scope = request.data.get('scope')
+        scope_id = request.data.get('scope_id')
+
+        if not email:
+            return Response(
+                {'error': 'Give the address to send it to.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if role not in RoleGrant.Role.values:
+            return Response(
+                {'error': "role must be 'co_host' or 'presenter'"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        target = _resolve_scope(event, scope, scope_id)
+        if target is None:
+            return Response(
+                {'error': 'Name what the role covers: this event, one of its '
+                          'meetings, or one session of one.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        grant, created = RoleGrant.objects.get_or_create(
+            email=email, role=role, **target,
+            defaults={'granted_by': request.user},
+        )
+        # If that address already has an account, tie them together now
+        # rather than waiting for them to arrive.
+        claim_grants_for_address(grant)
+
+        logger.info(f"{email} given {role} over a {grant.scope} in event {event.id}")
+        return Response(
+            RoleGrantSerializer(grant).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=['post'])
     def meetings(self, request, pk=None):
@@ -670,3 +758,44 @@ def _match_existing_participant(meeting, email):
         invite.joined_at = participant.joined_at
         invite.joined_user = participant.user
         invite.save(update_fields=['joined_at', 'joined_user'])
+
+
+def _resolve_scope(event, scope, scope_id):
+    """Turn a named scope into the field that records it.
+
+    Everything has to sit inside the programme being edited, so a meeting
+    id from somebody else's event cannot be smuggled through.
+    """
+    if scope == 'event':
+        return {'event': event}
+    if scope == 'meeting':
+        meeting = Meeting.objects.filter(id=scope_id, event=event).first()
+        return {'meeting': meeting} if meeting else None
+    if scope == 'session':
+        session = Session.objects.filter(
+            id=scope_id, meeting__event=event
+        ).first()
+        return {'session': session} if session else None
+    return None
+
+
+def claim_grants_for_address(grant):
+    """Link a grant to the account holding that address, if there is one."""
+    from src.apps.accounts.models import User
+
+    if grant.user_id:
+        return
+    owner = User.objects.filter(email__iexact=grant.email).first()
+    if owner:
+        grant.user = owner
+        grant.save(update_fields=['user'])
+
+
+def _transcript_of(session) -> str:
+    """The session's spoken record, as a starting point for a summary."""
+    from src.apps.transcription.models import TranscriptionSegment
+
+    lines = TranscriptionSegment.objects.filter(
+        session=session, is_final=True
+    ).order_by('start_time').values_list('text', flat=True)
+    return ' '.join(line.strip() for line in lines if line and line.strip())

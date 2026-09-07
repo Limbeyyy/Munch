@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
+import { QUEUE_POLL_MS } from '../../services/polling';
 import { EventMeeting, EventProgramme, MeetingParticipant, Session } from '../../types';
 import { Pair, useOrganizer } from '../i18n';
 import { ContactRequests } from '../ContactRequests';
+import { RoleGrants } from '../RoleGrants';
 import { Card, Chip, Empty, Head, Panel, Tabs } from '../ui';
 import { SESSION_STATE_LABEL, SESSION_STATE_TONE, sessionState } from '../sessionState';
 
@@ -59,6 +61,7 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
   const [changing, setChanging] = useState<string | null>(null);
   const [settingVisibility, setSettingVisibility] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState(0);
+  const [grantCount, setGrantCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -87,6 +90,15 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
   }, [event]);
 
   useEffect(() => { loadParticipants(); }, [loadParticipants]);
+
+  // Just the counts for the tab labels; each panel fetches its own list.
+  useEffect(() => {
+    if (!eventId) { setGrantCount(0); return; }
+    apiClient
+      .getProgrammeRoles(eventId)
+      .then((roles) => setGrantCount(roles.granted.length))
+      .catch(() => setGrantCount(0));
+  }, [eventId, tab]);
 
   // Only the count, so the tab can say how many are waiting. The list
   // itself is the shared component's business.
@@ -263,6 +275,10 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
               { id: 'speakers', label: { ne: `वक्ता (${num(speakers.length)})`, en: `Speakers (${speakers.length})` } },
               { id: 'team', label: { ne: `टोली (${num(teamCount)})`, en: `Team (${teamCount})` } },
               {
+                id: 'roles',
+                label: { ne: `भूमिका (${num(grantCount)})`, en: `Roles (${grantCount})` },
+              },
+              {
                 id: 'contacts',
                 label: pendingRequests > 0
                   ? { ne: `सम्पर्क अनुरोध (${num(pendingRequests)})`, en: `Contact requests (${pendingRequests})` }
@@ -273,8 +289,10 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
 
           {loading ? (
             <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>
+          ) : tab === 'roles' ? (
+            <RoleGrants event={event} />
           ) : tab === 'contacts' ? (
-            <ContactRequests eventId={eventId || undefined} refreshMs={15000} />
+            <ContactRequests eventId={eventId || undefined} refreshMs={QUEUE_POLL_MS} />
           ) : tab === 'speakers' ? (
             <>
               {speakers.length === 0 ? (

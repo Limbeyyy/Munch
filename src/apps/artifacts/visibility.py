@@ -44,4 +44,11 @@ def can_organize(meeting, user) -> bool:
         return False
     if str(user.id) == str(meeting.host_id):
         return True
-    return meeting.participants.filter(user=user, role__in=['host', 'co_host']).exists()
+    if meeting.participants.filter(user=user, role__in=['host', 'co_host']).exists():
+        return True
+
+    # Being named a co-host is enough; it should not also require having
+    # walked into the room, which is what a participant row records.
+    from src.apps.meetings.roles import is_co_host
+
+    return is_co_host(meeting, user)
