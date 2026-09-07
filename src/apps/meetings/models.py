@@ -776,3 +776,150 @@ class SessionSummary(models.Model):
 
     def __str__(self):
         return f"Summary of {self.session.title} ({self.status})"
+
+
+class HubPost(models.Model):
+    """Something an attendee put into the hub: a question, an idea, a suggestion.
+
+    One table rather than three, because they are the same shape - somebody
+    writes a line, other people vote on it, and the organizer answers or
+    acts. Only what they are *for* differs, and that is the kind.
+
+    Where they go differs too. A question and an idea are read by the room,
+    so they wait for the organizer to let them through. A suggestion is
+    addressed to the organizer alone and is never shown to anybody else.
+    """
+    class Kind(models.TextChoices):
+        QUESTION = 'question', 'Question'
+        IDEA = 'idea', 'Idea'
+        SUGGESTION = 'suggestion', 'Suggestion to the organizer'
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'In moderation'
+        PUBLISHED = 'published', 'Published'
+        DECLINED = 'declined', 'Declined'
+        # Suggestions end somewhere else: the organizer did something, or
+        # is thinking about it.
+        LOOKING = 'looking', 'Being looked at'
+        ADDRESSED = 'addressed', 'Addressed'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    meeting = models.ForeignKey(
+        Meeting, on_delete=models.CASCADE, related_name='hub_posts'
+    )
+    # Which part of the running order it was about, where that is known.
+    session = models.ForeignKey(
+        'meetings.Session', on_delete=models.SET_NULL,
+        related_name='hub_posts', null=True, blank=True,
+    )
+
+    # Exactly one of these wrote it; guests have no account.
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='hub_posts',
+        null=True, blank=True,
+    )
+    guest = models.ForeignKey(
+        'meetings.GuestAttendee', on_delete=models.CASCADE,
+        related_name='hub_posts', null=True, blank=True,
+    )
+
+    # Asked without a name against it. The author is still recorded - one
+    # person gets one vote and one question - but it is not shown.
+    anonymous = models.BooleanField(default=False)
+
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+    body = models.TextField()
+
+    # Suggestions are filed under a heading, so the organizer can see at a
+    # glance what kind of thing people keep raising.
+    category = models.CharField(max_length=40, blank=True)
+
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING
+    )
+
+    # The organizer's reply, shown under the question.
+    answer = models.TextField(blank=True)
+    answered_by = models.CharField(max_length=255, blank=True)
+    answered_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'hub_posts'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['meeting', 'kind', 'status']),
+            models.Index(fields=['session']),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                name='hub_post_exactly_one_author',
+                check=(
+                    models.Q(user__isnull=False, guest__isnull=True)
+                    | models.Q(user__isnull=True, guest__isnull=False)
+                ),
+            ),
+        ]
+
+    @property
+    def author_label(self) -> str:
+        """Who to show. Anonymous posts say only that somebody attending asked."""
+        if self.anonymous:
+            return 'Anonymous'
+        if self.user:
+            full = f"{self.user.first_name} {self.user.last_name}".strip()
+            return full or self.user.email
+        return self.guest.full_name if self.guest else 'Attendee'
+
+    def __str__(self):
+        return f"{self.kind}: {self.body[:40]}"
+
+
+class HubVote(models.Model):
+    """One person's opinion of one post.
+
+    Held as a row per voter rather than a running total so that changing
+    your mind is possible and voting twice is not. The score is worked out
+    from these.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    post = models.ForeignKey(HubPost, on_delete=models.CASCADE, related_name='votes')
+
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='hub_votes',
+        null=True, blank=True,
+    )
+    guest = models.ForeignKey(
+        'meetings.GuestAttendee', on_delete=models.CASCADE,
+        related_name='hub_votes', null=True, blank=True,
+    )
+
+    #: +1 for up, -1 for down. A withdrawn vote is deleted, not stored as 0.
+    value = models.SmallIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'hub_votes'
+        constraints = [
+            models.CheckConstraint(
+                name='hub_vote_exactly_one_voter',
+                check=(
+                    models.Q(user__isnull=False, guest__isnull=True)
+                    | models.Q(user__isnull=True, guest__isnull=False)
+                ),
+            ),
+            models.CheckConstraint(
+                name='hub_vote_is_up_or_down',
+                check=models.Q(value__in=[1, -1]),
+            ),
+            models.UniqueConstraint(
+                fields=['post', 'user'], condition=models.Q(user__isnull=False),
+                name='one_vote_per_person_per_post',
+            ),
+            models.UniqueConstraint(
+                fields=['post', 'guest'], condition=models.Q(guest__isnull=False),
+                name='one_vote_per_guest_per_post',
+            ),
+        ]

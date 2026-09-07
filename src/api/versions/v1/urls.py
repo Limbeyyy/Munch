@@ -198,6 +198,7 @@ def _broadcast_roles_changed(meeting_code):
 
 # Custom nested routes for participants (must come before router include)
 from src.apps.meetings import guest_views
+from src.apps.meetings import hub_views
 from src.apps.transcription import ingest as transcription_ingest
 
 urlpatterns = [
@@ -216,6 +217,20 @@ urlpatterns = [
     path('meetings/guest/status/', guest_views.guest_status, name='guest-status'),
     path('meetings/guest/leave/', guest_views.guest_leave, name='guest-leave'),
     path('meetings/guest/chat/', guest_views.guest_chat, name='guest-chat'),
+    path('meetings/guest/board/', guest_views.guest_board, name='guest-board'),
+
+    # The attendee hub: questions, ideas and suggestions, for account
+    # holders and guests alike.
+    re_path(
+        r'^meetings/(?P<meeting_ref>[^/.]+)/hub/$',
+        hub_views.hub_posts,
+        name='hub-posts',
+    ),
+    re_path(
+        r'^meetings/(?P<meeting_ref>[^/.]+)/hub/(?P<post_id>[0-9a-f-]+)/vote/$',
+        hub_views.hub_vote,
+        name='hub-vote',
+    ),
     path('meetings/guest/presenters/', guest_views.guest_presenters, name='guest-presenters'),
     path('meetings/guest/resources/', guest_views.guest_resources, name='guest-resources'),
     re_path(
