@@ -189,8 +189,14 @@ class MeetingViewSet(viewsets.ModelViewSet):
             .order_by('-scheduled_start')
         )
 
+    #: Reading a meeting you hold the code for. A code is handed out to be
+    #: used - it is how somebody is told the meeting exists at all - so
+    #: presenting one is enough to look the meeting up and walk in. Writing
+    #: to it still needs the ordinary membership.
+    CODE_IS_ENOUGH = {'retrieve', 'join'}
+
     def get_object(self):
-        """Get object by meeting_code or pk"""
+        """Find the meeting by its code, or failing that by its id."""
         queryset = self.get_queryset()
         lookup_value = self.kwargs.get('pk')
 
@@ -201,8 +207,14 @@ class MeetingViewSet(viewsets.ModelViewSet):
             except Meeting.DoesNotExist:
                 obj = None
 
-        if obj is None:
+            # Somebody who was given the code but has not joined yet is in
+            # none of the lists the visibility filter checks, so the filter
+            # would turn them away from the very meeting they were invited
+            # to by code. The code itself is the credential here.
+            if obj is None and self.action in self.CODE_IS_ENOUGH:
+                obj = Meeting.objects.filter(meeting_code=lookup_value).first()
 
+        if obj is None:
             # Fall back to default pk lookup
             obj = super().get_object()
 
@@ -276,6 +288,15 @@ class MeetingViewSet(viewsets.ModelViewSet):
     def join(self, request, pk=None):
         """Join a meeting"""
         meeting = self.get_object()
+
+        # The room opens a quarter of an hour before its hour, for everyone
+        # on the same terms - the host included. Nobody has to be here
+        # first, and being late is never the problem.
+        from src.apps.meetings.entry import is_open, too_early_response
+
+        if not is_open(meeting):
+            return too_early_response(meeting)
+
         serializer = MeetingJoinSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
@@ -350,6 +371,26 @@ class MeetingViewSet(viewsets.ModelViewSet):
             return Response(
                 {'error': 'This meeting has already ended'},
                 status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Gathering early is one thing; declaring the meeting begun before
+        # its own hour is another. The room is already open for whoever
+        # turned up - this is only about calling it started.
+        from src.apps.meetings.entry import can_start, opens_at
+
+        if not can_start(meeting):
+            return Response(
+                {
+                    'error': (
+                        f'This meeting starts at '
+                        f'{timezone.localtime(meeting.scheduled_start):%H:%M}. '
+                        'You can gather in the room until then.'
+                    ),
+                    'code': 'not_yet',
+                    'scheduled_start': meeting.scheduled_start.isoformat(),
+                    'opens_at': opens_at(meeting).isoformat(),
+                },
+                status=status.HTTP_409_CONFLICT,
             )
 
         # Rejoining must not restart the clock, but opening a meeting today

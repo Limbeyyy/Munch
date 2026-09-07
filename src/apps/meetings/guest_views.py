@@ -89,6 +89,14 @@ def guest_knock(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    # A guest may knock once the room opens, whether or not the host has
+    # arrived. The request simply waits in the host's queue until it is
+    # answered, so a late host still finds everyone who came early.
+    from src.apps.meetings.entry import is_open, too_early_response
+
+    if not is_open(meeting):
+        return too_early_response(meeting)
+
     # Someone the host already admitted is coming back - whether they dropped
     # out or left deliberately. Approval already happened; don't ask again.
     returning = GuestAttendee.objects.filter(
