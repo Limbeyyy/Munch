@@ -21,6 +21,9 @@ interface Check {
   action: string;
 }
 
+/** The group that holds meetings belonging to no programme. */
+const LOOSE = '__loose__';
+
 /** What an event's checklist is judged on, fetched when it is opened. */
 interface Facts {
   sessions: number;
@@ -61,7 +64,7 @@ export const SetupView: React.FC<Props> = ({ meetings, onNavigate, onCreate }) =
     if (facts[key] || checking[key]) return;
     setChecking((v) => ({ ...v, [key]: true }));
 
-    const [invites, participants, files, sessionLists] = await Promise.all([
+    const [invites, participants, files, sessionLists, granted] = await Promise.all([
       Promise.allSettled(meetingIds.map((id) => apiClient.getMeetingInvites(id))),
       Promise.allSettled(meetingIds.map((id) => apiClient.getParticipants(id))),
       Promise.allSettled(meetingIds.map((id) => apiClient.getResources(id))),
@@ -69,12 +72,21 @@ export const SetupView: React.FC<Props> = ({ meetings, onNavigate, onCreate }) =
       sessions === null
         ? Promise.allSettled(meetingIds.map((id) => apiClient.listSessions(id)))
         : Promise.resolve([]),
+      // Roles are given per programme, and to addresses that need not have
+      // signed in - so they are not visible in the participant lists. The
+      // loose-meetings group is not a programme and has none to fetch.
+      key === LOOSE
+        ? Promise.resolve(null)
+        : apiClient.getProgrammeRoles(key).catch(() => null),
     ]);
 
     const total = (rs: PromiseSettledResult<any[]>[]) =>
       rs.reduce((sum, r) => sum + (r.status === 'fulfilled' ? r.value.length : 0), 0);
 
-    const presenters = participants.reduce(
+    // Somebody counts as named whether they hold a role in the room, were
+    // given one over part of the programme, or are down as a speaker -
+    // which is itself a presenting role.
+    const inTheRoom = participants.reduce(
       (sum, r) =>
         sum +
         (r.status === 'fulfilled'
@@ -82,6 +94,8 @@ export const SetupView: React.FC<Props> = ({ meetings, onNavigate, onCreate }) =
           : 0),
       0
     );
+    const presenters =
+      inTheRoom + (granted ? granted.granted.length + granted.speakers.length : 0);
 
     setFacts((v) => ({
       ...v,
@@ -306,7 +320,7 @@ export const SetupView: React.FC<Props> = ({ meetings, onNavigate, onCreate }) =
 
           {loose.length > 0 && (
             <Group
-              id="__loose__"
+              id={LOOSE}
               title={t({ ne: 'कार्यक्रम बाहिरका बैठक', en: 'Meetings outside any event' })}
               subtitle={t({
                 ne: `${num(loose.length)} बैठक`,
