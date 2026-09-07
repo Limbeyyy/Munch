@@ -335,6 +335,24 @@ class ApiClient {
     return response.data;
   }
 
+  /**
+   * Answer a question on the board, or change the answer.
+   *
+   * An empty answer takes it back off, which is why this is not simply an
+   * append.
+   */
+  async answerBoardMessage(
+    meetingId: string,
+    messageId: string,
+    answer: string
+  ): Promise<ChatMessage> {
+    const response = await this.client.post(`/meetings/${meetingId}/answer_message/`, {
+      message_id: messageId,
+      answer,
+    });
+    return response.data;
+  }
+
   async logout(): Promise<void> {
     try {
       await this.client.post('/auth/logout/', {
