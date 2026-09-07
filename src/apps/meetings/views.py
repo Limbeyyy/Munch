@@ -799,12 +799,19 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='reviewed_messages')
     def reviewed_messages(self, request, pk=None):
-        """Direct messages the host has let through. Host only.
+        """Direct messages the host has seen. Host only.
 
-        The record of what was passed on, which is what the moderation
-        dashboard shows once a message leaves the queue. Split by who sent
-        it, because an account holder and a guest are answered in different
-        places. Each carries whether it also went on the board.
+        Everything private that reached its recipient - what the host let
+        through, and what never needed letting through because it was sent
+        to the host in the first place. That second kind used to appear
+        nowhere: it skipped the queue, correctly, and then fell outside a
+        record that only listed approvals, so a question asked of the host
+        from the room could not be filed as one afterwards.
+
+        Split by who sent it, because an account holder and a guest are
+        answered in different places. Each carries whether it also went on
+        the board. The host's own outgoing messages are not a queue of
+        anything, so they are left out.
         """
         meeting = self.get_object()
 
@@ -816,12 +823,17 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
         reviewed = ChatMessage.objects.filter(
             meeting=meeting,
-            moderation_status=ChatMessage.Moderation.APPROVED,
+            moderation_status__in=[
+                ChatMessage.Moderation.APPROVED,
+                ChatMessage.Moderation.NOT_REQUIRED,
+            ],
         ).exclude(
             recipient__isnull=True, guest_recipient__isnull=True
+        ).exclude(
+            sender=request.user
         ).select_related(
             'sender', 'recipient', 'guest_sender', 'guest_recipient'
-        ).order_by('-moderated_at')
+        ).order_by('-created_at')
 
         rows = ChatMessageSerializer(reviewed, many=True).data
         return Response({

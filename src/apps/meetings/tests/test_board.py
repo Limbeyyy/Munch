@@ -379,11 +379,67 @@ class ReviewedMessagesTests(TestCase):
 
         self.assertEqual(self.reviewed()['from_users'], [])
 
+    def test_a_message_sent_straight_to_the_host_is_in_the_record(self):
+        """The reported gap: it needed no approval, so it appeared nowhere.
+
+        A question put to the host from the room skips the queue, quite
+        rightly - the host should not have to approve their own mail. But
+        it is still a direct message the host has read, and still the kind
+        of thing worth filing as a question afterwards.
+        """
+        ChatMessage.objects.create(
+            meeting=self.meeting, sender=self.asker, recipient=self.host,
+            body='what is kataho?',
+            moderation_status=ChatMessage.Moderation.NOT_REQUIRED,
+        )
+
+        recorded = self.reviewed()['from_users']
+
+        self.assertEqual(len(recorded), 1)
+        self.assertEqual(recorded[0]['body'], 'what is kataho?')
+
+    def test_the_same_from_a_guest_lands_under_guests(self):
+        ChatMessage.objects.create(
+            meeting=self.meeting, guest_sender=self.guest, recipient=self.host,
+            body='Is there parking?',
+            moderation_status=ChatMessage.Moderation.NOT_REQUIRED,
+        )
+
+        body = self.reviewed()
+        self.assertEqual(body['from_users'], [])
+        self.assertEqual(len(body['from_guests']), 1)
+
+    def test_it_can_then_be_filed_as_a_question(self):
+        asked = ChatMessage.objects.create(
+            meeting=self.meeting, sender=self.asker, recipient=self.host,
+            body='what is kataho?',
+            moderation_status=ChatMessage.Moderation.NOT_REQUIRED,
+        )
+
+        response = self.host_client.post(
+            f'{API}/meetings/{self.meeting.id}/sort_message/',
+            {'message_id': str(asked.id), 'topic': 'faq'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        board = self.host_client.get(f'{API}/meetings/{self.meeting.id}/board/').json()
+        self.assertEqual(len(board['faq']), 1)
+
+    def test_the_hosts_own_messages_are_not_a_queue(self):
+        ChatMessage.objects.create(
+            meeting=self.meeting, sender=self.host, recipient=self.asker,
+            body='Sent by me',
+            moderation_status=ChatMessage.Moderation.NOT_REQUIRED,
+        )
+
+        self.assertEqual(self.reviewed()['from_users'], [])
+
     def test_a_room_message_is_never_in_the_record(self):
         # The record is of what the host passed on privately.
         ChatMessage.objects.create(
             meeting=self.meeting, sender=self.asker, body='Hello all',
-            moderation_status=ChatMessage.Moderation.APPROVED,
+            moderation_status=ChatMessage.Moderation.NOT_REQUIRED,
         )
 
         self.assertEqual(self.reviewed()['from_users'], [])

@@ -7,7 +7,8 @@ import {
 } from '../../types';
 import { Modal } from '../OrganizerShell';
 import { MessageBoard } from '../MessageBoard';
-import { ReviewedMessages } from '../ReviewedMessages';
+import { ReviewedMessages, ReviewedRow } from '../ReviewedMessages';
+import { errorText } from '../errors';
 import { useOrganizer } from '../i18n';
 import { Btn, Chip, Empty, Head, Panel, Tabs } from '../ui';
 
@@ -51,8 +52,8 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
   const [events, setEvents] = useState<EventProgramme[]>([]);
   const [pending, setPending] = useState<Record<string, ChatMessage[]>>({});
   const [waiting, setWaiting] = useState<Record<string, GuestAttendee[]>>({});
-  const [reviewedUsers, setReviewedUsers] = useState<ChatMessage[]>([]);
-  const [reviewedGuests, setReviewedGuests] = useState<ChatMessage[]>([]);
+  const [reviewedUsers, setReviewedUsers] = useState<ReviewedRow[]>([]);
+  const [reviewedGuests, setReviewedGuests] = useState<ReviewedRow[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
 
   const [query, setQuery] = useState('');
@@ -84,14 +85,16 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
     );
     const nextPending: Record<string, ChatMessage[]> = {};
     const nextWaiting: Record<string, GuestAttendee[]> = {};
-    const fromUsers: ChatMessage[] = [];
-    const fromGuests: ChatMessage[] = [];
+    const fromUsers: ReviewedRow[] = [];
+    const fromGuests: ReviewedRow[] = [];
     results.forEach((r) => {
       if (r.status !== 'fulfilled') return;
       nextPending[r.value.id] = r.value.pending;
       nextWaiting[r.value.id] = r.value.waiting.filter((g) => g.status === 'pending');
-      fromUsers.push(...r.value.reviewed.from_users);
-      fromGuests.push(...r.value.reviewed.from_guests);
+      const tag = (rows: ChatMessage[]) =>
+        rows.map((row) => ({ ...row, meetingId: r.value.id }));
+      fromUsers.push(...tag(r.value.reviewed.from_users));
+      fromGuests.push(...tag(r.value.reviewed.from_guests));
     });
     setPending(nextPending);
     setWaiting(nextWaiting);
@@ -240,6 +243,42 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
     } finally { setBusy(null); }
   };
 
+  /**
+   * File a message the host already passed on, or take it back off.
+   *
+   * The board is read by everyone in the meeting, so putting a private
+   * message on it is asked about first - the same question the accept
+   * prompt asks, in the place where the decision is now being made.
+   */
+  const sortReviewed = async (message: ReviewedRow, topic: MessageTopic) => {
+    if (topic !== 'none') {
+      const ok = window.confirm(
+        t({
+          ne: `यो सिधा सन्देश हो। बोर्डमा राख्दा बैठकका सबैले पढ्न सक्छन्।\n\n“${message.body}”\n\nराख्ने?`,
+          en: `This was sent privately. Putting it on the board lets everybody in the meeting read it.\n\n“${message.body}”\n\nPut it up?`,
+        })
+      );
+      if (!ok) return;
+    }
+    try {
+      setBusy(message.id);
+      const updated = await apiClient.sortMessage(message.meetingId, message.id, topic);
+      const swap = (rows: ReviewedRow[]) =>
+        rows.map((r) => (r.id === message.id ? { ...r, ...updated } : r));
+      setReviewedUsers(swap);
+      setReviewedGuests(swap);
+      toast.success(
+        topic === 'none'
+          ? t({ ne: 'बोर्डबाट हटाइयो', en: 'Taken off the board' })
+          : topic === 'faq'
+          ? t({ ne: 'प्रश्नमा राखियो', en: 'On the board as a question' })
+          : t({ ne: 'सुझावमा राखियो', en: 'On the board as a suggestion' })
+      );
+    } catch (e: any) {
+      toast.error(errorText(e, t({ ne: 'सार्न सकिएन', en: 'Could not move it' })));
+    } finally { setBusy(null); }
+  };
+
   const decideGuest = async (row: Row, admit: boolean) => {
     if (!row.guest) return;
     try {
@@ -308,6 +347,7 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
               <MessageBoard
                 meetingId={boardMeeting || meetings[0].id}
                 refreshMs={QUEUE_POLL_MS}
+                canAnswer
               />
             </>
           )}
@@ -549,6 +589,8 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
           whether it also went on the board. */}
       <div className="mt-3.5">
         <ReviewedMessages
+          busy={busy}
+          onSort={sortReviewed}
           messages={tab === 'guests' ? reviewedGuests : reviewedUsers}
           empty={
             tab === 'guests'
