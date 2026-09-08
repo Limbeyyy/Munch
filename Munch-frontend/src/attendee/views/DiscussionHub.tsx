@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { ACTIVE_POLL_MS } from '../../services/polling';
 import { EventMeeting, HubBoard, HubKind, HubPost } from '../../types';
+import { PhotoAlbums } from '../../organizer/Photos';
 import { errorText } from '../../organizer/errors';
 import { Pair, useOrganizer } from '../../organizer/i18n';
 import { Btn, Card, Chip, Empty, Tabs } from '../../organizer/ui';
@@ -85,7 +86,9 @@ export const DiscussionHub: React.FC<Props> = ({ meetings, guestToken }) => {
   const [meetingCode, setMeetingCode] = useState(meetings[0]?.meeting_code ?? '');
   const meeting = meetings.find((m) => m.meeting_code === meetingCode) ?? meetings[0];
 
-  const [tab, setTab] = useState<HubKind>('question');
+  // 'photo' is not a kind of post, so it sits alongside the board's kinds
+  // rather than inside them.
+  const [tab, setTab] = useState<HubKind | 'photo'>('question');
   const [board, setBoard] = useState<HubBoard | null>(null);
   const [draft, setDraft] = useState('');
   const [anonymous, setAnonymous] = useState(false);
@@ -109,7 +112,8 @@ export const DiscussionHub: React.FC<Props> = ({ meetings, guestToken }) => {
   }, [load]);
 
   const send = async () => {
-    if (!meeting) return;
+    // The photo tab has no composer, so nothing to send from it.
+    if (!meeting || tab === 'photo') return;
     if (!draft.trim()) {
       toast.error(t({ ne: 'केही लेख्नुहोस्', en: 'Write something first' }));
       return;
@@ -273,7 +277,7 @@ export const DiscussionHub: React.FC<Props> = ({ meetings, guestToken }) => {
     <>
       <Tabs
         active={tab}
-        onChange={(id) => { setTab(id as HubKind); setDraft(''); }}
+        onChange={(id) => { setTab(id as HubKind | 'photo'); setDraft(''); }}
         tabs={[
           {
             id: 'question',
@@ -289,6 +293,7 @@ export const DiscussionHub: React.FC<Props> = ({ meetings, guestToken }) => {
               en: `Idea board (${board?.ideas.length ?? 0})`,
             },
           },
+          { id: 'photo', label: { ne: 'फोटो', en: 'Photos' } },
           { id: 'suggestion', label: { ne: 'आयोजकलाई सुझाव', en: 'To the organizer' } },
         ]}
       />
@@ -310,6 +315,14 @@ export const DiscussionHub: React.FC<Props> = ({ meetings, guestToken }) => {
         </div>
       )}
 
+      {tab === 'photo' ? (
+        meeting ? (
+          <PhotoAlbums meetingRef={meeting.meeting_code} canManage={!guestToken} />
+        ) : (
+          <Card><Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No meeting yet.' })}</Empty></Card>
+        )
+      ) : (
+      <>
       {composer}
 
       {!board ? (
@@ -401,6 +414,8 @@ export const DiscussionHub: React.FC<Props> = ({ meetings, guestToken }) => {
             </div>
           ))}
         </Card>
+      )}
+      </>
       )}
     </>
   );

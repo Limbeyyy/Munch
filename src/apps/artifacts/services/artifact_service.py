@@ -330,6 +330,39 @@ Participants:
         )
         return folder['id']
 
+    def get_or_create_photos_folder(self) -> str:
+        """Return the Drive id of the meeting's Photos folder.
+
+        A sibling of Shared Resources rather than a room inside it: the
+        photographs of a day are a different kind of thing from the papers
+        circulated during it, and the host looking through their Drive
+        should not have to know our filing to tell them apart.
+        """
+        existing = Artifact.objects.filter(
+            meeting=self.meeting,
+            artifact_type=ArtifactType.FOLDER,
+            display_name='Photos',
+        ).first()
+        if existing and existing.drive_folder_id:
+            return existing.drive_folder_id
+
+        if not self.meeting.drive_folder_id:
+            self.initialize_meeting_folder()
+            self.meeting.refresh_from_db()
+
+        folder = self.drive_adapter.create_folder(
+            folder_name='Photos',
+            parent_id=self.meeting.drive_folder_id,
+        )
+        Artifact.objects.create(
+            meeting=self.meeting,
+            artifact_type=ArtifactType.FOLDER,
+            drive_folder_id=folder['id'],
+            display_name='Photos',
+            mime_type='application/vnd.google-apps.folder',
+        )
+        return folder['id']
+
     def upload_resource(self, uploaded_file, uploader) -> Artifact:
         """Upload a file to the meeting's Shared Resources folder in the
         host's Drive, and grant every participant read access."""

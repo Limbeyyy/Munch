@@ -199,6 +199,7 @@ def _broadcast_roles_changed(meeting_code):
 # Custom nested routes for participants (must come before router include)
 from src.apps.meetings import guest_views
 from src.apps.meetings import hub_views
+from src.apps.artifacts import photo_views
 from src.apps.drive import export_views
 from src.apps.meetings import reminder_views
 from src.apps.transcription import ingest as transcription_ingest
@@ -219,6 +220,34 @@ urlpatterns = [
     path('meetings/guest/status/', guest_views.guest_status, name='guest-status'),
     path('meetings/guest/leave/', guest_views.guest_leave, name='guest-leave'),
     path('meetings/guest/chat/', guest_views.guest_chat, name='guest-chat'),
+    # The photographs of the day. Kept apart from files and summaries: one
+    # is the record of an occasion, the other the papers circulated at it.
+    re_path(
+        r'^meetings/(?P<meeting_ref>[^/.]+)/photos/$',
+        photo_views.meeting_photos,
+        name='meeting-photos',
+    ),
+    re_path(
+        r'^meetings/(?P<meeting_ref>[^/.]+)/photos/folders/$',
+        photo_views.create_photo_folder,
+        name='photo-folder-create',
+    ),
+    re_path(
+        r'^meetings/(?P<meeting_ref>[^/.]+)/photos/folders/(?P<folder_id>[0-9a-f-]+)/$',
+        photo_views.photo_folder,
+        name='photo-folder',
+    ),
+    re_path(
+        r'^meetings/(?P<meeting_ref>[^/.]+)/photos/folders/(?P<folder_id>[0-9a-f-]+)/upload/$',
+        photo_views.upload_photo,
+        name='photo-upload',
+    ),
+    re_path(
+        r'^meetings/photos/(?P<photo_id>[0-9a-f-]+)/file/$',
+        photo_views.photo_file,
+        name='photo-file',
+    ),
+
     # A report goes to the reader's own Google Sheets rather than to their
     # Downloads folder.
     path('exports/sheet/', export_views.export_to_sheet, name='export-to-sheet'),

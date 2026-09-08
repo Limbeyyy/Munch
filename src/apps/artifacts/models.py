@@ -95,3 +95,85 @@ class Artifact(models.Model):
 
     def needs_retry(self):
         return self.sync_status == self.SyncStatus.FAILED and self.retry_count < 3
+
+class PhotoFolder(models.Model):
+    """A named place for the photographs taken at a meeting.
+
+    Every meeting has one folder whether anybody asked for it or not: the
+    default. Photographs land there unless the host has made somewhere
+    better to put them - a prize distribution, the hall, a seminar - and
+    "somewhere better" is the host's judgement, not ours, so the custom
+    folders are theirs to create and name.
+
+    Kept apart from Artifact on purpose. Files and summaries are working
+    documents with a release rule tied to the session that owns them;
+    photographs are a record of the day, and mixing the two would put one
+    set of rules over both.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    meeting = models.ForeignKey(
+        Meeting, on_delete=models.CASCADE, related_name='photo_folders'
+    )
+    name = models.CharField(max_length=120)
+    #: The one every meeting has, which cannot be renamed or removed.
+    is_default = models.BooleanField(default=False)
+    created_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='photo_folders_created',
+    )
+    #: Where it lives in the host's Drive, made on the first upload.
+    drive_folder_id = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'photo_folders'
+        # The default sorts first; the rest read in the order they were made.
+        ordering = ['-is_default', 'created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['meeting', 'name'], name='one_photo_folder_per_name'
+            ),
+            models.UniqueConstraint(
+                fields=['meeting'],
+                condition=models.Q(is_default=True),
+                name='one_default_photo_folder_per_meeting',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.name} ({self.meeting.meeting_code})'
+
+
+class MeetingPhoto(models.Model):
+    """One photograph from the day, in the host's own Drive."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    folder = models.ForeignKey(
+        PhotoFolder, on_delete=models.CASCADE, related_name='photos'
+    )
+    # Held here as well as on the folder: almost every question asked of
+    # this table is asked about a meeting.
+    meeting = models.ForeignKey(
+        Meeting, on_delete=models.CASCADE, related_name='photos'
+    )
+    caption = models.CharField(max_length=255, blank=True)
+    drive_file_id = models.CharField(max_length=255, blank=True)
+    mime_type = models.CharField(max_length=100, blank=True)
+    file_size = models.PositiveBigIntegerField(null=True, blank=True)
+    web_view_link = models.URLField(max_length=800, blank=True)
+    uploaded_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='photos_uploaded',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'meeting_photos'
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['meeting']),
+            models.Index(fields=['folder']),
+        ]
+
+    def __str__(self):
+        return self.caption or f'Photo {self.id}'

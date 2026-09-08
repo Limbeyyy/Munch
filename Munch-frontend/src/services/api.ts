@@ -37,6 +37,9 @@ import {
   UserRoles,
   ProfileSummary,
   ReminderPage,
+  MeetingPhoto,
+  PhotoFolder,
+  PhotoPage,
   SheetExport,
   UpgradeRequestRow,
   ResourceVisibility,
@@ -426,6 +429,64 @@ class ApiClient {
   async getUpgradeRequests(): Promise<{ requests: UpgradeRequestRow[] }> {
     const response = await this.client.get('/users/upgrade/');
     return response.data;
+  }
+
+  /** The photographs of a meeting, by folder. */
+  async getPhotos(meetingRef: string): Promise<PhotoPage> {
+    const response = await this.client.get(`/meetings/${meetingRef}/photos/`);
+    return response.data;
+  }
+
+  async createPhotoFolder(meetingRef: string, name: string): Promise<PhotoFolder> {
+    const response = await this.client.post(
+      `/meetings/${meetingRef}/photos/folders/`, { name }
+    );
+    return response.data;
+  }
+
+  async renamePhotoFolder(
+    meetingRef: string, folderId: string, name: string
+  ): Promise<PhotoFolder> {
+    const response = await this.client.post(
+      `/meetings/${meetingRef}/photos/folders/${folderId}/`, { name }
+    );
+    return response.data;
+  }
+
+  async deletePhotoFolder(meetingRef: string, folderId: string): Promise<void> {
+    await this.client.delete(`/meetings/${meetingRef}/photos/folders/${folderId}/`);
+  }
+
+  async uploadPhoto(
+    meetingRef: string, folderId: string, file: File, caption = ''
+  ): Promise<MeetingPhoto> {
+    const body = new FormData();
+    body.append('file', file);
+    if (caption) body.append('caption', caption);
+    const response = await this.client.post(
+      `/meetings/${meetingRef}/photos/folders/${folderId}/upload/`,
+      body,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    return response.data;
+  }
+
+  async deletePhoto(photoId: string): Promise<void> {
+    await this.client.delete(`/meetings/photos/${photoId}/file/`);
+  }
+
+  /**
+   * The photograph itself, as something an <img> can show.
+   *
+   * Fetched rather than linked: the file is served by this backend on the
+   * signed-in request, and an <img src> carries no Authorization header.
+   * The caller owns the URL that comes back and must revoke it.
+   */
+  async getPhotoObjectUrl(photoId: string): Promise<string> {
+    const response = await this.client.get(
+      `/meetings/photos/${photoId}/file/`, { responseType: 'blob' }
+    );
+    return URL.createObjectURL(response.data);
   }
 
   /**
