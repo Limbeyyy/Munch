@@ -108,6 +108,9 @@ export interface TranscriptSummary {
 }
 
 // Artifacts
+/** Who may read a shared file, and from when. */
+export type ResourceVisibility = 'now' | 'after_session' | 'public' | 'organizers';
+
 export interface Artifact {
   id: string;
   meeting_id: string;
@@ -124,6 +127,10 @@ export interface Artifact {
   session_title?: string | null;
   /** False while its session is still to come, or still running. */
   is_released?: boolean;
+  /** Who may read it, and from when. */
+  visibility?: ResourceVisibility;
+  /** Where it sits in the order attendees see. */
+  position?: number;
   created_at: string;
 }
 
@@ -644,6 +651,10 @@ export interface BoardEntry {
   was_direct: boolean;
   /** Who a direct question was put to; null for a public one. */
   sent_to: string | null;
+  /** Upvotes less downvotes — the room's sense of what wants answering. */
+  score: number;
+  /** How this reader voted: 1, -1, or 0 for not yet. */
+  my_vote: number;
   /** The answer from the front of the room; empty until one is written. */
   answer: string;
   answered_by: string;
@@ -701,4 +712,65 @@ export interface HubBoard {
   ideas: HubPost[];
   /** Only ever this reader's own — suggestions go to the organizer alone. */
   suggestions: HubPost[];
+}
+
+/** A nudge somebody is owed before something they are part of happens. */
+export interface Reminder {
+  id: string;
+  kind: 'meeting' | 'session';
+  meeting_id: string;
+  meeting_code: string;
+  meeting_title: string;
+  session_id: string | null;
+  session_title: string | null;
+  speaker_name: string;
+  hall: string;
+  starts_at: string;
+  ends_at: string;
+  /** When the nudge is owed: an hour before a meeting, a quarter before a session. */
+  due_at: string;
+  is_due: boolean;
+  read: boolean;
+  lead_minutes: number;
+  /** Puts it in a Google Calendar. Needs no tokens or consent screen. */
+  calendar_url: string;
+}
+
+export interface ReminderPage {
+  reminders: Reminder[];
+  unread: number;
+  meeting_lead_minutes: number;
+  session_lead_minutes: number;
+}
+
+/** Everything a profile page shows, in one answer. */
+export interface ProfileSummary extends UserRoles {
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    avatar_url: string | null;
+    is_verified: boolean;
+    joined: string;
+    signed_in_with_google: boolean;
+    language: string;
+    timezone: string;
+  };
+  remaining: {
+    events: number | null;
+    meetings: number | null;
+    sessions_per_meeting: number | null;
+    attendees: number | null;
+  };
+  plans: HostPlan[];
+}
+
+export interface UpgradeRequestRow {
+  id: string;
+  plan: string;
+  plan_name: string;
+  from_plan: string;
+  status: 'asked' | 'done' | 'declined';
+  note: string;
+  created_at: string;
 }

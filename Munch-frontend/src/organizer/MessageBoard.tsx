@@ -7,6 +7,49 @@ import { Btn, Chip, Empty, Panel, Tabs } from './ui';
 import { Modal } from './OrganizerShell';
 import { errorText } from './errors';
 
+/**
+ * How somebody votes on one entry.
+ *
+ * The same shape and the same rule as the hub: pressing the same arrow
+ * twice takes the vote back, and the count is the server's answer rather
+ * than a guess made here, so two people voting at once cannot drift.
+ */
+const Vote: React.FC<{
+  entry: BoardEntry;
+  busy: boolean;
+  onVote: (value: 1 | -1) => void;
+}> = ({ entry, busy, onVote }) => {
+  const { num } = useOrganizer();
+  const chosen = entry.my_vote;
+
+  const arrow = (value: 1 | -1, glyph: string, label: string) => (
+    <button
+      type="button"
+      disabled={busy}
+      aria-label={label}
+      aria-pressed={chosen === value}
+      onClick={() => onVote(value)}
+      className={`w-7 h-5 grid place-items-center rounded text-[13px] leading-none transition disabled:opacity-50 ${
+        chosen === value ? 'text-amber font-bold' : 'text-[#6E7C8E] hover:text-navy-700'
+      }`}
+    >
+      {glyph}
+    </button>
+  );
+
+  return (
+    <div
+      className={`flex flex-col items-center rounded-lg border px-1 py-0.5 flex-none ${
+        chosen !== 0 ? 'border-amber bg-amber/[.08]' : 'border-navy-800/15 bg-white'
+      }`}
+    >
+      {arrow(1, '↑', 'Upvote')}
+      <span className="text-[12.5px] tabular-nums font-medium">{num(entry.score)}</span>
+      {arrow(-1, '↓', 'Downvote')}
+    </div>
+  );
+};
+
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -37,6 +80,7 @@ export const MessageBoard: React.FC<Props> = ({
   const [answering, setAnswering] = useState<BoardEntry | null>(null);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
+  const [voting, setVoting] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -80,6 +124,21 @@ export const MessageBoard: React.FC<Props> = ({
     } catch (e: any) {
       toast.error(errorText(e, t({ ne: 'राख्न सकिएन', en: 'Could not post it' })));
     } finally { setSaving(false); }
+  };
+
+  /** One vote each. The room decides what most wants answering. */
+  const vote = async (entry: BoardEntry, value: 1 | -1) => {
+    try {
+      setVoting(entry.id);
+      const updated = guestToken
+        ? await apiClient.guestVoteOnBoard(guestToken, entry.id, value)
+        : meetingId
+        ? await apiClient.voteOnBoard(meetingId, entry.id, value)
+        : null;
+      if (updated) setBoard(updated);
+    } catch (e: any) {
+      toast.error(errorText(e, t({ ne: 'भोट दिन सकिएन', en: 'Could not vote' })));
+    } finally { setVoting(null); }
   };
 
   const shown: BoardEntry[] = (tab === 'faq' ? board?.faq : board?.suggestions) ?? [];
@@ -136,8 +195,10 @@ export const MessageBoard: React.FC<Props> = ({
           shown.map((entry) => (
             <div
               key={entry.id}
-              className="py-3 border-b border-navy-800/[.08] last:border-0"
+              className="flex gap-3 py-3 border-b border-navy-800/[.08] last:border-0"
             >
+              <Vote entry={entry} busy={voting === entry.id} onVote={(v) => vote(entry, v)} />
+              <div className="min-w-0 flex-1">
               <p className="text-[13.5px] text-ink font-read">{entry.body}</p>
               <p className="text-[12px] text-[#6E7C8E] mt-1 flex items-center gap-1.5 flex-wrap">
                 <span>{entry.asked_by}</span>
@@ -179,6 +240,7 @@ export const MessageBoard: React.FC<Props> = ({
                   </Btn>
                 </div>
               )}
+              </div>
             </div>
           ))
         )}

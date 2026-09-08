@@ -14,9 +14,23 @@ from src.apps.artifacts.models import Artifact, ArtifactType
 def is_released(artifact) -> bool:
     """True when everyone in the meeting may read this file.
 
-    A file with no session attached is not waiting on anything, so it is
-    readable straight away.
+    Four answers, and the uploader picks which:
+
+    * visible now, and public to all - readable as soon as it is there;
+    * after the session - held until the session it belongs to has
+      finished, so the room cannot read ahead of the speaker;
+    * organizers only - never released to the room at all.
+
+    A file marked "after the session" with no session attached is not
+    waiting on anything, so it is readable straight away.
     """
+    choice = getattr(artifact, 'visibility', None)
+
+    if choice == Artifact.Visibility.ORGANIZERS:
+        return False
+    if choice in (Artifact.Visibility.NOW, Artifact.Visibility.PUBLIC):
+        return True
+
     if artifact.session_id is None:
         return True
     return artifact.session.status == 'done'
@@ -31,11 +45,17 @@ def resources_for(meeting, *, include_unreleased: bool):
     resources = (
         Artifact.objects.filter(meeting=meeting, artifact_type=ArtifactType.RESOURCE)
         .select_related('session')
-        .order_by('-created_at')
+        # The order the organizer set, then newest first among equals.
+        .order_by('position', '-created_at')
     )
     if include_unreleased:
         return resources
     return [artifact for artifact in resources if is_released(artifact)]
+
+
+def is_public(artifact) -> bool:
+    """Whether a guest may read it as well as the account holders."""
+    return getattr(artifact, 'visibility', None) == Artifact.Visibility.PUBLIC
 
 
 def can_organize(meeting, user) -> bool:

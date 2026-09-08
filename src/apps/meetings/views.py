@@ -164,6 +164,50 @@ def broadcast_chat_settings(meeting_code, payload):
     except Exception as e:
         logger.warning(f"Could not broadcast chat settings for {meeting_code}: {e}")
 
+def _push(meeting_code, payload, what):
+    """Tell everyone in the room something changed. Best effort.
+
+    A channel layer problem must not fail the request that already made
+    the change stick.
+    """
+    try:
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            return
+        async_to_sync(channel_layer.group_send)(f'meeting_{meeting_code}', payload)
+    except Exception as e:
+        logger.warning(f"Could not broadcast {what} for {meeting_code}: {e}")
+
+
+def broadcast_roster_changed(meeting):
+    """Somebody came in or stepped out.
+
+    Sent rather than leaving every client to poll: a participant list that
+    only changes when you reload is not a list of who is in the room.
+    """
+    _push(
+        meeting.meeting_code,
+        {
+            'type': 'roster_update',
+            'active_count': meeting.participants.filter(is_active=True).count(),
+        },
+        'roster',
+    )
+
+
+def broadcast_resources_changed(meeting):
+    """A file arrived, or who may read one changed."""
+    _push(meeting.meeting_code, {'type': 'resources_update'}, 'resources')
+
+
+def broadcast_attendance_changed(meeting):
+    """The attendance record moved."""
+    _push(meeting.meeting_code, {'type': 'attendance_update'}, 'attendance')
+
+
 class MeetingViewSet(viewsets.ModelViewSet):
     """
     ViewSet for meeting operations
@@ -338,6 +382,8 @@ class MeetingViewSet(viewsets.ModelViewSet):
                 )
 
 
+            broadcast_roster_changed(meeting)
+
             # Get meeting state for WebSocket connection
             meeting_state = meeting_service.get_meeting_state(meeting.id)
             
@@ -484,6 +530,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
             user=str(request.user.id),
         )
 
+        broadcast_roster_changed(meeting)
         return Response({'message': 'You left the meeting'})
 
     @action(detail=True, methods=['get'])
@@ -1043,6 +1090,36 @@ class MeetingViewSet(viewsets.ModelViewSet):
         logger.info(f"Board answer {'written' if answer else 'cleared'} on {message.id}")
         return Response(ChatMessageSerializer(message).data)
 
+    @action(detail=True, methods=['post'], url_path='vote_board')
+    def vote_board(self, request, pk=None):
+        """Vote a question or suggestion up or down, or take the vote back.
+
+        Everybody in the meeting gets one. The room deciding what most
+        wants answering is the point of a board.
+        """
+        from src.apps.meetings.board import board_for, cast
+
+        meeting = self.get_object()
+
+        value = request.data.get('value')
+        if value not in (1, -1):
+            return Response(
+                {'error': 'value must be 1 or -1'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        message = ChatMessage.objects.filter(
+            meeting=meeting, id=request.data.get('message_id')
+        ).exclude(topic=ChatMessage.Topic.NONE).first()
+        if message is None:
+            return Response(
+                {'error': 'Nothing on the board with that id'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        cast(message, value, user=request.user)
+        return Response(board_for(meeting, user=request.user))
+
     @action(detail=True, methods=['get'], url_path='board')
     def board(self, request, pk=None):
         """The questions and suggestions the host has put up.
@@ -1056,7 +1133,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
         from src.apps.meetings.board import board_for
 
-        return Response(board_for(meeting))
+        return Response(board_for(meeting, user=request.user))
 
     @action(detail=True, methods=['get'], url_path='qr', permission_classes=[AllowAny])
     def qr(self, request, pk=None):
@@ -1189,10 +1266,65 @@ class MeetingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        broadcast_resources_changed(meeting)
         return Response(
             ArtifactSerializer(artifact).data,
             status=status.HTTP_201_CREATED
         )
+
+    @action(detail=True, methods=['post'], url_path='resource_settings')
+    def resource_settings(self, request, pk=None):
+        """Say who may read a shared file, and where it sits in the order.
+
+        Whoever uploaded it chose to begin with; the organizers can change
+        it afterwards, which is the point of having the choice at all.
+        """
+        from src.apps.artifacts.models import Artifact
+        from src.apps.artifacts.serializers import ArtifactSerializer
+        from src.apps.artifacts.visibility import can_organize
+
+        meeting = self.get_object()
+        if not can_organize(meeting, request.user):
+            return Response(
+                {'error': 'Only the people running the meeting can change this'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        artifact = Artifact.objects.filter(
+            meeting=meeting, id=request.data.get('resource_id')
+        ).select_related('session').first()
+        if artifact is None:
+            return Response(
+                {'error': 'No such file on this meeting'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        changed = []
+        wanted = request.data.get('visibility')
+        if wanted is not None:
+            if wanted not in Artifact.Visibility.values:
+                return Response(
+                    {'error': f'visibility must be one of '
+                              f'{sorted(Artifact.Visibility.values)}'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            artifact.visibility = wanted
+            changed.append('visibility')
+
+        position = request.data.get('position')
+        if position is not None:
+            artifact.position = max(0, int(position))
+            changed.append('position')
+
+        if not changed:
+            return Response(
+                {'error': 'Nothing to change.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        artifact.save(update_fields=changed + ['updated_at'])
+        broadcast_resources_changed(meeting)
+        return Response(ArtifactSerializer(artifact).data)
 
     def update_participant(self, request, pk=None, participant_id=None):
         """Update a meeting participant's status"""

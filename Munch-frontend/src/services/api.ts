@@ -35,6 +35,10 @@ import {
   SpeakerContact,
   ContactRequestRow,
   UserRoles,
+  ProfileSummary,
+  ReminderPage,
+  UpgradeRequestRow,
+  ResourceVisibility,
   HubBoard,
   HubKind,
   HubPost,
@@ -350,6 +354,87 @@ class ApiClient {
       message_id: messageId,
       answer,
     });
+    return response.data;
+  }
+
+  /**
+   * Vote a question or suggestion up or down, or take the vote back.
+   *
+   * Guests pass their token; account holders their JWT. Both get one vote.
+   */
+  async voteOnBoard(
+    meetingId: string,
+    messageId: string,
+    value: 1 | -1
+  ): Promise<MeetingBoard> {
+    const response = await this.client.post(`/meetings/${meetingId}/vote_board/`, {
+      message_id: messageId,
+      value,
+    });
+    return response.data;
+  }
+
+  async guestVoteOnBoard(
+    token: string,
+    messageId: string,
+    value: 1 | -1
+  ): Promise<MeetingBoard> {
+    const response = await this.client.post('/meetings/guest/board/vote/', {
+      token,
+      message_id: messageId,
+      value,
+    });
+    return response.data;
+  }
+
+  /**
+   * Say who may read a shared file, and where it sits in the order.
+   *
+   * Whoever uploaded it chose to begin with; the organizers change it
+   * afterwards, which is the point of having the choice.
+   */
+  async setResourceSettings(
+    meetingId: string,
+    resourceId: string,
+    change: { visibility?: ResourceVisibility; position?: number }
+  ): Promise<Artifact> {
+    const response = await this.client.post(
+      `/meetings/${meetingId}/resource_settings/`,
+      { resource_id: resourceId, ...change }
+    );
+    return response.data;
+  }
+
+  /** Who this person is here, and what their plan leaves them. */
+  async getProfileSummary(): Promise<ProfileSummary> {
+    const response = await this.client.get('/users/profile_summary/');
+    return response.data;
+  }
+
+  /**
+   * Ask to move to a bigger plan.
+   *
+   * No money changes hands - there is no checkout yet - so this records
+   * the ask rather than pretending to charge.
+   */
+  async requestUpgrade(plan: string, note = ''): Promise<UpgradeRequestRow> {
+    const response = await this.client.post('/users/upgrade/', { plan, note });
+    return response.data;
+  }
+
+  async getUpgradeRequests(): Promise<{ requests: UpgradeRequestRow[] }> {
+    const response = await this.client.get('/users/upgrade/');
+    return response.data;
+  }
+
+  /** What this person is owed a nudge about, with diary links. */
+  async getReminders(): Promise<ReminderPage> {
+    const response = await this.client.get('/reminders/');
+    return response.data;
+  }
+
+  async markRemindersRead(id?: string): Promise<{ marked: number }> {
+    const response = await this.client.post('/reminders/read/', id ? { id } : {});
     return response.data;
   }
 

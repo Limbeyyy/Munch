@@ -21,6 +21,10 @@ import { PeopleView } from '../organizer/views/PeopleView';
 import { ModerationView } from '../organizer/views/ModerationView';
 import { ReportsView } from '../organizer/views/ReportsView';
 import { SettingsView } from '../organizer/views/SettingsView';
+import { ProfileView } from '../organizer/ProfileView';
+import { SubscriptionView } from '../organizer/SubscriptionView';
+import { RemindersView } from '../organizer/RemindersView';
+import { useNudges } from '../organizer/nudges';
 import { ShareMeetingDialog } from '../components/ShareMeetingDialog';
 
 const OrganizerInner: React.FC = () => {
@@ -37,6 +41,9 @@ const OrganizerInner: React.FC = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [drawer, setDrawer] = useState<Meeting | null>(null);
   const [sharing, setSharing] = useState<Meeting | null>(null);
+
+  // One poll for both the rail's badge and the reminders page itself.
+  const nudges = useNudges();
 
   const load = useCallback(async () => {
     try {
@@ -84,8 +91,9 @@ const OrganizerInner: React.FC = () => {
     }
     if (pendingCount > 0) out.moderation = { text: num(pendingCount), hot: true };
     if (meetings.length > 0) out.agenda = { text: num(meetings.length) };
+    if (nudges.unread > 0) out.reminders = { text: num(nudges.unread) };
     return out;
-  }, [meetings, pendingCount, t, num]);
+  }, [meetings, pendingCount, nudges.unread, t, num]);
 
   const activeTitle = meetings.find((m) => m.status === 'active')?.title;
 
@@ -121,6 +129,9 @@ const OrganizerInner: React.FC = () => {
             {view === 'moderation' && <ModerationView meetings={meetings} />}
             {view === 'reports' && <ReportsView meetings={meetings} />}
             {view === 'settings' && <SettingsView meetings={meetings} />}
+            {view === 'reminders' && <RemindersView page={nudges.page} loading={nudges.loading} onRead={nudges.markRead} />}
+            {view === 'profile' && <ProfileView onNavigate={setView} />}
+            {view === 'subscription' && <SubscriptionView />}
           </>
         )}
       </OrganizerShell>

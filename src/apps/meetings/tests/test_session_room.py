@@ -42,10 +42,35 @@ class SessionRoomTests(TestCase):
         self.assertNotEqual(room['started_at'], self.meeting.started_at.isoformat())
 
     def test_whatever_is_on_stage_is_the_room(self):
+        # Within its own slot: the second talk's slot is running now.
+        self.second.status = Session.Status.LIVE
+        self.second.save(update_fields=['status'])
+        during = self.second.starts_at + timezone.timedelta(minutes=5)
+
+        self.assertEqual(current_session(self.meeting, during), self.second)
+
+    def test_a_session_that_has_overrun_is_not_the_room(self):
+        """Why the clock used to jump.
+
+        An overrun session is over, whether or not the sweep has closed it
+        yet. Counting from one made the room read fifty minutes on one poll
+        and twenty on the next, depending on whether a sweep had run in
+        between.
+        """
         self.first.status = Session.Status.LIVE
         self.first.save(update_fields=['status'])
+        during_second = self.second.starts_at + timezone.timedelta(minutes=5)
 
-        self.assertEqual(current_session(self.meeting), self.first)
+        # The first talk is still marked live but its half hour went long
+        # ago; the second one's slot is what is happening.
+        self.assertEqual(current_session(self.meeting, during_second), self.second)
+
+    def test_an_overrun_session_alone_leaves_the_room_holding_nothing(self):
+        self.first.status = Session.Status.LIVE
+        self.first.save(update_fields=['status'])
+        between = self.first.starts_at + timezone.timedelta(minutes=35)
+
+        self.assertIsNone(current_session(self.meeting, between))
 
     def test_otherwise_the_slot_the_clock_is_in(self):
         # Nothing on stage, but the timetable says the second talk is now.

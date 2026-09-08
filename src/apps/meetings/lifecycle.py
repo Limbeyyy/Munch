@@ -201,16 +201,24 @@ def current_session(meeting, now=None):
     talk with its own start and its own end, and that is what the clock on
     the wall should be counting.
 
-    Whatever is on stage, if anything is. Otherwise whatever the timetable
-    says is happening at this moment - somebody arriving during a slot has
-    arrived for that session even if the host has not pressed anything yet.
-    Nothing outside a slot: between sessions the room is between sessions.
+    Whatever is on stage and still within its own slot. Otherwise whatever
+    the timetable says is happening at this moment - somebody arriving
+    during a slot has arrived for that session even if the host has not
+    pressed anything yet. Nothing outside a slot: between sessions the room
+    is between sessions.
     """
     now = now or timezone.now()
 
-    live = meeting.sessions.filter(status=Session.Status.LIVE).order_by('starts_at').first()
-    if live is not None:
-        return live
+    # Something on stage and still inside its own slot. A live session that
+    # has overrun is over, whether or not the sweep has closed it yet -
+    # counting from one made the room's clock jump between the overrun
+    # session and the slot actually happening, depending on whether a sweep
+    # had run between two reads.
+    for live in meeting.sessions.filter(
+        status=Session.Status.LIVE
+    ).order_by('starts_at'):
+        if now <= scheduled_end(live):
+            return live
 
     for session in meeting.sessions.order_by('starts_at'):
         if session.starts_at <= now <= scheduled_end(session):

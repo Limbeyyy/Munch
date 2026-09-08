@@ -4,6 +4,7 @@ import { apiClient } from '../../services/api';
 import { Artifact, Meeting, TranscriptionSegment } from '../../types';
 import { MeetingOverview } from '../MeetingOverview';
 import { SummaryApprovals } from '../SummaryApprovals';
+import { ResourceControls } from '../ResourceVisibility';
 import { MEETING_STATE_LABEL, MEETING_STATE_TONE, meetingState } from '../sessionState';
 import { useOrganizer } from '../i18n';
 import { Btn, Chip, Empty, Head, Panel, Tabs } from '../ui';
@@ -213,6 +214,15 @@ export const ContentView: React.FC<Props> = ({ meetings }) => {
                                 <Chip tone="ok">{f.session_title}</Chip>
                               </span>
                             )}
+                            {/* Who may read it, and where it sits in the
+                                order attendees see. */}
+                            <ResourceControls
+                              meetingId={meeting.id}
+                              resource={f}
+                              index={i}
+                              total={files.length}
+                              onChanged={loadResources}
+                            />
                             {f.web_view_link && (
                               <a
                                 href={f.web_view_link}

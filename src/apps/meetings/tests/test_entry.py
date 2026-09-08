@@ -41,7 +41,10 @@ class EntryWindowTests(TestCase):
     def join(self, meeting, client=None):
         return (client or self.visitor_client).post(f'{API}/meetings/{meeting.id}/join/')
 
-    def knock(self, meeting, phone='9800000000'):
+    def knock(self, meeting, phone='9812345678'):
+        # Deliberately not the factory's speaker phone: somebody arriving
+        # with a presenter's number is turned away, which is tested in
+        # test_speaker_presenter and would mask what this file is about.
         return APIClient().post(f'{API}/meetings/guest/knock/', {
             'meeting_code': meeting.meeting_code,
             'full_name': 'A Guest',

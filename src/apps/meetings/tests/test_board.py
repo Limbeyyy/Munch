@@ -11,7 +11,7 @@ from rest_framework.test import APIClient
 from src.apps.accounts.tokens import issue_tokens
 from src.apps.meetings.guest_tokens import make_guest_token
 from src.apps.meetings.models import (
-    ChatMessage, GuestAttendee, MeetingParticipant,
+    ChatMessage, GuestAttendee, HubVote, MeetingParticipant,
 )
 from src.apps.meetings.tests.factories import (
     make_event, make_host, make_meeting, make_session,
@@ -559,3 +559,122 @@ class AnsweringTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(self.board()['faq'][0]['answer'], '')
+
+
+class BoardVotingTests(TestCase):
+    """Everybody in the meeting gets one vote on what is up there."""
+
+    def setUp(self):
+        self.host = make_host('host@example.com')
+        self.asker = make_host('asker@example.com')
+        self.other = make_host('other@example.com')
+        self.event = make_event(self.host)
+        self.meeting = make_meeting(self.host, self.event, start=timezone.now())
+        make_session(self.meeting, timezone.now(), 60)
+        for person in (self.asker, self.other):
+            MeetingParticipant.objects.create(
+                meeting=self.meeting, user=person, role='attendee'
+            )
+        self.guest = GuestAttendee.objects.create(
+            meeting=self.meeting, full_name='A Guest', phone='9800000000',
+            status=GuestAttendee.Status.ADMITTED,
+        )
+        self.host_client = signed_in(self.host)
+        self.question = ChatMessage.objects.create(
+            meeting=self.meeting, sender=self.asker, recipient=self.host,
+            body='When is the reception?',
+            moderation_status=ChatMessage.Moderation.APPROVED,
+            topic=ChatMessage.Topic.FAQ,
+        )
+
+    def cast(self, value, client=None, message=None):
+        return (client or signed_in(self.other)).post(
+            f'{API}/meetings/{self.meeting.id}/vote_board/',
+            {'message_id': str((message or self.question).id), 'value': value},
+            format='json',
+        )
+
+    def board(self, client=None):
+        return (client or signed_in(self.other)).get(
+            f'{API}/meetings/{self.meeting.id}/board/'
+        ).json()
+
+    def test_a_question_starts_at_nothing(self):
+        entry = self.board()['faq'][0]
+        self.assertEqual(entry['score'], 0)
+        self.assertEqual(entry['my_vote'], 0)
+
+    def test_an_upvote_raises_it(self):
+        self.assertEqual(self.cast(1).status_code, 200)
+        self.assertEqual(self.board()['faq'][0]['score'], 1)
+
+    def test_a_downvote_lowers_it(self):
+        self.cast(-1)
+        self.assertEqual(self.board()['faq'][0]['score'], -1)
+
+    def test_the_same_vote_twice_takes_it_back(self):
+        self.cast(1)
+        self.cast(1)
+        self.assertEqual(self.board()['faq'][0]['score'], 0)
+
+    def test_changing_your_mind_replaces_it(self):
+        self.cast(1)
+        self.cast(-1)
+
+        self.assertEqual(self.board()['faq'][0]['score'], -1)
+        self.assertEqual(HubVote.objects.filter(message=self.question).count(), 1)
+
+    def test_votes_from_different_people_add_up(self):
+        self.cast(1)
+        self.cast(1, client=self.host_client)
+        self.cast(1, client=signed_in(self.asker))
+
+        self.assertEqual(self.board()['faq'][0]['score'], 3)
+
+    def test_a_guest_gets_one_too(self):
+        from src.apps.meetings.guest_tokens import make_guest_token
+
+        token = make_guest_token(self.guest)
+        for _ in range(2):
+            APIClient().post(f'{API}/meetings/guest/board/vote/', {
+                'token': token, 'message_id': str(self.question.id), 'value': 1,
+            }, format='json')
+
+        # Pressed twice, so withdrawn.
+        self.assertEqual(HubVote.objects.filter(message=self.question).count(), 0)
+
+    def test_the_board_says_how_this_reader_voted(self):
+        self.cast(1)
+
+        self.assertEqual(self.board()['faq'][0]['my_vote'], 1)
+        self.assertEqual(self.board(self.host_client)['faq'][0]['my_vote'], 0)
+
+    def test_the_most_wanted_question_comes_first(self):
+        quiet = ChatMessage.objects.create(
+            meeting=self.meeting, sender=self.asker, recipient=self.host,
+            body='A quieter one',
+            moderation_status=ChatMessage.Moderation.APPROVED,
+            topic=ChatMessage.Topic.FAQ,
+        )
+        self.cast(1, message=quiet)
+        self.cast(1)
+        self.cast(1, client=self.host_client)
+
+        self.assertEqual(self.board()['faq'][0]['body'], 'When is the reception?')
+
+    def test_nothing_off_the_board_can_be_voted_on(self):
+        off = ChatMessage.objects.create(
+            meeting=self.meeting, sender=self.asker, recipient=self.host,
+            body='Not up there',
+            moderation_status=ChatMessage.Moderation.APPROVED,
+        )
+
+        self.assertEqual(self.cast(1, message=off).status_code, 404)
+
+    def test_a_nonsense_vote_is_refused(self):
+        self.assertEqual(self.cast(5).status_code, 400)
+
+    def test_somebody_outside_the_meeting_cannot_vote(self):
+        outsider = signed_in(make_host('outsider@example.com'))
+
+        self.assertEqual(self.cast(1, client=outsider).status_code, 404)

@@ -5,6 +5,7 @@ import { QUEUE_POLL_MS } from '../../services/polling';
 import { EventMeeting, EventProgramme, MeetingParticipant, Session } from '../../types';
 import { Pair, useOrganizer } from '../i18n';
 import { ContactRequests } from '../ContactRequests';
+import { groupBySpeaker } from '../speakers';
 import { RoleGrants } from '../RoleGrants';
 import { Card, Chip, Empty, Head, Panel, Tabs } from '../ui';
 import { SESSION_STATE_LABEL, SESSION_STATE_TONE, sessionState } from '../sessionState';
@@ -120,36 +121,25 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
    */
   const speakers = useMemo((): Speaker[] => {
     if (!event) return [];
-    const order: string[] = [];
-    const byPerson: Record<string, Slot[]> = {};
 
-    event.meetings.forEach((meeting) =>
+    // In the order they first appear in the day.
+    const slots: Slot[] = event.meetings.flatMap((meeting) =>
       [...meeting.sessions]
         .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at))
-        .forEach((session) => {
-          const name = session.speaker_name?.trim();
-          if (!name) return;
-          const email = session.speaker_contact?.email?.trim().toLowerCase();
-          const key = email || `name:${name.toLowerCase()}`;
-          if (!byPerson[key]) { byPerson[key] = []; order.push(key); }
-          byPerson[key].push({ session, meeting });
-        })
+        .map((session) => ({ session, meeting }))
     );
 
-    return order.map((key) => {
-      const slots = byPerson[key];
-      const first = slots[0].session;
-      const states = Array.from(
-        new Set(slots.map((s) => s.session.speaker_visibility))
-      );
+    return groupBySpeaker(slots, (slot) => slot.session).map(({ key, name, rows }) => {
+      const first = rows[0].session;
+      const states = Array.from(new Set(rows.map((r) => r.session.speaker_visibility)));
       return {
         key,
-        name: first.speaker_name.trim(),
+        name,
         email: first.speaker_contact?.email ?? '',
         phone: first.speaker_contact?.phone ?? '',
-        slots,
-        // A speaker held public on one session and private on another is
-        // neither: the card says so rather than picking one at random.
+        slots: rows,
+        // Held public on one session and private on another is neither:
+        // the card says so rather than picking one at random.
         visibility: states.length === 1 ? states[0] : 'mixed',
       };
     });

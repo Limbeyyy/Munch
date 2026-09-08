@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { useOrganizer } from '../../organizer/i18n';
+import { groupBySpeaker } from '../../organizer/speakers';
 import { Card, Chip } from '../../organizer/ui';
 import { SpineItem, clock } from '../Spine';
 import { SpeakerContactButton } from '../SpeakerContactButton';
@@ -14,17 +15,16 @@ export const SpeakersView: React.FC<Props> = ({ items, onOpen }) => {
   const { t, num } = useOrganizer();
 
   // A speaker often holds more than one slot, so gather their sessions.
-  const speakers = useMemo(() => {
-    const order: string[] = [];
-    const byName: Record<string, SpineItem[]> = {};
-    items.forEach((item) => {
-      const name = item.session.speaker_name?.trim();
-      if (!name) return;
-      if (!byName[name]) { byName[name] = []; order.push(name); }
-      byName[name].push(item);
-    });
-    return order.map((name) => ({ name, sessions: byName[name] }));
-  }, [items]);
+  // Grouped by the same rule the organizer uses, so the two screens
+  // cannot disagree about how many speakers there are.
+  const speakers = useMemo(
+    () =>
+      groupBySpeaker(items, (item) => item.session).map(({ name, rows }) => ({
+        name,
+        sessions: rows,
+      })),
+    [items]
+  );
 
   return (
     <>

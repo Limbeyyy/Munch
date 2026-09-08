@@ -892,14 +892,28 @@ class HubPost(models.Model):
 
 
 class HubVote(models.Model):
-    """One person's opinion of one post.
+    """One person's opinion of one thing on a board.
 
     Held as a row per voter rather than a running total so that changing
     your mind is possible and voting twice is not. The score is worked out
     from these.
+
+    Two kinds of thing can be voted on and they are the same kind of thing
+    to a reader: a question somebody posted in the hub, and a private
+    message the host put on the board. One table rather than two, so the
+    rules about one vote each and changing your mind live in one place.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    post = models.ForeignKey(HubPost, on_delete=models.CASCADE, related_name='votes')
+
+    # Exactly one of these is what the vote is about.
+    post = models.ForeignKey(
+        HubPost, on_delete=models.CASCADE, related_name='votes',
+        null=True, blank=True,
+    )
+    message = models.ForeignKey(
+        ChatMessage, on_delete=models.CASCADE, related_name='votes',
+        null=True, blank=True,
+    )
 
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name='hub_votes',
@@ -918,6 +932,13 @@ class HubVote(models.Model):
         db_table = 'hub_votes'
         constraints = [
             models.CheckConstraint(
+                name='hub_vote_exactly_one_subject',
+                check=(
+                    models.Q(post__isnull=False, message__isnull=True)
+                    | models.Q(post__isnull=True, message__isnull=False)
+                ),
+            ),
+            models.CheckConstraint(
                 name='hub_vote_exactly_one_voter',
                 check=(
                     models.Q(user__isnull=False, guest__isnull=True)
@@ -929,11 +950,95 @@ class HubVote(models.Model):
                 check=models.Q(value__in=[1, -1]),
             ),
             models.UniqueConstraint(
-                fields=['post', 'user'], condition=models.Q(user__isnull=False),
+                fields=['post', 'user'],
+                condition=models.Q(user__isnull=False, post__isnull=False),
                 name='one_vote_per_person_per_post',
             ),
             models.UniqueConstraint(
-                fields=['post', 'guest'], condition=models.Q(guest__isnull=False),
+                fields=['post', 'guest'],
+                condition=models.Q(guest__isnull=False, post__isnull=False),
                 name='one_vote_per_guest_per_post',
             ),
+            models.UniqueConstraint(
+                fields=['message', 'user'],
+                condition=models.Q(user__isnull=False, message__isnull=False),
+                name='one_vote_per_person_per_message',
+            ),
+            models.UniqueConstraint(
+                fields=['message', 'guest'],
+                condition=models.Q(guest__isnull=False, message__isnull=False),
+                name='one_vote_per_guest_per_message',
+            ),
         ]
+
+
+class Reminder(models.Model):
+    """A nudge somebody is owed before something they are part of happens.
+
+    A row rather than a message fired and forgotten: a row can be shown in
+    the app, marked as read, and written again without duplicating, none of
+    which an email already sent can do.
+
+    Two lead times, because two different things are being remembered. A
+    meeting is somewhere you have to get to, so an hour's warning helps. A
+    session is a talk inside a meeting you are probably already at, so
+    fifteen minutes is enough - and an hour's warning for each of four
+    talks would be noise.
+    """
+    class Kind(models.TextChoices):
+        MEETING = 'meeting', 'Meeting starting'
+        SESSION = 'session', 'Session starting'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reminders')
+
+    meeting = models.ForeignKey(
+        Meeting, on_delete=models.CASCADE, related_name='reminders'
+    )
+    session = models.ForeignKey(
+        'meetings.Session', on_delete=models.CASCADE,
+        related_name='reminders', null=True, blank=True,
+    )
+
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+
+    #: When to tell them, and what it is they are being told about.
+    due_at = models.DateTimeField()
+    starts_at = models.DateTimeField()
+
+    #: Set once it has actually been shown to them.
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'reminders'
+        ordering = ['due_at']
+        constraints = [
+            # One reminder per person per thing. Regenerating after the
+            # timetable moves updates the row rather than adding another.
+            models.UniqueConstraint(
+                fields=['user', 'meeting', 'kind'],
+                condition=models.Q(session__isnull=True),
+                name='one_meeting_reminder_per_person',
+            ),
+            models.UniqueConstraint(
+                fields=['user', 'session', 'kind'],
+                condition=models.Q(session__isnull=False),
+                name='one_session_reminder_per_person',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['user', 'due_at']),
+            models.Index(fields=['due_at', 'delivered_at']),
+        ]
+
+    @property
+    def is_due(self) -> bool:
+        from django.utils import timezone as tz
+
+        return tz.now() >= self.due_at
+
+    def __str__(self):
+        return f"{self.kind} reminder for {self.user.email} at {self.due_at}"

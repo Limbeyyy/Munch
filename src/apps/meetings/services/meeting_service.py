@@ -150,6 +150,18 @@ class MeetingService:
         """End an active meeting"""
         try:
             meeting = Meeting.objects.get(id=meeting_id)
+
+            # Close whatever is on stage first, while the room still has
+            # people in it. Attendance is a snapshot of who is present when
+            # a session ends, so clearing the room before taking it records
+            # nobody - which is how a session everybody sat through came
+            # out empty when the host ended the meeting early.
+            from src.apps.meetings.lifecycle import close_session
+            from src.apps.meetings.models import Session
+
+            for running in meeting.sessions.filter(status=Session.Status.LIVE):
+                close_session(running, timezone.now())
+
             meeting.status = Meeting.Status.ENDED
             meeting.ended_at = timezone.now()
             meeting.save()
