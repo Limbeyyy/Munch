@@ -14,7 +14,8 @@ import {
 } from '../MeetingDraftFields';
 import {
   GAP_MINUTES, MEETING_GAP_MINUTES, PlannedMeeting, PlannedSession,
-  applyEdit, countChanges, hallsInUse, pendingChanges, reflowMeeting, setHall, toPlan,
+  applyEdit, countChanges, hallsInUse, pendingChanges, reflowMeeting, setHall,
+  swapSessions, toPlan, whyNotSwap,
 } from '../schedule';
 
 const clock = (ms: number) =>
@@ -27,9 +28,9 @@ const toLocalInput = (ms: number) => {
 };
 
 /** The table's shape. Header and rows share it so they stay aligned. */
-const COLUMNS = 'minmax(200px,1fr) 150px 200px 84px 124px 112px 36px';
+const COLUMNS = '28px minmax(200px,1fr) 150px 200px 84px 124px 112px 36px';
 /** Narrower than this the columns would be squashed, so the table scrolls. */
-const TABLE_MIN_WIDTH = 976;
+const TABLE_MIN_WIDTH = 1004;
 
 const gapBefore = (plan: PlannedMeeting[], index: number) =>
   index === 0 ? null : Math.round((plan[index].startsAt - plan[index - 1].endsAt) / 60000);
@@ -58,6 +59,9 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
   const [newMeeting, setNewMeeting] = useState(false);
   /** The meeting a session is being added to, if any. */
   const [addingTo, setAddingTo] = useState<PlannedMeeting | null>(null);
+  /** The session being dragged, and the row it is hovering over. */
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -159,16 +163,106 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
     return <Chip tone={SESSION_STATE_TONE[state]}>{t(SESSION_STATE_LABEL[state])}</Chip>;
   };
 
+  /**
+   * Two sessions change places, each taking the other's slot.
+   *
+   * Refusals are spoken rather than silent: dropping a row somewhere it
+   * cannot go looks broken otherwise, and the reason is never obvious from
+   * the row itself.
+   */
+  const swap = (fromId: string, toId: string) => {
+    const refusal = whyNotSwap(plan, fromId, toId);
+    if (refusal === 'other-meeting') {
+      toast.error(t({
+        ne: 'सत्रहरू एउटै बैठकभित्र मात्र ठाउँ साट्न सक्छन्।',
+        en: 'Sessions can only change places within the same meeting.',
+      }));
+      return;
+    }
+    if (refusal === 'settled') {
+      toast.error(t({
+        ne: 'चलिसकेको वा चलिरहेको सत्रको समय फेरिँदैन।',
+        en: 'A session that has run, or is running, keeps its time.',
+      }));
+      return;
+    }
+    if (refusal !== null) return;
+
+    const sessions = plan.flatMap((m) => m.sessions);
+    const moved = sessions.find((s) => s.id === fromId);
+    const other = sessions.find((s) => s.id === toId);
+    setPlan((p) => swapSessions(p, fromId, toId));
+    if (moved && other) {
+      toast.success(t({
+        ne: `“${moved.title}” र “${other.title}” ले ठाउँ साटे`,
+        en: `“${moved.title}” and “${other.title}” changed places`,
+      }));
+    }
+  };
+
+  /** Alt with an arrow moves a row, for anybody not using a mouse. */
+  const nudge = (meeting: PlannedMeeting, session: PlannedSession, by: -1 | 1) => {
+    const order = meeting.sessions;
+    const at = order.findIndex((s) => s.id === session.id);
+    const neighbour = order[at + by];
+    if (neighbour) swap(session.id, neighbour.id);
+  };
+
   const sessionRow = (meeting: PlannedMeeting, session: PlannedSession) => {
     const locked = session.status === 'done';
+    const fixed = locked || session.status === 'live';
     return (
       <div
         key={session.id}
+        onDragOver={(e) => {
+          if (!dragging || dragging === session.id) return;
+          e.preventDefault();
+          setOver(session.id);
+        }}
+        onDragLeave={() => setOver((id) => (id === session.id ? null : id))}
+        onDrop={(e) => {
+          e.preventDefault();
+          const fromId = dragging || e.dataTransfer.getData('text/plain');
+          setOver(null);
+          setDragging(null);
+          if (fromId) swap(fromId, session.id);
+        }}
         className={`grid gap-2.5 items-center px-4 py-2.5 border-b border-navy-800/[.08] last:border-0 ${
           session.moved ? 'bg-amber/[.08]' : ''
+        } ${over === session.id ? 'outline outline-2 -outline-offset-2 outline-amber' : ''} ${
+          dragging === session.id ? 'opacity-50' : ''
         }`}
         style={{ gridTemplateColumns: COLUMNS, minWidth: TABLE_MIN_WIDTH }}
       >
+        <button
+          type="button"
+          draggable={!fixed}
+          onDragStart={(e) => {
+            e.dataTransfer.setData('text/plain', session.id);
+            e.dataTransfer.effectAllowed = 'move';
+            setDragging(session.id);
+          }}
+          onDragEnd={() => { setDragging(null); setOver(null); }}
+          onKeyDown={(e) => {
+            if (!e.altKey) return;
+            if (e.key === 'ArrowUp') { e.preventDefault(); nudge(meeting, session, -1); }
+            if (e.key === 'ArrowDown') { e.preventDefault(); nudge(meeting, session, 1); }
+          }}
+          disabled={fixed}
+          aria-label={t({
+            ne: `“${session.title}” सार्नुहोस् — तानेर छोड्नुहोस्, वा Alt सँग तीर`,
+            en: `Move “${session.title}” — drag it onto another session, or Alt with an arrow key`,
+          })}
+          title={t({
+            ne: 'तानेर अर्को सत्रमा छोड्नुहोस् — दुवैले ठाउँ साट्छन्',
+            en: 'Drag onto another session — the two change places',
+          })}
+          className={`w-6 h-7 rounded-md text-[#6E7C8E] leading-none text-[15px]
+            ${fixed ? 'opacity-25' : 'cursor-grab hover:bg-navy-800/[.06] hover:text-navy-800'}`}
+        >
+          ⠿
+        </button>
+
         <div className="min-w-0">
           <p className="text-[13.5px] font-medium truncate">{session.title}</p>
           <p className="text-[12px] text-[#6E7C8E] truncate">
@@ -236,8 +330,8 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
       <Head
         title={{ ne: 'सत्रहरू', en: 'Sessions' }}
         lede={{
-          ne: 'अर्को सत्रकै समय राख्नुभयो भने दुवैले ठाउँ साट्छन्। अरू कुनै समय राख्दा त्यो सत्र सबैभन्दा नजिकको खाली समयमा बस्छ — बीचमा कम्तीमा १५ मिनेट।',
-          en: `Give a session the time another one holds and the two trade places. Any other time puts it at the nearest free point, with at least ${MEETING_GAP_MINUTES} minutes either side.`,
+          ne: 'एउटा सत्र तानेर अर्कोमा छोड्नुभयो भने दुवैले ठाउँ साट्छन्। अर्को सत्रकै समय राख्नुभयो भने पनि त्यही हुन्छ। अरू कुनै समय राख्दा त्यो सत्र सबैभन्दा नजिकको खाली समयमा बस्छ — बीचमा कम्तीमा १५ मिनेट।',
+          en: `Drag a session onto another and the two change places. Give one the time another holds and they trade the same way. Any other time puts it at the nearest free point, with at least ${MEETING_GAP_MINUTES} minutes either side.`,
         }}
         actions={
           <>
@@ -370,6 +464,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
                           className="grid gap-2.5 px-4 py-2 bg-[#FBFAF6] border-b border-navy-800/15 text-xs text-[#6E7C8E] font-medium"
                           style={{ gridTemplateColumns: COLUMNS, minWidth: TABLE_MIN_WIDTH }}
                         >
+                          <span className="sr-only">{t({ ne: 'क्रम', en: 'Order' })}</span>
                           <span>{t({ ne: 'सत्र', en: 'Session' })}</span>
                           <span>{t({ ne: 'हल', en: 'Hall' })}</span>
                           <span>{t({ ne: 'सुरु', en: 'Starts' })}</span>

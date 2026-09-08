@@ -249,6 +249,46 @@ export const applyEdit = (
 /** Kept for callers written against the older name. */
 export const reflow = applyEdit;
 
+/** Why two sessions cannot change places, or null if they can. */
+export type SwapRefusal = 'same' | 'other-meeting' | 'settled' | null;
+
+export const whyNotSwap = (
+  plan: PlannedMeeting[],
+  aId: string,
+  bId: string
+): SwapRefusal => {
+  const sessions = allSessions(plan);
+  const a = sessions.find((s) => s.id === aId);
+  const b = sessions.find((s) => s.id === bId);
+  if (!a || !b || a.id === b.id) return 'same';
+  if (a.meetingId !== b.meetingId) return 'other-meeting';
+  // A session that has run, or is running, has a real time and keeps it.
+  if (isSettled(a) || isSettled(b)) return 'settled';
+  const meeting = plan.find((m) => m.id === a.meetingId);
+  if (meeting && isUnderway(meeting)) return 'settled';
+  return null;
+};
+
+/**
+ * Two sessions change places, each taking the other's slot.
+ *
+ * Which is what dragging one onto the other means: the running order is
+ * rearranged, the times stay where they were. Written as a start-time edit
+ * because that is already how the schedule recognises a swap - a session
+ * given the time another one holds trades with it - so the reflow, the
+ * gaps and the pinned first session all keep working without a second set
+ * of rules to disagree with the first.
+ */
+export const swapSessions = (
+  plan: PlannedMeeting[],
+  aId: string,
+  bId: string
+): PlannedMeeting[] => {
+  if (whyNotSwap(plan, aId, bId) !== null) return plan;
+  const target = allSessions(plan).find((s) => s.id === bId)!;
+  return applyEdit(plan, aId, { startsAt: target.startsAt });
+};
+
 /** Put a session in a different hall. Nothing else about the day changes. */
 export const setHall = (
   plan: PlannedMeeting[],
