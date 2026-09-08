@@ -2,6 +2,7 @@ from celery import shared_task
 from django.core.cache import cache
 from django.db import transaction
 import logging
+from src.apps.meetings.lifecycle import broadcast_meeting_ended
 from src.apps.meetings.models import Meeting
 from src.apps.artifacts.services.artifact_service import MeetingArtifactService
 from src.apps.drive.services.google_drive_adapter import GoogleDriveAdapter
@@ -111,11 +112,13 @@ def cleanup_meeting_resources(self, meeting_id):
         # Archive or delete meeting resources
         # This could include moving files to archive folder, removing temporary data, etc.
         
-        # Update meeting status if needed
+        # Update meeting status if needed. Through the service, so the room
+        # is emptied and told rather than left sitting in an ended meeting.
         if meeting.status == Meeting.Status.ACTIVE:
-            meeting.status = Meeting.Status.ENDED
-            meeting.ended_at = timezone.now()
-            meeting.save()
+            from src.apps.meetings.services.meeting_service import MeetingService
+
+            meeting = MeetingService.end_meeting(meeting.id)
+            broadcast_meeting_ended(meeting, reason='time_elapsed')
         
         # Clear cache
         cache.delete_pattern(f'meeting_*_{meeting_id}')

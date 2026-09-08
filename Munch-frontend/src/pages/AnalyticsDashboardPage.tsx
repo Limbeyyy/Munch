@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAnalyticsStore } from '../store/analyticsStore';
+import { openAsSheet } from '../organizer/sheets';
 
 export const AnalyticsDashboardPage: React.FC = () => {
   const {
@@ -18,6 +19,21 @@ export const AnalyticsDashboardPage: React.FC = () => {
       fetchOrgAnalytics(orgId, dateRange.from, dateRange.to);
     }
   }, [orgId, dateRange.from, dateRange.to, fetchOrgAnalytics]);
+
+  /**
+   * Analytics go to the reader's own Google Sheets, like every other
+   * report here. This page is English-only, so the wording is passed
+   * straight through rather than translated.
+   */
+  const handleSheet = () => {
+    const figures = orgAnalytics as Record<string, unknown> | null;
+    const rows: (string | number)[][] = [['measure', 'value']];
+    Object.entries(figures ?? {}).forEach(([key, value]) => {
+      if (value === null || typeof value === 'object') return;
+      rows.push([key, String(value)]);
+    });
+    openAsSheet('analytics', rows, { t: (pair) => pair.en || pair.ne });
+  };
 
   const handleExport = async (format: 'csv' | 'pdf') => {
     await exportAnalytics(format);
@@ -40,10 +56,10 @@ export const AnalyticsDashboardPage: React.FC = () => {
           <h1 className="text-3xl font-bold text-gray-900">Analytics Dashboard</h1>
           <div className="flex gap-2">
             <button
-              onClick={() => handleExport('csv')}
+              onClick={handleSheet}
               className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
             >
-              Export CSV
+              Export to Sheets
             </button>
             <button
               onClick={() => handleExport('pdf')}

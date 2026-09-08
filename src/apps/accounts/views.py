@@ -69,7 +69,7 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
         shows three different loading states and gets them out of step.
         """
         from src.apps.accounts.plans import PLANS, plan_for, usage_for
-        from src.apps.accounts.roles import roles_payload
+        from src.apps.accounts.roles import roles_payload, signs_in_with_google
 
         payload = roles_payload(request.user)
         plan = plan_for(request.user)
@@ -89,7 +89,7 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
                 'avatar_url': request.user.avatar_url,
                 'is_verified': request.user.is_verified,
                 'joined': request.user.created_at,
-                'signed_in_with_google': bool(request.user.google_subject),
+                'signed_in_with_google': signs_in_with_google(request.user),
                 'language': request.user.preferred_language,
                 'timezone': request.user.timezone,
             },

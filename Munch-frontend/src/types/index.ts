@@ -736,6 +736,13 @@ export interface Reminder {
   calendar_url: string;
 }
 
+/** A report that has been written into somebody's own Google Drive. */
+export interface SheetExport {
+  id: string;
+  name: string;
+  url: string;
+}
+
 export interface ReminderPage {
   reminders: Reminder[];
   unread: number;

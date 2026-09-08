@@ -156,7 +156,7 @@ class MeetingService:
             # a session ends, so clearing the room before taking it records
             # nobody - which is how a session everybody sat through came
             # out empty when the host ended the meeting early.
-            from src.apps.meetings.lifecycle import close_session
+            from src.apps.meetings.lifecycle import clear_room, close_session
             from src.apps.meetings.models import Session
 
             for running in meeting.sessions.filter(status=Session.Status.LIVE):
@@ -166,17 +166,9 @@ class MeetingService:
             meeting.ended_at = timezone.now()
             meeting.save()
 
-            # Mark all participants as inactive
-            MeetingParticipant.objects.filter(meeting=meeting).update(
-                is_active=False,
-                left_at=timezone.now()
-            )
-
-            # Guests hold no participant row, so close their sessions too.
-            from src.apps.meetings.models import GuestAttendee
-            GuestAttendee.objects.filter(
-                meeting=meeting, status=GuestAttendee.Status.ADMITTED
-            ).update(status=GuestAttendee.Status.LEFT)
+            # Now that the register is taken, empty the room. One definition
+            # of that, shared with every other way a meeting can end.
+            clear_room(meeting, meeting.ended_at)
 
             MeetingEvent.objects.create(
                 meeting=meeting,

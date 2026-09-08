@@ -199,6 +199,7 @@ def _broadcast_roles_changed(meeting_code):
 # Custom nested routes for participants (must come before router include)
 from src.apps.meetings import guest_views
 from src.apps.meetings import hub_views
+from src.apps.drive import export_views
 from src.apps.meetings import reminder_views
 from src.apps.transcription import ingest as transcription_ingest
 
@@ -218,6 +219,10 @@ urlpatterns = [
     path('meetings/guest/status/', guest_views.guest_status, name='guest-status'),
     path('meetings/guest/leave/', guest_views.guest_leave, name='guest-leave'),
     path('meetings/guest/chat/', guest_views.guest_chat, name='guest-chat'),
+    # A report goes to the reader's own Google Sheets rather than to their
+    # Downloads folder.
+    path('exports/sheet/', export_views.export_to_sheet, name='export-to-sheet'),
+
     path('reminders/', reminder_views.my_reminders, name='my-reminders'),
     path('reminders/read/', reminder_views.mark_reminders_read,
          name='reminders-read'),

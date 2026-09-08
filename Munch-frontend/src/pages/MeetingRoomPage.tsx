@@ -81,6 +81,7 @@ export const MeetingRoomPage: React.FC = () => {
     roster: () => {},
     resources: () => {},
     attendance: () => {},
+    meeting: () => {},
   });
   const meetingIdRef = useRef<string | null>(null);
   const elapsedRef = useRef(0);
@@ -327,6 +328,23 @@ export const MeetingRoomPage: React.FC = () => {
     setDraft('');
   };
 
+  /**
+   * Re-read the meeting without the ceremony of arriving at it.
+   *
+   * ``loadMeeting`` puts a spinner up, joins the room and checks the door,
+   * all of which is right on the way in and wrong for a socket saying the
+   * running order moved on.
+   */
+  const refreshMeeting = useCallback(async () => {
+    const id = meetingIdRef.current;
+    if (!id || !meetingCode) return;
+    try {
+      setMeeting(await apiClient.getMeeting(meetingCode));
+    } catch {
+      // A dropped refresh is not worth interrupting the meeting for.
+    }
+  }, [meetingCode, setMeeting]);
+
   const loadMeeting = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -393,6 +411,14 @@ export const MeetingRoomPage: React.FC = () => {
       } else if (data.type === 'state_update' || data.type === 'participant_joined'
                  || data.type === 'participant_left') {
         refreshParticipants();
+        // The running order moving on changes which session the room is
+        // holding, and a session ended early is over well before the time
+        // it was given. Re-read it: whoever is sitting in a session that
+        // has finished should be shown the door, and whoever is sitting in
+        // one that has just been handed the stage should stay put.
+        if (data.state?.session_ended || data.state?.session_started) {
+          refreshRef.current.meeting();
+        }
       } else if (data.type === 'chat_message') {
         setMessages((prev) => {
           if (data.message_id && prev.some((m) => m.id === data.message_id)) return prev;
@@ -547,8 +573,9 @@ export const MeetingRoomPage: React.FC = () => {
         if (id) loadResources(id);
       },
       attendance: () => loadAttendance(),
+      meeting: () => refreshMeeting(),
     };
-  }, [loadResources, loadAttendance, setParticipants]);
+  }, [loadResources, loadAttendance, setParticipants, refreshMeeting]);
 
   // The device streams new lines over the socket; this fills in what was
   // said before we arrived.

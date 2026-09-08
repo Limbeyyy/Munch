@@ -37,6 +37,7 @@ import {
   UserRoles,
   ProfileSummary,
   ReminderPage,
+  SheetExport,
   UpgradeRequestRow,
   ResourceVisibility,
   HubBoard,
@@ -424,6 +425,21 @@ class ApiClient {
 
   async getUpgradeRequests(): Promise<{ requests: UpgradeRequestRow[] }> {
     const response = await this.client.get('/users/upgrade/');
+    return response.data;
+  }
+
+  /**
+   * Put a report into this person's own Google Sheets.
+   *
+   * The rows are the ones on screen, so the sheet says what the reader was
+   * shown. The link that comes back opens the file in their Drive.
+   */
+  async exportToSheet(
+    kind: 'attendance' | 'report' | 'analytics',
+    rows: (string | number)[][],
+    subject = ''
+  ): Promise<SheetExport> {
+    const response = await this.client.post('/exports/sheet/', { kind, rows, subject });
     return response.data;
   }
 

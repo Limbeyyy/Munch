@@ -16,7 +16,9 @@ import logging
 from django.db import transaction
 from django.utils import timezone
 
-from src.apps.meetings.models import Meeting, Session, SessionAttendance
+from src.apps.meetings.models import (
+    GuestAttendee, Meeting, MeetingParticipant, Session, SessionAttendance,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +100,60 @@ def has_more_to_run(meeting, now=None) -> bool:
     return False
 
 
+def clear_room(meeting, now=None):
+    """Empty the room: nobody is left sitting in a meeting that is over.
+
+    Called after attendance has been taken, never before - the register is
+    a snapshot of who is present when a session closes, so clearing the
+    room first would record nobody.
+
+    Every way a meeting can end goes through here, because the way this
+    went wrong before was not the rule but the number of places that had
+    to remember it.
+    """
+    now = now or timezone.now()
+
+    left = MeetingParticipant.objects.filter(
+        meeting=meeting, is_active=True
+    ).update(is_active=False, left_at=now)
+
+    # Guests hold no participant row, so their side is closed separately.
+    sent_home = GuestAttendee.objects.filter(
+        meeting=meeting, status=GuestAttendee.Status.ADMITTED
+    ).update(status=GuestAttendee.Status.LEFT)
+
+    return left + sent_home
+
+
+def broadcast_meeting_ended(meeting, reason='host_ended'):
+    """Tell everyone in the room it is over, and why.
+
+    The consumer hangs up after passing this on, so a client that ignores
+    the message still leaves - the room is shut for everybody at the same
+    moment rather than one browser at a time. Best effort: a meeting that
+    has ended in the database has ended whether or not the news got out.
+    """
+    try:
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+
+        layer = get_channel_layer()
+        if layer is None:
+            return
+        async_to_sync(layer.group_send)(
+            f'meeting_{meeting.meeting_code}',
+            {
+                'type': 'meeting_ended',
+                'reason': reason,
+                'ended_at': meeting.ended_at.isoformat() if meeting.ended_at else None,
+            },
+        )
+    except Exception as e:
+        logger.warning(
+            f"Could not broadcast end of {meeting.meeting_code}: {e}"
+        )
+
+
 def close_meeting_if_spent(meeting, now=None):
     """Close a meeting once nothing in it is still running and its time is up.
 
@@ -117,6 +173,12 @@ def close_meeting_if_spent(meeting, now=None):
     meeting.status = Meeting.Status.ENDED
     meeting.ended_at = now
     meeting.save(update_fields=['status', 'ended_at', 'updated_at'])
+
+    # The books were closed here but the room was not, so whoever was still
+    # in it stayed there - counted as present in a meeting that had ended.
+    clear_room(meeting, now)
+    broadcast_meeting_ended(meeting, reason='time_elapsed')
+
     logger.info(f"Meeting {meeting.meeting_code} closed: its time ran out")
     return True
 

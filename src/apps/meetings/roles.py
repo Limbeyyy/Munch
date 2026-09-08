@@ -174,6 +174,25 @@ def _digits(value: str) -> str:
     return ''.join(ch for ch in (value or '') if ch.isdigit())
 
 
+def account_holder(typed):
+    """The account an address at the guest door belongs to, if any.
+
+    An address identifies exactly one account here - the email column is
+    unique - so somebody typing one at the guest door is either signing in
+    under their own name or borrowing somebody else's. Neither belongs at
+    a door that asks for no proof: the first has an account to sign in
+    with, and the second would be sitting in the room under a name that is
+    not theirs, with no way for anybody to tell.
+    """
+    address = (typed or '').strip()
+    if '@' not in address:
+        return None
+
+    from src.apps.accounts.models import User
+
+    return User.objects.filter(email__iexact=address).first()
+
+
 def presenter_details(meeting, *, name='', phone=''):
     """Whether these door details belong to somebody down to present.
 

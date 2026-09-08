@@ -103,6 +103,15 @@ export const LoginPage: React.FC = () => {
         return;
       }
 
+      // Somebody who already has an account, typing their address at the
+      // guest door. Same treatment: not a scolding, just a pointer back to
+      // the sign-in button, which is where that address works.
+      if (refusal?.code === 'account_must_sign_in') {
+        setShowGuest(false);
+        toast(refusal.error, { icon: '\uD83D\uDD11', duration: 9000 });
+        return;
+      }
+
       const detail =
         refusal?.error ??
         refusal?.phone?.[0] ??

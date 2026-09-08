@@ -98,27 +98,9 @@ def deliver_moderated_message(meeting, message, decision):
         )
 
 
-def broadcast_meeting_ended(meeting, reason='host_ended'):
-    """Tell everyone the meeting is over and why."""
-    try:
-        from asgiref.sync import async_to_sync
-        from channels.layers import get_channel_layer
-
-        layer = get_channel_layer()
-        if layer is None:
-            return
-        async_to_sync(layer.group_send)(
-            f'meeting_{meeting.meeting_code}',
-            {
-                'type': 'meeting_ended',
-                'reason': reason,
-                'ended_at': meeting.ended_at.isoformat() if meeting.ended_at else None,
-            },
-        )
-    except Exception as e:
-        logger.warning(
-            f"Could not broadcast end of {meeting.meeting_code}: {e}"
-        )
+# Defined with the rest of the lifecycle rules and re-exported here, which
+# is where the callers already look for it.
+from src.apps.meetings.lifecycle import broadcast_meeting_ended  # noqa: E402
 
 
 def broadcast_meeting_started(meeting):
