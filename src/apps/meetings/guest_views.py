@@ -83,19 +83,25 @@ def guest_knock(request):
             {'error': f"No meeting found with code {data['meeting_code']}"},
             status=status.HTTP_404_NOT_FOUND
         )
+    from src.apps.meetings.entry import guest_door_open, no_session_response
+
     if meeting.status == Meeting.Status.ENDED:
         return Response(
-            {'error': 'This meeting has already ended'},
-            status=status.HTTP_400_BAD_REQUEST
+            {
+                'error': 'No session is live right now. This meeting has finished.',
+                'code': 'no_session_live',
+                'opens_at': None,
+            },
+            status=status.HTTP_403_FORBIDDEN,
         )
 
-    # A guest may knock once the room opens, whether or not the host has
-    # arrived. The request simply waits in the host's queue until it is
-    # answered, so a late host still finds everyone who came early.
-    from src.apps.meetings.entry import is_open, too_early_response
-
-    if not is_open(meeting):
-        return too_early_response(meeting)
+    # A guest has no dashboard to wait on: they came for a talk, so either
+    # one is on stage or about to be and they may knock, or there is
+    # nothing to come in for and saying so beats an empty hall. Knocking
+    # is unchanged - the request waits in the host's queue until answered,
+    # so a late host still finds everybody who came early.
+    if not guest_door_open(meeting):
+        return no_session_response(meeting)
 
     # Presenting is tied to an account, so somebody arriving at the guest
     # door with a presenter's details is turned round rather than seated.

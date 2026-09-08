@@ -112,6 +112,14 @@ export const LoginPage: React.FC = () => {
         return;
       }
 
+      // A guest has nowhere else to be: no dashboard, no programme to
+      // browse. So when there is nothing to come in for, that is the whole
+      // answer, and it is worth saying at length rather than in passing.
+      if (refusal?.code === 'no_session_live' || refusal?.code === 'too_early') {
+        toast(refusal.error, { icon: '\uD83D\uDD53', duration: 10000 });
+        return;
+      }
+
       const detail =
         refusal?.error ??
         refusal?.phone?.[0] ??
