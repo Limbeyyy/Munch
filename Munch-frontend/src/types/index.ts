@@ -736,6 +736,51 @@ export interface Reminder {
   calendar_url: string;
 }
 
+/**
+ * A named place for the photographs of a meeting.
+ *
+ * Deliberately not an Artifact: files and summaries are working documents
+ * with a release rule tied to their session, photographs are the record of
+ * the day, and one set of rules over both would suit neither.
+ */
+export interface PhotoFolder {
+  id: string;
+  name: string;
+  is_default: boolean;
+  created_by: string;
+  is_mine: boolean;
+  photo_count: number;
+  created_at: string;
+}
+
+export interface MeetingPhoto {
+  id: string;
+  folder_id: string;
+  caption: string;
+  mime_type: string;
+  file_size: number | null;
+  taken_by: string;
+  taken_by_id: string;
+  is_mine: boolean;
+  created_at: string;
+  /** Served by the backend, so it needs the signed-in request to fetch it. */
+  url: string;
+}
+
+export interface PhotoPage {
+  meeting_id: string;
+  meeting_code: string;
+  meeting_title: string;
+  meeting_is_finished: boolean;
+  /** Whether this person may add one now: the permission and the timing. */
+  can_upload: boolean;
+  /** Whether they are one of the people who may, once it has finished. */
+  is_a_photographer: boolean;
+  can_arrange: boolean;
+  folders: PhotoFolder[];
+  photos: MeetingPhoto[];
+}
+
 /** A report that has been written into somebody's own Google Drive. */
 export interface SheetExport {
   id: string;

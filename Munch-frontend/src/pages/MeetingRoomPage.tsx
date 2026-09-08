@@ -11,6 +11,7 @@ import {
 import toast from 'react-hot-toast';
 import { ShareMeetingDialog } from '../components/ShareMeetingDialog';
 import { ResourceControls } from '../organizer/ResourceVisibility';
+import { PhotoUploads } from '../organizer/Photos';
 import { LiveTranscriptStage } from '../components/LiveTranscriptStage';
 
 
@@ -1377,6 +1378,10 @@ export const MeetingRoomPage: React.FC = () => {
               })}
             </div>
           </div>
+
+          {/* Photographs of the day. A different thing from the papers
+              circulated during it, so a section of its own. */}
+          {meetingCode && <PhotoUploads meetingRef={meetingCode} tone="dark" />}
 
           {/* Shared Resources */}
           <div className="flex-1 overflow-y-auto p-4 border-b border-gray-700 min-h-0">
