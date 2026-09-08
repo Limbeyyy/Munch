@@ -10,6 +10,7 @@ import {
 } from '../types';
 import toast from 'react-hot-toast';
 import { ShareMeetingDialog } from '../components/ShareMeetingDialog';
+import { ResourceControls } from '../organizer/ResourceVisibility';
 import { LiveTranscriptStage } from '../components/LiveTranscriptStage';
 
 
@@ -73,6 +74,14 @@ export const MeetingRoomPage: React.FC = () => {
   const [attendance, setAttendance] = useState<AttendanceReport | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const showChatRef = useRef(false);
+  // Read inside the socket handler, which is created once.
+  const showAttendanceRef = useRef(false);
+  /** The reloads the socket asks for, kept current without rebuilding it. */
+  const refreshRef = useRef({
+    roster: () => {},
+    resources: () => {},
+    attendance: () => {},
+  });
   const meetingIdRef = useRef<string | null>(null);
   const elapsedRef = useRef(0);
 
@@ -103,12 +112,13 @@ export const MeetingRoomPage: React.FC = () => {
 
   useEffect(() => {
     showChatRef.current = showChat;
+    showAttendanceRef.current = showAttendance;
     if (showChat) {
       setUnread(0);
       if (chatTab === 'public') setUnreadPublic(0);
       else setUnreadPrivate(0);
     }
-  }, [showChat, chatTab]);
+  }, [showChat, chatTab, showAttendance]);
 
   useEffect(() => {
     chatTabRef.current = chatTab;
@@ -118,6 +128,13 @@ export const MeetingRoomPage: React.FC = () => {
   }, [chatTab]);
 
   const isHost = !!user && currentMeeting?.host?.id === user.id;
+
+  /** Whoever runs the room: the host, or anyone helping run it. */
+  const canOrganize =
+    isHost ||
+    (participants as MeetingParticipant[]).some(
+      (p) => p.user?.id === user?.id && ['host', 'co_host'].includes(p.role)
+    );
   const visibleMessages = messages.filter((m) =>
     chatTab === 'private' ? m.is_direct : !m.is_direct
   );
@@ -446,6 +463,16 @@ export const MeetingRoomPage: React.FC = () => {
           }]
         );
         toast(`${data.full_name} is asking to join`, { icon: '🔔' });
+      } else if (data.type === 'roster_update') {
+        // Somebody came in or stepped out. Ask for the list rather than
+        // patching it here: the server already knows who is in the room.
+        // Read through refs so this handler - and with it the socket - is
+        // not rebuilt every time one of them changes.
+        refreshRef.current.roster();
+      } else if (data.type === 'resources_update') {
+        refreshRef.current.resources();
+      } else if (data.type === 'attendance_update') {
+        if (showAttendanceRef.current) refreshRef.current.attendance();
       } else if (data.type === 'meeting_started') {
         setMeeting({
           ...(useMeetingStore.getState().currentMeeting as any),
@@ -506,6 +533,22 @@ export const MeetingRoomPage: React.FC = () => {
       // Resources are supplementary; a failure here must not break the room.
     }
   }, []);
+
+  // Keep the socket's reloads pointing at the current functions. The
+  // handler holds the ref, not the functions, so the connection survives.
+  useEffect(() => {
+    refreshRef.current = {
+      roster: () => {
+        const id = meetingIdRef.current;
+        if (id) apiClient.getParticipants(id).then(setParticipants).catch(() => undefined);
+      },
+      resources: () => {
+        const id = meetingIdRef.current;
+        if (id) loadResources(id);
+      },
+      attendance: () => loadAttendance(),
+    };
+  }, [loadResources, loadAttendance, setParticipants]);
 
   // The device streams new lines over the socket; this fills in what was
   // said before we arrived.
@@ -1344,25 +1387,40 @@ export const MeetingRoomPage: React.FC = () => {
               </p>
             ) : (
               <div className="space-y-2">
-                {resources.map((r) => (
-                  <a
-                    key={r.id}
-                    href={r.web_view_link ?? '#'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block bg-gray-700 hover:bg-gray-600 p-3 rounded text-sm transition"
-                  >
-                    <p className="font-medium truncate">{r.display_name}</p>
-                    <p className="text-gray-300 text-xs mt-1 truncate">
-                      {formatFileSize(r.file_size)}
-                      {r.metadata?.uploaded_by_email &&
-                        ` · ${
-                          r.metadata.uploaded_by_email === user?.email
-                            ? 'you'
-                            : r.metadata.uploaded_by_email
-                        }`}
-                    </p>
-                  </a>
+                {resources.map((r, i) => (
+                  <div key={r.id} className="bg-gray-700 rounded text-sm">
+                    <a
+                      href={r.web_view_link ?? '#'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block hover:bg-gray-600 p-3 rounded transition"
+                    >
+                      <p className="font-medium truncate">{r.display_name}</p>
+                      <p className="text-gray-300 text-xs mt-1 truncate">
+                        {formatFileSize(r.file_size)}
+                        {r.metadata?.uploaded_by_email &&
+                          ` · ${
+                            r.metadata.uploaded_by_email === user?.email
+                              ? 'you'
+                              : r.metadata.uploaded_by_email
+                          }`}
+                        {r.is_released === false && ' · not open to the room yet'}
+                      </p>
+                    </a>
+                    {/* Whoever runs the room decides who may read it, from
+                        here as well as from the dashboard. */}
+                    {canOrganize && meetingId && (
+                      <div className="px-3 pb-2.5">
+                        <ResourceControls
+                          meetingId={meetingId}
+                          resource={r}
+                          index={i}
+                          total={resources.length}
+                          onChanged={() => loadResources(meetingId)}
+                        />
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
             )}

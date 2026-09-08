@@ -168,3 +168,50 @@ class HostAccount(models.Model):
         if self.current_period_end and self.current_period_end < timezone.now():
             return False
         return True
+
+
+class UpgradeRequest(models.Model):
+    """Somebody asking to move to a bigger plan.
+
+    There is no checkout yet, and a button that silently does nothing is
+    worse than no button. This records the ask so it can be actioned - by
+    the operator, with set_host_plan - and so the person can see that it
+    was heard rather than wondering.
+    """
+    class Status(models.TextChoices):
+        ASKED = 'asked', 'Asked'
+        DONE = 'done', 'Applied'
+        DECLINED = 'declined', 'Declined'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='upgrade_requests'
+    )
+
+    #: The plan they are asking for, from accounts.plans.
+    plan = models.CharField(max_length=20)
+    #: What they were on when they asked, so the ask still makes sense later.
+    from_plan = models.CharField(max_length=20, blank=True)
+    note = models.TextField(blank=True)
+
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.ASKED
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'upgrade_requests'
+        ordering = ['-created_at']
+        constraints = [
+            # One open ask per person per plan: pressing twice is not two
+            # requests.
+            models.UniqueConstraint(
+                fields=['user', 'plan'],
+                condition=models.Q(status='asked'),
+                name='one_open_upgrade_request_per_plan',
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user.email} -> {self.plan} ({self.status})"

@@ -299,6 +299,21 @@ class MeetingConsumer(AsyncWebsocketConsumer):
             'timestamp': event['timestamp']
         }))
 
+    async def roster_update(self, event):
+        """Somebody came in or stepped out of the room."""
+        await self.send(text_data=json.dumps({
+            'type': 'roster_update',
+            'active_count': event.get('active_count'),
+        }))
+
+    async def resources_update(self, event):
+        """A file arrived, or who may read one changed."""
+        await self.send(text_data=json.dumps({'type': 'resources_update'}))
+
+    async def attendance_update(self, event):
+        """The attendance record moved."""
+        await self.send(text_data=json.dumps({'type': 'attendance_update'}))
+
     async def state_update(self, event):
         """Broadcast participant state update"""
         await self.send(text_data=json.dumps({

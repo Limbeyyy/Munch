@@ -15,6 +15,10 @@ import { DashboardView } from '../attendee/views/DashboardView';
 import { SessionsView } from '../attendee/views/SessionsView';
 import { SpeakersView } from '../attendee/views/SpeakersView';
 import { HubView } from '../attendee/views/HubView';
+import { ProfileView } from '../organizer/ProfileView';
+import { SubscriptionView } from '../organizer/SubscriptionView';
+import { RemindersView } from '../organizer/RemindersView';
+import { useNudges } from '../organizer/nudges';
 
 const dayKey = (iso: string) => new Date(iso).toISOString().slice(0, 10);
 
@@ -40,6 +44,9 @@ const AttendeeInner: React.FC = () => {
   const [day, setDay] = useState('');
   const [canOrganize, setCanOrganize] = useState(false);
 
+  // One poll for both the rail's badge and the reminders page itself.
+  const nudges = useNudges();
+
   useEffect(() => {
     // Only actual host standing earns the organizer panel — being invited to
     // someone else's programme puts it in the list without granting it.
@@ -62,6 +69,7 @@ const AttendeeInner: React.FC = () => {
   }, [t]);
 
   useEffect(() => { load(); }, [load]);
+
 
   // The organizer decides what is on stage, so the attendee's view has to
   // follow it rather than wait for a reload.
@@ -148,6 +156,7 @@ const AttendeeInner: React.FC = () => {
         view={view}
         onNavigate={setView}
         counts={{
+          reminders: nudges.unread > 0 ? num(nudges.unread) : undefined,
           agenda: items.length ? num(items.length) : undefined,
           sessions: items.filter((i) => i.session.status === 'done').length
             ? num(items.filter((i) => i.session.status === 'done').length)
@@ -267,6 +276,10 @@ const AttendeeInner: React.FC = () => {
             )}
 
             {view === 'connect' && <SpeakersView items={items} onOpen={setOpen} />}
+
+            {view === 'reminders' && <RemindersView page={nudges.page} loading={nudges.loading} onRead={nudges.markRead} />}
+            {view === 'profile' && <ProfileView onNavigate={setView} />}
+            {view === 'subscription' && <SubscriptionView />}
           </>
         )}
       </AttendeeShell>

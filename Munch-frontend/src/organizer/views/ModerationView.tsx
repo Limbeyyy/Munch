@@ -296,8 +296,13 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
     } finally { setBusy(null); }
   };
 
-  const messageCount = live.reduce((n, m) => n + (pending[m.id]?.length ?? 0), 0);
-  const guestCount = live.reduce((n, m) => n + (waiting[m.id]?.length ?? 0), 0);
+  // What each tab holds, not only what is waiting in it. A tab reading
+  // (0) above a list of four messages is just wrong to the eye, whatever
+  // the number technically counted.
+  const messageCount =
+    live.reduce((n, m) => n + (pending[m.id]?.length ?? 0), 0) + reviewedUsers.length;
+  const guestCount =
+    live.reduce((n, m) => n + (waiting[m.id]?.length ?? 0), 0) + reviewedGuests.length;
 
   return (
     <>

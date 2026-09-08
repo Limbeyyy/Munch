@@ -184,6 +184,13 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'src.apps.meetings.tasks.close_expired_sessions',
         'schedule': 300.0,  # every five minutes
     },
+    'write-reminders': {
+        # The app writes these as it reads them, which covers anybody with
+        # the page open. This is for whoever will not open it until the
+        # morning and still wants their hour's warning.
+        'task': 'src.apps.meetings.tasks.write_reminders',
+        'schedule': 600.0,  # every ten minutes
+    },
     'cleanup-old-meetings-daily': {
         'task': 'src.workers.meeting_worker.cleanup_old_meetings',
         'schedule': 86400.0,  # daily

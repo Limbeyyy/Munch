@@ -24,3 +24,26 @@ def close_expired_sessions():
     if closed:
         logger.info(f"Closed {closed} session(s) that ran past their slot")
     return closed
+
+
+@shared_task(name='src.apps.meetings.tasks.write_reminders')
+def write_reminders():
+    """Keep everybody's reminders in step with the timetable.
+
+    The app generates these as it reads them, which covers anybody who has
+    the page open. This is for the rest: somebody who will not open it
+    until tomorrow morning should still have an hour's warning waiting.
+    """
+    from django.utils import timezone
+
+    from src.apps.meetings.models import Meeting
+    from src.apps.meetings.reminders import generate_for_meeting
+
+    upcoming = Meeting.objects.filter(
+        scheduled_end__gte=timezone.now()
+    ).exclude(status=Meeting.Status.ENDED)
+
+    written = sum(generate_for_meeting(meeting) for meeting in upcoming)
+    if written:
+        logger.info(f"Wrote {written} reminder(s)")
+    return written

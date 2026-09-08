@@ -1,4 +1,6 @@
-import { earliestStart, spaceOut, tooCloseTogether, toLocalInput } from '../MeetingDraftFields';
+import {
+  earliestStart, openingAt, opensTheMeeting, spaceOut, tooCloseTogether, toLocalInput,
+} from '../MeetingDraftFields';
 import { confirmSpacing } from '../confirmSpacing';
 import { MeetingDraft, SessionDraft } from '../../types';
 
@@ -88,9 +90,11 @@ describe('spaceOut', () => {
     expect(plan.sessions[1].starts_at).toEqual(toLocalInput(after(180)));
   });
 
-  it('never moves anything earlier', () => {
+  it('moves nothing earlier but the session that opens the meeting', () => {
+    // The opener is pulled back to the meeting's own start; everything
+    // after it only ever moves later.
     const plan = spaceOut(draft([session(after(120), 60, 'A'), session(after(300), 60, 'B')]));
-    expect(plan.sessions[0].starts_at).toEqual(toLocalInput(after(120)));
+    expect(plan.sessions[0].starts_at).toEqual(toLocalInput(NINE));
     expect(plan.sessions[1].starts_at).toEqual(toLocalInput(after(300)));
   });
 
@@ -123,5 +127,72 @@ describe('confirmSpacing', () => {
   it('saves nothing when the organizer would rather go back', () => {
     const plan = draft([session(NINE, 60, 'A'), session(after(70), 60, 'B')]);
     expect(confirmSpacing([plan], () => false)).toBeNull();
+  });
+});
+
+describe('the session that opens the meeting', () => {
+  const meetingAt = (hour: number, sessions: SessionDraft[]): MeetingDraft => ({
+    title: 'Wedding Preparation',
+    scheduled_start: toLocalInput(new Date(`2026-09-08T${String(hour).padStart(2, '0')}:00:00`)),
+    duration_minutes: 120,
+    sessions,
+  });
+
+  const nine = new Date('2026-09-08T09:00:00');
+  const after9 = (mins: number) => new Date(nine.getTime() + mins * 60000);
+
+  it('is flagged when it starts after the meeting', () => {
+    // The reported case: meeting at 09:00, first session at 09:30.
+    const plan = meetingAt(9, [session(after9(30), 30, 'Haldi')]);
+    expect(tooCloseTogether(plan)).toEqual(['Haldi']);
+  });
+
+  it('is content when the two agree', () => {
+    expect(tooCloseTogether(meetingAt(9, [session(nine, 30, 'Haldi')]))).toEqual([]);
+  });
+
+  it('is pulled back to the meeting start when put right', () => {
+    const plan = spaceOut(meetingAt(9, [session(after9(30), 30, 'Haldi')]));
+    expect(plan.sessions[0].starts_at).toEqual(toLocalInput(nine));
+  });
+
+  it('takes the rest of the running order with it', () => {
+    const plan = spaceOut(
+      meetingAt(9, [session(after9(30), 30, 'Haldi'), session(after9(75), 40, 'Mehendi')])
+    );
+    expect(plan.sessions.map((s) => s.starts_at)).toEqual([
+      toLocalInput(nine),
+      // Typed at 10:15, and a gap the organizer left is left alone.
+      toLocalInput(after9(75)),
+    ]);
+  });
+
+  it('closes the running order up when the opener would collide', () => {
+    const plan = spaceOut(
+      meetingAt(9, [session(after9(30), 60, 'Haldi'), session(after9(45), 40, 'Mehendi')])
+    );
+    // Haldi opens at 09:00 and runs an hour, so Mehendi steps to 10:15.
+    expect(plan.sessions.map((s) => s.starts_at)).toEqual([
+      toLocalInput(nine),
+      toLocalInput(after9(75)),
+    ]);
+  });
+
+  it('moves with the meeting when the meeting moves', () => {
+    const plan = meetingAt(9, [session(nine, 30, 'Haldi'), session(after9(45), 40, 'Mehendi')]);
+    const later = toLocalInput(after9(60));
+
+    const moved = openingAt(plan, later);
+
+    expect(moved.scheduled_start).toEqual(later);
+    expect(moved.sessions[0].starts_at).toEqual(later);
+    // Only the opener is pinned; the rest are settled by spacing.
+    expect(moved.sessions[1].starts_at).toEqual(toLocalInput(after9(45)));
+  });
+
+  it('knows which session opens the meeting whatever order they were typed in', () => {
+    const plan = meetingAt(9, [session(after9(45), 40, 'Mehendi'), session(nine, 30, 'Haldi')]);
+    expect(opensTheMeeting(plan, 1)).toBe(true);
+    expect(opensTheMeeting(plan, 0)).toBe(false);
   });
 });

@@ -214,17 +214,25 @@ def normalise_running_order(sessions, first_start=None):
     organizer's order is kept, and each session is pushed to the earliest
     time that leaves fifteen minutes after the one before it.
 
+    The first session begins exactly when the meeting does. A meeting that
+    opens at nine with nothing happening until half past is not a meeting
+    that opens at nine - the empty half hour is either a mistake or belongs
+    to the meeting's own start time. Putting a different talk first is a
+    matter of reordering them, not of leaving a hole at the front.
+
     ``sessions`` are dicts, in the order they should run. Returns them with
-    ``starts_at`` corrected; anything already late enough is left alone.
+    ``starts_at`` corrected.
     """
     ordered = sorted(sessions, key=lambda s: s['starts_at'])
     previous_end = None
 
     for session in ordered:
         starts_at = session['starts_at']
-        if first_start is not None and previous_end is None:
-            starts_at = max(starts_at, first_start)
-        if previous_end is not None:
+        if previous_end is None:
+            # The first one opens the meeting, whatever was typed.
+            if first_start is not None:
+                starts_at = first_start
+        else:
             starts_at = max(starts_at, previous_end + GAP)
         session['starts_at'] = starts_at
         previous_end = starts_at + timezone.timedelta(

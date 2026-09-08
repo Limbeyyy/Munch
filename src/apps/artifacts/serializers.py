@@ -6,7 +6,7 @@ class ArtifactSerializer(serializers.ModelSerializer):
         model = Artifact
         fields = [
             'id', 'meeting', 'session', 'session_title', 'is_released',
-            'artifact_type', 'drive_file_id',
+            'visibility', 'position', 'artifact_type', 'drive_file_id',
             'drive_folder_id', 'display_name', 'mime_type',
             'file_size', 'web_view_link', 'sync_status',
             'metadata', 'created_at', 'updated_at'

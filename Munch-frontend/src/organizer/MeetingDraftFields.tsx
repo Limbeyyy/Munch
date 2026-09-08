@@ -17,8 +17,41 @@ export const emptyMeeting = (date: string, hour = 9): MeetingDraft => {
     duration_minutes: 120,
     sessions: [],
   };
+  // Its one session opens it: same start, no hole at the front.
   // A meeting is its running order, so it starts with a session to fill in.
   return { ...draft, sessions: [emptySession(draft)] };
+};
+
+/**
+ * Move a meeting, and take its opening session with it.
+ *
+ * The first session begins exactly when the meeting does. A meeting that
+ * opens at nine with nothing happening until half past is not a meeting
+ * that opens at nine - either the start time is wrong or the gap is, and
+ * making them agree is the only reading that is not a mistake.
+ */
+export const openingAt = (meeting: MeetingDraft, scheduled_start: string): MeetingDraft => {
+  const inOrder = [...meeting.sessions].sort(
+    (a, b) => +new Date(a.starts_at) - +new Date(b.starts_at)
+  );
+  const opener = inOrder[0];
+  return {
+    ...meeting,
+    scheduled_start,
+    sessions: meeting.sessions.map((session) =>
+      session === opener ? { ...session, starts_at: scheduled_start } : session
+    ),
+  };
+};
+
+/** Whether this is the session that opens the meeting. */
+export const opensTheMeeting = (meeting: MeetingDraft, index: number): boolean => {
+  const earliest = meeting.sessions.reduce(
+    (soonest, s, i) =>
+      +new Date(s.starts_at) < +new Date(meeting.sessions[soonest].starts_at) ? i : soonest,
+    0
+  );
+  return index === earliest;
 };
 
 /**
@@ -81,6 +114,16 @@ interface Props {
 export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemove, index }) => {
   const { t, num } = useOrganizer();
 
+  /**
+   * Whether the opening session has drifted off the meeting's start.
+   *
+   * Leaving a hole at the front is not a way to run a different talk
+   * first: that is a matter of reordering them.
+   */
+  const late = (i: number) =>
+    opensTheMeeting(meeting, i) &&
+    +new Date(meeting.sessions[i].starts_at) > +new Date(meeting.scheduled_start);
+
   /** Whether this session would start before the gap after the one above it. */
   const tooEarly = (i: number) => {
     const soonest = earliestStart(meeting, i);
@@ -132,7 +175,7 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
           <input
             type="datetime-local"
             value={meeting.scheduled_start}
-            onChange={(e) => onChange({ ...meeting, scheduled_start: e.target.value })}
+            onChange={(e) => onChange(openingAt(meeting, e.target.value))}
             className="w-full border border-navy-800/15 rounded-lg px-2.5 py-1.5 text-[13px]"
           />
         </div>
@@ -235,9 +278,24 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
                     })()}
                     onChange={(e) => setSession(i, { starts_at: e.target.value })}
                     className={`w-full border rounded-md px-2 py-1 text-[12.5px] bg-white ${
-                      tooEarly(i) ? 'border-live' : 'border-navy-800/15'
+                      tooEarly(i) || late(i) ? 'border-live' : 'border-navy-800/15'
                     }`}
                   />
+                  {late(i) && (
+                    <p className="mt-1 text-[11.5px] text-live">
+                      {t({
+                        ne: 'पहिलो सत्र बैठक सुरु हुँदै सुरु हुनुपर्छ।',
+                        en: 'The first session starts when the meeting starts.',
+                      })}{' '}
+                      <button
+                        type="button"
+                        onClick={() => setSession(i, { starts_at: meeting.scheduled_start })}
+                        className="underline underline-offset-2"
+                      >
+                        {t({ ne: 'मिलाउनुहोस्', en: 'Move it to the start' })}
+                      </button>
+                    </p>
+                  )}
                   {tooEarly(i) && (
                     <p className="mt-1 text-[11.5px] text-live">
                       {t({
@@ -353,8 +411,15 @@ export const missingSpeakerDetails = (draft: MeetingDraft): string[] =>
 export const tooCloseTogether = (draft: MeetingDraft): string[] =>
   draft.sessions
     .map((session, i) => {
+      if (!session.title.trim()) return null;
+      // The opening session is wrong when it is late, not when it is early.
+      if (opensTheMeeting(draft, i)) {
+        return +new Date(session.starts_at) !== +new Date(draft.scheduled_start)
+          ? session.title.trim()
+          : null;
+      }
       const soonest = earliestStart(draft, i);
-      if (!soonest || !session.title.trim()) return null;
+      if (!soonest) return null;
       return new Date(session.starts_at) < soonest ? session.title.trim() : null;
     })
     .filter((title): title is string => title !== null);
@@ -371,10 +436,11 @@ export const spaceOut = (draft: MeetingDraft): MeetingDraft => {
   const sessions = [...draft.sessions]
     .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at))
     .map((session) => {
-      let startsAt = +new Date(session.starts_at);
-      if (previousEnd !== null) {
-        startsAt = Math.max(startsAt, previousEnd + GAP_MINUTES * 60000);
-      }
+      // The first one opens the meeting; the rest step back from it.
+      let startsAt =
+        previousEnd === null
+          ? +new Date(draft.scheduled_start)
+          : Math.max(+new Date(session.starts_at), previousEnd + GAP_MINUTES * 60000);
       previousEnd = startsAt + session.duration_minutes * 60000;
       return { ...session, starts_at: toLocalInput(new Date(startsAt)) };
     });

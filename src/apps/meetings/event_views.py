@@ -501,6 +501,10 @@ class SessionViewSet(viewsets.ModelViewSet):
         recorded = _close_session(session, timezone.now())
         _broadcast(session.meeting.meeting_code, session, 'session_ended')
 
+        from src.apps.meetings.views import broadcast_attendance_changed
+
+        broadcast_attendance_changed(session.meeting)
+
         return Response({
             **SessionSerializer(session).data,
             'attendance_recorded': recorded,
@@ -822,6 +826,11 @@ class SessionViewSet(viewsets.ModelViewSet):
         else:
             SessionAttendance.objects.filter(**lookup).delete()
 
+        # The attendance screens follow this rather than waiting to be
+        # reloaded.
+        from src.apps.meetings.views import broadcast_attendance_changed
+
+        broadcast_attendance_changed(session.meeting)
         return Response({'present': bool(present)})
 
 

@@ -5,7 +5,7 @@ import { Btn, Ic } from './ui';
 
 export interface NavItem {
   id: string;
-  group: 1 | 2 | 3;
+  group: 1 | 2 | 3 | 4;
   label: Pair;
   icon: string;
   /** Small count or live marker beside the name. */
@@ -35,12 +35,20 @@ export const NAV: NavItem[] = [
     icon: 'M3 3v18h18M7 15l4-4 3 3 5-6' },
   { id: 'settings', group: 3, label: { ne: 'सेटिङ', en: 'Settings' },
     icon: 'M4 6h16M4 12h16M4 18h16' },
+
+  { id: 'reminders', group: 4, label: { ne: 'सूचना र सम्झना', en: 'Notifications' },
+    icon: 'M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0' },
+  { id: 'profile', group: 4, label: { ne: 'प्रोफाइल', en: 'Profile' },
+    icon: 'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z' },
+  { id: 'subscription', group: 4, label: { ne: 'योजना', en: 'Subscription' },
+    icon: 'M2 7h20v12a2 2 0 01-2 2H4a2 2 0 01-2-2zM2 7l2.5-4h15L22 7M2 11h20' },
 ];
 
 const GROUP_LABELS: Record<number, Pair> = {
   1: { ne: 'कार्यक्रम चलाउने', en: 'Run the event' },
   2: { ne: 'तयारी', en: 'Prepare' },
   3: { ne: 'पछि', en: 'After' },
+  4: { ne: 'तपाईंको खाता', en: 'Your account' },
 };
 
 interface Props {
@@ -154,7 +162,7 @@ export const OrganizerShell: React.FC<Props> = ({
               railOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
             }`}
         >
-          {[1, 2, 3].map((group) => (
+          {[1, 2, 3, 4].map((group) => (
             <div key={group}>
               <div className="text-[11px] text-[#6E7C8E] px-2.5 pt-3 pb-1.5 tracking-wide">
                 {t(GROUP_LABELS[group])}

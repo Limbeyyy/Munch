@@ -92,10 +92,21 @@ export const LoginPage: React.FC = () => {
         navigate('/guest/waiting');
       }
     } catch (error: any) {
+      const refusal = error.response?.data;
+
+      // Somebody down to present arriving at the guest door. It is not a
+      // mistake to scold them for - they are expected, just not here - so
+      // say where they belong and put the sign-in button back in view.
+      if (refusal?.code === 'presenter_must_sign_in') {
+        setShowGuest(false);
+        toast(refusal.error, { icon: '\uD83C\uDF99\uFE0F', duration: 9000 });
+        return;
+      }
+
       const detail =
-        error.response?.data?.error ??
-        error.response?.data?.phone?.[0] ??
-        error.response?.data?.full_name?.[0] ??
+        refusal?.error ??
+        refusal?.phone?.[0] ??
+        refusal?.full_name?.[0] ??
         error.message;
       toast.error(detail);
     } finally {

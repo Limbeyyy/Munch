@@ -35,6 +35,30 @@ class Artifact(models.Model):
     )
     artifact_type = models.CharField(max_length=50, choices=ArtifactType.choices)
 
+    class Visibility(models.TextChoices):
+        # Readable by the room as soon as it is uploaded.
+        NOW = 'now', 'Visible now'
+        # Held until the session it belongs to has finished, so the room
+        # cannot read ahead of the speaker.
+        AFTER_SESSION = 'after_session', 'After the session'
+        # Open to anyone with the meeting, guests included, whatever the
+        # running order is doing.
+        PUBLIC = 'public', 'Public to all'
+        # Never leaves the people running the meeting.
+        ORGANIZERS = 'organizers', 'Organizers only'
+
+    #: Who may read this, and when. Chosen by whoever uploaded it and
+    #: changeable by the organizers afterwards.
+    visibility = models.CharField(
+        max_length=20,
+        choices=Visibility.choices,
+        default=Visibility.AFTER_SESSION,
+        help_text="Who may read this file, and from when",
+    )
+
+    #: Where it sits in the order attendees see. Lower comes first.
+    position = models.PositiveIntegerField(default=0)
+
     drive_file_id = models.CharField(max_length=255, null=True, blank=True)
     drive_folder_id = models.CharField(max_length=255, null=True, blank=True)
     display_name = models.CharField(max_length=255)

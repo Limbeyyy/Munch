@@ -92,12 +92,33 @@ def is_co_host(meeting, user) -> bool:
     return CO_HOST in roles_in_meeting(meeting, user=user)
 
 
+def speaks_at(meeting, user=None, email=None) -> bool:
+    """Whether this person is down to speak at some part of this meeting.
+
+    Read from the running order: a session names its speaker by address,
+    and giving that address is what makes somebody its presenter. Nothing
+    has to be granted separately.
+    """
+    address = (email or getattr(user, 'email', '') or '').strip()
+    if not address:
+        return False
+    return Session.objects.filter(
+        meeting=meeting, speaker_email__iexact=address
+    ).exists()
+
+
 def participant_role_for(meeting, user) -> str:
     """The role to record when this person walks into the room.
 
-    The host is always the host. Anyone the host named as a co-host arrives
-    as one rather than as an attendee who has to be promoted by hand.
-    Presenting is per session, so it does not decide the meeting-wide role.
+    The host is always the host. Anyone named as a co-host arrives as one
+    rather than as an attendee somebody has to promote. And a speaker
+    arrives as a presenter: they gave their address when the session was
+    written down, so the room already knows who they are.
+
+    Only an account holder can be any of these. A guest is somebody who
+    typed a name and a phone number at the door, and neither is proof of
+    anything - which is why knowing a speaker's details gets a guest no
+    further than the seats.
     """
     from src.apps.meetings.models import MeetingParticipant
 
@@ -105,6 +126,8 @@ def participant_role_for(meeting, user) -> str:
         return MeetingParticipant.Role.HOST
     if is_co_host(meeting, user):
         return MeetingParticipant.Role.CO_HOST
+    if speaks_at(meeting, user=user) or PRESENTER in roles_in_meeting(meeting, user=user):
+        return MeetingParticipant.Role.PRESENTER
     return MeetingParticipant.Role.ATTENDEE
 
 
@@ -144,3 +167,50 @@ def grants_in_event(event):
         | Q(meeting_id__in=list(meetings))
         | Q(session__meeting__event=event)
     ).select_related('event', 'meeting', 'session', 'session__meeting')
+
+
+def _digits(value: str) -> str:
+    """A phone number reduced to what actually identifies it."""
+    return ''.join(ch for ch in (value or '') if ch.isdigit())
+
+
+def presenter_details(meeting, *, name='', phone=''):
+    """Whether these door details belong to somebody down to present.
+
+    A presenter is somebody the organizer named, by an address they can be
+    reached at - so presenting is tied to that account and nothing else. A
+    name and a phone number typed at a door prove neither, which is why
+    somebody arriving with a presenter's details has to sign in instead of
+    being waved through as a guest.
+
+    Matched on the phone number the organizer wrote down, or on the address
+    itself when that is what was typed in the name box. Names alone are not
+    enough: two people share a name far more easily than a number.
+    """
+    typed_name = (name or '').strip()
+    typed_phone = _digits(phone)
+
+    if typed_phone:
+        for session in Session.objects.filter(meeting=meeting).exclude(speaker_phone=''):
+            if _digits(session.speaker_phone) == typed_phone:
+                return session.speaker_name or session.speaker_email
+
+    if '@' in typed_name:
+        speaking = Session.objects.filter(
+            meeting=meeting, speaker_email__iexact=typed_name
+        ).first()
+        if speaking is not None:
+            return speaking.speaker_name or speaking.speaker_email
+
+        granted = RoleGrant.objects.filter(
+            email__iexact=typed_name,
+            role__in=[RoleGrant.Role.PRESENTER, RoleGrant.Role.CO_HOST],
+        ).filter(
+            Q(meeting=meeting)
+            | Q(event_id=meeting.event_id, event__isnull=False)
+            | Q(session__meeting=meeting)
+        ).first()
+        if granted is not None:
+            return granted.email
+
+    return None

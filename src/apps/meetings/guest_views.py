@@ -97,6 +97,29 @@ def guest_knock(request):
     if not is_open(meeting):
         return too_early_response(meeting)
 
+    # Presenting is tied to an account, so somebody arriving at the guest
+    # door with a presenter's details is turned round rather than seated.
+    # A name and a phone number prove neither of the things a presenter has
+    # to be, and the seats are not where they belong.
+    from src.apps.meetings.roles import presenter_details
+
+    presenting_as = presenter_details(
+        meeting, name=data['full_name'], phone=data['phone']
+    )
+    if presenting_as:
+        return Response(
+            {
+                'error': (
+                    f'{presenting_as} is down to present at this meeting. '
+                    'Presenters sign in with Google rather than joining as a '
+                    'guest, and are recognised by the address the organizer '
+                    'has for them.'
+                ),
+                'code': 'presenter_must_sign_in',
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     # Someone the host already admitted is coming back - whether they dropped
     # out or left deliberately. Approval already happened; don't ask again.
     returning = GuestAttendee.objects.filter(
@@ -245,7 +268,44 @@ def guest_board(request):
 
     from src.apps.meetings.board import board_for
 
-    return Response(board_for(guest.meeting))
+    return Response(board_for(guest.meeting, guest=guest))
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def guest_vote_board(request):
+    """A guest votes on the board, on the same terms as anybody else."""
+    guest = resolve_guest(request.data.get('token', ''))
+    if guest is None:
+        return Response(
+            {'error': 'Invalid or expired guest session'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+    if not guest.is_admitted:
+        return Response(
+            {'error': 'You have not been admitted to this meeting'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    value = request.data.get('value')
+    if value not in (1, -1):
+        return Response(
+            {'error': 'value must be 1 or -1'}, status=status.HTTP_400_BAD_REQUEST
+        )
+
+    message = ChatMessage.objects.filter(
+        meeting=guest.meeting, id=request.data.get('message_id')
+    ).exclude(topic=ChatMessage.Topic.NONE).first()
+    if message is None:
+        return Response(
+            {'error': 'Nothing on the board with that id'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    from src.apps.meetings.board import board_for, cast
+
+    cast(message, value, guest=guest)
+    return Response(board_for(guest.meeting, guest=guest))
 
 
 @api_view(['GET'])

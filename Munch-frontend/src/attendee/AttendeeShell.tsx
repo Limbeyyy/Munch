@@ -8,6 +8,10 @@ export interface AttendeeNav {
   short: Pair;
   icon: string;
   count?: string;
+  /** Kept off the phone's bottom bar, which only has room for a handful. */
+  railOnly?: boolean;
+  /** Sits below a divider: the account rather than the programme. */
+  account?: boolean;
 }
 
 export const ATTENDEE_NAV: AttendeeNav[] = [
@@ -21,7 +25,20 @@ export const ATTENDEE_NAV: AttendeeNav[] = [
     icon: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z' },
   { id: 'connect', label: { ne: 'वक्ता', en: 'Speakers' }, short: { ne: 'वक्ता', en: 'Speakers' },
     icon: 'M17 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9.5 7a3.5 3.5 0 11-7 0 3.5 3.5 0 017 0zM22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75' },
+
+  { id: 'reminders', account: true,
+    label: { ne: 'सूचना र सम्झना', en: 'Notifications' }, short: { ne: 'सूचना', en: 'Alerts' },
+    icon: 'M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0' },
+  { id: 'profile', account: true, railOnly: true,
+    label: { ne: 'प्रोफाइल', en: 'Profile' }, short: { ne: 'प्रोफाइल', en: 'Profile' },
+    icon: 'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z' },
+  { id: 'subscription', account: true, railOnly: true,
+    label: { ne: 'योजना', en: 'Subscription' }, short: { ne: 'योजना', en: 'Plan' },
+    icon: 'M2 7h20v12a2 2 0 01-2 2H4a2 2 0 01-2-2zM2 7l2.5-4h15L22 7M2 11h20' },
 ];
+
+/** What the phone's bottom bar has room for. */
+const PHONE_NAV = ATTENDEE_NAV.filter((item) => !item.railOnly);
 
 interface Props {
   view: string;
@@ -72,11 +89,15 @@ export const AttendeeShell: React.FC<Props> = ({
           </div>
 
           <nav className="flex flex-col gap-0.5" aria-label={t({ ne: 'मुख्य मेनु', en: 'Main menu' })}>
-            {ATTENDEE_NAV.map((item) => {
+            {ATTENDEE_NAV.map((item, index) => {
               const current = view === item.id;
+              const opensAccount = item.account && !ATTENDEE_NAV[index - 1]?.account;
               return (
+                <React.Fragment key={item.id}>
+                {opensAccount && (
+                  <hr className="my-2.5 border-white/[.14]" aria-hidden />
+                )}
                 <button
-                  key={item.id}
                   aria-current={current}
                   onClick={() => onNavigate(item.id)}
                   className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-[10px] text-left text-[14.5px] ${
@@ -97,6 +118,7 @@ export const AttendeeShell: React.FC<Props> = ({
                     </span>
                   )}
                 </button>
+                </React.Fragment>
               );
             })}
           </nav>
@@ -177,12 +199,12 @@ export const AttendeeShell: React.FC<Props> = ({
       <nav
         className="lg:hidden fixed inset-x-0 bottom-0 z-40 bg-white border-t border-navy-800/15 grid"
         style={{
-          gridTemplateColumns: `repeat(${ATTENDEE_NAV.length},1fr)`,
+          gridTemplateColumns: `repeat(${PHONE_NAV.length},1fr)`,
           paddingBottom: 'env(safe-area-inset-bottom)',
         }}
         aria-label={t({ ne: 'मुख्य मेनु', en: 'Main menu' })}
       >
-        {ATTENDEE_NAV.map((item) => {
+        {PHONE_NAV.map((item) => {
           const current = view === item.id;
           return (
             <button
