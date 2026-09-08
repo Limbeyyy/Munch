@@ -50,6 +50,7 @@ export const GuestMeetingPage: React.FC = () => {
   const [startedAt, setStartedAt] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState('');
   const [sessionEndsAt, setSessionEndsAt] = useState<string | null>(null);
+  const [sessionOver, setSessionOver] = useState(false);
   // Guests read the transcript; only account holders can speak into it.
   const [transcript, setTranscript] = useState<TranscriptionSegment[]>([]);
 
@@ -156,6 +157,9 @@ export const GuestMeetingPage: React.FC = () => {
         setSessionTitle(running?.title ?? '');
         setSessionEndsAt(running?.ends_at ?? null);
         setStartedAt(running?.started_at ?? null);
+        // A session the host closed early is over well before the slot it
+        // was given, so the room cannot wait for the clock to run out.
+        setSessionOver(!!running?.is_over);
       } catch {
         // Try again on the next tick.
       }
@@ -322,7 +326,7 @@ export const GuestMeetingPage: React.FC = () => {
   // Same clock as everyone else: anchored to the host's start timestamp.
   /** The room shuts when its session is over; there is nothing left to be in. */
   useEffect(() => {
-    if (!sessionEndsAt) return;
+    if (!sessionEndsAt && !sessionOver) return;
     const shut = () => {
       toast(
         sessionTitle ? `“${sessionTitle}” has finished.` : 'This session has finished.',
@@ -330,12 +334,14 @@ export const GuestMeetingPage: React.FC = () => {
       );
       leave();
     };
-    const remaining = +new Date(sessionEndsAt) - Date.now();
+    if (sessionOver) { shut(); return; }
+
+    const remaining = +new Date(sessionEndsAt!) - Date.now();
     if (remaining <= 0) { shut(); return; }
     const id = setTimeout(shut, remaining);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionEndsAt, sessionTitle]);
+  }, [sessionEndsAt, sessionOver, sessionTitle]);
 
   useEffect(() => {
     if (!startedAt) {

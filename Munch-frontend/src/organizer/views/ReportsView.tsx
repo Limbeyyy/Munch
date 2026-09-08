@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { AttendanceReport, Meeting } from '../../types';
 import { useOrganizer } from '../i18n';
+import { openAsSheet } from '../sheets';
 import { BarRow, Btn, Empty, Head, Kpi, Panel } from '../ui';
 
 interface Props { meetings: Meeting[]; }
@@ -64,14 +64,7 @@ export const ReportsView: React.FC<Props> = ({ meetings }) => {
         segmentCounts[m.id] ?? 0, resourceCounts[m.id] ?? 0,
       ];
     });
-    const csv = [head, ...rows]
-      .map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
-    a.download = 'manch-event-report.csv';
-    a.click();
-    toast.success(t({ ne: 'रिपोर्ट डाउनलोड भयो', en: 'Report downloaded' }));
+    openAsSheet('report', [head, ...rows], { t });
   };
 
   return (
@@ -84,7 +77,7 @@ export const ReportsView: React.FC<Props> = ({ meetings }) => {
         }}
         actions={
           <Btn tone="solid" onClick={exportReport} disabled={meetings.length === 0}>
-            {t({ ne: 'रिपोर्ट निकाल्नुहोस् (CSV)', en: 'Export report (CSV)' })}
+            {t({ ne: 'गुगल शीटमा निकाल्नुहोस्', en: 'Export to Sheets' })}
           </Btn>
         }
       />

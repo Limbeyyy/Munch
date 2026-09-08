@@ -5,6 +5,7 @@ import {
   AttendanceReport, EventMeeting, EventProgramme, Session, SessionAttendanceRow,
 } from '../../types';
 import { useOrganizer } from '../i18n';
+import { openAsSheet } from '../sheets';
 import { BarRow, Btn, Card, Chip, Empty, Head, Kpi, Panel, Tabs } from '../ui';
 import { sessionState } from '../sessionState';
 
@@ -143,19 +144,19 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
 
   const totalSessions = rolls.reduce((n, r) => n + r.sessions.length, 0);
 
-  const exportCSV = () => {
+  /**
+   * The register, in the host's own Google Sheets.
+   *
+   * A downloaded file cannot be handed to a board or a ministry without
+   * being attached to something; a sheet is a link, and it lands in the
+   * host's own Drive rather than ours.
+   */
+  const exportSheet = () => {
     const head = ['person', 'guest', 'meetings_attended', 'sessions_attended', 'of_sessions'];
     const rows = across.map((p) => [
       p.name, p.isGuest ? 'yes' : 'no', p.meetings.size, p.sessions.size, totalSessions,
     ]);
-    const csv = [head, ...rows]
-      .map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
-    a.download = 'manch-attendance.csv';
-    a.click();
-    toast.success(t({ ne: 'CSV डाउनलोड भयो', en: 'CSV downloaded' }));
+    openAsSheet('attendance', [head, ...rows], { subject: event?.title ?? '', t });
   };
 
   const nameChip = (p: Person) => (
@@ -180,8 +181,8 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
           en: 'Who was at each session, and who came to the meeting at all.',
         }}
         actions={
-          <Btn onClick={exportCSV} disabled={across.length === 0}>
-            {t({ ne: 'CSV निकाल्नुहोस्', en: 'Export CSV' })}
+          <Btn onClick={exportSheet} disabled={across.length === 0}>
+            {t({ ne: 'गुगल शीटमा निकाल्नुहोस्', en: 'Export to Sheets' })}
           </Btn>
         }
       />

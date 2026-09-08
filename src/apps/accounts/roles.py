@@ -34,6 +34,20 @@ def portals_for(user) -> list:
     return portals
 
 
+def signs_in_with_google(user) -> bool:
+    """Whether this account gets in through Google.
+
+    Two places record it and they do not always agree: the sign-in stores
+    the subject on the user, and the OAuth exchange stores a connection.
+    Accounts exist with the second and not the first, so asking only the
+    user's own column reports a Google account as a password one and hands
+    somebody the wrong advice at the door.
+    """
+    if getattr(user, 'google_subject', None):
+        return True
+    return user.google_connections.filter(is_active=True).exists()
+
+
 def roles_payload(user) -> dict:
     """What the sign-in chooser and the organizer dashboard need to know."""
     host = is_host(user)

@@ -120,6 +120,32 @@ def guest_knock(request):
             status=status.HTTP_403_FORBIDDEN,
         )
 
+    # An address that belongs to an account is not guest credentials. This
+    # is checked before the returning-guest lookup below, so an admitted
+    # guest row cannot be used to walk back in around it.
+    from src.apps.meetings.roles import account_holder
+
+    holder = account_holder(data['full_name'])
+    if holder is not None:
+        from src.apps.accounts.roles import signs_in_with_google
+
+        with_google = signs_in_with_google(holder)
+        return Response(
+            {
+                'error': (
+                    f'{holder.email} already has an account here. '
+                    + (
+                        'Sign in with Google instead of joining as a guest.'
+                        if with_google
+                        else 'Sign in to that account instead of joining as a guest.'
+                    )
+                ),
+                'code': 'account_must_sign_in',
+                'signs_in_with_google': with_google,
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     # Someone the host already admitted is coming back - whether they dropped
     # out or left deliberately. Approval already happened; don't ask again.
     returning = GuestAttendee.objects.filter(
