@@ -1,6 +1,13 @@
 import { EventMeeting, Session } from '../types';
 
-/** The least breathing room left between one slot and the next. */
+/**
+ * The least breathing room left between one slot and the next, where the
+ * host has expressed no preference of their own.
+ *
+ * The number the day is actually spaced by comes from the host's settings
+ * and is passed in; this is what to use before it has been read, and what
+ * an installation gets if nobody ever changes it.
+ */
 export const GAP_MINUTES = 15;
 /** Kept under the old name so existing callers still read well. */
 export const MEETING_GAP_MINUTES = GAP_MINUTES;
@@ -128,7 +135,8 @@ const regroup = (plan: PlannedMeeting[], sessions: PlannedSession[]): PlannedMee
 const resolve = (
   sessions: PlannedSession[],
   underway: Set<string>,
-  anchoredId?: string
+  anchoredId?: string,
+  gapMinutes: number = GAP_MINUTES
 ): PlannedSession[] => {
   const fixedBy = (s: PlannedSession) => isSettled(s) || underway.has(s.meetingId);
 
@@ -149,7 +157,7 @@ const resolve = (
     let startsAt = session.startsAt;
 
     if (previousEnd !== null) {
-      startsAt = Math.max(startsAt, previousEnd + GAP_MINUTES * MS);
+      startsAt = Math.max(startsAt, previousEnd + gapMinutes * MS);
     }
 
     // Step past anything immovable this would land on, and keep stepping:
@@ -160,10 +168,10 @@ const resolve = (
       for (const block of fixed) {
         const blockEnd = endOf(block);
         const clashes =
-          startsAt < blockEnd + GAP_MINUTES * MS &&
-          startsAt + length + GAP_MINUTES * MS > block.startsAt;
+          startsAt < blockEnd + gapMinutes * MS &&
+          startsAt + length + gapMinutes * MS > block.startsAt;
         if (clashes) {
-          startsAt = blockEnd + GAP_MINUTES * MS;
+          startsAt = blockEnd + gapMinutes * MS;
           clear = false;
         }
       }
@@ -182,10 +190,13 @@ const resolve = (
 };
 
 /** Push meetings apart if a reflow left them touching. */
-const separate = (plan: PlannedMeeting[]): PlannedMeeting[] => {
+const separate = (
+  plan: PlannedMeeting[],
+  gapMinutes: number = GAP_MINUTES
+): PlannedMeeting[] => {
   const out = [...plan];
   for (let i = 1; i < out.length; i += 1) {
-    const earliest = out[i - 1].endsAt + GAP_MINUTES * MS;
+    const earliest = out[i - 1].endsAt + gapMinutes * MS;
     if (out[i].startsAt < earliest && !isUnderway(out[i])) {
       const shift = earliest - out[i].startsAt;
       out[i] = {
@@ -214,7 +225,8 @@ const separate = (plan: PlannedMeeting[]): PlannedMeeting[] => {
 export const applyEdit = (
   plan: PlannedMeeting[],
   sessionId: string,
-  change: { startsAt?: number; durationMinutes?: number }
+  change: { startsAt?: number; durationMinutes?: number },
+  gapMinutes: number = GAP_MINUTES
 ): PlannedMeeting[] => {
   const sessions = allSessions(plan);
   const target = sessions.find((s) => s.id === sessionId);
@@ -237,13 +249,19 @@ export const applyEdit = (
       if (s.id === occupant.id) return { ...s, startsAt: target.startsAt };
       return s;
     });
-    return separate(regroup(plan, resolve(swapped, underwayMeetings(plan))));
+    return separate(
+      regroup(plan, resolve(swapped, underwayMeetings(plan), undefined, gapMinutes)),
+      gapMinutes
+    );
   }
 
   const edited = sessions.map((s) =>
     s.id === sessionId ? { ...s, startsAt: nextStart, durationMinutes: nextDuration } : s
   );
-  return separate(regroup(plan, resolve(edited, underwayMeetings(plan), sessionId)));
+  return separate(
+    regroup(plan, resolve(edited, underwayMeetings(plan), sessionId, gapMinutes)),
+    gapMinutes
+  );
 };
 
 /** Kept for callers written against the older name. */
@@ -282,11 +300,12 @@ export const whyNotSwap = (
 export const swapSessions = (
   plan: PlannedMeeting[],
   aId: string,
-  bId: string
+  bId: string,
+  gapMinutes: number = GAP_MINUTES
 ): PlannedMeeting[] => {
   if (whyNotSwap(plan, aId, bId) !== null) return plan;
   const target = allSessions(plan).find((s) => s.id === bId)!;
-  return applyEdit(plan, aId, { startsAt: target.startsAt });
+  return applyEdit(plan, aId, { startsAt: target.startsAt }, gapMinutes);
 };
 
 /** Put a session in a different hall. Nothing else about the day changes. */
@@ -318,7 +337,8 @@ export const hallsInUse = (plan: PlannedMeeting[]): string[] => {
 export const reflowMeeting = (
   plan: PlannedMeeting[],
   meetingId: string,
-  startsAt: number
+  startsAt: number,
+  gapMinutes: number = GAP_MINUTES
 ): PlannedMeeting[] => {
   const meeting = plan.find((m) => m.id === meetingId);
   if (!meeting || isUnderway(meeting)) return plan;
@@ -329,7 +349,10 @@ export const reflowMeeting = (
   const sessions = allSessions(plan).map((s) =>
     s.meetingId === meetingId && !isSettled(s) ? { ...s, startsAt: s.startsAt + shift } : s
   );
-  return separate(regroup(plan, resolve(sessions, underwayMeetings(plan))));
+  return separate(
+    regroup(plan, resolve(sessions, underwayMeetings(plan), undefined, gapMinutes)),
+    gapMinutes
+  );
 };
 
 export const pendingChanges = (plan: PlannedMeeting[]) => ({

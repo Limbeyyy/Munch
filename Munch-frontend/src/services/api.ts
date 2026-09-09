@@ -40,6 +40,7 @@ import {
   MeetingPhoto,
   PhotoFolder,
   PhotoPage,
+  SchedulingPrefs,
   SheetExport,
   UpgradeRequestRow,
   ResourceVisibility,
@@ -428,6 +429,19 @@ class ApiClient {
 
   async getUpgradeRequests(): Promise<{ requests: UpgradeRequestRow[] }> {
     const response = await this.client.get('/users/upgrade/');
+    return response.data;
+  }
+
+  /** The interval this host keeps between sessions. */
+  async getSchedulingPrefs(): Promise<SchedulingPrefs> {
+    const response = await this.client.get('/users/scheduling/');
+    return response.data;
+  }
+
+  async setSessionGap(minutes: number): Promise<SchedulingPrefs> {
+    const response = await this.client.post('/users/scheduling/', {
+      session_gap_minutes: minutes,
+    });
     return response.data;
   }
 

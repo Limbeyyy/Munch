@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { Meeting, UserRoles } from '../../types';
+import { Meeting, SchedulingPrefs, UserRoles } from '../../types';
 import { useOrganizer } from '../i18n';
+import { forgetSessionGap } from '../sessionGap';
 import { BarRow, Btn, Card, Head, Switch, Tabs } from '../ui';
 
 interface Props { meetings: Meeting[]; }
@@ -53,6 +54,7 @@ export const SettingsView: React.FC<Props> = ({ meetings }) => {
         onChange={setTab}
         tabs={[
           { id: 'rules', label: { ne: 'च्याट नियम', en: 'Chat rules' } },
+          { id: 'schedule', label: { ne: 'तालिका', en: 'Scheduling' } },
           { id: 'device', label: { ne: 'हलको यन्त्र', en: 'Hall device' } },
           { id: 'acc', label: { ne: 'पहुँच', en: 'Accessibility' } },
           { id: 'plan', label: { ne: 'योजना', en: 'Plan' } },
@@ -108,6 +110,8 @@ export const SettingsView: React.FC<Props> = ({ meetings }) => {
           )}
         </Card>
       )}
+
+      {tab === 'schedule' && <SchedulingPanel />}
 
       {tab === 'device' && (
         <Card className="max-w-[760px]">
@@ -194,6 +198,123 @@ Authorization: Bearer <ingest token>
  * shown as they are used rather than as a feature list; the pricing page is
  * one click away for whoever needs more room.
  */
+/**
+ * How much room this host leaves between one session and the next.
+ *
+ * Fifteen minutes was the rule for everybody. A hall that has to be
+ * cleared and re-laid needs longer than a panel changing chairs, so the
+ * number is theirs - and it is the number the scheduler actually spaces
+ * the day by, not a note about intentions.
+ */
+const SchedulingPanel: React.FC = () => {
+  const { t, num } = useOrganizer();
+  const [prefs, setPrefs] = useState<SchedulingPrefs | null>(null);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    apiClient
+      .getSchedulingPrefs()
+      .then((found) => {
+        setPrefs(found);
+        setDraft(String(found.session_gap_minutes));
+      })
+      .catch(() => undefined);
+  }, []);
+
+  if (!prefs) {
+    return (
+      <Card className="max-w-[760px]">
+        <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>
+      </Card>
+    );
+  }
+
+  const wanted = Number(draft);
+  const valid =
+    draft.trim() !== '' &&
+    Number.isFinite(wanted) &&
+    Number.isInteger(wanted) &&
+    wanted >= 0 &&
+    wanted <= prefs.max_session_gap_minutes;
+  const changed = valid && wanted !== prefs.session_gap_minutes;
+
+  const save = async () => {
+    if (!changed) return;
+    try {
+      setSaving(true);
+      const saved = await apiClient.setSessionGap(wanted);
+      setPrefs(saved);
+      setDraft(String(saved.session_gap_minutes));
+      // The agenda and the draft forms hold the old number; tell them.
+      forgetSessionGap(saved.session_gap_minutes);
+      toast.success(t({ ne: 'सेभ भयो', en: 'Saved' }));
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.error ?? t({ ne: 'सेभ हुन सकेन', en: 'Could not save' })
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card className="max-w-[760px]">
+      <h3 className="text-[15px] font-semibold mb-1">
+        {t({ ne: 'सत्रबीचको अन्तराल', en: 'Interval between sessions' })}
+      </h3>
+      <p className="text-[13px] text-ink-2 leading-relaxed mb-3.5">
+        {t({
+          ne: 'एउटा सत्र सकिएपछि अर्को सुरु हुनुअघि कति समय चाहिन्छ। तालिका मिलाउँदा यही अन्तराल राखिन्छ।',
+          en: 'How long one session needs after the last before it can begin. The agenda spaces every day by this number.',
+        })}
+      </p>
+
+      <div className="flex items-end gap-2.5 flex-wrap">
+        <div>
+          <label
+            htmlFor="manch-session-gap"
+            className="block text-[12.5px] text-[#6E7C8E] mb-1.5"
+          >
+            {t({ ne: 'मिनेट', en: 'Minutes' })}
+          </label>
+          <input
+            id="manch-session-gap"
+            type="number"
+            min={0}
+            max={prefs.max_session_gap_minutes}
+            step={5}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            aria-describedby="manch-session-gap-hint"
+            className="border border-navy-800/15 rounded-[9px] px-3 py-2 w-[120px] bg-white"
+          />
+        </div>
+        <Btn tone="amber" onClick={save} disabled={!changed || saving}>
+          {saving ? t({ ne: 'सेभ हुँदै…', en: 'Saving…' }) : t({ ne: 'सेभ', en: 'Save' })}
+        </Btn>
+      </div>
+
+      <p id="manch-session-gap-hint" className="text-[12.5px] text-[#6E7C8E] mt-2">
+        {!valid
+          ? t({
+              ne: `० देखि ${num(prefs.max_session_gap_minutes)} मिनेटसम्म राख्न मिल्छ।`,
+              en: `Anything from 0 to ${prefs.max_session_gap_minutes} minutes.`,
+            })
+          : wanted === 0
+          ? t({
+              ne: 'सत्रहरू लगातार चल्नेछन् — बीचमा खाली समय हुँदैन।',
+              en: 'Sessions will run back to back, with no room in between.',
+            })
+          : t({
+              ne: `पूर्वनिर्धारित ${num(prefs.default_session_gap_minutes)} मिनेट।`,
+              en: `The default is ${prefs.default_session_gap_minutes} minutes.`,
+            })}
+      </p>
+    </Card>
+  );
+};
+
 const PlanPanel: React.FC<{ roles: UserRoles | null }> = ({ roles }) => {
   const { t, num } = useOrganizer();
 

@@ -217,8 +217,16 @@ def build_meeting(data, *, event=None, host=None):
     # The order the organizer typed is kept; the times are spaced out so the
     # mandatory gap holds from the moment the meeting exists rather than
     # having to be corrected afterwards.
+    # The host's own interval, since the meeting does not exist yet to be
+    # asked for it.
+    account = getattr(owner, 'host_account', None)
+    spacing = timezone.timedelta(
+        minutes=account.session_gap_minutes if account else 15
+    )
     sessions_data = normalise_running_order(
-        data.get('sessions') or [], first_start=data['scheduled_start']
+        data.get('sessions') or [],
+        first_start=data['scheduled_start'],
+        gap=spacing,
     )
     start = data['scheduled_start']
     end = start + timezone.timedelta(minutes=data.get('duration_minutes', 60))

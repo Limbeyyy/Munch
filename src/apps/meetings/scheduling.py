@@ -34,9 +34,33 @@ from src.apps.meetings.models import Meeting, Session
 
 logger = logging.getLogger(__name__)
 
-#: The least breathing room left between one slot and the next.
+#: The least breathing room left between one slot and the next, where the
+#: host has expressed no preference of their own.
 GAP_MINUTES = 15
 GAP = timezone.timedelta(minutes=GAP_MINUTES)
+
+#: The widest interval worth offering. Beyond a couple of hours the answer
+#: is another meeting, not a longer gap.
+MAX_GAP_MINUTES = 240
+
+
+def gap_minutes_for(meeting) -> int:
+    """The interval this host keeps between sessions.
+
+    A hall that has to be cleared and re-laid needs longer than a panel
+    changing chairs, so the fifteen minutes everybody used to get is now
+    only the default. Read from the host rather than the meeting: it is a
+    way of working, not a property of one morning.
+    """
+    account = getattr(getattr(meeting, 'host', None), 'host_account', None)
+    if account is None:
+        return GAP_MINUTES
+    return int(account.session_gap_minutes)
+
+
+def gap_for(meeting):
+    """The same interval, as something to add to a time."""
+    return timezone.timedelta(minutes=gap_minutes_for(meeting))
 
 #: No session is worth scheduling for less than this.
 MIN_DURATION_MINUTES = 5
@@ -112,7 +136,7 @@ def _underway_meeting_ids(sessions):
     )
 
 
-def resolve(slots, anchored_id=None):
+def resolve(slots, anchored_id=None, gap=GAP):
     """Settle collisions by moving things later, never earlier.
 
     The mirror of ``resolve`` in the agenda engine. A slot forced to move
@@ -133,7 +157,7 @@ def resolve(slots, anchored_id=None):
     for slot in movable:
         starts_at = slot.starts_at
         if previous_end is not None:
-            starts_at = max(starts_at, previous_end + GAP)
+            starts_at = max(starts_at, previous_end + gap)
 
         # Step past anything immovable this would land on, and keep
         # stepping: clearing one obstacle can walk it into the next.
@@ -143,11 +167,11 @@ def resolve(slots, anchored_id=None):
             for block in fixed:
                 length = timezone.timedelta(minutes=slot.duration_minutes)
                 clashes = (
-                    starts_at < block.ends_at + GAP
-                    and starts_at + length + GAP > block.starts_at
+                    starts_at < block.ends_at + gap
+                    and starts_at + length + gap > block.starts_at
                 )
                 if clashes:
-                    starts_at = block.ends_at + GAP
+                    starts_at = block.ends_at + gap
                     clear = False
 
         placed.append(replace(slot, starts_at=starts_at))
@@ -175,7 +199,7 @@ def earliest_start(meeting, before=None, exclude_id=None):
         if latest_end is None or end > latest_end:
             latest_end = end
 
-    return latest_end + GAP if latest_end else None
+    return latest_end + gap_for(meeting) if latest_end else None
 
 
 def check_slot(meeting, starts_at, duration_minutes, exclude_id=None):
@@ -191,23 +215,24 @@ def check_slot(meeting, starts_at, duration_minutes, exclude_id=None):
         )
 
     ends_at = starts_at + timezone.timedelta(minutes=duration_minutes)
+    gap = gap_for(meeting)
     query = day_sessions(meeting)
     if exclude_id is not None:
         query = query.exclude(id=exclude_id)
 
     for other in query.select_related('meeting'):
         other_end = other.starts_at + timezone.timedelta(minutes=other.duration_minutes)
-        if starts_at < other_end + GAP and ends_at + GAP > other.starts_at:
+        if starts_at < other_end + gap and ends_at + gap > other.starts_at:
             soonest = earliest_start(meeting, exclude_id=exclude_id)
             when = timezone.localtime(other.starts_at).strftime('%H:%M')
             raise ScheduleConflict(
                 f'"{other.title}" runs at {when}, and every session needs '
-                f'{GAP_MINUTES} minutes either side of it.',
+                f'{gap_minutes_for(meeting)} minutes either side of it.',
                 earliest=soonest,
             )
 
 
-def normalise_running_order(sessions, first_start=None):
+def normalise_running_order(sessions, first_start=None, gap=GAP):
     """Space a freshly typed running order so it obeys the gap.
 
     Applied when a meeting is created with its sessions in one go: the
@@ -233,7 +258,7 @@ def normalise_running_order(sessions, first_start=None):
             if first_start is not None:
                 starts_at = first_start
         else:
-            starts_at = max(starts_at, previous_end + GAP)
+            starts_at = max(starts_at, previous_end + gap)
         session['starts_at'] = starts_at
         previous_end = starts_at + timezone.timedelta(
             minutes=session.get('duration_minutes', 30)
@@ -283,7 +308,9 @@ def reschedule(meeting, changes, anchored_id=None):
             session.hall = change['hall']
 
     underway = _underway_meeting_ids(locked)
-    settled = resolve(_slots(locked, underway), anchored_id=anchored_id)
+    settled = resolve(
+        _slots(locked, underway), anchored_id=anchored_id, gap=gap_for(meeting)
+    )
 
     moved = []
     for slot in settled:
