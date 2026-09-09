@@ -21,11 +21,11 @@ import { PeopleView } from '../organizer/views/PeopleView';
 import { ModerationView } from '../organizer/views/ModerationView';
 import { ReportsView } from '../organizer/views/ReportsView';
 import { SettingsView } from '../organizer/views/SettingsView';
-import { PhotosView } from '../organizer/views/PhotosView';
 import { ProfileView } from '../organizer/ProfileView';
 import { SubscriptionView } from '../organizer/SubscriptionView';
 import { RemindersView } from '../organizer/RemindersView';
 import { useNudges } from '../organizer/nudges';
+import { useMeetingPulse } from '../organizer/meetingPulse';
 import { ShareMeetingDialog } from '../components/ShareMeetingDialog';
 
 const OrganizerInner: React.FC = () => {
@@ -96,7 +96,12 @@ const OrganizerInner: React.FC = () => {
     return out;
   }, [meetings, pendingCount, nudges.unread, t, num]);
 
-  const activeTitle = meetings.find((m) => m.status === 'active')?.title;
+  const running = meetings.find((m) => m.status === 'active') ?? null;
+  const activeTitle = running?.title;
+
+  // A meeting ending should reach every screen at once rather than on the
+  // next poll, so the dashboard listens to the room while one is running.
+  useMeetingPulse(running?.meeting_code, load);
 
   return (
     <>
@@ -129,7 +134,6 @@ const OrganizerInner: React.FC = () => {
             {view === 'people' && <PeopleView meetings={meetings} currentUserId={user?.id} />}
             {view === 'moderation' && <ModerationView meetings={meetings} />}
             {view === 'reports' && <ReportsView meetings={meetings} />}
-            {view === 'photos' && <PhotosView meetings={meetings} />}
             {view === 'settings' && <SettingsView meetings={meetings} />}
             {view === 'reminders' && <RemindersView page={nudges.page} loading={nudges.loading} onRead={nudges.markRead} />}
             {view === 'profile' && <ProfileView onNavigate={setView} />}

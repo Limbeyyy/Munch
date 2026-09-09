@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { ACTIVE_POLL_MS } from '../../services/polling';
+import { doorway, howFarOff } from '../sessionState';
 import {
   AttendanceReport, ChatMessage, GuestAttendee, Meeting, MeetingParticipant,
   Session,
@@ -52,6 +53,34 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
     .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at))[0];
   const stage = onStage ?? upNext;
   const isLive = !!onStage;
+
+  /**
+   * When the room opens for whatever is on the desk, and what may be done
+   * yet. The upcoming session is shown however far off it is - eight hours
+   * or eight minutes - because the desk is where the host looks to see
+   * what is next. What changes with the clock is not whether it is shown
+   * but whether the buttons do anything: going in early is refused by the
+   * server, and a button that only produces that refusal reads as broken.
+   */
+  const [tick, setTick] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setTick(Date.now()), 20000);
+    return () => clearInterval(id);
+  }, []);
+
+  const door = doorway(stage?.starts_at, tick);
+  const away = stage ? howFarOff(stage.starts_at, tick) : null;
+  const awayText = (): string => {
+    if (!away) return '';
+    const { amount, unit } = away;
+    if (unit === 'minute') {
+      return t({ ne: `${num(amount)} मिनेटमा`, en: `in ${amount} min` });
+    }
+    if (unit === 'hour') {
+      return t({ ne: `${num(amount)} घण्टामा`, en: `in ${amount} h` });
+    }
+    return t({ ne: `${num(amount)} दिनमा`, en: `in ${amount} d` });
+  };
 
   const [participants, setParticipants] = useState<MeetingParticipant[]>([]);
   const [attendance, setAttendance] = useState<AttendanceReport | null>(null);
@@ -203,7 +232,18 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
           en: 'Start and end sessions, watch the room, clear the queue — all from here.',
         }}
         actions={
-          <Btn onClick={() => navigate(`/meeting/${current.meeting_code}`)}>
+          <Btn
+            onClick={() => navigate(`/meeting/${current.meeting_code}`)}
+            disabled={!!stage && !door.canEnter}
+            title={
+              stage && !door.canEnter
+                ? t({
+                    ne: `कोठा ${new Date(door.opensAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} बजे खुल्छ`,
+                    en: `The room opens at ${new Date(door.opensAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+                  })
+                : undefined
+            }
+          >
             {t({ ne: 'कोठामा जानुहोस्', en: 'Enter the room' })}
           </Btn>
         }
@@ -223,6 +263,11 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
                   ? t({ ne: 'चलिरहेको सत्र', en: 'On stage now' })
                   : t({ ne: 'अर्को सत्र', en: 'Up next' })}
               </span>
+              {!isLive && stage && (
+                <span className="text-[12px] text-[#C9DAF1] bg-white/[.14] rounded-full px-2.5 leading-[20px]">
+                  {awayText()}
+                </span>
+              )}
               <span className="ml-auto text-[12.5px] text-[#AFC6E6]">
                 {stage ? (() => {
                   const from = new Date(stage.starts_at);
@@ -271,7 +316,15 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
                 ) : stage ? (
                   <button
                     onClick={start}
-                    disabled={busy}
+                    disabled={busy || !door.canStart}
+                    title={
+                      door.canStart
+                        ? undefined
+                        : t({
+                            ne: 'सत्रको समय आएपछि मात्र सुरु गर्न मिल्छ',
+                            en: 'A session can only be started once its time has come',
+                          })
+                    }
                     className="px-3.5 py-2 rounded-[9px] bg-amber text-[#20160A] font-semibold text-[13.5px] disabled:opacity-50"
                   >
                     {t({ ne: 'सत्र सुरु गर्नुहोस्', en: 'Start session' })}
@@ -286,7 +339,7 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
               { value: num(activeCount), label: { ne: 'अहिले हलमा', en: 'In the room' } },
               {
                 value: attendance
-                  ? `${num(attendance.attended_count)}/${num(attendance.expected_from_invites || attendance.attended_count)}`
+                  ? `${num(attendance.attended_count)}/${num(attendance.expected_total || attendance.attended_count)}`
                   : '—',
                 label: { ne: 'आज चेक-इन', en: 'Checked in today' },
               },

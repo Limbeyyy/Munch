@@ -113,7 +113,9 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
   useEffect(() => { load(); }, [load]);
 
   const totals = useMemo(() => {
-    const invited = rolls.reduce((n, r) => n + (r.report?.expected_from_invites ?? 0), 0);
+    // The roll, not the invitations: a guest was part of the meeting even
+    // though nobody sent them anything.
+    const invited = rolls.reduce((n, r) => n + (r.report?.expected_total ?? 0), 0);
     const inRoom = rolls.reduce((n, r) => n + (r.report?.active_count ?? 0), 0);
     const guests = rolls.reduce((n, r) => n + r.people.filter((p) => p.isGuest).length, 0);
 

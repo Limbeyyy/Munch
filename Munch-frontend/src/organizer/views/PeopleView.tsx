@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { QUEUE_POLL_MS } from '../../services/polling';
-import { EventMeeting, EventProgramme, MeetingParticipant, Session } from '../../types';
+import {
+  AttendanceReport, EventMeeting, EventProgramme, MeetingParticipant, Session,
+} from '../../types';
 import { Pair, useOrganizer } from '../i18n';
 import { ContactRequests } from '../ContactRequests';
 import { groupBySpeaker } from '../speakers';
@@ -59,6 +61,7 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
   const [eventId, setEventId] = useState('');
   const [tab, setTab] = useState('speakers');
   const [participants, setParticipants] = useState<Record<string, MeetingParticipant[]>>({});
+  const [turnout, setTurnout] = useState<Record<string, AttendanceReport | null>>({});
   const [changing, setChanging] = useState<string | null>(null);
   const [settingVisibility, setSettingVisibility] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState(0);
@@ -78,16 +81,31 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
 
   const event = events.find((e) => e.id === eventId) ?? null;
 
+  /**
+   * The team of each meeting, and how many seats its sessions filled.
+   *
+   * Everyone who was there, not everyone who is there: ending a meeting
+   * empties the room, so asking the room's question here showed a finished
+   * meeting as having had no team at all.
+   */
   const loadParticipants = useCallback(async () => {
-    if (!event) { setParticipants({}); return; }
+    if (!event) { setParticipants({}); setTurnout({}); return; }
     const results = await Promise.allSettled(
-      event.meetings.map((m) =>
-        apiClient.getParticipants(m.id).then((rows) => [m.id, rows] as const)
-      )
+      event.meetings.map(async (m) => [
+        m.id,
+        await apiClient.getParticipants(m.id, true),
+        await apiClient.getAttendance(m.id).catch(() => null),
+      ] as const)
     );
     const next: Record<string, MeetingParticipant[]> = {};
-    results.forEach((r) => { if (r.status === 'fulfilled') next[r.value[0]] = r.value[1]; });
+    const seats: Record<string, AttendanceReport | null> = {};
+    results.forEach((r) => {
+      if (r.status !== 'fulfilled') return;
+      next[r.value[0]] = r.value[1];
+      seats[r.value[0]] = r.value[2];
+    });
     setParticipants(next);
+    setTurnout(seats);
   }, [event]);
 
   useEffect(() => { loadParticipants(); }, [loadParticipants]);
@@ -330,6 +348,7 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
 
               {event?.meetings.map((meeting) => {
                 const rows = participants[meeting.id] ?? [];
+                const seats = turnout[meeting.id] ?? null;
                 const isHost = meeting.id && rows.some(
                   (p) => p.role === 'host' && p.user?.id === currentUserId
                 );
@@ -344,9 +363,32 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
                           ne: `${num(rows.length)} जना`,
                           en: `${rows.length} ${rows.length === 1 ? 'person' : 'people'}`,
                         })}
+                        {seats && seats.sessions.length > 0 && (
+                          <>
+                            {' · '}
+                            {t({
+                              ne: `${num(seats.session_attendance_total)} सत्र-उपस्थिति`,
+                              en: `${seats.session_attendance_total} across ${seats.sessions.length} session${seats.sessions.length === 1 ? '' : 's'}`,
+                            })}
+                          </>
+                        )}
                       </span>
                     }
                   >
+                    {seats && seats.sessions.length > 0 && (
+                      <div className="px-3.5 py-2.5 border-b border-navy-800/[.08] flex gap-x-4 gap-y-1 flex-wrap">
+                        {seats.sessions.map((session) => (
+                          <span key={session.id} className="text-[12.5px] text-[#6E7C8E]">
+                            {session.title}
+                            {' · '}
+                            <span className="text-navy-900 font-medium tabular-nums">
+                              {num(session.attended_count)}
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
                     {rows.length === 0 ? (
                       <Empty>
                         {t({

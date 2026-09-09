@@ -33,8 +33,6 @@ export const NAV: NavItem[] = [
 
   { id: 'reports', group: 3, label: { ne: 'रिपोर्ट', en: 'Reports' },
     icon: 'M3 3v18h18M7 15l4-4 3 3 5-6' },
-  { id: 'photos', group: 3, label: { ne: 'तस्बिरहरू', en: 'Photos' },
-    icon: 'M3 5h18v14H3zM3 15l5-5 4 4 3-3 6 6M16 9a1.4 1.4 0 100-2.8 1.4 1.4 0 000 2.8' },
   { id: 'settings', group: 3, label: { ne: 'सेटिङ', en: 'Settings' },
     icon: 'M4 6h16M4 12h16M4 18h16' },
 

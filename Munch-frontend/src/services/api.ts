@@ -787,8 +787,17 @@ class ApiClient {
   }
 
   // Participant endpoints
-  async getParticipants(meetingId: string): Promise<any[]> {
-    const response = await this.client.get(`/meetings/${meetingId}/participants/`);
+  /**
+   * Who is in the meeting now.
+   *
+   * ``everyone`` asks a different question - who was in it at all - which
+   * is what a team page wants: ending a meeting empties the room, so
+   * asking the room's question there shows nobody.
+   */
+  async getParticipants(meetingId: string, everyone = false): Promise<any[]> {
+    const response = await this.client.get(
+      `/meetings/${meetingId}/participants/${everyone ? '?everyone=1' : ''}`
+    );
     return response.data;
   }
 

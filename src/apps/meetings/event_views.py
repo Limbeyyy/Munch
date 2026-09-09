@@ -501,13 +501,26 @@ class SessionViewSet(viewsets.ModelViewSet):
         recorded = _close_session(session, timezone.now())
         _broadcast(session.meeting.meeting_code, session, 'session_ended')
 
+        from src.apps.meetings.lifecycle import close_meeting_if_spent
         from src.apps.meetings.views import broadcast_attendance_changed
 
         broadcast_attendance_changed(session.meeting)
 
+        # The host ending the last session has ended the meeting. Not at
+        # half past when its window happens to close - now, with the room
+        # emptied and everybody told, so no screen is left saying a meeting
+        # is running that the host has finished with.
+        meeting_ended = close_meeting_if_spent(
+            session.meeting, wait_for_window=False
+        )
+        if meeting_ended:
+            session.meeting.refresh_from_db()
+
         return Response({
             **SessionSerializer(session).data,
             'attendance_recorded': recorded,
+            'meeting_status': session.meeting.status,
+            'meeting_ended': meeting_ended,
         })
 
     @action(detail=True, methods=['get'])

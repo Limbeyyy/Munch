@@ -11,6 +11,7 @@ import { ReviewedMessages, ReviewedRow } from '../ReviewedMessages';
 import { errorText } from '../errors';
 import { useOrganizer } from '../i18n';
 import { Btn, Chip, Empty, Head, Panel, Tabs } from '../ui';
+import { PhotoAlbums } from '../Photos';
 
 const PAGE_SIZE = 20;
 
@@ -39,6 +40,63 @@ interface Row extends Placement {
 interface Props { meetings: Meeting[]; }
 
 /**
+ * The photographs of a meeting, filed by whoever was there to take them.
+ *
+ * Here rather than beside the reports because it belongs with the other
+ * things people put into a meeting - the messages, the questions, the
+ * suggestions - and not with the settings, which are about how the
+ * platform behaves rather than what happened on the day.
+ */
+const PhotoModeration: React.FC<{ meetings: Meeting[] }> = ({ meetings }) => {
+  const { t } = useOrganizer();
+  const [chosen, setChosen] = useState('');
+
+  const ordered = useMemo(
+    () => [
+      ...meetings.filter((m) => m.status === 'ended'),
+      ...meetings.filter((m) => m.status !== 'ended'),
+    ],
+    [meetings]
+  );
+  const meeting = meetings.find((m) => m.id === chosen) ?? ordered[0] ?? null;
+
+  if (!meeting) {
+    return <Panel><Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No meetings.' })}</Empty></Panel>;
+  }
+
+  return (
+    <div className="flex flex-col gap-3.5">
+      {meetings.length > 1 && (
+        <div>
+          <label
+            htmlFor="manch-photo-meeting"
+            className="block text-[12.5px] text-[#6E7C8E] mb-1.5"
+          >
+            {t({ ne: 'कुन बैठक', en: 'Which meeting' })}
+          </label>
+          <select
+            id="manch-photo-meeting"
+            value={meeting.id}
+            onChange={(e) => setChosen(e.target.value)}
+            className="w-full max-w-md border border-navy-800/15 rounded-[9px] px-3 py-2 bg-white text-[14px]"
+          >
+            {ordered.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.title}
+                {m.status === 'ended'
+                  ? ''
+                  : t({ ne: ' (सकिएको छैन)', en: ' (not finished)' })}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <PhotoAlbums meetingRef={meeting.meeting_code} />
+    </div>
+  );
+};
+
+/**
  * Everything waiting on the organizer's word, kept in the shape of the
  * programme: an item belongs to a meeting, and to whichever session was
  * running when it arrived.
@@ -46,8 +104,19 @@ interface Props { meetings: Meeting[]; }
 export const ModerationView: React.FC<Props> = ({ meetings }) => {
   const { t, num } = useOrganizer();
 
-  const [tab, setTab] = useState<'messages' | 'guests' | 'board'>('messages');
+  const [tab, setTab] = useState<'messages' | 'guests' | 'board' | 'photos'>(
+    'messages'
+  );
   const [boardMeeting, setBoardMeeting] = useState('');
+  /**
+   * Which meeting the messages and guests come from.
+   *
+   * Empty means the ones still running, which is the queue a moderator
+   * works. Naming one opens its history instead - including meetings that
+   * have ended, whose messages used to vanish from this screen the moment
+   * they did, because only live meetings were ever fetched.
+   */
+  const [historyMeeting, setHistoryMeeting] = useState('');
   const [accepting, setAccepting] = useState<Row | null>(null);
   const [events, setEvents] = useState<EventProgramme[]>([]);
   const [pending, setPending] = useState<Record<string, ChatMessage[]>>({});
@@ -62,11 +131,15 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
 
   // A moderator watches the whole programme, so both queues are gathered
   // from every meeting that has not ended.
-  const live = useMemo(
-    () => meetings.filter((m) => m.status === 'active' || m.status === 'scheduled'),
-    [meetings]
-  );
+  const live = useMemo(() => {
+    const chosen = meetings.find((m) => m.id === historyMeeting);
+    if (chosen) return [chosen];
+    return meetings.filter((m) => m.status === 'active' || m.status === 'scheduled');
+  }, [meetings, historyMeeting]);
   const liveKey = live.map((m) => m.id).join(',');
+
+  /** Looking at one meeting is looking at its record, not at its queue. */
+  const showingHistory = !!meetings.find((m) => m.id === historyMeeting);
 
   useEffect(() => {
     apiClient.listEvents().then(setEvents).catch(() => undefined);
@@ -90,7 +163,9 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
     results.forEach((r) => {
       if (r.status !== 'fulfilled') return;
       nextPending[r.value.id] = r.value.pending;
-      nextWaiting[r.value.id] = r.value.waiting.filter((g) => g.status === 'pending');
+      nextWaiting[r.value.id] = showingHistory
+        ? r.value.waiting
+        : r.value.waiting.filter((g) => g.status === 'pending');
       const tag = (rows: ChatMessage[]) =>
         rows.map((row) => ({ ...row, meetingId: r.value.id }));
       fromUsers.push(...tag(r.value.reviewed.from_users));
@@ -100,7 +175,7 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
     setWaiting(nextWaiting);
     setReviewedUsers(fromUsers);
     setReviewedGuests(fromGuests);
-  }, [liveKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [liveKey, showingHistory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     load();
@@ -138,7 +213,12 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
     const out: Row[] = [];
     live.forEach((meeting) => {
       if (tab === 'messages') {
-        (pending[meeting.id] ?? []).forEach((m) => {
+        const settled = showingHistory
+          ? [...reviewedUsers, ...reviewedGuests].filter(
+              (r) => r.meetingId === meeting.id
+            )
+          : [];
+        [...(pending[meeting.id] ?? []), ...settled].forEach((m) => {
           const place = placementOf(meeting, m.created_at);
           out.push({
             ...place,
@@ -174,7 +254,10 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
 
     // Oldest first: whoever has waited longest deserves a decision first.
     return out.sort((a, b) => +new Date(a.at) - +new Date(b.at));
-  }, [live, tab, pending, waiting, placementOf]);
+  }, [
+    live, tab, pending, waiting, placementOf,
+    showingHistory, reviewedUsers, reviewedGuests,
+  ]);
 
   const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const matched = useMemo(
@@ -316,15 +399,18 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
 
       <Tabs
         active={tab}
-        onChange={(id) => setTab(id as 'messages' | 'guests' | 'board')}
+        onChange={(id) => setTab(id as 'messages' | 'guests' | 'board' | 'photos')}
         tabs={[
           { id: 'messages', label: { ne: `सन्देश (${num(messageCount)})`, en: `Messages (${messageCount})` } },
           { id: 'guests', label: { ne: `पाहुना (${num(guestCount)})`, en: `Guests (${guestCount})` } },
           { id: 'board', label: { ne: 'प्रश्न र सुझाव', en: 'Questions & suggestions' } },
+          { id: 'photos', label: { ne: 'फोटो', en: 'Photos' } },
         ]}
       />
 
-      {tab === 'board' ? (
+      {tab === 'photos' ? (
+        <PhotoModeration meetings={meetings} />
+      ) : tab === 'board' ? (
         <div className="flex flex-col gap-3.5">
           {meetings.length === 0 ? (
             <Panel><Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No meetings.' })}</Empty></Panel>
@@ -359,6 +445,38 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
         </div>
       ) : (
       <>
+      {meetings.length > 0 && (
+        <div className="mb-3.5">
+          <label
+            htmlFor="manch-moderation-meeting"
+            className="block text-[12.5px] text-[#6E7C8E] mb-1.5"
+          >
+            {t({ ne: 'कुन बैठक', en: 'Which meeting' })}
+          </label>
+          <select
+            id="manch-moderation-meeting"
+            value={historyMeeting}
+            onChange={(e) => { setHistoryMeeting(e.target.value); setPage(1); }}
+            className="w-full max-w-md border border-navy-800/15 rounded-[9px] px-3 py-2 bg-white text-[14px]"
+          >
+            <option value="">
+              {t({ ne: 'चलिरहेका बैठक (लाइन)', en: 'Meetings still running (the queue)' })}
+            </option>
+            {meetings.map((m) => (
+              <option key={m.id} value={m.id}>{m.title}</option>
+            ))}
+          </select>
+          {showingHistory && (
+            <p className="text-[12px] text-[#6E7C8E] mt-1.5">
+              {t({
+                ne: 'यो बैठकको सबै — निर्णय भइसकेका पनि।',
+                en: 'Everything from this meeting, decided items included.',
+              })}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Search */}
       <div className="flex items-center gap-2 flex-wrap mb-3.5">
         <div className="relative flex-1 min-w-[240px]">

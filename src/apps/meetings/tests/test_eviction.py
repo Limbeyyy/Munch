@@ -161,6 +161,77 @@ class EvictionTests(TransactionTestCase):
             1,
         )
 
+    async def test_ending_the_last_session_by_hand_shuts_the_room_at_once(self):
+        # Not at half past when the meeting's own window closes: the host
+        # has said it is over, so everybody is told now.
+        comm = await joined(self.meeting, self.attendee)
+        await comm.receive_json_from()
+
+        def end_session():
+            from django.test import Client
+
+            client = Client(
+                HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(self.host)}',
+                HTTP_HOST='localhost',
+            )
+            return client.post(f'{API}/sessions/{self.session.id}/end/')
+
+        response = await database_sync_to_async(end_session)()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['meeting_ended'])
+        self.assertEqual(response.json()['meeting_status'], Meeting.Status.ENDED)
+
+        seen = set()
+        for _ in range(4):
+            said = await comm.receive_json_from()
+            seen.add(said['type'])
+            if said['type'] == 'meeting_ended':
+                break
+        self.assertIn('meeting_ended', seen)
+        await comm.disconnect()
+
+    def test_the_meeting_stays_open_while_a_session_is_still_to_come(self):
+        # Ending the first of two is not ending the meeting.
+        later = make_session(
+            self.meeting,
+            timezone.now() + timezone.timedelta(hours=1),
+            60,
+            'Sagun',
+        )
+        from django.test import Client
+
+        client = Client(
+            HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(self.host)}',
+            HTTP_HOST='localhost',
+        )
+        body = client.post(f'{API}/sessions/{self.session.id}/end/').json()
+
+        self.assertFalse(body['meeting_ended'])
+        self.meeting.refresh_from_db()
+        self.assertEqual(self.meeting.status, Meeting.Status.ACTIVE)
+        self.assertTrue(later.id)
+
+    def test_the_register_survives_the_room_being_emptied_that_way(self):
+        from src.apps.meetings.models import SessionAttendance
+        from django.test import Client
+
+        client = Client(
+            HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(self.host)}',
+            HTTP_HOST='localhost',
+        )
+        client.post(f'{API}/sessions/{self.session.id}/end/')
+
+        self.assertTrue(
+            SessionAttendance.objects.filter(
+                session=self.session, user=self.attendee
+            ).exists()
+        )
+        self.assertFalse(
+            MeetingParticipant.objects.filter(
+                meeting=self.meeting, is_active=True
+            ).exists()
+        )
+
     def test_the_books_are_closed_as_well(self):
         self.end_it()
 
