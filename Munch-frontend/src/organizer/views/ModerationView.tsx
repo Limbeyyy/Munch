@@ -212,13 +212,20 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
     live.forEach((meeting) => {
+      // A message from a guest is a guest's business, wherever it is in
+      // its life. Sorting them by who sent them rather than by what kind
+      // of thing they are keeps the two queues answering the questions
+      // their names promise: this tab is the people with accounts.
+      const fromGuest = (m: { sender_is_guest?: boolean }) => !!m.sender_is_guest;
+
       if (tab === 'messages') {
         const settled = showingHistory
-          ? [...reviewedUsers, ...reviewedGuests].filter(
-              (r) => r.meetingId === meeting.id
-            )
+          ? reviewedUsers.filter((r) => r.meetingId === meeting.id)
           : [];
-        [...(pending[meeting.id] ?? []), ...settled].forEach((m) => {
+        [
+          ...(pending[meeting.id] ?? []).filter((m) => !fromGuest(m)),
+          ...settled,
+        ].forEach((m) => {
           const place = placementOf(meeting, m.created_at);
           out.push({
             ...place,
@@ -244,6 +251,30 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
             guest: g,
             haystack: [
               g.full_name, g.phone,
+              meeting.title, meeting.meeting_code,
+              place.eventTitle, place.session?.title, place.session?.speaker_name,
+            ].filter(Boolean).join(' ').toLowerCase(),
+          });
+        });
+
+        // What the guests themselves have written, beside the people
+        // waiting at the door.
+        const settled = showingHistory
+          ? reviewedGuests.filter((r) => r.meetingId === meeting.id)
+          : [];
+        [
+          ...(pending[meeting.id] ?? []).filter(fromGuest),
+          ...settled,
+        ].forEach((m) => {
+          const place = placementOf(meeting, m.created_at);
+          out.push({
+            ...place,
+            kind: 'message',
+            id: m.id,
+            at: m.created_at,
+            message: m,
+            haystack: [
+              m.body, m.sender_name, m.sender_email, m.recipient_name,
               meeting.title, meeting.meeting_code,
               place.eventTitle, place.session?.title, place.session?.speaker_name,
             ].filter(Boolean).join(' ').toLowerCase(),
@@ -382,10 +413,17 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
   // What each tab holds, not only what is waiting in it. A tab reading
   // (0) above a list of four messages is just wrong to the eye, whatever
   // the number technically counted.
-  const messageCount =
-    live.reduce((n, m) => n + (pending[m.id]?.length ?? 0), 0) + reviewedUsers.length;
+  const pendingFrom = (guests: boolean) =>
+    live.reduce(
+      (n, m) =>
+        n + (pending[m.id] ?? []).filter((x) => !!x.sender_is_guest === guests).length,
+      0
+    );
+  const messageCount = pendingFrom(false) + reviewedUsers.length;
   const guestCount =
-    live.reduce((n, m) => n + (waiting[m.id]?.length ?? 0), 0) + reviewedGuests.length;
+    live.reduce((n, m) => n + (waiting[m.id]?.length ?? 0), 0)
+    + pendingFrom(true)
+    + reviewedGuests.length;
 
   return (
     <>
@@ -519,7 +557,10 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
                   ne: 'लाइन सफा छ। सहभागीले प्रस्तोतालाई पठाएका सन्देश यहाँ आउँछन्।',
                   en: 'The queue is clear. Messages attendees send to presenters land here.',
                 })
-              : t({ ne: 'कोही पर्खिरहेको छैन।', en: 'Nobody is waiting.' })}
+              : t({
+                  ne: 'कोही पर्खिरहेको छैन, र पाहुनाबाट कुनै सन्देश आएको छैन।',
+                  en: 'Nobody is waiting, and no guest has written anything.',
+                })}
           </Empty>
         </Panel>
       ) : (
@@ -689,7 +730,7 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
         </Modal>
       )}
 
-      {tab !== 'board' && (
+      {(tab === 'messages' || tab === 'guests') && (
       <>
       {/* Paging, only once there is more than a page to show */}
       {pageCount > 1 && (
