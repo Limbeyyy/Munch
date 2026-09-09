@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { ACTIVE_POLL_MS } from '../../services/polling';
 import { doorway, howFarOff } from '../sessionState';
+import { ChatRules } from '../ChatRules';
 import {
   AttendanceReport, ChatMessage, GuestAttendee, Meeting, MeetingParticipant,
   Session,
@@ -350,6 +351,19 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
               },
             ]}
           />
+
+          {/* The chat is something the host does to a session that is
+              running - closing the floor for a speaker, opening direct
+              messages for a question round - so the switches live here
+              while one is on stage rather than in settings, where they
+              were a preference nobody was setting. */}
+          {isLive && (
+            <Panel title={t({ ne: 'च्याट नियम', en: 'Chat rules' })}>
+              <div className="px-4 py-3.5">
+                <ChatRules meetingId={current.id} />
+              </div>
+            </Panel>
+          )}
 
           {/* Guests knock from the moment the room opens, whether or not
               anybody is here to answer. They wait here rather than in a

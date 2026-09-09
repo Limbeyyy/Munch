@@ -438,11 +438,16 @@ class ApiClient {
     return response.data;
   }
 
-  async setSessionGap(minutes: number): Promise<SchedulingPrefs> {
-    const response = await this.client.post('/users/scheduling/', {
-      session_gap_minutes: minutes,
-    });
+  /** Change one or more of them; what is not sent is left alone. */
+  async setSchedulingPrefs(
+    patch: Record<string, number | boolean>
+  ): Promise<SchedulingPrefs> {
+    const response = await this.client.post('/users/scheduling/', patch);
     return response.data;
+  }
+
+  async setSessionGap(minutes: number): Promise<SchedulingPrefs> {
+    return this.setSchedulingPrefs({ session_gap_minutes: minutes });
   }
 
   /** The photographs of a meeting, by folder. */

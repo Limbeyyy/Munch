@@ -134,7 +134,7 @@ const OrganizerInner: React.FC = () => {
             {view === 'people' && <PeopleView meetings={meetings} currentUserId={user?.id} />}
             {view === 'moderation' && <ModerationView meetings={meetings} />}
             {view === 'reports' && <ReportsView meetings={meetings} />}
-            {view === 'settings' && <SettingsView meetings={meetings} />}
+            {view === 'settings' && <SettingsView />}
             {view === 'reminders' && <RemindersView page={nudges.page} loading={nudges.loading} onRead={nudges.markRead} />}
             {view === 'profile' && <ProfileView onNavigate={setView} />}
             {view === 'subscription' && <SubscriptionView />}

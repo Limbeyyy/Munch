@@ -752,9 +752,22 @@ export interface Reminder {
   calendar_url: string;
 }
 
-/** How this host spaces their day. */
+/** How this host spaces their day, and how much warning it gives. */
 export interface SchedulingPrefs {
   session_gap_minutes: number;
+  meeting_reminder_minutes: number;
+  session_reminder_minutes: number;
+  reminders_enabled: boolean;
+  defaults: {
+    session_gap_minutes: number;
+    meeting_reminder_minutes: number;
+    session_reminder_minutes: number;
+  };
+  maximums: {
+    session_gap_minutes: number;
+    meeting_reminder_minutes: number;
+    session_reminder_minutes: number;
+  };
   default_session_gap_minutes: number;
   max_session_gap_minutes: number;
 }

@@ -105,51 +105,84 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get', 'post'], url_path='scheduling')
     def scheduling(self, request):
-        """The intervals this host schedules by.
+        """The intervals this host's programme runs to.
 
-        One field so far: the breathing room between one session and the
-        next. It used to be fifteen minutes for everybody, which suits a
-        panel changing chairs and not a hall that has to be cleared and
-        re-laid.
+        How much room a hall needs between one session and the next, and
+        how much warning the people coming are given. All three were fixed
+        numbers written into the code: fifteen minutes between sessions, an
+        hour before a meeting, a quarter of an hour before a talk. They
+        suit a conference people travel to and not a ward meeting down the
+        corridor, so they are the host's to set.
+
+        Fields are taken one at a time, so a screen may send only what it
+        changed.
         """
         from src.apps.accounts.roles import ensure_host
-        from src.apps.meetings.scheduling import (
-            GAP_MINUTES, MAX_GAP_MINUTES,
+        from src.apps.meetings.reminders import (
+            MAX_LEAD_MINUTES, MEETING_LEAD_MINUTES, SESSION_LEAD_MINUTES,
         )
+        from src.apps.meetings.scheduling import GAP_MINUTES, MAX_GAP_MINUTES
 
-        account = getattr(request.user, 'host_account', None)
+        #: field -> (default, largest allowed)
+        NUMBERS = {
+            'session_gap_minutes': (GAP_MINUTES, MAX_GAP_MINUTES),
+            'meeting_reminder_minutes': (MEETING_LEAD_MINUTES, MAX_LEAD_MINUTES),
+            'session_reminder_minutes': (SESSION_LEAD_MINUTES, MAX_LEAD_MINUTES),
+        }
 
         def as_json():
-            return {
-                'session_gap_minutes': (
-                    account.session_gap_minutes if account else GAP_MINUTES
-                ),
-                'default_session_gap_minutes': GAP_MINUTES,
-                'max_session_gap_minutes': MAX_GAP_MINUTES,
+            account = getattr(request.user, 'host_account', None)
+            body = {
+                field: getattr(account, field) if account else default
+                for field, (default, _) in NUMBERS.items()
             }
+            body['reminders_enabled'] = (
+                account.reminders_enabled if account else True
+            )
+            body['defaults'] = {field: default for field, (default, _) in NUMBERS.items()}
+            body['maximums'] = {field: most for field, (_, most) in NUMBERS.items()}
+            # Kept under the older names, which the agenda already reads.
+            body['default_session_gap_minutes'] = GAP_MINUTES
+            body['max_session_gap_minutes'] = MAX_GAP_MINUTES
+            return body
 
         if request.method == 'GET':
             return Response(as_json())
 
-        raw = request.data.get('session_gap_minutes')
-        try:
-            wanted = int(raw)
-        except (TypeError, ValueError):
-            return Response(
-                {
-                    'error': 'session_gap_minutes must be a whole number of minutes',
-                    'code': 'not_a_number',
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        changes = {}
+        for field, (_, most) in NUMBERS.items():
+            if field not in request.data:
+                continue
+            try:
+                wanted = int(request.data[field])
+            except (TypeError, ValueError):
+                return Response(
+                    {
+                        'error': f'{field} must be a whole number of minutes',
+                        'code': 'not_a_number',
+                        'field': field,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if wanted < 0 or wanted > most:
+                return Response(
+                    {
+                        'error': f'That goes from 0 to {most} minutes.',
+                        'code': 'out_of_range',
+                        'field': field,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            changes[field] = wanted
 
-        if wanted < 0 or wanted > MAX_GAP_MINUTES:
+        if 'reminders_enabled' in request.data:
+            changes['reminders_enabled'] = bool(request.data['reminders_enabled'])
+
+        if not changes:
             return Response(
                 {
-                    'error': (
-                        f'The interval goes from 0 to {MAX_GAP_MINUTES} minutes.'
-                    ),
-                    'code': 'out_of_range',
+                    'error': f'Send one of {sorted(NUMBERS) + ["reminders_enabled"]}',
+                    'code': 'nothing_to_change',
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -157,8 +190,10 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
         # Somebody setting how their days are spaced is hosting, whether or
         # not they have opened a programme yet.
         account = getattr(request.user, 'host_account', None) or ensure_host(request.user)
-        account.session_gap_minutes = wanted
-        account.save(update_fields=['session_gap_minutes', 'updated_at'])
+        for field, value in changes.items():
+            setattr(account, field, value)
+        account.save(update_fields=[*changes, 'updated_at'])
+        request.user.refresh_from_db()
 
         return Response(as_json())
 

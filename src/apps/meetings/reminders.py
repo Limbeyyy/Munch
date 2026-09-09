@@ -17,6 +17,32 @@ MEETING_LEAD_MINUTES = 60
 #: And before one talk inside it.
 SESSION_LEAD_MINUTES = 15
 
+#: The most warning worth offering. A day ahead is a diary entry, which is
+#: what the calendar link is for.
+MAX_LEAD_MINUTES = 1440
+
+
+def leads_for(meeting):
+    """How much warning this meeting's programme gives, and whether any.
+
+    Read from the host: the hour before a meeting and the quarter before a
+    talk were the rule for everybody, and they suit a conference where
+    people travel in. A ward meeting down the corridor wants less, and a
+    programme people fly to wants more.
+    """
+    account = getattr(getattr(meeting, 'host', None), 'host_account', None)
+    if account is None:
+        return {
+            'enabled': True,
+            'meeting': MEETING_LEAD_MINUTES,
+            'session': SESSION_LEAD_MINUTES,
+        }
+    return {
+        'enabled': account.reminders_enabled,
+        'meeting': int(account.meeting_reminder_minutes),
+        'session': int(account.session_reminder_minutes),
+    }
+
 
 def audience_for(meeting):
     """Everyone who should hear about this meeting.
@@ -57,6 +83,12 @@ def generate_for_meeting(meeting, now=None):
     if meeting.status == meeting.Status.ENDED:
         return 0
 
+    leads = leads_for(meeting)
+    # A host who has turned reminders off is not owed the argument that
+    # they might want them; nothing is written at all.
+    if not leads['enabled']:
+        return 0
+
     people = list(audience_for(meeting).distinct())
     if not people:
         return 0
@@ -64,7 +96,7 @@ def generate_for_meeting(meeting, now=None):
     written = 0
 
     if meeting.scheduled_start > now:
-        when = due_at(meeting.scheduled_start, MEETING_LEAD_MINUTES)
+        when = due_at(meeting.scheduled_start, leads['meeting'])
         for person in people:
             _, created = Reminder.objects.update_or_create(
                 user=person, meeting=meeting, session=None,
@@ -76,7 +108,7 @@ def generate_for_meeting(meeting, now=None):
     for session in meeting.sessions.all():
         if session.starts_at <= now or session.status != session.Status.SCHEDULED:
             continue
-        when = due_at(session.starts_at, SESSION_LEAD_MINUTES)
+        when = due_at(session.starts_at, leads['session'])
         for person in people:
             _, created = Reminder.objects.update_or_create(
                 user=person, meeting=meeting, session=session,
