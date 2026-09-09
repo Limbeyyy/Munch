@@ -40,6 +40,8 @@ import {
   MeetingPhoto,
   PhotoFolder,
   PhotoPage,
+  ConclusionAction,
+  ConclusionPage,
   SchedulingPrefs,
   SheetExport,
   UpgradeRequestRow,
@@ -278,8 +280,13 @@ class ApiClient {
     return response.data;
   }
 
-  async saveSessionSummary(sessionId: string, body: string): Promise<SessionSummary> {
-    const response = await this.client.put(`/sessions/${sessionId}/summary/`, { body });
+  async saveSessionSummary(
+    sessionId: string, body: string, actions?: ConclusionAction[]
+  ): Promise<SessionSummary> {
+    const response = await this.client.put(`/sessions/${sessionId}/summary/`, {
+      body,
+      ...(actions ? { actions } : {}),
+    });
     return response.data;
   }
 
@@ -448,6 +455,59 @@ class ApiClient {
 
   async setSessionGap(minutes: number): Promise<SchedulingPrefs> {
     return this.setSchedulingPrefs({ session_gap_minutes: minutes });
+  }
+
+  /** What each session settled, and what this reader is owed for. */
+  async getConclusions(): Promise<ConclusionPage> {
+    const response = await this.client.get('/conclusions/');
+    return response.data;
+  }
+
+  /**
+   * Build a whole programme from a filled-in spreadsheet.
+   *
+   * ``dryRun`` reads it and says what it would make without making it, so
+   * the organizer sees the day before committing to it.
+   */
+  async importProgrammeSheet(
+    file: File, dryRun = false
+  ): Promise<{
+    dry_run?: boolean;
+    created?: EventProgramme[];
+    programmes: {
+      title: string;
+      event_date: string;
+      venue: string;
+      meetings: {
+        title: string;
+        scheduled_start: string;
+        sessions: {
+          title: string; starts_at: string; duration_minutes: number;
+          speaker_name: string; hall: string;
+        }[];
+      }[];
+    }[];
+  }> {
+    const body = new FormData();
+    body.append('file', file);
+    if (dryRun) body.append('dry_run', 'true');
+    const response = await this.client.post('/events/import_sheet/', body, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  }
+
+  /** Where the blank template lives, for a plain download link. */
+  programmeTemplateUrl(): string {
+    return `${this.client.defaults.baseURL}/events/import_template/`;
+  }
+
+  /** The blank template, fetched with this person's sign-in. */
+  async downloadProgrammeTemplate(): Promise<Blob> {
+    const response = await this.client.get('/events/import_template/', {
+      responseType: 'blob',
+    });
+    return response.data;
   }
 
   /** The photographs of a meeting, by folder. */
