@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import { ShareMeetingDialog } from '../components/ShareMeetingDialog';
 import { ResourceControls } from '../organizer/ResourceVisibility';
 import { PhotoUploads } from '../organizer/Photos';
+import { OrganizerProvider } from '../organizer/i18n';
 import { LiveTranscriptStage } from '../components/LiveTranscriptStage';
 
 
@@ -37,7 +38,7 @@ const formatElapsed = (totalSeconds: number): string => {
     : `${pad(minutes)}:${pad(seconds)}`;
 };
 
-export const MeetingRoomPage: React.FC = () => {
+const MeetingRoomInner: React.FC = () => {
   const { meetingCode } = useParams<{ meetingCode: string }>();
   const navigate = useNavigate();
   const { user } = useAuthStore();
@@ -1468,3 +1469,17 @@ export const MeetingRoomPage: React.FC = () => {
     </div>
   );
 };
+
+/**
+ * The room, with the reader's language and accessibility settings.
+ *
+ * It shares components with the dashboards - the resource controls, the
+ * photo section - and those speak both languages, which means they need
+ * the same context every other screen gives them. Without it they throw
+ * on first render, and the whole room goes down with them.
+ */
+export const MeetingRoomPage: React.FC = () => (
+  <OrganizerProvider>
+    <MeetingRoomInner />
+  </OrganizerProvider>
+);
