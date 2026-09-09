@@ -14,6 +14,7 @@ import { DashboardView } from '../attendee/views/DashboardView';
 import { SessionsView } from '../attendee/views/SessionsView';
 import { SpeakersView } from '../attendee/views/SpeakersView';
 import { HubView } from '../attendee/views/HubView';
+import { ConclusionsView } from '../attendee/views/ConclusionsView';
 import { ProfileView } from '../organizer/ProfileView';
 import { SubscriptionView } from '../organizer/SubscriptionView';
 import { RemindersView } from '../organizer/RemindersView';
@@ -274,6 +275,10 @@ const AttendeeInner: React.FC = () => {
             )}
 
             {view === 'connect' && <SpeakersView items={items} onOpen={setOpen} />}
+
+            {view === 'conclusions' && (
+              <ConclusionsView myName={nameOf(user)} myEmail={user?.email ?? ''} />
+            )}
 
             {view === 'reminders' && <RemindersView page={nudges.page} loading={nudges.loading} onRead={nudges.markRead} />}
             {view === 'profile' && <ProfileView onNavigate={setView} />}

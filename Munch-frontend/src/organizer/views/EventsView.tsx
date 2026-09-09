@@ -6,6 +6,7 @@ import { EventMeeting, EventProgramme, MeetingDraft, Session } from '../../types
 import { ShareMeetingDialog } from '../../components/ShareMeetingDialog';
 import { confirmSpacing } from '../confirmSpacing';
 import { useSessionGap } from '../sessionGap';
+import { ImportProgramme } from '../ImportProgramme';
 import { errorText } from '../errors';
 import { useOrganizer } from '../i18n';
 import { Btn, Card, Chip, Empty, Head, Panel } from '../ui';
@@ -44,6 +45,7 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
   const [busy, setBusy] = useState<string | null>(null);
 
   const [newEvent, setNewEvent] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [addMeetingTo, setAddMeetingTo] = useState<EventProgramme | null>(null);
   const [inviteTo, setInviteTo] = useState<EventProgramme | null>(null);
   const [sharing, setSharing] = useState<EventMeeting | null>(null);
@@ -186,10 +188,25 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
           ne: 'एउटा कार्यक्रमभित्र धेरै बैठक, र हरेक बैठकभित्र त्यसको सत्रहरू।',
           en: 'An event holds meetings, and each meeting holds the sessions that make it up.',
         }}
-        actions={<Btn tone="amber" onClick={() => setNewEvent(true)}>
-          {t({ ne: '+ नयाँ कार्यक्रम', en: '+ New event' })}
-        </Btn>}
+        actions={
+          <>
+            <Btn onClick={() => setImporting((v) => !v)}>
+              {t({ ne: 'पानाबाट ल्याउने', en: 'Import from a sheet' })}
+            </Btn>
+            <Btn tone="amber" onClick={() => setNewEvent(true)}>
+              {t({ ne: '+ नयाँ कार्यक्रम', en: '+ New event' })}
+            </Btn>
+          </>
+        }
       />
+
+      {importing && (
+        <div className="mb-4">
+          <ImportProgramme
+            onImported={async () => { setImporting(false); await load(); onChanged(); }}
+          />
+        </div>
+      )}
 
       {loading ? (
         <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>

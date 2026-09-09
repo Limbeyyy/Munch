@@ -6,6 +6,8 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -90,6 +92,121 @@ class EventViewSet(viewsets.ModelViewSet):
         logger.info(f"Created event {event.id} with {event.meetings.count()} meetings")
         return Response(
             EventSerializer(event, context=self.get_serializer_context()).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=False, methods=['get'], url_path='import_template')
+    def import_template(self, request):
+        """The blank sheet to fill in, with its notes and an example."""
+        from django.http import HttpResponse
+
+        from src.apps.meetings.importing import template_csv
+
+        response = HttpResponse(template_csv(), content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = (
+            'attachment; filename="manch-programme-template.csv"'
+        )
+        return response
+
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path='import_sheet',
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def import_sheet(self, request):
+        """Build a programme from a filled-in template.
+
+        The rows become the same payload the form sends and go through the
+        same serializer, so a sheet cannot make a programme the form would
+        have refused - the spacing, the speaker details and the plan's
+        limits are all still enforced, once, where they live.
+
+        ``dry_run`` reads the sheet and says what it would make without
+        making it, which is what the screen offers before committing.
+        """
+        from django.db import transaction
+
+        from src.apps.meetings.event_serializers import EventCreateSerializer
+        from src.apps.meetings.importing import ImportProblem, read_sheet
+
+        sheet = request.FILES.get('file')
+        if sheet is None:
+            return Response(
+                {'error': 'No sheet provided', 'code': 'no_file'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if sheet.size > 2 * 1024 * 1024:
+            return Response(
+                {'error': 'That sheet is larger than 2MB.', 'code': 'too_large'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            programmes = read_sheet(sheet.read())
+        except ImportProblem as problem:
+            return Response(problem.as_json(), status=status.HTTP_400_BAD_REQUEST)
+
+        dry_run = str(request.data.get('dry_run', '')).lower() in ('1', 'true', 'yes')
+
+        reading = [
+            {
+                'title': event['title'],
+                'event_date': event['event_date'],
+                'venue': event['venue'],
+                'meetings': [
+                    {
+                        'title': meeting['title'],
+                        'scheduled_start': meeting['scheduled_start'],
+                        'sessions': [
+                            {
+                                'title': session['title'],
+                                'starts_at': session['starts_at'],
+                                'duration_minutes': session['duration_minutes'],
+                                'speaker_name': session['speaker_name'],
+                                'hall': session['hall'],
+                            }
+                            for session in meeting['sessions']
+                        ],
+                    }
+                    for meeting in event['meetings']
+                ],
+            }
+            for event in programmes
+        ]
+
+        if dry_run:
+            return Response({'dry_run': True, 'programmes': reading})
+
+        made = []
+        try:
+            # All of it or none: half a programme is worse than a refusal,
+            # because the half that landed has to be found and undone by
+            # hand.
+            with transaction.atomic():
+                for event in programmes:
+                    serializer = EventCreateSerializer(
+                        data=event, context={'request': request}
+                    )
+                    serializer.is_valid(raise_exception=True)
+                    made.append(serializer.save())
+        except ValidationError as refusal:
+            return Response(
+                {
+                    'error': 'The sheet was read, but the programme was refused.',
+                    'code': 'refused',
+                    'detail': refusal.detail,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from src.apps.meetings.event_serializers import EventSerializer
+
+        return Response(
+            {
+                'created': EventSerializer(made, many=True).data,
+                'programmes': reading,
+            },
             status=status.HTTP_201_CREATED,
         )
 
@@ -764,6 +881,9 @@ class SessionViewSet(viewsets.ModelViewSet):
             return denied
 
         body = request.data.get('body')
+        if body is None and 'actions' in request.data and existing is not None:
+            # Only the action list is being changed; the prose stays.
+            body = existing.body
         if body is None:
             return Response(
                 {'error': 'Send the summary under "body".'},
@@ -772,6 +892,18 @@ class SessionViewSet(viewsets.ModelViewSet):
 
         summary, _ = SessionSummary.objects.get_or_create(session=session)
         summary.body = body
+
+        if 'actions' in request.data:
+            from src.apps.meetings.conclusions import tidy_actions
+
+            try:
+                summary.actions = tidy_actions(request.data['actions'])
+            except ValueError as wrong:
+                return Response(
+                    {'error': str(wrong), 'code': 'bad_actions'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         summary.updated_by = request.user
         # Editing a published summary sends it back for approval: what is
         # public should always be something somebody signed off on.

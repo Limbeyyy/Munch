@@ -93,3 +93,41 @@ html[data-a11y-calm] {
     animation-iteration-count: 1 !important;
   }
 }
+
+/*
+ * Printing is how a page here becomes a PDF.
+ *
+ * Every browser can save one, which gives the reader a real file to keep
+ * without this project drawing the same document a second time. What has
+ * to go is the furniture: rails, bottom bars and buttons mean nothing on
+ * paper, and a dark panel wastes a cartridge.
+ */
+@media print {
+  aside,
+  nav,
+  header,
+  .manch-no-print {
+    display: none !important;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  /* Panels are the content: keep their edges, lose their shadows, and do
+     not let one break across a page. */
+  main div,
+  main section,
+  main article {
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+
+  a[href]::after {
+    content: '';
+  }
+}

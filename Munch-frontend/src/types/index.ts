@@ -688,6 +688,8 @@ export interface SessionSummary {
   session: string;
   session_title: string;
   body: string;
+  /** What somebody has to go and do, out of this session. */
+  actions: ConclusionAction[];
   status: 'needs_approval' | 'published';
   is_published: boolean;
   /** False for the draft offered before anything has been written. */
@@ -750,6 +752,37 @@ export interface Reminder {
   lead_minutes: number;
   /** Puts it in a Google Calendar. Needs no tokens or consent screen. */
   calendar_url: string;
+}
+
+/** Something somebody has to go and do, out of a session. */
+export interface ConclusionAction {
+  task: string;
+  owner: string;
+  due: string;
+  /** Present on the reader's own list, to say where it came from. */
+  session_title?: string;
+}
+
+/** What one session settled. */
+export interface Conclusion {
+  session_id: string;
+  session_title: string;
+  session_starts_at: string;
+  speaker_name: string;
+  hall: string;
+  meeting_id: string;
+  meeting_title: string;
+  event_id: string;
+  event_title: string;
+  findings: string[];
+  actions: ConclusionAction[];
+  published_at: string | null;
+}
+
+export interface ConclusionPage {
+  conclusions: Conclusion[];
+  /** The actions with this reader's name against them. */
+  mine: ConclusionAction[];
 }
 
 /** How this host spaces their day, and how much warning it gives. */

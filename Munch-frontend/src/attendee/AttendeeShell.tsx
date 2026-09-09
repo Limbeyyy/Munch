@@ -24,6 +24,10 @@ export const ATTENDEE_NAV: AttendeeNav[] = [
   { id: 'connect', label: { ne: 'वक्ता', en: 'Speakers' }, short: { ne: 'वक्ता', en: 'Speakers' },
     icon: 'M17 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9.5 7a3.5 3.5 0 11-7 0 3.5 3.5 0 017 0zM22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75' },
 
+  { id: 'conclusions', label: { ne: 'मुख्य निष्कर्ष', en: 'Conclusions' },
+    short: { ne: 'निष्कर्ष', en: 'Findings' },
+    icon: 'M9 11l3 3 8-8M20 12v7a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9' },
+
   { id: 'reminders', account: true,
     label: { ne: 'सूचना र सम्झना', en: 'Notifications' }, short: { ne: 'सूचना', en: 'Alerts' },
     icon: 'M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0' },

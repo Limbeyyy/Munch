@@ -201,6 +201,7 @@ from src.apps.meetings import guest_views
 from src.apps.meetings import hub_views
 from src.apps.artifacts import photo_views
 from src.apps.drive import export_views
+from src.apps.meetings import conclusion_views
 from src.apps.meetings import reminder_views
 from src.apps.transcription import ingest as transcription_ingest
 
@@ -251,6 +252,9 @@ urlpatterns = [
     # A report goes to the reader's own Google Sheets rather than to their
     # Downloads folder.
     path('exports/sheet/', export_views.export_to_sheet, name='export-to-sheet'),
+
+    # What the day came to, for the people who sat through it.
+    path('conclusions/', conclusion_views.my_conclusions, name='my-conclusions'),
 
     path('reminders/', reminder_views.my_reminders, name='my-reminders'),
     path('reminders/read/', reminder_views.mark_reminders_read,

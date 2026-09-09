@@ -768,6 +768,13 @@ class SessionSummary(models.Model):
     )
 
     body = models.TextField(blank=True)
+
+    #: What somebody has to go and do, as ``{task, owner, due}`` rows.
+    #: A decision with nobody's name against it is a note; the whole value
+    #: of the list is that each line says who and by when, which is why
+    #: they are held apart from the prose rather than buried in it.
+    actions = models.JSONField(default=list, blank=True)
+
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.NEEDS_APPROVAL
     )

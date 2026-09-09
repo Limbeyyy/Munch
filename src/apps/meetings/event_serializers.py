@@ -371,8 +371,8 @@ class SessionSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = SessionSummary
         fields = [
-            'session', 'session_title', 'body', 'status', 'is_published',
-            'saved', 'published_at', 'updated_at',
+            'session', 'session_title', 'body', 'actions', 'status',
+            'is_published', 'saved', 'published_at', 'updated_at',
         ]
         read_only_fields = fields
 
