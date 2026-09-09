@@ -420,8 +420,24 @@ export interface AttendanceEntry {
   was_invited: boolean;
 }
 
+export interface SessionTurnout {
+  id: string;
+  title: string;
+  starts_at: string;
+  status: string;
+  attended_count: number;
+}
+
 export interface AttendanceReport {
   expected_from_invites: number;
+  /** Invitations, plus the guests and anyone else who turned up. */
+  expected_total: number;
+  /** What is left of that total once the people who came are taken off. */
+  absent_count: number;
+  walked_in_uninvited: number;
+  /** Every seat filled across the running order, session by session. */
+  session_attendance_total: number;
+  sessions: SessionTurnout[];
   attended_count: number;
   active_count: number;
   inactive_count: number;

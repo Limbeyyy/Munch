@@ -522,15 +522,38 @@ class MeetingViewSet(viewsets.ModelViewSet):
         Guests have no participant row, so they are projected into the same
         shape with ``is_guest`` set; otherwise the headcount would not match
         what people can actually see in the room.
+
+        ``?everyone=1`` asks a different question: not who is here now but
+        who was here at all. The room wants the first - a list of people who
+        have left is not a room. A team page wants the second, and asking
+        the room's question there is why a meeting that had finished showed
+        no team at all: ending one empties it, so everybody was inactive
+        and nobody came back.
         """
         meeting = self.get_object()
 
+        everyone = str(request.query_params.get('everyone', '')).lower() in (
+            '1', 'true', 'yes'
+        )
+
+        roster = meeting.participants.select_related('user')
+        if not everyone:
+            roster = roster.filter(is_active=True)
+
         people = [
             {**ParticipantSerializer(p).data, 'is_guest': False}
-            for p in meeting.participants.filter(is_active=True).select_related('user')
+            for p in roster
         ]
 
-        for g in meeting.guests.filter(status=GuestAttendee.Status.ADMITTED):
+        guests = meeting.guests.filter(status=GuestAttendee.Status.ADMITTED)
+        if everyone:
+            # Somebody the host admitted was in the room, whether or not
+            # they are still in it.
+            guests = meeting.guests.filter(
+                status__in=[GuestAttendee.Status.ADMITTED, GuestAttendee.Status.LEFT]
+            )
+
+        for g in guests:
             people.append({
                 'id': str(g.id),
                 'user': {
@@ -540,7 +563,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
                     'last_name': '',
                 },
                 'role': 'guest',
-                'is_active': True,
+                'is_active': g.status == GuestAttendee.Status.ADMITTED,
                 'is_muted': False,
                 'is_video_on': False,
                 'is_screen_sharing': False,
@@ -746,14 +769,49 @@ class MeetingViewSet(viewsets.ModelViewSet):
             for i in invites if i.joined_at is None
         ]
 
+        # The roll is everybody the meeting had: those invited, the guests
+        # the host admitted, and anybody who walked in with the code
+        # without either. A guest was never invited, so counting only
+        # invitations makes the turnout look worse than it was - and
+        # subtracting attendance from that number can go negative.
+        walked_in = sum(1 for a in attended_users if not a['was_invited'])
+        expected_total = len(invites) + len(attended_guests) + walked_in
+
+        # Session by session, since a meeting's own headcount says nothing
+        # about which of its talks people actually sat through.
+        from src.apps.meetings.models import SessionAttendance
+
+        per_session = []
+        gross = 0
+        for session in meeting.sessions.order_by('starts_at'):
+            seats = SessionAttendance.objects.filter(session=session).count()
+            gross += seats
+            per_session.append({
+                'id': str(session.id),
+                'title': session.title,
+                'starts_at': session.starts_at,
+                'status': session.status,
+                'attended_count': seats,
+            })
+
         return Response({
             'expected_from_invites': len(invites),
+            # What the meeting is measured against: invitations plus the
+            # people who came without one.
+            'expected_total': expected_total,
             'attended_count': len(attended),
+            'absent_count': max(0, expected_total - len(attended)),
             'active_count': sum(1 for a in attended if a['is_active']),
             'inactive_count': sum(1 for a in attended if not a['is_active']),
             'invited_who_attended': sum(1 for i in invites if i.joined_at),
             'invited_who_did_not': len(no_show),
             'guests_admitted': len(attended_guests),
+            'walked_in_uninvited': walked_in,
+            # Every seat filled across the running order: two sessions with
+            # four and two people is six, not the six-or-fewer distinct
+            # people who sat in them.
+            'session_attendance_total': gross,
+            'sessions': per_session,
             'attended': attended,
             'did_not_attend': no_show,
         })

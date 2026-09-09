@@ -123,3 +123,58 @@ export const MEETING_STATE_TONE: Record<
   finished: 'ok',
   'never-started': 'draft',
 };
+
+/**
+ * How long before a session begins the room opens.
+ *
+ * The same quarter of an hour the server keeps, stated here so the buttons
+ * on a screen and the rules behind them cannot disagree. Coming early is
+ * refused, coming late never is.
+ */
+export const ENTRY_WINDOW_MINUTES = 15;
+
+const MS = 60000;
+
+/** What a screen may offer for a session, and when. */
+export interface Doorway {
+  /** When the room opens: a quarter of an hour before it starts. */
+  opensAt: number;
+  /** Whether anybody may go in yet. */
+  canEnter: boolean;
+  /** Whether the host may declare it begun - not before its own hour. */
+  canStart: boolean;
+  /** Minutes until it opens, or 0 once it has. */
+  untilOpen: number;
+  /** Minutes until it starts, or 0 once it has. */
+  untilStart: number;
+}
+
+export const doorway = (
+  startsAt: string | number | null | undefined,
+  now: number = Date.now()
+): Doorway => {
+  const starts = startsAt ? +new Date(startsAt) : NaN;
+  if (!Number.isFinite(starts)) {
+    return { opensAt: NaN, canEnter: false, canStart: false, untilOpen: 0, untilStart: 0 };
+  }
+
+  const opensAt = starts - ENTRY_WINDOW_MINUTES * MS;
+  return {
+    opensAt,
+    canEnter: now >= opensAt,
+    canStart: now >= starts,
+    untilOpen: Math.max(0, Math.ceil((opensAt - now) / MS)),
+    untilStart: Math.max(0, Math.ceil((starts - now) / MS)),
+  };
+};
+
+/** "in 9 minutes", "in 3 hours", "in 2 days" - how far off something is. */
+export const howFarOff = (
+  startsAt: string | number,
+  now: number = Date.now()
+): { amount: number; unit: 'minute' | 'hour' | 'day' } => {
+  const minutes = Math.max(0, Math.ceil((+new Date(startsAt) - now) / MS));
+  if (minutes < 60) return { amount: minutes, unit: 'minute' };
+  if (minutes < 60 * 24) return { amount: Math.round(minutes / 60), unit: 'hour' };
+  return { amount: Math.round(minutes / (60 * 24)), unit: 'day' };
+};

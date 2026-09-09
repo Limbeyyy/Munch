@@ -2,7 +2,7 @@ import React from 'react';
 import { EventMeeting, EventProgramme } from '../../types';
 import { useOrganizer } from '../../organizer/i18n';
 import { Btn, Card } from '../../organizer/ui';
-import { sessionState } from '../../organizer/sessionState';
+import { doorway, howFarOff, sessionState } from '../../organizer/sessionState';
 import { Spine, SpineItem, clock } from '../Spine';
 
 interface Props {
@@ -17,6 +17,94 @@ interface Props {
   elapsed: number;
 }
 
+/**
+ * The next session, whenever it is.
+ *
+ * Shown the same way whether it is eight hours off or eight minutes: what
+ * changes with the clock is the door, not whether people are told what is
+ * coming. Going in is refused until a quarter of an hour before, and the
+ * button says so rather than failing when pressed.
+ */
+const UpNext: React.FC<{
+  item: SpineItem;
+  onOpen: (item: SpineItem) => void;
+  onJoinRoom: (meeting: EventMeeting) => void;
+}> = ({ item, onOpen, onJoinRoom }) => {
+  const { t, num } = useOrganizer();
+  const [now, setNow] = React.useState(Date.now());
+
+  React.useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 20000);
+    return () => clearInterval(id);
+  }, []);
+
+  const door = doorway(item.session.starts_at, now);
+  const { amount, unit } = howFarOff(item.session.starts_at, now);
+  const away =
+    unit === 'minute'
+      ? t({ ne: `${num(amount)} मिनेटमा`, en: `in ${amount} min` })
+      : unit === 'hour'
+      ? t({ ne: `${num(amount)} घण्टामा`, en: `in ${amount} h` })
+      : t({ ne: `${num(amount)} दिनमा`, en: `in ${amount} d` });
+  const opens = new Date(door.opensAt).toLocaleTimeString([], {
+    hour: '2-digit', minute: '2-digit',
+  });
+
+  return (
+    <div
+      className="bg-navy-800 text-white rounded-[22px] px-6 py-5"
+      style={{ backgroundImage: 'radial-gradient(circle at 88% -20%, rgba(240,162,43,.22), transparent 55%)' }}
+    >
+      <div className="flex items-center gap-2.5 flex-wrap">
+        <span className="text-[12.5px] text-amber font-semibold">
+          {t({ ne: 'अर्को सत्र', en: 'Up next' })}
+        </span>
+        <span className="text-[12px] text-[#C9DAF1] bg-white/[.14] rounded-full px-2.5 leading-[20px]">
+          {away}
+        </span>
+        <span className="ms-auto text-[12.5px] text-[#AFC6E6]">
+          {item.meeting.title} · {clock(item.session.starts_at)}–{clock(item.session.ends_at)}
+        </span>
+      </div>
+
+      <h2 className="text-[23px] font-semibold mt-3 mb-1.5 tracking-tight">
+        {item.session.title}
+      </h2>
+      <p className="text-sm text-[#C9DAF1]">
+        {[
+          item.session.speaker_name || t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' }),
+          item.session.hall,
+        ].filter(Boolean).join(' · ')}
+      </p>
+
+      <div className="flex gap-2.5 mt-4 flex-wrap items-center">
+        <button
+          onClick={() => onJoinRoom(item.meeting)}
+          disabled={!door.canEnter}
+          className="px-3.5 py-2 rounded-[10px] bg-amber text-[#20160A] text-[13.5px] font-semibold
+            disabled:opacity-45 disabled:cursor-not-allowed"
+        >
+          {t({ ne: 'कोठामा जानुहोस्', en: 'Enter the room' })}
+        </button>
+        <button
+          onClick={() => onOpen(item)}
+          className="px-3.5 py-2 rounded-[10px] border border-white/35 text-[13.5px] hover:bg-white/[.12]"
+        >
+          {t({ ne: 'विवरण हेर्नुहोस्', en: 'See the details' })}
+        </button>
+        {!door.canEnter && (
+          <span className="text-[12.5px] text-[#AFC6E6]">
+            {t({
+              ne: `कोठा ${opens} बजे खुल्छ`,
+              en: `The room opens at ${opens}`,
+            })}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+};
+
 /** What is happening now, what you have missed, and what is coming. */
 export const DashboardView: React.FC<Props> = ({
   event, items, live, attendedIds, onOpen, onNavigate, onJoinRoom, elapsed,
@@ -25,9 +113,17 @@ export const DashboardView: React.FC<Props> = ({
 
   // Attendance can only be judged on sessions that actually ran.
   const done = items.filter((i) => sessionState(i.session, Date.now(), i.meeting) === 'finished');
-  const upcoming = items
+  const ahead = items
     .filter((i) => sessionState(i.session, Date.now(), i.meeting) === 'upcoming')
-    .slice(0, 3);
+    .sort((a, b) => +new Date(a.session.starts_at) - +new Date(b.session.starts_at));
+  const upcoming = ahead.slice(0, 3);
+  /**
+   * What the panel shows when nothing is on stage: the next session,
+   * however far off it is. An empty panel saying "nothing is running"
+   * answers a question nobody asked - what people want to know is what is
+   * next and whether they can go in yet.
+   */
+  const next = ahead[0] ?? null;
   const attendedCount = done.filter((i) => attendedIds.has(i.session.id)).length;
   const missed = done.filter((i) => !attendedIds.has(i.session.id));
 
@@ -97,12 +193,14 @@ export const DashboardView: React.FC<Props> = ({
               </button>
             </div>
           </div>
+        ) : next ? (
+          <UpNext item={next} onOpen={onOpen} onJoinRoom={onJoinRoom} />
         ) : (
           <Card className="text-center py-8">
             <p className="text-[#6E7C8E]">
               {items.length === 0
                 ? t({ ne: 'तपाईंको कुनै कार्यक्रम छैन।', en: 'You are not on any programme yet.' })
-                : t({ ne: 'अहिले कुनै सत्र चलिरहेको छैन।', en: 'No session is running right now.' })}
+                : t({ ne: 'तपाईंको कार्यक्रममा अब कुनै सत्र बाँकी छैन।', en: 'Nothing left on your programme.' })}
             </p>
           </Card>
         )}

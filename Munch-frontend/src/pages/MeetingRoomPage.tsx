@@ -843,10 +843,10 @@ export const MeetingRoomPage: React.FC = () => {
               <div className="p-6 overflow-y-auto space-y-6">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                   {[
-                    ['Invited', attendance.expected_from_invites],
+                    ['On the roll', attendance.expected_total],
                     ['Attended', attendance.attended_count],
                     ['In meeting now', attendance.active_count],
-                    ['No-shows', attendance.invited_who_did_not],
+                    ['Absent', attendance.absent_count],
                   ].map(([label, value]) => (
                     <div key={label as string} className="bg-gray-50 rounded-lg p-3">
                       <p className="text-2xl font-bold">{value as number}</p>

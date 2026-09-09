@@ -39,7 +39,7 @@ export const ReportsView: React.FC<Props> = ({ meetings }) => {
 
   const totals = useMemo(() => {
     const list = Object.values(reports);
-    const invited = list.reduce((sum, r) => sum + r.expected_from_invites, 0);
+    const invited = list.reduce((sum, r) => sum + r.expected_total, 0);
     const attended = list.reduce((sum, r) => sum + r.attended_count, 0);
     const guests = list.reduce((sum, r) => sum + r.guests_admitted, 0);
     const lines = Object.values(segmentCounts).reduce((a, b) => a + b, 0);
@@ -102,7 +102,7 @@ export const ReportsView: React.FC<Props> = ({ meetings }) => {
             ) : (
               meetings.map((m) => {
                 const r = reports[m.id];
-                const expected = r?.expected_from_invites || r?.attended_count || 0;
+                const expected = r?.expected_total || r?.attended_count || 0;
                 const pct = expected ? Math.round(((r?.attended_count ?? 0) / expected) * 100) : 0;
                 return <BarRow key={m.id} label={m.title} pct={pct} right={num(r?.attended_count ?? 0)} />;
               })

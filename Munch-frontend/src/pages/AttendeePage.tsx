@@ -19,6 +19,7 @@ import { ProfileView } from '../organizer/ProfileView';
 import { SubscriptionView } from '../organizer/SubscriptionView';
 import { RemindersView } from '../organizer/RemindersView';
 import { useNudges } from '../organizer/nudges';
+import { useMeetingPulse } from '../organizer/meetingPulse';
 
 const dayKey = (iso: string) => new Date(iso).toISOString().slice(0, 10);
 
@@ -90,6 +91,10 @@ const AttendeeInner: React.FC = () => {
   }, [event]);
 
   const live = items.find((i) => i.session.status === 'live') ?? null;
+
+  // The same courtesy the room gets: when the host ends a session, this
+  // screen stops saying it is running without waiting for the next poll.
+  useMeetingPulse(live?.meeting.meeting_code, load);
 
   // Which sessions this person was recorded at. Read per finished session,
   // because attendance is only settled once a session closes.

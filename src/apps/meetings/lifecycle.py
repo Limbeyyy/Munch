@@ -154,11 +154,18 @@ def broadcast_meeting_ended(meeting, reason='host_ended'):
         )
 
 
-def close_meeting_if_spent(meeting, now=None):
-    """Close a meeting once nothing in it is still running and its time is up.
+def close_meeting_if_spent(meeting, now=None, wait_for_window=True):
+    """Close a meeting once nothing in it is still running.
 
     A meeting is only ever ended if it was started: one nobody opened keeps
     whatever state it had, so it can still read as never started.
+
+    ``wait_for_window`` is what separates the clock running out from the
+    host saying so. Left to itself, a meeting whose last session has
+    finished early stays open until its own window closes, because the host
+    may yet add something. When the host ends the last session by hand
+    there is nothing to wait for: they have said the meeting is over, and
+    everybody should be told at once rather than at half past.
     """
     now = now or timezone.now()
     if meeting.status != Meeting.Status.ACTIVE:
@@ -167,7 +174,7 @@ def close_meeting_if_spent(meeting, now=None):
     # happens to run out. A session still to come is still to come.
     if has_more_to_run(meeting, now):
         return False
-    if meeting.scheduled_end and now < meeting.scheduled_end:
+    if wait_for_window and meeting.scheduled_end and now < meeting.scheduled_end:
         return False
 
     meeting.status = Meeting.Status.ENDED
@@ -177,9 +184,14 @@ def close_meeting_if_spent(meeting, now=None):
     # The books were closed here but the room was not, so whoever was still
     # in it stayed there - counted as present in a meeting that had ended.
     clear_room(meeting, now)
-    broadcast_meeting_ended(meeting, reason='time_elapsed')
+    broadcast_meeting_ended(
+        meeting, reason='time_elapsed' if wait_for_window else 'host_ended'
+    )
 
-    logger.info(f"Meeting {meeting.meeting_code} closed: its time ran out")
+    logger.info(
+        f"Meeting {meeting.meeting_code} closed: "
+        + ('its time ran out' if wait_for_window else 'the host ended its last session')
+    )
     return True
 
 
