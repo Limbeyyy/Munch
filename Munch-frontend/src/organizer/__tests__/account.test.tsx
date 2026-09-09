@@ -393,10 +393,12 @@ describe('both portals can reach the new pages', () => {
     expect(ids).toEqual(expect.arrayContaining(['profile', 'subscription', 'reminders']));
   });
 
-  it('keeps the phone bar short by leaving the quiet pages to the rail', () => {
-    const onPhone = ATTENDEE_NAV.filter((n) => !n.railOnly).map((n) => n.id);
-    expect(onPhone).toContain('reminders');
-    expect(onPhone).not.toContain('subscription');
-    expect(onPhone.length).toBeLessThanOrEqual(6);
+  it('leaves nothing unreachable on a phone', () => {
+    // The rail is hidden at phone width, so anything kept out of the
+    // bottom strip could not be opened at all. The strip scrolls instead.
+    const ids = ATTENDEE_NAV.map((n) => n.id);
+    expect(ids).toContain('reminders');
+    expect(ids).toContain('subscription');
+    expect(ids).toContain('profile');
   });
 });

@@ -26,6 +26,7 @@ import { SubscriptionView } from '../organizer/SubscriptionView';
 import { RemindersView } from '../organizer/RemindersView';
 import { useNudges } from '../organizer/nudges';
 import { useMeetingPulse } from '../organizer/meetingPulse';
+import { unseenSince, useSeen } from '../organizer/seen';
 import { ShareMeetingDialog } from '../components/ShareMeetingDialog';
 
 const OrganizerInner: React.FC = () => {
@@ -36,7 +37,8 @@ const OrganizerInner: React.FC = () => {
   const [view, setView] = useState('events');
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
-  const [pendingCount, setPendingCount] = useState(0);
+  /** Everything still awaiting a decision, with when each arrived. */
+  const [queue, setQueue] = useState<{ id: string; created_at: string }[]>([]);
 
   const [a11yOpen, setA11yOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -68,7 +70,7 @@ const OrganizerInner: React.FC = () => {
   // The rail carries counts, so the queue is visible from any screen.
   useEffect(() => {
     const running = meetings.filter((m) => m.status === 'active' || m.status === 'scheduled');
-    if (running.length === 0) { setPendingCount(0); return; }
+    if (running.length === 0) { setQueue([]); return; }
 
     let cancelled = false;
     const count = async () => {
@@ -76,8 +78,8 @@ const OrganizerInner: React.FC = () => {
         running.map((m) => apiClient.getPendingMessages(m.id))
       );
       if (cancelled) return;
-      setPendingCount(
-        results.reduce((sum, r) => sum + (r.status === 'fulfilled' ? r.value.length : 0), 0)
+      setQueue(
+        results.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])) as any
       );
     };
     count();
@@ -85,16 +87,29 @@ const OrganizerInner: React.FC = () => {
     return () => { cancelled = true; clearInterval(id); };
   }, [meetings]);
 
+  // A badge says something has arrived that has not been looked at. Being
+  // in the section is looking at it, so the count goes while the queue
+  // itself stays exactly as it was.
+  const seen = useSeen(view);
+
+  useEffect(() => {
+    // Reminders carry their own read mark, on the account rather than in
+    // this browser, so opening the page puts the badge down everywhere.
+    if (view === 'reminders' && nudges.unread > 0) nudges.markRead();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, nudges.unread]);
+
   const badges = useMemo(() => {
     const out: Record<string, { text: string; hot?: boolean }> = {};
     if (meetings.some((m) => m.status === 'active')) {
       out.live = { text: t({ ne: 'लाइभ', en: 'Live' }), hot: true };
     }
-    if (pendingCount > 0) out.moderation = { text: num(pendingCount), hot: true };
+    const news = unseenSince(queue, seen.moderation ?? 0, (m) => m.created_at);
+    if (news > 0) out.moderation = { text: num(news), hot: true };
     if (meetings.length > 0) out.agenda = { text: num(meetings.length) };
     if (nudges.unread > 0) out.reminders = { text: num(nudges.unread) };
     return out;
-  }, [meetings, pendingCount, nudges.unread, t, num]);
+  }, [meetings, queue, nudges.unread, seen, t, num]);
 
   const running = meetings.find((m) => m.status === 'active') ?? null;
   const activeTitle = running?.title;

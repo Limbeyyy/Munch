@@ -8,8 +8,6 @@ export interface AttendeeNav {
   short: Pair;
   icon: string;
   count?: string;
-  /** Kept off the phone's bottom bar, which only has room for a handful. */
-  railOnly?: boolean;
   /** Sits below a divider: the account rather than the programme. */
   account?: boolean;
 }
@@ -29,16 +27,16 @@ export const ATTENDEE_NAV: AttendeeNav[] = [
   { id: 'reminders', account: true,
     label: { ne: 'सूचना र सम्झना', en: 'Notifications' }, short: { ne: 'सूचना', en: 'Alerts' },
     icon: 'M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0' },
-  { id: 'profile', account: true, railOnly: true,
+  { id: 'profile', account: true,
     label: { ne: 'प्रोफाइल', en: 'Profile' }, short: { ne: 'प्रोफाइल', en: 'Profile' },
     icon: 'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z' },
-  { id: 'subscription', account: true, railOnly: true,
+  { id: 'subscription', account: true,
     label: { ne: 'योजना', en: 'Subscription' }, short: { ne: 'योजना', en: 'Plan' },
     icon: 'M2 7h20v12a2 2 0 01-2 2H4a2 2 0 01-2-2zM2 7l2.5-4h15L22 7M2 11h20' },
 ];
 
-/** What the phone's bottom bar has room for. */
-const PHONE_NAV = ATTENDEE_NAV.filter((item) => !item.railOnly);
+/** The same list the rail shows; the strip scrolls to fit it. */
+const PHONE_NAV = ATTENDEE_NAV;
 
 interface Props {
   view: string;
@@ -49,7 +47,6 @@ interface Props {
   eventTitle?: string;
   eventDetail?: string;
   /** Only offered to people who actually run something. */
-  onSwitchToOrganizer?: () => void;
   onLeave: () => void;
   children: React.ReactNode;
 }
@@ -60,7 +57,7 @@ interface Props {
  */
 export const AttendeeShell: React.FC<Props> = ({
   view, onNavigate, counts = {}, who, eventTitle, eventDetail,
-  onSwitchToOrganizer, onLeave, children,
+  onLeave, children,
 }) => {
   const { t, lang, setLang } = useOrganizer();
   const online = typeof navigator === 'undefined' ? true : navigator.onLine;
@@ -171,15 +168,6 @@ export const AttendeeShell: React.FC<Props> = ({
                 ))}
               </div>
 
-              {onSwitchToOrganizer && (
-                <button
-                  onClick={onSwitchToOrganizer}
-                  className="hidden sm:inline-flex px-3 py-1.5 rounded-lg border border-navy-800 text-navy-800 text-[13px] font-medium hover:bg-white"
-                >
-                  {t({ ne: 'आयोजक प्यानल', en: 'Organizer panel' })}
-                </button>
-              )}
-
               <button
                 onClick={onLeave}
                 className="px-3 py-1.5 rounded-lg border border-navy-800/20 text-ink-2 text-[13px] hover:bg-white"
@@ -195,13 +183,16 @@ export const AttendeeShell: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Bottom bar on a phone */}
+      {/* Bottom bar on a phone.
+
+          A strip that scrolls rather than a row that divides: dividing it
+          meant deciding which pages a phone could not reach at all, since
+          the rail this replaces is hidden at that width. Everything the
+          rail offers is here, and the thumb reaches the rest. */}
       <nav
-        className="lg:hidden fixed inset-x-0 bottom-0 z-40 bg-white border-t border-navy-800/15 grid"
-        style={{
-          gridTemplateColumns: `repeat(${PHONE_NAV.length},1fr)`,
-          paddingBottom: 'env(safe-area-inset-bottom)',
-        }}
+        className="lg:hidden fixed inset-x-0 bottom-0 z-40 bg-white border-t border-navy-800/15
+          flex overflow-x-auto"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         aria-label={t({ ne: 'मुख्य मेनु', en: 'Main menu' })}
       >
         {PHONE_NAV.map((item) => {
@@ -211,12 +202,13 @@ export const AttendeeShell: React.FC<Props> = ({
               key={item.id}
               aria-current={current}
               onClick={() => onNavigate(item.id)}
-              className={`flex flex-col items-center gap-1 py-2 text-[10.5px] ${
+              className={`flex flex-col items-center gap-1 py-2 px-1 text-[10.5px]
+                flex-1 min-w-[64px] ${
                 current ? 'text-navy-800 font-semibold' : 'text-[#6E7C8E]'
               }`}
             >
               <span className={current ? 'text-amber-700' : ''}><Ic d={item.icon} size={19} /></span>
-              {t(item.short)}
+              <span className="truncate max-w-full">{t(item.short)}</span>
             </button>
           );
         })}
