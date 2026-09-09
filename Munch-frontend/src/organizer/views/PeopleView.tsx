@@ -12,14 +12,33 @@ import { RoleGrants } from '../RoleGrants';
 import { Card, Chip, Empty, Head, Panel, Tabs } from '../ui';
 import { SESSION_STATE_LABEL, SESSION_STATE_TONE, sessionState } from '../sessionState';
 
+/** A role the host can give somebody. */
 type Role = 'host' | 'co_host' | 'presenter' | 'attendee';
 
-const ROLE_LABEL: Record<Role, Pair> = {
+/** What a row can say it is. A guest holds no account, so nobody is
+ *  made one - but they stand in the roster and have to be named. */
+type Standing = Role | 'guest';
+
+const ASSIGNABLE: Role[] = ['host', 'co_host', 'presenter', 'attendee'];
+
+const ROLE_LABEL: Record<Standing, Pair> = {
   host: { ne: 'आयोजक', en: 'Host' },
   co_host: { ne: 'सह-आयोजक', en: 'Co-host' },
   presenter: { ne: 'प्रस्तोता', en: 'Presenter' },
   attendee: { ne: 'सहभागी', en: 'Attendee' },
+  guest: { ne: 'पाहुना', en: 'Guest' },
 };
+
+/**
+ * What to call this row.
+ *
+ * Guests are projected into the roster with a role of their own, which
+ * this list did not know about - and an unnamed role took the whole page
+ * down rather than reading oddly, because there is nothing to translate.
+ * Anything else unfamiliar is shown as it came rather than crashing.
+ */
+const standingOf = (role: string): Pair =>
+  ROLE_LABEL[role as Standing] ?? { ne: role, en: role };
 
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -187,7 +206,7 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
       setChanging(p.id);
       await apiClient.updateParticipantRole(meeting.id, p.user.id, role);
       await loadParticipants();
-      const label = t(ROLE_LABEL[role]);
+      const label = t(standingOf(role));
       toast.success(
         t({
           ne: `${nameOf(p.user)} अब ${label}`,
@@ -425,8 +444,16 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
                                   </div>
                                 </td>
                                 <td className="px-3 py-2.5 border-b border-navy-800/[.08]">
-                                  <Chip tone={p.role === 'host' ? 'ok' : p.role === 'attendee' ? 'draft' : 'default'}>
-                                    {t(ROLE_LABEL[p.role as Role])}
+                                  <Chip
+                                    tone={
+                                      p.role === 'host'
+                                        ? 'ok'
+                                        : p.role === 'attendee' || p.role === 'guest'
+                                        ? 'draft'
+                                        : 'default'
+                                    }
+                                  >
+                                    {t(standingOf(p.role))}
                                   </Chip>
                                 </td>
                                 <td className="px-3 py-2.5 border-b border-navy-800/[.08]">
@@ -435,6 +462,14 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
                                     : <Chip tone="draft">{t({ ne: 'बाहिर', en: 'Away' })}</Chip>}
                                 </td>
                                 <td className="px-3 py-2.5 border-b border-navy-800/[.08]">
+                                  {p.role === 'guest' ? (
+                                    <span className="text-[12.5px] text-[#6E7C8E]">
+                                      {t({
+                                        ne: 'पाहुनाको भूमिका हुँदैन',
+                                        en: 'A guest holds no role',
+                                      })}
+                                    </span>
+                                  ) : (
                                   <select
                                     value={p.role}
                                     disabled={!isHost || changing === p.id || p.user?.id === currentUserId}
@@ -448,10 +483,11 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
                                     }
                                     className="border border-navy-800/15 rounded-md px-2 py-1 text-[13px] bg-white disabled:opacity-50"
                                   >
-                                    {(Object.keys(ROLE_LABEL) as Role[]).map((r) => (
+                                    {ASSIGNABLE.map((r) => (
                                       <option key={r} value={r}>{t(ROLE_LABEL[r])}</option>
                                     ))}
                                   </select>
+                                  )}
                                 </td>
                               </tr>
                             ))}

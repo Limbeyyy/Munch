@@ -1363,7 +1363,10 @@ const MeetingRoomInner: React.FC = () => {
                         value={p.role}
                         disabled={changingRole === p.id}
                         onChange={(e) =>
-                          changeRole(p, e.target.value as MeetingParticipant['role'])
+                          changeRole(
+                            p,
+                            e.target.value as 'host' | 'co_host' | 'presenter' | 'attendee'
+                          )
                         }
                         aria-label={`Role for ${p.user.email}`}
                         className="mt-2 w-full bg-gray-800 text-xs rounded px-2 py-1.5 disabled:opacity-50"
