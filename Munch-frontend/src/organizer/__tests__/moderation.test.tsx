@@ -150,9 +150,100 @@ describe('what belongs under the photographs', () => {
   it('still keeps that record under the two queues', async () => {
     show();
 
-    expect(await screen.findByText('Passed on')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('tab', { name: /Transfers/ }));
+    expect(screen.getByText('Passed on')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: /Guests/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Transfers/ }));
     expect(screen.getByText('Passed on')).toBeInTheDocument();
+  });
+});
+
+describe('the two halves of a queue', () => {
+  const passedOn = (over: any = {}) => ({
+    ...message({ id: 'p1', moderation_status: 'approved', topic: 'faq' }),
+    meetingId: 'm1',
+    ...over,
+  });
+
+  it('opens on the deciding half', async () => {
+    api.getPendingMessages.mockResolvedValue([
+      message({ sender_is_guest: false, body: 'will slides be shared?' }),
+    ] as any);
+
+    show();
+
+    // Wait for the queue itself, then say which half is showing it.
+    expect(await screen.findByText('will slides be shared?')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Permissions/ })).toHaveAttribute(
+      'aria-selected', 'true'
+    );
+    expect(screen.queryByText('Passed on')).not.toBeInTheDocument();
+  });
+
+  it('counts each half on its own tab', async () => {
+    api.getPendingMessages.mockResolvedValue([
+      message({ sender_is_guest: false }),
+      message({ id: 'x2', sender_is_guest: false }),
+    ] as any);
+    api.getReviewedMessages.mockResolvedValue({
+      from_users: [passedOn()], from_guests: [],
+    } as any);
+
+    show();
+
+    expect(await screen.findByRole('tab', { name: 'Permissions (2)' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Transfers (1)' })).toBeInTheDocument();
+  });
+
+  it('shows what was passed on under transfers, and the queue not at all', async () => {
+    api.getPendingMessages.mockResolvedValue([
+      message({ sender_is_guest: false, body: 'still waiting on this' }),
+    ] as any);
+    api.getReviewedMessages.mockResolvedValue({
+      from_users: [passedOn({ body: 'already passed on' })], from_guests: [],
+    } as any);
+
+    show();
+
+    fireEvent.click(await screen.findByRole('tab', { name: /Transfers/ }));
+
+    expect(await screen.findByText('already passed on')).toBeInTheDocument();
+    expect(screen.queryByText('still waiting on this')).not.toBeInTheDocument();
+  });
+
+  it('gives the guests queue its own pair', async () => {
+    api.getReviewedMessages.mockResolvedValue({
+      from_users: [], from_guests: [passedOn({ body: 'from a guest, passed on' })],
+    } as any);
+
+    show();
+
+    fireEvent.click(await screen.findByRole('tab', { name: /Guests/ }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Transfers (1)' }));
+
+    expect(await screen.findByText('from a guest, passed on')).toBeInTheDocument();
+  });
+
+  it('names the queue above its halves', async () => {
+    show();
+
+    // "Messages" as the heading, with Permissions and Transfers beneath.
+    expect(
+      await screen.findByRole('heading', { name: 'Messages' })
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Guests/ }));
+    expect(screen.getByRole('heading', { name: 'Guests' })).toBeInTheDocument();
+  });
+
+  it('has no such halves on the board or the photographs', async () => {
+    show();
+
+    fireEvent.click(await screen.findByRole('tab', { name: /Questions/ }));
+    expect(screen.queryByRole('tab', { name: /Permissions/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Photos' }));
+    expect(screen.queryByRole('tab', { name: /Transfers/ })).not.toBeInTheDocument();
   });
 });
