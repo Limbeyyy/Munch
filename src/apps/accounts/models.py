@@ -148,6 +148,11 @@ class HostAccount(models.Model):
     plan = models.CharField(max_length=20, choices=Plan.choices, default=Plan.FREE)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.TRIAL)
 
+    #: The breathing room this host wants between one session and the next.
+    #: Fifteen minutes was the rule for everybody; some halls need longer to
+    #: clear and some programmes run back to back, so it is theirs to set.
+    session_gap_minutes = models.PositiveSmallIntegerField(default=15)
+
     started_at = models.DateTimeField(auto_now_add=True)
     current_period_end = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)

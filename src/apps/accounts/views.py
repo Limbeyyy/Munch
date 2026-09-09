@@ -103,6 +103,65 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
             'plans': [PLANS[key].as_json() for key in PLANS],
         })
 
+    @action(detail=False, methods=['get', 'post'], url_path='scheduling')
+    def scheduling(self, request):
+        """The intervals this host schedules by.
+
+        One field so far: the breathing room between one session and the
+        next. It used to be fifteen minutes for everybody, which suits a
+        panel changing chairs and not a hall that has to be cleared and
+        re-laid.
+        """
+        from src.apps.accounts.roles import ensure_host
+        from src.apps.meetings.scheduling import (
+            GAP_MINUTES, MAX_GAP_MINUTES,
+        )
+
+        account = getattr(request.user, 'host_account', None)
+
+        def as_json():
+            return {
+                'session_gap_minutes': (
+                    account.session_gap_minutes if account else GAP_MINUTES
+                ),
+                'default_session_gap_minutes': GAP_MINUTES,
+                'max_session_gap_minutes': MAX_GAP_MINUTES,
+            }
+
+        if request.method == 'GET':
+            return Response(as_json())
+
+        raw = request.data.get('session_gap_minutes')
+        try:
+            wanted = int(raw)
+        except (TypeError, ValueError):
+            return Response(
+                {
+                    'error': 'session_gap_minutes must be a whole number of minutes',
+                    'code': 'not_a_number',
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if wanted < 0 or wanted > MAX_GAP_MINUTES:
+            return Response(
+                {
+                    'error': (
+                        f'The interval goes from 0 to {MAX_GAP_MINUTES} minutes.'
+                    ),
+                    'code': 'out_of_range',
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Somebody setting how their days are spaced is hosting, whether or
+        # not they have opened a programme yet.
+        account = getattr(request.user, 'host_account', None) or ensure_host(request.user)
+        account.session_gap_minutes = wanted
+        account.save(update_fields=['session_gap_minutes', 'updated_at'])
+
+        return Response(as_json())
+
     @action(detail=False, methods=['get', 'post'], url_path='upgrade')
     def upgrade(self, request):
         """Ask to move to a bigger plan, or see what has been asked.

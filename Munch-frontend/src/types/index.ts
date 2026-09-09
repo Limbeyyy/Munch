@@ -736,6 +736,13 @@ export interface Reminder {
   calendar_url: string;
 }
 
+/** How this host spaces their day. */
+export interface SchedulingPrefs {
+  session_gap_minutes: number;
+  default_session_gap_minutes: number;
+  max_session_gap_minutes: number;
+}
+
 /**
  * A named place for the photographs of a meeting.
  *

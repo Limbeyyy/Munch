@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { EventProgramme, MeetingDraft, SessionDraft } from '../../types';
 import { confirmSpacing } from '../confirmSpacing';
+import { sessionGap, useSessionGap } from '../sessionGap';
 import { errorText } from '../errors';
 import { useOrganizer } from '../i18n';
 import { Btn, Card, Chip, Empty, Head, Panel } from '../ui';
@@ -13,7 +14,7 @@ import {
   toApiMeeting, toLocalInput as toLocalDay,
 } from '../MeetingDraftFields';
 import {
-  GAP_MINUTES, MEETING_GAP_MINUTES, PlannedMeeting, PlannedSession,
+  PlannedMeeting, PlannedSession,
   applyEdit, countChanges, hallsInUse, pendingChanges, reflowMeeting, setHall,
   swapSessions, toPlan, whyNotSwap,
 } from '../schedule';
@@ -62,6 +63,11 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
   /** The session being dragged, and the row it is hovering over. */
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
+  /**
+   * The interval this host keeps between sessions, so the reflow on this
+   * screen spaces the day by the same number the server will.
+   */
+  const gapMinutes = useSessionGap();
 
   const load = useCallback(async () => {
     try {
@@ -191,7 +197,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
     const sessions = plan.flatMap((m) => m.sessions);
     const moved = sessions.find((s) => s.id === fromId);
     const other = sessions.find((s) => s.id === toId);
-    setPlan((p) => swapSessions(p, fromId, toId));
+    setPlan((p) => swapSessions(p, fromId, toId, gapMinutes));
     if (moved && other) {
       toast.success(t({
         ne: `“${moved.title}” र “${other.title}” ले ठाउँ साटे`,
@@ -285,7 +291,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
           disabled={locked}
           onChange={(e) => {
             const next = new Date(e.target.value).getTime();
-            if (!Number.isNaN(next)) setPlan((p) => applyEdit(p, session.id, { startsAt: next }));
+            if (!Number.isNaN(next)) setPlan((p) => applyEdit(p, session.id, { startsAt: next }, gapMinutes));
           }}
           className="border border-navy-800/15 rounded-md px-2 py-1 text-[13px] bg-white disabled:opacity-50"
         />
@@ -297,7 +303,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
           value={session.durationMinutes}
           disabled={locked}
           onChange={(e) =>
-            setPlan((p) => applyEdit(p, session.id, { durationMinutes: Number(e.target.value) || 5 }))
+            setPlan((p) => applyEdit(p, session.id, { durationMinutes: Number(e.target.value) || 5 }, gapMinutes))
           }
           className="border border-navy-800/15 rounded-md px-2 py-1 text-[13px] text-center bg-white disabled:opacity-50"
         />
@@ -330,8 +336,8 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
       <Head
         title={{ ne: 'सत्रहरू', en: 'Sessions' }}
         lede={{
-          ne: 'एउटा सत्र तानेर अर्कोमा छोड्नुभयो भने दुवैले ठाउँ साट्छन्। अर्को सत्रकै समय राख्नुभयो भने पनि त्यही हुन्छ। अरू कुनै समय राख्दा त्यो सत्र सबैभन्दा नजिकको खाली समयमा बस्छ — बीचमा कम्तीमा १५ मिनेट।',
-          en: `Drag a session onto another and the two change places. Give one the time another holds and they trade the same way. Any other time puts it at the nearest free point, with at least ${MEETING_GAP_MINUTES} minutes either side.`,
+          ne: `एउटा सत्र तानेर अर्कोमा छोड्नुभयो भने दुवैले ठाउँ साट्छन्। अर्को सत्रकै समय राख्नुभयो भने पनि त्यही हुन्छ। अरू कुनै समय राख्दा त्यो सत्र सबैभन्दा नजिकको खाली समयमा बस्छ — बीचमा कम्तीमा ${num(gapMinutes)} मिनेट।`,
+          en: `Drag a session onto another and the two change places. Give one the time another holds and they trade the same way. Any other time puts it at the nearest free point, with at least ${gapMinutes} minutes either side.`,
         }}
         actions={
           <>
@@ -412,7 +418,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
                   {gap !== null && (
                     <p
                       className={`text-[12px] mb-1.5 ps-1 ${
-                        gap < MEETING_GAP_MINUTES ? 'text-live' : 'text-[#6E7C8E]'
+                        gap < gapMinutes ? 'text-live' : 'text-[#6E7C8E]'
                       }`}
                     >
                       {t({
@@ -449,7 +455,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
                         title={t({ ne: 'पूरा बैठक सार्नुहोस्', en: 'Move the whole meeting' })}
                         onChange={(e) => {
                           const next = new Date(e.target.value).getTime();
-                          if (!Number.isNaN(next)) setPlan((p) => reflowMeeting(p, meeting.id, next));
+                          if (!Number.isNaN(next)) setPlan((p) => reflowMeeting(p, meeting.id, next, gapMinutes));
                         }}
                         className="border border-navy-800/15 rounded-md px-2 py-1 text-[12.5px] bg-white"
                       />
@@ -517,6 +523,7 @@ const NewMeetingModal: React.FC<{
   onCreated: () => void;
 }> = ({ events, defaultEventId, onClose, onCreated }) => {
   const { t } = useOrganizer();
+  const gapMinutes = useSessionGap();
   const [eventId, setEventId] = useState<string>(defaultEventId ?? '');
   const day =
     events.find((e) => e.id === eventId)?.event_date ?? toLocalDay(new Date()).slice(0, 10);
@@ -552,7 +559,7 @@ const NewMeetingModal: React.FC<{
     // The gap is mandatory, so a running order typed too tight is put right
     // here - with the organizer agreeing to the new times - rather than
     // being bounced back by the server.
-    const plan = confirmSpacing([meeting], window.confirm);
+    const plan = confirmSpacing([meeting], window.confirm, gapMinutes);
     if (!plan) return;
 
     try {
@@ -636,7 +643,7 @@ const NewSessionModal: React.FC<{
     starts_at: toLocalDay(
       new Date(
         last
-          ? last.startsAt + (last.durationMinutes + GAP_MINUTES) * 60000
+          ? last.startsAt + (last.durationMinutes + sessionGap()) * 60000
           : meeting.startsAt
       )
     ),

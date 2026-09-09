@@ -2,6 +2,7 @@ import React from 'react';
 import { MeetingDraft, SessionDraft } from '../types';
 import { useOrganizer } from './i18n';
 import { GAP_MINUTES } from './schedule';
+import { useSessionGap } from './sessionGap';
 import { Btn } from './ui';
 
 /** A local datetime string for an <input type="datetime-local">. */
@@ -60,7 +61,11 @@ export const opensTheMeeting = (meeting: MeetingDraft, index: number): boolean =
  * The same rule the server enforces: the previous session's end, plus the
  * mandatory gap. Returns null when nothing runs before it.
  */
-export const earliestStart = (meeting: MeetingDraft, index: number): Date | null => {
+export const earliestStart = (
+  meeting: MeetingDraft,
+  index: number,
+  gapMinutes: number = GAP_MINUTES
+): Date | null => {
   const before = meeting.sessions.slice(0, index);
   if (before.length === 0) return null;
 
@@ -69,17 +74,20 @@ export const earliestStart = (meeting: MeetingDraft, index: number): Date | null
       (s) => new Date(s.starts_at).getTime() + s.duration_minutes * 60000
     )
   );
-  return new Date(lastEnd + GAP_MINUTES * 60000);
+  return new Date(lastEnd + gapMinutes * 60000);
 };
 
-export const emptySession = (meeting: MeetingDraft): SessionDraft => {
+export const emptySession = (
+  meeting: MeetingDraft,
+  gapMinutes: number = GAP_MINUTES
+): SessionDraft => {
   // A new session starts once the last one has finished and the mandatory
   // gap has passed, so the running order builds forward already legal.
   const last = meeting.sessions[meeting.sessions.length - 1];
   const from = last
     ? new Date(
         new Date(last.starts_at).getTime() +
-          (last.duration_minutes + GAP_MINUTES) * 60000
+          (last.duration_minutes + gapMinutes) * 60000
       )
     : new Date(meeting.scheduled_start);
   return {
@@ -112,6 +120,7 @@ interface Props {
  * event or being added to one that already exists.
  */
 export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemove, index }) => {
+  const gapMinutes = useSessionGap();
   const { t, num } = useOrganizer();
 
   /**
@@ -126,7 +135,7 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
 
   /** Whether this session would start before the gap after the one above it. */
   const tooEarly = (i: number) => {
-    const soonest = earliestStart(meeting, i);
+    const soonest = earliestStart(meeting, i, gapMinutes);
     if (!soonest) return false;
     return new Date(meeting.sessions[i].starts_at) < soonest;
   };
@@ -207,7 +216,7 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
             sm
             className="ml-auto"
             onClick={() =>
-              onChange({ ...meeting, sessions: [...meeting.sessions, emptySession(meeting)] })
+              onChange({ ...meeting, sessions: [...meeting.sessions, emptySession(meeting, gapMinutes)] })
             }
           >
             {t({ ne: '+ सत्र', en: '+ Session' })}
@@ -273,7 +282,7 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
                     type="datetime-local"
                     value={session.starts_at}
                     min={(() => {
-                      const soonest = earliestStart(meeting, i);
+                      const soonest = earliestStart(meeting, i, gapMinutes);
                       return soonest ? toLocalInput(soonest) : undefined;
                     })()}
                     onChange={(e) => setSession(i, { starts_at: e.target.value })}
@@ -299,13 +308,13 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
                   {tooEarly(i) && (
                     <p className="mt-1 text-[11.5px] text-live">
                       {t({
-                        ne: `अघिल्लो सत्रपछि ${num(GAP_MINUTES)} मिनेटको खाली ठाउँ चाहिन्छ।`,
-                        en: `Sessions need ${GAP_MINUTES} minutes between them.`,
+                        ne: `अघिल्लो सत्रपछि ${num(gapMinutes)} मिनेटको खाली ठाउँ चाहिन्छ।`,
+                        en: `Sessions need ${gapMinutes} minutes between them.`,
                       })}{' '}
                       <button
                         type="button"
                         onClick={() => {
-                          const soonest = earliestStart(meeting, i);
+                          const soonest = earliestStart(meeting, i, gapMinutes);
                           if (soonest) setSession(i, { starts_at: toLocalInput(soonest) });
                         }}
                         className="underline underline-offset-2"
@@ -408,7 +417,10 @@ export const missingSpeakerDetails = (draft: MeetingDraft): string[] =>
  * The form flags these as they are typed; this is the check before saving,
  * for anyone who got past the field guard.
  */
-export const tooCloseTogether = (draft: MeetingDraft): string[] =>
+export const tooCloseTogether = (
+  draft: MeetingDraft,
+  gapMinutes: number = GAP_MINUTES
+): string[] =>
   draft.sessions
     .map((session, i) => {
       if (!session.title.trim()) return null;
@@ -418,7 +430,7 @@ export const tooCloseTogether = (draft: MeetingDraft): string[] =>
           ? session.title.trim()
           : null;
       }
-      const soonest = earliestStart(draft, i);
+      const soonest = earliestStart(draft, i, gapMinutes);
       if (!soonest) return null;
       return new Date(session.starts_at) < soonest ? session.title.trim() : null;
     })
@@ -431,7 +443,10 @@ export const tooCloseTogether = (draft: MeetingDraft): string[] =>
  * with its sessions, so confirming the offered times gives exactly what
  * would have been stored anyway.
  */
-export const spaceOut = (draft: MeetingDraft): MeetingDraft => {
+export const spaceOut = (
+  draft: MeetingDraft,
+  gapMinutes: number = GAP_MINUTES
+): MeetingDraft => {
   let previousEnd: number | null = null;
   const sessions = [...draft.sessions]
     .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at))
@@ -440,7 +455,7 @@ export const spaceOut = (draft: MeetingDraft): MeetingDraft => {
       let startsAt =
         previousEnd === null
           ? +new Date(draft.scheduled_start)
-          : Math.max(+new Date(session.starts_at), previousEnd + GAP_MINUTES * 60000);
+          : Math.max(+new Date(session.starts_at), previousEnd + gapMinutes * 60000);
       previousEnd = startsAt + session.duration_minutes * 60000;
       return { ...session, starts_at: toLocalInput(new Date(startsAt)) };
     });

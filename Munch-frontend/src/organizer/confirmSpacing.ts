@@ -12,14 +12,15 @@ import { spaceOut, tooCloseTogether } from './MeetingDraftFields';
  */
 export const confirmSpacing = (
   drafts: MeetingDraft[],
-  ask: (message: string) => boolean
+  ask: (message: string) => boolean,
+  gapMinutes: number = GAP_MINUTES
 ): MeetingDraft[] | null => {
-  const tight = drafts.flatMap(tooCloseTogether);
+  const tight = drafts.flatMap((draft) => tooCloseTogether(draft, gapMinutes));
   if (tight.length === 0) return drafts;
 
   const ok = ask(
-    `${tight.join(', ')} leaves less than ${GAP_MINUTES} minutes after the session before it.\n\n` +
+    `${tight.join(', ')} leaves less than ${gapMinutes} minutes after the session before it.\n\n` +
       'Move it to the next free time and save?'
   );
-  return ok ? drafts.map(spaceOut) : null;
+  return ok ? drafts.map((draft) => spaceOut(draft, gapMinutes)) : null;
 };

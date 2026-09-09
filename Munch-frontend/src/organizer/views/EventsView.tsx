@@ -5,6 +5,7 @@ import { LIST_POLL_MS } from '../../services/polling';
 import { EventMeeting, EventProgramme, MeetingDraft, Session } from '../../types';
 import { ShareMeetingDialog } from '../../components/ShareMeetingDialog';
 import { confirmSpacing } from '../confirmSpacing';
+import { useSessionGap } from '../sessionGap';
 import { errorText } from '../errors';
 import { useOrganizer } from '../i18n';
 import { Btn, Card, Chip, Empty, Head, Panel } from '../ui';
@@ -497,6 +498,7 @@ const NewEventModal: React.FC<{ onClose: () => void; onCreated: () => void }> = 
   onClose, onCreated,
 }) => {
   const { t } = useOrganizer();
+  const gapMinutes = useSessionGap();
   const today = toLocalInput(new Date()).slice(0, 10);
 
   const [title, setTitle] = useState('');
@@ -530,7 +532,7 @@ const NewEventModal: React.FC<{ onClose: () => void; onCreated: () => void }> = 
     // The gap is mandatory, so a running order typed too tight is put right
     // here - with the organizer agreeing to the new times - rather than
     // being bounced back by the server.
-    const plan = confirmSpacing(named, window.confirm);
+    const plan = confirmSpacing(named, window.confirm, gapMinutes);
     if (!plan) return;
 
     try {
@@ -640,6 +642,7 @@ const AddMeetingModal: React.FC<{
   onAdded: () => void;
 }> = ({ event, onClose, onAdded }) => {
   const { t } = useOrganizer();
+  const gapMinutes = useSessionGap();
   const [meeting, setMeeting] = useState<MeetingDraft>(() => emptyMeeting(event.event_date, 14));
   const [busy, setBusy] = useState(false);
 
@@ -661,7 +664,7 @@ const AddMeetingModal: React.FC<{
     // The gap is mandatory, so a running order typed too tight is put right
     // here - with the organizer agreeing to the new times - rather than
     // being bounced back by the server.
-    const plan = confirmSpacing([meeting], window.confirm);
+    const plan = confirmSpacing([meeting], window.confirm, gapMinutes);
     if (!plan) return;
 
     try {
