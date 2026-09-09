@@ -30,22 +30,19 @@ export const ReviewedMessages: React.FC<{
   empty: Pair;
   busy?: string | null;
   onSort: (message: ReviewedRow, topic: MessageTopic) => void;
-}> = ({ messages, empty, busy, onSort }) => {
+  /**
+   * Draw the list without a frame of its own.
+   *
+   * Set where this sits inside a card that already names it - a heading
+   * saying "Passed on" under a tab saying the same thing is one heading
+   * too many, and two borders around one list read as two lists.
+   */
+  bare?: boolean;
+}> = ({ messages, empty, busy, onSort, bare }) => {
   const { t, num } = useOrganizer();
 
-  return (
-    <Panel
-      title={t({ ne: 'पठाइसकिएका', en: 'Passed on' })}
-      aside={
-        <span className="text-[12.5px] text-[#6E7C8E]">
-          {t({
-            ne: `${num(messages.length)} सन्देश`,
-            en: `${messages.length} message${messages.length === 1 ? '' : 's'}`,
-          })}
-        </span>
-      }
-    >
-      <div className="px-4">
+  const rows = (
+    <div className="px-4">
         {messages.length === 0 ? (
           <Empty>{t(empty)}</Empty>
         ) : (
@@ -103,7 +100,24 @@ export const ReviewedMessages: React.FC<{
             </div>
           ))
         )}
-      </div>
+    </div>
+  );
+
+  if (bare) return rows;
+
+  return (
+    <Panel
+      title={t({ ne: 'पठाइसकिएका', en: 'Passed on' })}
+      aside={
+        <span className="text-[12.5px] text-[#6E7C8E]">
+          {t({
+            ne: `${num(messages.length)} सन्देश`,
+            en: `${messages.length} message${messages.length === 1 ? '' : 's'}`,
+          })}
+        </span>
+      }
+    >
+      {rows}
     </Panel>
   );
 };

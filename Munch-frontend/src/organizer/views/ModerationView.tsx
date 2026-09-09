@@ -497,38 +497,6 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
         </div>
       ) : (
       <>
-      {/* One queue, two halves of the same job: deciding what may be
-          passed on, and moving what already was. They were stacked on one
-          screen, which meant scrolling past the whole queue to reach the
-          record of it. */}
-      <div className="bg-white border border-navy-800/15 rounded-xl px-4 pt-3 pb-1 mb-3.5">
-        <h2 className="text-[15.5px] font-semibold">
-          {tab === 'guests'
-            ? t({ ne: 'पाहुना', en: 'Guests' })
-            : t({ ne: 'सन्देश', en: 'Messages' })}
-        </h2>
-        <Tabs
-          active={half}
-          onChange={(id) => { setHalf(id as Half); setPage(1); }}
-          tabs={[
-            {
-              id: 'permissions',
-              label: {
-                ne: `अनुमति (${num(rows.length)})`,
-                en: `Permissions (${rows.length})`,
-              },
-            },
-            {
-              id: 'transfers',
-              label: {
-                ne: `स्थानान्तरण (${num(passedOn.length)})`,
-                en: `Transfers (${passedOn.length})`,
-              },
-            },
-          ]}
-        />
-      </div>
-
       {meetings.length > 0 && (
         <div className="mb-3.5">
           <label
@@ -561,29 +529,6 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
         </div>
       )}
 
-      {/* Out of the queue, into the record: what was passed on, and
-          whether it also went on the board. */}
-      {half === 'transfers' ? (
-      <div className="mt-3.5">
-        <ReviewedMessages
-          busy={busy}
-          onSort={sortReviewed}
-          messages={passedOn}
-          empty={
-            tab === 'guests'
-              ? {
-                  ne: 'पाहुनाबाट आएको कुनै सिधा सन्देश अझै पठाइएको छैन।',
-                  en: 'No direct message from a guest has been passed on yet.',
-                }
-              : {
-                  ne: 'कुनै सिधा सन्देश अझै पठाइएको छैन।',
-                  en: 'No direct message has been passed on yet.',
-                }
-          }
-        />
-      </div>
-      ) : (
-      <>
       {/* Search */}
       <div className="flex items-center gap-2 flex-wrap mb-3.5">
         <div className="relative flex-1 min-w-[240px]">
@@ -616,9 +561,65 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
         </span>
       </div>
 
+      {/* One card, not a scattering: the queue's name, its two halves, and
+          whichever half is open. What decides *which* items are in play -
+          the meeting, and the search - sits above it, because it governs
+          both halves rather than belonging to either. */}
+      <div className="bg-white border border-navy-800/15 rounded-xl overflow-hidden">
+      <div className="px-4 pt-3">
+        <h2 className="text-[15.5px] font-semibold">
+          {tab === 'guests'
+            ? t({ ne: 'पाहुना', en: 'Guests' })
+            : t({ ne: 'सन्देश', en: 'Messages' })}
+        </h2>
+        <Tabs
+          active={half}
+          onChange={(id) => { setHalf(id as Half); setPage(1); }}
+          tabs={[
+            {
+              id: 'permissions',
+              label: {
+                ne: `अनुमति (${num(rows.length)})`,
+                en: `Permissions (${rows.length})`,
+              },
+            },
+            {
+              id: 'transfers',
+              label: {
+                ne: `स्थानान्तरण (${num(passedOn.length)})`,
+                en: `Transfers (${passedOn.length})`,
+              },
+            },
+          ]}
+        />
+      </div>
+
+      <div className="border-t border-navy-800/[.08]">
+      {/* Out of the queue, into the record: what was passed on, and
+          whether it also went on the board. */}
+      {half === 'transfers' ? (
+        <ReviewedMessages
+          bare
+          busy={busy}
+          onSort={sortReviewed}
+          messages={passedOn}
+          empty={
+            tab === 'guests'
+              ? {
+                  ne: 'पाहुनाबाट आएको कुनै सिधा सन्देश अझै पठाइएको छैन।',
+                  en: 'No direct message from a guest has been passed on yet.',
+                }
+              : {
+                  ne: 'कुनै सिधा सन्देश अझै पठाइएको छैन।',
+                  en: 'No direct message has been passed on yet.',
+                }
+          }
+        />
+      ) : (
+      <>
+
       {matched.length === 0 ? (
-        <Panel>
-          <Empty>
+        <Empty>
             {terms.length > 0
               ? t({ ne: 'खोजसँग मिल्ने केही भेटिएन।', en: 'Nothing matches that search.' })
               : tab === 'messages'
@@ -630,16 +631,17 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
                   ne: 'कोही पर्खिरहेको छैन, र पाहुनाबाट कुनै सन्देश आएको छैन।',
                   en: 'Nobody is waiting, and no guest has written anything.',
                 })}
-          </Empty>
-        </Panel>
+        </Empty>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div>
           {sections.map(({ key, row, items }) => {
             const shut = !!collapsed[key];
             return (
-              <Panel
+              <section
                 key={key}
-                title={
+                className="border-b border-navy-800/15 last:border-0"
+              >
+                <div className="px-4 py-3 bg-[#FBFAF6] flex items-center gap-2.5 flex-wrap">
                   <button
                     onClick={() => setCollapsed((v) => ({ ...v, [key]: !shut }))}
                     className="flex items-center gap-2 text-left min-w-0"
@@ -648,8 +650,6 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
                     <span className="text-[14.5px] font-semibold truncate">{row.meeting.title}</span>
                     <span className="text-[12px] font-mono text-navy-700">{row.meeting.meeting_code}</span>
                   </button>
-                }
-                aside={
                   <span className="flex items-center gap-2 flex-wrap text-[12.5px] text-[#6E7C8E]">
                     <span className="truncate max-w-[220px]">
                       {row.eventTitle}
@@ -666,8 +666,8 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
                     )}
                     <Chip>{num(items.length)}</Chip>
                   </span>
-                }
-              >
+                </div>
+
                 {!shut && (
                   <div className="px-4">
                     {items.map((item: Row) =>
@@ -732,7 +732,7 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
                     )}
                   </div>
                 )}
-              </Panel>
+              </section>
             );
           })}
         </div>
@@ -740,7 +740,7 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
 
       {/* Paging, only once there is more than a page to show */}
       {pageCount > 1 && (
-        <div className="flex items-center gap-2 mt-4 justify-center">
+        <div className="flex items-center gap-2 py-3.5 justify-center border-t border-navy-800/[.08]">
           <Btn sm disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
             {t({ ne: 'अघिल्लो', en: 'Previous' })}
           </Btn>
@@ -757,6 +757,8 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
       )}
       </>
       )}
+      </div>
+      </div>
 
       </>
       )}

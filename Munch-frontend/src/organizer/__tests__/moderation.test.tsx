@@ -144,18 +144,62 @@ describe('what belongs under the photographs', () => {
     fireEvent.click(await screen.findByRole('tab', { name: 'Photos' }));
 
     await waitFor(() => expect(api.getPhotos).toHaveBeenCalled());
-    expect(screen.queryByText('Passed on')).not.toBeInTheDocument();
+    // The record names itself by what it says when empty; its heading is
+    // the tab now.
+    expect(screen.queryByText(/passed on yet/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Transfers/ })).not.toBeInTheDocument();
   });
 
   it('still keeps that record under the two queues', async () => {
     show();
 
     fireEvent.click(await screen.findByRole('tab', { name: /Transfers/ }));
-    expect(screen.getByText('Passed on')).toBeInTheDocument();
+    expect(
+      await screen.findByText('No direct message has been passed on yet.')
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: /Guests/ }));
     fireEvent.click(screen.getByRole('tab', { name: /Transfers/ }));
-    expect(screen.getByText('Passed on')).toBeInTheDocument();
+    expect(
+      await screen.findByText('No direct message from a guest has been passed on yet.')
+    ).toBeInTheDocument();
+  });
+});
+
+describe('where the pieces of the page sit', () => {
+  it('keeps the queue inside the card that names it', async () => {
+    // The complaint was that these were scattered: a card with the
+    // queue's name and its two halves, and then the queue itself floating
+    // below it in cards of its own.
+    api.getPendingMessages.mockResolvedValue([
+      message({ sender_is_guest: false, body: 'will slides be shared?' }),
+    ] as any);
+
+    show();
+
+    const heading = await screen.findByRole('heading', { name: 'Messages' });
+    const card = heading.closest('div.rounded-xl') as HTMLElement;
+    expect(card).not.toBeNull();
+    expect(card).toContainElement(await screen.findByText('will slides be shared?'));
+    expect(card).toContainElement(screen.getByRole('tab', { name: /Permissions/ }));
+  });
+
+  it('puts the meeting and the search above that card', async () => {
+    show();
+
+    const heading = await screen.findByRole('heading', { name: 'Messages' });
+    const card = heading.closest('div.rounded-xl') as HTMLElement;
+    const picker = screen.getByLabelText('Which meeting');
+    const search = screen.getByPlaceholderText(/Search meeting, code/);
+
+    // They govern both halves, so they belong above rather than inside.
+    expect(card).not.toContainElement(picker);
+    expect(card).not.toContainElement(search);
+    for (const above of [picker, search]) {
+      expect(
+        above.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+    }
   });
 });
 
