@@ -63,7 +63,13 @@ export interface Meeting {
 export interface MeetingParticipant {
   id: string;
   user: User;
-  role: 'host' | 'co_host' | 'presenter' | 'attendee';
+  /**
+   * A guest holds no account and no participant row, but the roster
+   * projects them into this shape so a headcount matches the room. Their
+   * role says so, which is why it is in this list: leaving it out did not
+   * stop the server sending it, it only stopped the screens expecting it.
+   */
+  role: 'host' | 'co_host' | 'presenter' | 'attendee' | 'guest';
   session_id: string;
   joined_at: string;
   left_at?: string;
