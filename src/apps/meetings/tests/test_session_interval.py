@@ -166,3 +166,127 @@ class IntervalEndpointTests(TestCase):
         from django.test import Client
 
         self.assertEqual(Client().get(f'{API}/users/scheduling/').status_code, 401)
+
+
+class ReminderSettingTests(TestCase):
+    """How much warning a programme gives, as the host sets it."""
+
+    def setUp(self):
+        self.host = make_host('host@example.com')
+        self.event = make_event(self.host)
+        self.start = timezone.now() + timezone.timedelta(days=1)
+        self.meeting = make_meeting(self.host, self.event, start=self.start, minutes=180)
+        self.session = make_session(self.meeting, self.start, 60, 'Haldi')
+
+    def client_for(self, user):
+        from django.test import Client
+
+        return Client(HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(user)}')
+
+    def set_leads(self, **fields):
+        HostAccount.objects.update_or_create(user=self.host, defaults=fields)
+        self.meeting.refresh_from_db()
+
+    def reminders(self):
+        from src.apps.meetings.models import Reminder
+        from src.apps.meetings.reminders import generate_for_meeting
+
+        Reminder.objects.all().delete()
+        generate_for_meeting(self.meeting)
+        return {r.kind: r for r in Reminder.objects.filter(user=self.host)}
+
+    def test_without_a_preference_it_is_an_hour_and_a_quarter_of_one(self):
+        rows = self.reminders()
+
+        self.assertEqual(
+            (self.meeting.scheduled_start - rows['meeting'].due_at).total_seconds() / 60,
+            60,
+        )
+        self.assertEqual(
+            (self.session.starts_at - rows['session'].due_at).total_seconds() / 60,
+            15,
+        )
+
+    def test_the_hosts_own_warning_is_what_is_used(self):
+        self.set_leads(meeting_reminder_minutes=180, session_reminder_minutes=45)
+
+        rows = self.reminders()
+
+        self.assertEqual(
+            (self.meeting.scheduled_start - rows['meeting'].due_at).total_seconds() / 60,
+            180,
+        )
+        self.assertEqual(
+            (self.session.starts_at - rows['session'].due_at).total_seconds() / 60,
+            45,
+        )
+
+    def test_turning_them_off_writes_none_at_all(self):
+        self.set_leads(reminders_enabled=False)
+
+        self.assertEqual(self.reminders(), {})
+
+    def test_turning_them_back_on_writes_them_again(self):
+        self.set_leads(reminders_enabled=False)
+        self.reminders()
+        self.set_leads(reminders_enabled=True)
+
+        self.assertEqual(len(self.reminders()), 2)
+
+    def test_the_page_quotes_the_warning_it_actually_gave(self):
+        self.set_leads(meeting_reminder_minutes=120, session_reminder_minutes=30)
+        self.reminders()
+
+        body = self.client_for(self.host).get(f'{API}/reminders/').json()
+
+        self.assertEqual(body['meeting_lead_minutes'], 120)
+        self.assertEqual(body['session_lead_minutes'], 30)
+        leads = {r['kind']: r['lead_minutes'] for r in body['reminders']}
+        self.assertEqual(leads, {'meeting': 120, 'session': 30})
+
+    def test_the_settings_endpoint_carries_them(self):
+        client = self.client_for(self.host)
+
+        client.post(
+            f'{API}/users/scheduling/',
+            {'meeting_reminder_minutes': 90, 'reminders_enabled': False},
+            content_type='application/json',
+        )
+
+        body = client.get(f'{API}/users/scheduling/').json()
+        self.assertEqual(body['meeting_reminder_minutes'], 90)
+        self.assertFalse(body['reminders_enabled'])
+        # Untouched fields keep what they had.
+        self.assertEqual(body['session_reminder_minutes'], 15)
+
+    def test_one_field_at_a_time_leaves_the_others_alone(self):
+        client = self.client_for(self.host)
+        client.post(
+            f'{API}/users/scheduling/', {'session_gap_minutes': 25},
+            content_type='application/json',
+        )
+        client.post(
+            f'{API}/users/scheduling/', {'session_reminder_minutes': 5},
+            content_type='application/json',
+        )
+
+        body = client.get(f'{API}/users/scheduling/').json()
+        self.assertEqual(body['session_gap_minutes'], 25)
+        self.assertEqual(body['session_reminder_minutes'], 5)
+
+    def test_more_than_a_day_of_warning_is_refused(self):
+        response = self.client_for(self.host).post(
+            f'{API}/users/scheduling/', {'meeting_reminder_minutes': 2000},
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['field'], 'meeting_reminder_minutes')
+
+    def test_sending_nothing_changes_nothing_and_says_so(self):
+        response = self.client_for(self.host).post(
+            f'{API}/users/scheduling/', {}, content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['code'], 'nothing_to_change')

@@ -153,6 +153,15 @@ class HostAccount(models.Model):
     #: clear and some programmes run back to back, so it is theirs to set.
     session_gap_minutes = models.PositiveSmallIntegerField(default=15)
 
+    #: How much warning this host's programme gives. A meeting is called
+    #: further ahead than a talk inside it, because people travel to the
+    #: first and walk down a corridor to the second - but how much further
+    #: depends on the event, so both are theirs to set.
+    meeting_reminder_minutes = models.PositiveSmallIntegerField(default=60)
+    session_reminder_minutes = models.PositiveSmallIntegerField(default=15)
+    #: Off means the programme sends none at all.
+    reminders_enabled = models.BooleanField(default=True)
+
     started_at = models.DateTimeField(auto_now_add=True)
     current_period_end = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)

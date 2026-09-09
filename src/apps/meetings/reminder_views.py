@@ -10,7 +10,7 @@ from rest_framework.response import Response
 
 from src.apps.meetings.models import Reminder
 from src.apps.meetings.reminders import (
-    MEETING_LEAD_MINUTES, SESSION_LEAD_MINUTES, calendar_link,
+    MEETING_LEAD_MINUTES, SESSION_LEAD_MINUTES, calendar_link, leads_for,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,7 @@ def _as_json(reminder):
     """
     meeting = reminder.meeting
     session = reminder.session
+    leads = leads_for(meeting)
 
     if session is not None:
         title = f'{session.title} — {meeting.title}'
@@ -60,8 +61,10 @@ def _as_json(reminder):
         'due_at': reminder.due_at,
         'is_due': reminder.is_due,
         'read': reminder.read_at is not None,
+        # What this one was written with, which is the meeting's programme
+        # rather than the platform's old constant.
         'lead_minutes': (
-            SESSION_LEAD_MINUTES if session is not None else MEETING_LEAD_MINUTES
+            leads['session'] if session is not None else leads['meeting']
         ),
         'calendar_url': calendar_link(
             title=title,
@@ -112,11 +115,18 @@ def my_reminders(request):
         id__in=[r.id for r in mine if r.is_due], delivered_at__isnull=True
     ).update(delivered_at=timezone.now())
 
+    # The page states the warning it works to. Where somebody follows more
+    # than one programme those can differ, so the commonest is quoted -
+    # each row carries its own alongside.
+    def commonest(field, fallback):
+        seen = [r['lead_minutes'] for r in rows if (r['kind'] == 'session') == (field == 'session')]
+        return max(set(seen), key=seen.count) if seen else fallback
+
     return Response({
         'reminders': rows,
         'unread': sum(1 for r in rows if r['is_due'] and not r['read']),
-        'meeting_lead_minutes': MEETING_LEAD_MINUTES,
-        'session_lead_minutes': SESSION_LEAD_MINUTES,
+        'meeting_lead_minutes': commonest('meeting', MEETING_LEAD_MINUTES),
+        'session_lead_minutes': commonest('session', SESSION_LEAD_MINUTES),
     })
 
 

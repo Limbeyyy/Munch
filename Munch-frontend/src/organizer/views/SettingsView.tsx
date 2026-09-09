@@ -1,43 +1,27 @@
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { Meeting, SchedulingPrefs, UserRoles } from '../../types';
-import { useOrganizer } from '../i18n';
+import { SchedulingPrefs } from '../../types';
+import { Pair, useOrganizer } from '../i18n';
 import { forgetSessionGap } from '../sessionGap';
-import { BarRow, Btn, Card, Head, Switch, Tabs } from '../ui';
+import { Btn, Card, Head, Switch, Tabs } from '../ui';
 
-interface Props { meetings: Meeting[]; }
+// Nothing here belongs to one meeting any more: the settings that did
+// have gone to the live desk, where a meeting is in front of the host.
 
-/** Event-wide preferences: chat rules, accessibility, and where data sits. */
-export const SettingsView: React.FC<Props> = ({ meetings }) => {
-  const { t, lang, setLang, a11y, setA11y } = useOrganizer();
-  const [tab, setTab] = useState('rules');
-  const [selected, setSelected] = useState(meetings[0]?.id ?? '');
-  const [settings, setSettings] = useState({ chat_enabled: false, direct_messages_enabled: false });
-  const [saving, setSaving] = useState(false);
-  const [roles, setRoles] = useState<UserRoles | null>(null);
-
-  useEffect(() => {
-    apiClient.getMyRoles().then(setRoles).catch(() => undefined);
-  }, []);
-
-  const meeting = meetings.find((m) => m.id === selected) ?? meetings[0];
-
-  useEffect(() => {
-    if (!meeting) return;
-    apiClient.getChatSettings(meeting.id).then(setSettings).catch(() => undefined);
-  }, [meeting]);
-
-  const toggle = async (patch: Partial<typeof settings>) => {
-    if (!meeting) return;
-    try {
-      setSaving(true);
-      setSettings(await apiClient.updateChatSettings(meeting.id, patch));
-      toast.success(t({ ne: 'सेभ भयो', en: 'Saved' }));
-    } catch {
-      toast.error(t({ ne: 'सेभ हुन सकेन', en: 'Could not save' }));
-    } finally { setSaving(false); }
-  };
+/**
+ * How the programme runs: its spacing, its reminders, and the hall device.
+ *
+ * Three things that used to be here have gone where they are actually
+ * used. The chat rules are a thing the host does to a session that is
+ * running, so they sit with the live controls. Accessibility already has
+ * its own button in the header, and the plan its own page - two ways to
+ * change one setting is one more than anybody needs, and the second is
+ * always the one that goes stale.
+ */
+export const SettingsView: React.FC = () => {
+  const { t } = useOrganizer();
+  const [tab, setTab] = useState('schedule');
 
   return (
     <>
@@ -53,65 +37,15 @@ export const SettingsView: React.FC<Props> = ({ meetings }) => {
         active={tab}
         onChange={setTab}
         tabs={[
-          { id: 'rules', label: { ne: 'च्याट नियम', en: 'Chat rules' } },
           { id: 'schedule', label: { ne: 'तालिका', en: 'Scheduling' } },
+          { id: 'notify', label: { ne: 'सूचना', en: 'Notifications' } },
           { id: 'device', label: { ne: 'हलको यन्त्र', en: 'Hall device' } },
-          { id: 'acc', label: { ne: 'पहुँच', en: 'Accessibility' } },
-          { id: 'plan', label: { ne: 'योजना', en: 'Plan' } },
         ]}
       />
 
-      {tab === 'rules' && (
-        <Card className="max-w-[760px]">
-          {meetings.length > 1 && (
-            <div className="mb-4">
-              <label className="block text-[12.5px] text-[#6E7C8E] mb-1.5">
-                {t({ ne: 'कुन सत्र', en: 'Which session' })}
-              </label>
-              <select
-                value={meeting?.id ?? ''}
-                onChange={(e) => setSelected(e.target.value)}
-                className="w-full border border-navy-800/15 rounded-[9px] px-3 py-2 bg-white text-[14px]"
-              >
-                {meetings.map((m) => (
-                  <option key={m.id} value={m.id}>{m.title} · {m.meeting_code}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {!meeting ? (
-            <p className="text-[12.5px] text-[#6E7C8E]">
-              {t({ ne: 'पहिले एउटा सत्र बनाउनुहोस्।', en: 'Create a session first.' })}
-            </p>
-          ) : (
-            <div className="flex flex-col gap-4">
-              <Switch
-                on={settings.chat_enabled}
-                disabled={saving}
-                onToggle={() => toggle({ chat_enabled: !settings.chat_enabled })}
-                label={{ ne: 'च्याट कोठा खुला राख्ने', en: 'Keep the chat room open' }}
-                hint={{
-                  ne: 'बन्द राखे कसैले पनि सन्देश पठाउन पाउँदैनन्।',
-                  en: 'With this off, nobody can send messages at all.',
-                }}
-              />
-              <Switch
-                on={settings.direct_messages_enabled}
-                disabled={saving}
-                onToggle={() => toggle({ direct_messages_enabled: !settings.direct_messages_enabled })}
-                label={{ ne: 'सिधा सन्देश लिने', en: 'Accept direct messages' }}
-                hint={{
-                  ne: 'सहभागीले प्रस्तोतालाई पठाएको सन्देश तपाईंको स्वीकृतिपछि मात्र पुग्छ।',
-                  en: 'A message to a presenter reaches them only after you approve it.',
-                }}
-              />
-            </div>
-          )}
-        </Card>
-      )}
-
       {tab === 'schedule' && <SchedulingPanel />}
+
+      {tab === 'notify' && <NotificationPanel />}
 
       {tab === 'device' && (
         <Card className="max-w-[760px]">
@@ -146,47 +80,6 @@ Authorization: Bearer <ingest token>
         </Card>
       )}
 
-      {tab === 'acc' && (
-        <Card className="max-w-[760px]">
-          <p className="text-[12.5px] text-[#6E7C8E]">
-            {t({
-              ne: 'यी छनोट यही ब्राउजरमा सुरक्षित हुन्छन्।',
-              en: 'These choices are remembered in this browser.',
-            })}
-          </p>
-
-          <div className="mt-4 flex flex-col gap-4">
-            <Switch
-              on={a11y.big}
-              onToggle={() => setA11y((v) => ({ ...v, big: !v.big }))}
-              label={{ ne: 'ठूलो अक्षर', en: 'Larger text' }}
-              hint={{ ne: 'सबै लेखाइ ठूलो हुन्छ।', en: 'Bigger type throughout.' }}
-            />
-            <Switch
-              on={a11y.contrast}
-              onToggle={() => setA11y((v) => ({ ...v, contrast: !v.contrast }))}
-              label={{ ne: 'गाढा किनारा', en: 'Stronger borders' }}
-              hint={{ ne: 'हल्का धर्का गाढा हुन्छन्।', en: 'Faint lines become solid.' }}
-            />
-            <Switch
-              on={a11y.calm}
-              onToggle={() => setA11y((v) => ({ ...v, calm: !v.calm }))}
-              label={{ ne: 'चलायमान कम', en: 'Reduce motion' }}
-              hint={{ ne: 'एनिमेसन बन्द हुन्छ।', en: 'Turns off animation.' }}
-            />
-          </div>
-
-          <div className="mt-5 pt-4 border-t border-navy-800/[.08]">
-            <p className="text-[12.5px] text-[#6E7C8E] mb-2">{t({ ne: 'भाषा', en: 'Language' })}</p>
-            <div className="flex gap-2">
-              <Btn tone={lang === 'ne' ? 'solid' : 'plain'} onClick={() => setLang('ne')}>नेपाली</Btn>
-              <Btn tone={lang === 'en' ? 'solid' : 'plain'} onClick={() => setLang('en')}>English</Btn>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {tab === 'plan' && <PlanPanel roles={roles} />}
     </>
   );
 };
@@ -198,6 +91,169 @@ Authorization: Bearer <ingest token>
  * shown as they are used rather than as a feature list; the pricing page is
  * one click away for whoever needs more room.
  */
+/**
+ * How much warning this host's programme gives, and whether it gives any.
+ *
+ * A meeting is called further ahead than a talk inside it, because people
+ * travel to the first and walk down a corridor to the second. How much
+ * further depends on the event, which is why these are fields rather than
+ * the hour and quarter-hour that used to be written into the code.
+ */
+const NotificationPanel: React.FC = () => {
+  const { t, num } = useOrganizer();
+  const [prefs, setPrefs] = useState<SchedulingPrefs | null>(null);
+  const [meetingLead, setMeetingLead] = useState('');
+  const [sessionLead, setSessionLead] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    apiClient
+      .getSchedulingPrefs()
+      .then((found) => {
+        setPrefs(found);
+        setMeetingLead(String(found.meeting_reminder_minutes));
+        setSessionLead(String(found.session_reminder_minutes));
+      })
+      .catch(() => undefined);
+  }, []);
+
+  if (!prefs) {
+    return (
+      <Card className="max-w-[760px]">
+        <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>
+      </Card>
+    );
+  }
+
+  const most = prefs.maximums.meeting_reminder_minutes;
+  const reads = (raw: string) => {
+    const n = Number(raw);
+    return raw.trim() !== '' && Number.isInteger(n) && n >= 0 && n <= most ? n : null;
+  };
+  const wantedMeeting = reads(meetingLead);
+  const wantedSession = reads(sessionLead);
+  const changed =
+    (wantedMeeting !== null && wantedMeeting !== prefs.meeting_reminder_minutes) ||
+    (wantedSession !== null && wantedSession !== prefs.session_reminder_minutes);
+  const valid = wantedMeeting !== null && wantedSession !== null;
+
+  const send = async (patch: Record<string, number | boolean>) => {
+    try {
+      setSaving(true);
+      const saved = await apiClient.setSchedulingPrefs(patch);
+      setPrefs(saved);
+      setMeetingLead(String(saved.meeting_reminder_minutes));
+      setSessionLead(String(saved.session_reminder_minutes));
+      toast.success(t({ ne: 'सेभ भयो', en: 'Saved' }));
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.error ?? t({ ne: 'सेभ हुन सकेन', en: 'Could not save' })
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const field = (
+    id: string,
+    label: Pair,
+    hint: Pair,
+    value: string,
+    onChange: (next: string) => void
+  ) => (
+    <div>
+      <label htmlFor={id} className="block text-[13px] font-medium mb-1">
+        {t(label)}
+      </label>
+      <div className="flex items-center gap-2">
+        <input
+          id={id}
+          type="number"
+          min={0}
+          max={most}
+          step={5}
+          value={value}
+          disabled={!prefs.reminders_enabled}
+          onChange={(e) => onChange(e.target.value)}
+          className="border border-navy-800/15 rounded-[9px] px-3 py-2 w-[120px] bg-white disabled:opacity-50"
+        />
+        <span className="text-[13px] text-[#6E7C8E]">
+          {t({ ne: 'मिनेट अघि', en: 'minutes before' })}
+        </span>
+      </div>
+      <p className="text-[12.5px] text-[#6E7C8E] mt-1">{t(hint)}</p>
+    </div>
+  );
+
+  return (
+    <Card className="max-w-[760px]">
+      <Switch
+        on={prefs.reminders_enabled}
+        disabled={saving}
+        onToggle={() => send({ reminders_enabled: !prefs.reminders_enabled })}
+        label={{ ne: 'सूचना पठाउने', en: 'Send reminders' }}
+        hint={{
+          ne: 'बन्द राखे यो कार्यक्रमबाट कुनै सम्झना जाँदैन।',
+          en: 'With this off, this programme sends none at all.',
+        }}
+      />
+
+      <div className="mt-5 pt-4 border-t border-navy-800/[.08] flex flex-col gap-4">
+        {field(
+          'manch-meeting-lead',
+          { ne: 'बैठकभन्दा अघि', en: 'Before a meeting' },
+          {
+            ne: 'बैठक सुरु हुनुभन्दा कति अघि सम्झाउने।',
+            en: 'How long before a meeting starts everybody is called.',
+          },
+          meetingLead,
+          setMeetingLead
+        )}
+        {field(
+          'manch-session-lead',
+          { ne: 'सत्रभन्दा अघि', en: 'Before a session' },
+          {
+            ne: 'प्रत्येक सत्र सुरु हुनुभन्दा कति अघि सम्झाउने।',
+            en: 'How long before each session on the programme.',
+          },
+          sessionLead,
+          setSessionLead
+        )}
+
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <Btn
+            tone="amber"
+            disabled={!changed || !valid || saving || !prefs.reminders_enabled}
+            onClick={() =>
+              send({
+                meeting_reminder_minutes: wantedMeeting as number,
+                session_reminder_minutes: wantedSession as number,
+              })
+            }
+          >
+            {saving ? t({ ne: 'सेभ हुँदै…', en: 'Saving…' }) : t({ ne: 'सेभ', en: 'Save' })}
+          </Btn>
+          {!valid && (
+            <span className="text-[12.5px] text-live">
+              {t({
+                ne: `० देखि ${num(most)} मिनेटसम्म।`,
+                en: `Anything from 0 to ${most} minutes.`,
+              })}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <p className="text-[12.5px] text-[#6E7C8E] mt-4 pt-3.5 border-t border-navy-800/[.08]">
+        {t({
+          ne: 'एउटा बैठक र त्यसका चार सत्र भए पाँच सम्झना जान्छन् — बैठकको एउटा, हरेक सत्रको आ-आफ्नै।',
+          en: 'A meeting with four sessions sends five reminders: one for the meeting, and one apiece for the sessions.',
+        })}
+      </p>
+    </Card>
+  );
+};
+
 /**
  * How much room this host leaves between one session and the next.
  *
@@ -311,84 +367,6 @@ const SchedulingPanel: React.FC = () => {
               en: `The default is ${prefs.default_session_gap_minutes} minutes.`,
             })}
       </p>
-    </Card>
-  );
-};
-
-const PlanPanel: React.FC<{ roles: UserRoles | null }> = ({ roles }) => {
-  const { t, num } = useOrganizer();
-
-  if (!roles?.plan || !roles.usage) {
-    return (
-      <Card className="max-w-[760px]">
-        <p className="text-[13px] text-[#6E7C8E]">
-          {t({ ne: 'योजनाको विवरण ल्याउँदै…', en: 'Fetching your plan…' })}
-        </p>
-      </Card>
-    );
-  }
-
-  const { plan, usage } = roles;
-  // A per-meeting ceiling has no single figure to spend, so it is stated
-  // rather than drawn as a bar.
-  const rows: { label: string; used: number | null; cap: number | null }[] = [
-    { label: t({ ne: 'कार्यक्रम', en: 'Events' }), used: usage.events, cap: plan.limits.events },
-    { label: t({ ne: 'बैठक', en: 'Meetings' }), used: usage.meetings, cap: plan.limits.meetings },
-    {
-      label: t({ ne: 'प्रति बैठक सत्र', en: 'Sessions per meeting' }),
-      used: null,
-      cap: plan.limits.sessions_per_meeting,
-    },
-  ];
-
-  return (
-    <Card className="max-w-[760px]">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="text-[15px] font-semibold text-navy-900">
-            {plan.name}
-            {!plan.paid && (
-              <span className="ml-2 text-[12px] font-normal text-[#6E7C8E]">
-                {t({ ne: 'निःशुल्क परीक्षण', en: 'free trial' })}
-              </span>
-            )}
-          </div>
-          <p className="mt-1 text-[12.5px] text-[#6E7C8E]">
-            {plan.paid
-              ? t({ ne: 'तपाईंको सदस्यता सक्रिय छ।', en: 'Your subscription is active.' })
-              : t({
-                  ne: 'परीक्षणमा २ कार्यक्रम, प्रत्येकमा २ बैठक, प्रत्येकमा २ सत्र।',
-                  en: 'The trial covers 2 events, 2 meetings each, 2 sessions each.',
-                })}
-          </p>
-        </div>
-        <Btn onClick={() => window.open('/pricing', '_blank')}>
-          {t({ ne: 'योजना हेर्नुहोस्', en: 'See plans' })}
-        </Btn>
-      </div>
-
-      <div className="mt-5 space-y-3">
-        {rows.map((row) =>
-          row.cap === null ? (
-            <div key={row.label} className="flex justify-between text-[13px]">
-              <span className="text-navy-900">{row.label}</span>
-              <span className="text-[#6E7C8E]">{t({ ne: 'असीमित', en: 'Unlimited' })}</span>
-            </div>
-          ) : row.used === null ? (
-            <div key={row.label} className="flex justify-between text-[13px]">
-              <span className="text-navy-900">{row.label}</span>
-              <span className="text-[#6E7C8E]">{t({ ne: 'सम्म', en: 'up to' })} {num(row.cap)}</span>
-            </div>
-          ) : (
-            <BarRow
-              key={row.label}
-              label={row.label}
-              pct={Math.min(100, Math.round((row.used / row.cap) * 100))}
-              right={`${num(row.used)} / ${num(row.cap)}`}
-            />
-          )
-        )}
-      </div>
     </Card>
   );
 };
