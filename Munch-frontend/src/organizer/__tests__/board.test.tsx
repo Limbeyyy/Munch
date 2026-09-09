@@ -99,6 +99,21 @@ describe('voting on a question', () => {
     expect(down.className).not.toContain('live');
   });
 
+  it('hugs its contents rather than stretching down the entry', async () => {
+    // The row is a flex row, so without this the pill grows to the height
+    // of the question and its answer and trails a column of empty tint.
+    api.getMeetingBoard.mockResolvedValue(board({
+      faq: [entry({ answer: 'Reception is at 5 PM sharp.', answered_by: 'Rahul' })],
+    }) as any);
+
+    show();
+
+    const pill = (await screen.findByRole('button', { name: 'Upvote' }))
+      .parentElement as HTMLElement;
+    expect(pill.className).toContain('self-start');
+    expect(pill.className).not.toContain('h-full');
+  });
+
   it('sends the vote and takes the answer back', async () => {
     api.voteOnBoard.mockResolvedValue(
       board({ faq: [entry({ score: 3, my_vote: 1 })] }) as any

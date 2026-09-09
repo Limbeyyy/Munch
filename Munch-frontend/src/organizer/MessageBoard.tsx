@@ -80,8 +80,15 @@ const Vote: React.FC<{
 
   return (
     <div
-      className={`flex flex-col items-center gap-[3px] rounded-[11px] border p-1 flex-none
-        transition-colors ${
+      /*
+       * `self-start` is doing real work: the row around this is a flex
+       * row, so without it the pill stretches to whatever height the
+       * question and its answer come to and leaves a column of empty
+       * tint below the arrows. It hugs its own contents and sits beside
+       * the question it belongs to.
+       */
+      className={`flex flex-col items-center gap-[3px] rounded-[11px] border
+        px-1 py-[3px] flex-none self-start transition-colors ${
         chosen === 1
           ? 'border-amber/70 bg-amber/[.10]'
           : chosen === -1
