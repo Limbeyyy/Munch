@@ -34,7 +34,16 @@ const OrganizerInner: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
 
-  const [view, setView] = useState('events');
+  /**
+   * The desk, on every arrival.
+   *
+   * A refresh mid-morning used to land on the programme, which is where
+   * a day is built rather than run - so the host had to navigate back to
+   * the thing they were in the middle of. The desk is what somebody
+   * opening this while an event is on wants first, and it says plainly
+   * when there is nothing to run.
+   */
+  const [view, setView] = useState('live');
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   /** Everything still awaiting a decision, with when each arrived. */
