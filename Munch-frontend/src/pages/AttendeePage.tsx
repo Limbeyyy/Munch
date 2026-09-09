@@ -7,7 +7,6 @@ import { useAuthStore } from '../store/authStore';
 import { EventMeeting, EventProgramme } from '../types';
 import { OrganizerProvider, useOrganizer } from '../organizer/i18n';
 import { Card, Tabs } from '../organizer/ui';
-import { rememberPortal } from './HomeRedirect';
 import { AttendeeShell } from '../attendee/AttendeeShell';
 import { Spine, SpineItem } from '../attendee/Spine';
 import { SessionDrawer } from '../attendee/SessionDrawer';
@@ -20,6 +19,7 @@ import { SubscriptionView } from '../organizer/SubscriptionView';
 import { RemindersView } from '../organizer/RemindersView';
 import { useNudges } from '../organizer/nudges';
 import { useMeetingPulse } from '../organizer/meetingPulse';
+import { useSeen } from '../organizer/seen';
 
 const dayKey = (iso: string) => new Date(iso).toISOString().slice(0, 10);
 
@@ -43,19 +43,17 @@ const AttendeeInner: React.FC = () => {
   const [open, setOpen] = useState<SpineItem | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [day, setDay] = useState('');
-  const [canOrganize, setCanOrganize] = useState(false);
 
   // One poll for both the rail's badge and the reminders page itself.
   const nudges = useNudges();
 
+  // Opening a section is looking at it, so its badge is spent.
+  useSeen(view);
+
   useEffect(() => {
-    // Only actual host standing earns the organizer panel — being invited to
-    // someone else's programme puts it in the list without granting it.
-    apiClient
-      .getMyRoles()
-      .then((roles) => setCanOrganize(roles.is_host))
-      .catch(() => setCanOrganize(false));
-  }, []);
+    if (view === 'reminders' && nudges.unread > 0) nudges.markRead();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, nudges.unread]);
 
   const load = useCallback(async () => {
     try {
@@ -180,11 +178,6 @@ const AttendeeInner: React.FC = () => {
                 }),
                 event.venue,
               ].filter(Boolean).join(' · ')
-            : undefined
-        }
-        onSwitchToOrganizer={
-          canOrganize
-            ? () => { rememberPortal('host'); navigate('/organizer'); }
             : undefined
         }
         onLeave={logout}

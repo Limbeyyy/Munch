@@ -74,9 +74,12 @@ export const HubView: React.FC<Props> = ({ meetings, guestToken }) => {
         ]}
       />
 
+      {/* Looking, and nothing else: photographs are the record the host
+          keeps, so adding to them is done from their side - even by
+          somebody who presents elsewhere on the programme. */}
       {tab === 'photos' ? (
         meeting ? (
-          <PhotoAlbums meetingRef={meeting.meeting_code} canManage={!guestToken} />
+          <PhotoAlbums meetingRef={meeting.meeting_code} canManage={false} />
         ) : (
           <Card><Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No meeting yet.' })}</Empty></Card>
         )

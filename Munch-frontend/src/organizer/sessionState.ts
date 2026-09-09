@@ -178,3 +178,50 @@ export const howFarOff = (
   if (minutes < 60 * 24) return { amount: Math.round(minutes / 60), unit: 'hour' };
   return { amount: Math.round(minutes / (60 * 24)), unit: 'day' };
 };
+
+/** What the desk is holding, and how it should read. */
+export type DeskState = 'live' | 'due' | 'upcoming';
+
+export interface Desk<T> {
+  session: T | null;
+  state: DeskState | null;
+}
+
+/**
+ * Which session a live desk should be showing, and in what state.
+ *
+ * A running order moves on. Session A holds the desk until its slot is
+ * spent, then B takes it, then C - so a host looking at the desk sees what
+ * is happening or what is next, never a slot that came and went hours ago.
+ *
+ * A session on stage always wins: the host started it, and that is the
+ * thing that is happening. Otherwise the desk shows the one whose slot
+ * contains this moment - due, and startable - or failing that the next one
+ * still ahead, which is shown but cannot be started yet.
+ *
+ * A scheduled session whose slot has passed is skipped rather than
+ * promoted. It was never started, and the agenda still says so; the desk
+ * is about what to do now.
+ */
+export const deskSession = <
+  T extends { status: string; starts_at: string; duration_minutes: number }
+>(
+  sessions: T[],
+  now: number = Date.now()
+): Desk<T> => {
+  const live = sessions.find((s) => s.status === 'live');
+  if (live) return { session: live, state: 'live' };
+
+  const ahead = sessions
+    .filter((s) => s.status === 'scheduled')
+    .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at));
+
+  const endOf = (s: T) =>
+    +new Date(s.starts_at) + s.duration_minutes * 60000;
+
+  const due = ahead.find((s) => +new Date(s.starts_at) <= now && now < endOf(s));
+  if (due) return { session: due, state: 'due' };
+
+  const next = ahead.find((s) => +new Date(s.starts_at) > now);
+  return next ? { session: next, state: 'upcoming' } : { session: null, state: null };
+};

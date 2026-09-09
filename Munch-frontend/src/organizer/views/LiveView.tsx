@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { ACTIVE_POLL_MS } from '../../services/polling';
-import { doorway, howFarOff } from '../sessionState';
+import { deskSession, doorway, howFarOff } from '../sessionState';
 import { ChatRules } from '../ChatRules';
 import {
   AttendanceReport, ChatMessage, GuestAttendee, Meeting, MeetingParticipant,
@@ -42,18 +42,25 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
   const [sessions, setSessions] = useState<Session[]>([]);
 
   /**
-   * The session on the desk: whatever is on stage, or the next one due.
+   * The desk follows the clock, so the running order moves on by itself.
    *
    * A meeting is a morning; a session is the thing that starts, runs and
-   * ends. Everything on this screen used to say "session" and act on the
-   * meeting, which is why starting from here started the whole morning.
+   * ends. Which one the desk holds is worked out in one place and shared
+   * with the attendee's panel, so the two cannot disagree about what is
+   * happening.
    */
-  const onStage = sessions.find((x) => x.status === 'live');
-  const upNext = sessions
-    .filter((x) => x.status === 'scheduled')
-    .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at))[0];
-  const stage = onStage ?? upNext;
-  const isLive = !!onStage;
+  const [tick, setTick] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setTick(Date.now()), 20000);
+    return () => clearInterval(id);
+  }, []);
+
+  const desk = deskSession(sessions, tick);
+  const stage = desk.session;
+  const isLive = desk.state === 'live';
+  /** Its slot contains this moment, so the host may put it on stage. */
+  const isDue = desk.state === 'due';
+  const onStage = isLive ? stage : undefined;
 
   /**
    * When the room opens for whatever is on the desk, and what may be done
@@ -63,12 +70,6 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
    * but whether the buttons do anything: going in early is refused by the
    * server, and a button that only produces that refusal reads as broken.
    */
-  const [tick, setTick] = useState(Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setTick(Date.now()), 20000);
-    return () => clearInterval(id);
-  }, []);
-
   const door = doorway(stage?.starts_at, tick);
   const away = stage ? howFarOff(stage.starts_at, tick) : null;
   const awayText = (): string => {
@@ -262,9 +263,11 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
               <span className="text-[12.5px] text-amber font-semibold">
                 {isLive
                   ? t({ ne: 'चलिरहेको सत्र', en: 'On stage now' })
+                  : isDue
+                  ? t({ ne: 'सुरु गर्ने समय भयो', en: 'Due now' })
                   : t({ ne: 'अर्को सत्र', en: 'Up next' })}
               </span>
-              {!isLive && stage && (
+              {!isLive && !isDue && stage && (
                 <span className="text-[12px] text-[#C9DAF1] bg-white/[.14] rounded-full px-2.5 leading-[20px]">
                   {awayText()}
                 </span>
@@ -317,9 +320,9 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
                 ) : stage ? (
                   <button
                     onClick={start}
-                    disabled={busy || !door.canStart}
+                    disabled={busy || !isDue}
                     title={
-                      door.canStart
+                      isDue
                         ? undefined
                         : t({
                             ne: 'सत्रको समय आएपछि मात्र सुरु गर्न मिल्छ',

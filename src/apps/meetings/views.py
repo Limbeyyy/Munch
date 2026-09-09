@@ -864,6 +864,16 @@ class MeetingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
 
+        # Admitting somebody who cannot come in yet does two wrong things:
+        # it lets them past a door the schedule says is shut, and it counts
+        # them as present in a session that has not opened. The request
+        # waits where it is until there is something to come in for, which
+        # is a quarter of an hour before the next session at the earliest.
+        from src.apps.meetings.entry import guest_door_open, no_session_response
+
+        if decision == 'admit' and not guest_door_open(meeting):
+            return no_session_response(meeting)
+
         guest.status = decisions[decision]
         guest.decided_by = request.user
         guest.decided_at = timezone.now()

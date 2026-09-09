@@ -2,7 +2,9 @@ import React from 'react';
 import { EventMeeting, EventProgramme } from '../../types';
 import { useOrganizer } from '../../organizer/i18n';
 import { Btn, Card } from '../../organizer/ui';
-import { doorway, howFarOff, sessionState } from '../../organizer/sessionState';
+import {
+  deskSession, doorway, howFarOff, sessionState,
+} from '../../organizer/sessionState';
 import { Spine, SpineItem, clock } from '../Spine';
 
 interface Props {
@@ -118,12 +120,19 @@ export const DashboardView: React.FC<Props> = ({
     .sort((a, b) => +new Date(a.session.starts_at) - +new Date(b.session.starts_at));
   const upcoming = ahead.slice(0, 3);
   /**
-   * What the panel shows when nothing is on stage: the next session,
-   * however far off it is. An empty panel saying "nothing is running"
-   * answers a question nobody asked - what people want to know is what is
-   * next and whether they can go in yet.
+   * What the panel shows when nothing is on stage: the session the desk
+   * would be holding, however far off it is. An empty panel saying
+   * "nothing is running" answers a question nobody asked - what people
+   * want to know is what is next and whether they can go in yet.
+   *
+   * The same rule the organizer's desk uses, so the two agree about which
+   * session the day has reached.
    */
-  const next = ahead[0] ?? null;
+  const onDesk = deskSession(
+    items.map((i) => i.session),
+    Date.now()
+  ).session;
+  const next = items.find((i) => i.session.id === onDesk?.id) ?? ahead[0] ?? null;
   const attendedCount = done.filter((i) => attendedIds.has(i.session.id)).length;
   const missed = done.filter((i) => !attendedIds.has(i.session.id));
 
