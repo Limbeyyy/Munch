@@ -15,6 +15,9 @@ import { PhotoAlbums } from '../Photos';
 
 const PAGE_SIZE = 20;
 
+/** The two halves of a queue: deciding, and what was decided. */
+type Half = 'permissions' | 'transfers';
+
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -117,6 +120,14 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
    * they did, because only live meetings were ever fetched.
    */
   const [historyMeeting, setHistoryMeeting] = useState('');
+  /**
+   * Which half of a queue is open: deciding, or what was decided.
+   *
+   * Both queues answer the same two questions - what may be passed on,
+   * and what has been - and stacking them meant scrolling past the whole
+   * queue to reach the record of it.
+   */
+  const [half, setHalf] = useState<Half>('permissions');
   const [accepting, setAccepting] = useState<Row | null>(null);
   const [events, setEvents] = useState<EventProgramme[]>([]);
   const [pending, setPending] = useState<Record<string, ChatMessage[]>>({});
@@ -419,6 +430,9 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
         n + (pending[m.id] ?? []).filter((x) => !!x.sender_is_guest === guests).length,
       0
     );
+  /** What has already been passed on, for whichever queue is open. */
+  const passedOn = tab === 'guests' ? reviewedGuests : reviewedUsers;
+
   const messageCount = pendingFrom(false) + reviewedUsers.length;
   const guestCount =
     live.reduce((n, m) => n + (waiting[m.id]?.length ?? 0), 0)
@@ -483,6 +497,38 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
         </div>
       ) : (
       <>
+      {/* One queue, two halves of the same job: deciding what may be
+          passed on, and moving what already was. They were stacked on one
+          screen, which meant scrolling past the whole queue to reach the
+          record of it. */}
+      <div className="bg-white border border-navy-800/15 rounded-xl px-4 pt-3 pb-1 mb-3.5">
+        <h2 className="text-[15.5px] font-semibold">
+          {tab === 'guests'
+            ? t({ ne: 'पाहुना', en: 'Guests' })
+            : t({ ne: 'सन्देश', en: 'Messages' })}
+        </h2>
+        <Tabs
+          active={half}
+          onChange={(id) => { setHalf(id as Half); setPage(1); }}
+          tabs={[
+            {
+              id: 'permissions',
+              label: {
+                ne: `अनुमति (${num(rows.length)})`,
+                en: `Permissions (${rows.length})`,
+              },
+            },
+            {
+              id: 'transfers',
+              label: {
+                ne: `स्थानान्तरण (${num(passedOn.length)})`,
+                en: `Transfers (${passedOn.length})`,
+              },
+            },
+          ]}
+        />
+      </div>
+
       {meetings.length > 0 && (
         <div className="mb-3.5">
           <label
@@ -515,6 +561,29 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
         </div>
       )}
 
+      {/* Out of the queue, into the record: what was passed on, and
+          whether it also went on the board. */}
+      {half === 'transfers' ? (
+      <div className="mt-3.5">
+        <ReviewedMessages
+          busy={busy}
+          onSort={sortReviewed}
+          messages={passedOn}
+          empty={
+            tab === 'guests'
+              ? {
+                  ne: 'पाहुनाबाट आएको कुनै सिधा सन्देश अझै पठाइएको छैन।',
+                  en: 'No direct message from a guest has been passed on yet.',
+                }
+              : {
+                  ne: 'कुनै सिधा सन्देश अझै पठाइएको छैन।',
+                  en: 'No direct message has been passed on yet.',
+                }
+          }
+        />
+      </div>
+      ) : (
+      <>
       {/* Search */}
       <div className="flex items-center gap-2 flex-wrap mb-3.5">
         <div className="relative flex-1 min-w-[240px]">
@@ -669,6 +738,26 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
         </div>
       )}
 
+      {/* Paging, only once there is more than a page to show */}
+      {pageCount > 1 && (
+        <div className="flex items-center gap-2 mt-4 justify-center">
+          <Btn sm disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
+            {t({ ne: 'अघिल्लो', en: 'Previous' })}
+          </Btn>
+          <span className="text-[12.5px] text-[#6E7C8E] tabular-nums px-2">
+            {t({
+              ne: `पृष्ठ ${num(currentPage)} / ${num(pageCount)}`,
+              en: `Page ${currentPage} of ${pageCount}`,
+            })}
+          </span>
+          <Btn sm disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>
+            {t({ ne: 'अर्को', en: 'Next' })}
+          </Btn>
+        </div>
+      )}
+      </>
+      )}
+
       </>
       )}
 
@@ -730,47 +819,6 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
         </Modal>
       )}
 
-      {(tab === 'messages' || tab === 'guests') && (
-      <>
-      {/* Paging, only once there is more than a page to show */}
-      {pageCount > 1 && (
-        <div className="flex items-center gap-2 mt-4 justify-center">
-          <Btn sm disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
-            {t({ ne: 'अघिल्लो', en: 'Previous' })}
-          </Btn>
-          <span className="text-[12.5px] text-[#6E7C8E] tabular-nums px-2">
-            {t({
-              ne: `पृष्ठ ${num(currentPage)} / ${num(pageCount)}`,
-              en: `Page ${currentPage} of ${pageCount}`,
-            })}
-          </span>
-          <Btn sm disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>
-            {t({ ne: 'अर्को', en: 'Next' })}
-          </Btn>
-        </div>
-      )}
-      {/* Out of the queue, into the record: what was passed on, and
-          whether it also went on the board. */}
-      <div className="mt-3.5">
-        <ReviewedMessages
-          busy={busy}
-          onSort={sortReviewed}
-          messages={tab === 'guests' ? reviewedGuests : reviewedUsers}
-          empty={
-            tab === 'guests'
-              ? {
-                  ne: 'पाहुनाबाट आएको कुनै सिधा सन्देश अझै पठाइएको छैन।',
-                  en: 'No direct message from a guest has been passed on yet.',
-                }
-              : {
-                  ne: 'कुनै सिधा सन्देश अझै पठाइएको छैन।',
-                  en: 'No direct message has been passed on yet.',
-                }
-          }
-        />
-      </div>
-      </>
-      )}
     </>
   );
 };
