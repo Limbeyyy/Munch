@@ -17,6 +17,9 @@ import { FigmaIcon, FigmaIconName } from '../assets/icons';
 import { OrganizerProvider } from '../organizer/i18n';
 
 
+/** The only three things allowed to sit beside the room. */
+type SidePanelId = 'chat' | 'resources' | 'questions';
+
 const formatFileSize = (bytes?: number | null): string => {
   if (!bytes) return '—';
   const units = ['B', 'KB', 'MB', 'GB'];
@@ -76,7 +79,21 @@ const MeetingRoomInner: React.FC = () => {
   const [showAttendance, setShowAttendance] = useState(false);
   /** Panels the bar along the foot opens over the room. */
   const [showPeople, setShowPeople] = useState(false);
-  const [showQuestions, setShowQuestions] = useState(false);
+  /**
+   * What the bar has been asked to put beside the room, in the order it
+   * was asked for. First clicked sits at the top; clicking it again takes
+   * it away. Nothing else may occupy that column, so the transcript keeps
+   * the width until somebody actually wants something there.
+   */
+  const [side, setSide] = useState<SidePanelId[]>([]);
+  const [resourceTab, setResourceTab] = useState<'slides' | 'photos'>('slides');
+  const toggleSide = (panel: SidePanelId) =>
+    setSide((open) =>
+      open.includes(panel) ? open.filter((x) => x !== panel) : [...open, panel]
+    );
+  const closeSide = (panel: SidePanelId) =>
+    setSide((open) => open.filter((x) => x !== panel));
+
   /** The meeting's running order, for the agenda down the left. */
   const [agenda, setAgenda] = useState<Session[]>([]);
   const [attendance, setAttendance] = useState<AttendanceReport | null>(null);
@@ -881,15 +898,6 @@ const MeetingRoomInner: React.FC = () => {
         </RoomPanel>
       )}
 
-      {/* The board of what the host has put up for everybody to read */}
-      {showQuestions && meetingId && (
-        <RoomPanel title="Questions" onClose={() => setShowQuestions(false)} wide>
-          <div className="p-4">
-            <MessageBoard meetingId={meetingId} refreshMs={20000} canAnswer={canOrganize} />
-          </div>
-        </RoomPanel>
-      )}
-
       {showAttendance && (
         <RoomPanel title="Attendance" onClose={() => setShowAttendance(false)} wide>
           <div className="p-4">
@@ -1003,7 +1011,13 @@ const MeetingRoomInner: React.FC = () => {
       )}
 
       {/* The room itself: the running order, the stage, and the side panels */}
-      <div className="grid gap-4 p-4 xl:grid-cols-[332px_minmax(0,1fr)_358px] items-start">
+      <div
+        className={`grid gap-4 p-4 items-start ${
+          side.length > 0
+            ? 'xl:grid-cols-[332px_minmax(0,1fr)_358px]'
+            : 'xl:grid-cols-[332px_minmax(0,1fr)]'
+        }`}
+      >
         {/* What the day runs through */}
         <RoomCard className="xl:sticky xl:top-4">
           <div className="bg-[#fcfcfc] h-12 grid place-items-center px-4">
@@ -1161,22 +1175,47 @@ const MeetingRoomInner: React.FC = () => {
           </RoomCard>
         </div>
 
-        {/* Resources and chat */}
-        <div className="flex flex-col gap-3 min-w-0">
-          <RoomCard id="manch-room-resources">
-            <div className="bg-[#fcfcfc] flex items-center justify-center px-4 pt-2 pb-1">
-              <h2 className="flex-1 text-[18px] text-black text-center tracking-[-0.09px]">
-                Resources ({resources.length})
-              </h2>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploadPercent !== null}
-                className="text-[13px] px-3 py-1.5 rounded-lg bg-navy-800 hover:bg-navy-700
-                  text-white disabled:opacity-50 flex-none"
-              >
-                {uploadPercent !== null ? `${uploadPercent}%` : '+ Upload'}
-              </button>
+        {/* Whatever the bar has been asked for, in the order it was asked.
+            Only these three may sit here, and until one is asked for the
+            transcript keeps the width to itself. */}
+        {side.length > 0 && (
+          <div className="flex flex-col gap-3 min-w-0">
+            {side.map((panel) => (
+              <React.Fragment key={panel}>
+                {panel === 'resources' && (
+          <RoomCard>
+            <SidePanelHead title="Resources" onClose={() => closeSide('resources')} />
+
+            <div className="bg-[#fcfcfc] flex border-b border-[#e3e8ef]" role="tablist">
+              {(['slides', 'photos'] as const).map((which) => (
+                <button
+                  key={which}
+                  role="tab"
+                  aria-selected={resourceTab === which}
+                  onClick={() => setResourceTab(which)}
+                  className={`flex-1 py-2 text-[14px] capitalize transition-colors ${
+                    resourceTab === which
+                      ? 'text-black font-medium border-b-2 border-black'
+                      : 'text-[#49454f] hover:text-black'
+                  }`}
+                >
+                  {which}
+                </button>
+              ))}
             </div>
+
+            {resourceTab === 'slides' && (
+              <div className="flex justify-end px-4 pt-2">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadPercent !== null}
+                  className="text-[13px] px-3 py-1.5 rounded-lg bg-navy-800 hover:bg-navy-700
+                    text-white disabled:opacity-50"
+                >
+                  {uploadPercent !== null ? `${uploadPercent}%` : '+ Upload'}
+                </button>
+              </div>
+            )}
 
             <input ref={fileInputRef} type="file" onChange={handleUpload} className="hidden" />
 
@@ -1189,6 +1228,11 @@ const MeetingRoomInner: React.FC = () => {
               </div>
             )}
 
+            {resourceTab === 'photos' ? (
+              <div className="px-4 py-3">
+                <PhotoUploads meetingRef={meetingCode ?? ''} />
+              </div>
+            ) : (
             <div className="max-h-[276px] overflow-y-auto">
               {resources.length === 0 ? (
                 <p className="text-[14px] text-[#656565] px-4 py-3">
@@ -1236,35 +1280,13 @@ const MeetingRoomInner: React.FC = () => {
                 ))
               )}
             </div>
+            )}
           </RoomCard>
 
-          {/* Photographs of the day. A different thing from the papers
-              circulated during it, so a section of its own. */}
-          {meetingCode && (
-            <RoomCard>
-              <div className="bg-[#fcfcfc] px-4 pt-2 pb-1">
-                <h2 className="text-[18px] text-black text-center tracking-[-0.09px]">
-                  Photos
-                </h2>
-              </div>
-              <div className="px-4 py-3">
-                <PhotoUploads meetingRef={meetingCode} />
-              </div>
-            </RoomCard>
-          )}
-
-          <RoomCard id="manch-room-chat">
-            <div className="bg-[#fcfcfc] flex items-center justify-center px-4 pt-2 pb-1">
-              <h2 className="flex-1 text-[18px] text-black text-center tracking-[-0.09px]">
-                Chat
-              </h2>
-              {unread > 0 && (
-                <span className="bg-live text-white text-[11px] font-bold rounded-full
-                  min-w-[20px] h-5 px-1 grid place-items-center flex-none">
-                  {unread > 9 ? '9+' : unread}
-                </span>
-              )}
-            </div>
+                )}
+                {panel === 'chat' && (
+          <RoomCard>
+            <SidePanelHead title="Chat" badge={unread} onClose={() => closeSide('chat')} />
 
             {!chatSettings.chat_enabled ? (
               <div className="flex flex-col items-center justify-center gap-3 p-6 text-center">
@@ -1460,11 +1482,9 @@ const MeetingRoomInner: React.FC = () => {
                         }
                       }}
                       placeholder={
-                        chatTab === 'private'
-                          ? dmTarget
-                            ? 'Private message…'
-                            : 'Pick someone above first'
-                          : 'Message the room…'
+                        chatTab === 'private' && !dmTarget
+                          ? 'Pick someone above first'
+                          : 'Write your message here'
                       }
                       maxLength={2000}
                       className="flex-1 min-w-0 bg-[#f9fafb] border border-[#e5e7eb] rounded-[12px]
@@ -1472,11 +1492,14 @@ const MeetingRoomInner: React.FC = () => {
                     />
                     <button
                       onClick={sendMessage}
+                      aria-label="Send"
                       disabled={!draft.trim() || (chatTab === 'private' && !dmTarget)}
-                      className="bg-navy-800 hover:bg-navy-700 text-white px-4 rounded-[12px]
-                        text-[14px] font-medium disabled:opacity-50 flex-none"
+                      className="text-navy-700 hover:text-navy-900 px-2 flex-none
+                        disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      Send
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+                        <path d="M3 20.5v-6l8-2.5-8-2.5v-6l19 8.5-19 8.5Z" fill="currentColor" />
+                      </svg>
                     </button>
                   </div>
 
@@ -1493,39 +1516,59 @@ const MeetingRoomInner: React.FC = () => {
               </>
             )}
           </RoomCard>
-        </div>
+                )}
+                {panel === 'questions' && (
+          <RoomCard>
+            <SidePanelHead title="Questions" onClose={() => closeSide('questions')} />
+            <div className="p-3 max-h-[520px] overflow-y-auto">
+              {meetingId && (
+                <MessageBoard meetingId={meetingId} refreshMs={20000} canAnswer={canOrganize} />
+              )}
+            </div>
+          </RoomCard>
+                )}
+              </React.Fragment>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* The room's own controls, along the foot of it */}
+      {/* Centred on the bar, with leaving out of the way at the end of
+          it: a right-hand button that takes part in the centring drags
+          everything else off centre, which is what it had been doing. */}
       <nav
-        className="fixed inset-x-0 bottom-0 z-30 bg-navy-800 flex items-center justify-center
-          gap-2 sm:gap-[38px] px-4 py-3 overflow-x-auto"
+        className="fixed inset-x-0 bottom-0 z-30 bg-navy-800 px-4 py-3"
         aria-label="Meeting controls"
       >
-        <RoomBarButton
-          icon="participants"
-          label={`Participants${participants.length ? ` (${participants.length})` : ''}`}
-          onClick={() => setShowPeople(true)}
-        />
-        <RoomBarButton
-          icon="chat"
-          label="Chat"
-          badge={unread}
-          onClick={() => { setShowChat(true); scrollToRoomCard('manch-room-chat'); }}
-        />
-        <RoomBarButton
-          icon="questions"
-          label="Questions"
-          onClick={() => setShowQuestions(true)}
-        />
-        <RoomBarButton
-          icon="resources"
-          label="Resources"
-          onClick={() => scrollToRoomCard('manch-room-resources')}
-        />
-        <RoomBarButton icon="share" label="Share" onClick={() => setShowShare(true)} />
+        <div className="flex items-center justify-center gap-2 sm:gap-[38px] overflow-x-auto">
+          <RoomBarButton
+            icon="participants"
+            label={`Participants${participants.length ? ` (${participants.length})` : ''}`}
+            onClick={() => setShowPeople(true)}
+          />
+          <RoomBarButton
+            icon="chat"
+            label="Chat"
+            badge={unread}
+            open={side.includes('chat')}
+            onClick={() => { setShowChat(true); toggleSide('chat'); }}
+          />
+          <RoomBarButton
+            icon="questions"
+            label="Questions"
+            open={side.includes('questions')}
+            onClick={() => toggleSide('questions')}
+          />
+          <RoomBarButton
+            icon="resources"
+            label="Resources"
+            open={side.includes('resources')}
+            onClick={() => toggleSide('resources')}
+          />
+          <RoomBarButton icon="share" label="Share" onClick={() => setShowShare(true)} />
+        </div>
 
-        <span className="ms-auto ps-4 flex-none">
+        <span className="absolute end-4 top-1/2 -translate-y-1/2 hidden sm:block">
           <RoomBarButton
             icon="leave"
             label="Leave"
@@ -1537,6 +1580,36 @@ const MeetingRoomInner: React.FC = () => {
     </div>
   );
 };
+
+/**
+ * The head of a side panel: its name centred, and the cross that sends
+ * it away again.
+ */
+const SidePanelHead: React.FC<{
+  title: string;
+  badge?: number;
+  onClose: () => void;
+}> = ({ title, badge = 0, onClose }) => (
+  <div className="bg-[#fcfcfc] flex items-center gap-2 px-4 pt-2 pb-1">
+    <span className="w-6 flex-none" aria-hidden />
+    <h2 className="flex-1 text-[18px] text-black text-center tracking-[-0.09px]">
+      {title}
+      {badge > 0 && (
+        <span className="ms-2 inline-grid place-items-center min-w-[20px] h-5 px-1 align-middle
+          text-[11px] font-bold bg-live text-white rounded-full">
+          {badge > 9 ? '9+' : badge}
+        </span>
+      )}
+    </h2>
+    <button
+      onClick={onClose}
+      aria-label={`Close ${title.toLowerCase()}`}
+      className="w-6 flex-none text-[#9ea8b7] hover:text-navy-800 text-[20px] leading-none"
+    >
+      &#10005;
+    </button>
+  </div>
+);
 
 /** A white card, the way every panel in this room is drawn. */
 const RoomCard: React.FC<{
@@ -1577,12 +1650,15 @@ const RoomBarButton: React.FC<{
   onClick: () => void;
   badge?: number;
   tone?: 'default' | 'leave';
-}> = ({ icon, label, onClick, badge = 0, tone = 'default' }) => (
+  /** Whether the panel this opens is currently beside the room. */
+  open?: boolean;
+}> = ({ icon, label, onClick, badge = 0, tone = 'default', open }) => (
   <button
     type="button"
     onClick={onClick}
-    className="relative flex flex-col items-center gap-[9px] px-3 py-2 rounded-[12px] w-[92px]
-      flex-none hover:bg-white/[.08] transition-colors"
+    aria-pressed={open}
+    className={`relative flex flex-col items-center gap-[9px] px-3 py-2 rounded-[12px] w-[92px]
+      flex-none transition-colors ${open ? 'bg-white/[.16]' : 'hover:bg-white/[.08]'}`}
   >
     <FigmaIcon name={icon} size={24} />
     <span
@@ -1635,17 +1711,6 @@ const RoomPanel: React.FC<{
   </div>
 );
 
-/** Bring one of the side cards into view, for the bar's shortcuts. */
-const scrollToRoomCard = (id: string) => {
-  const card = document.getElementById(id);
-  if (!card) return;
-  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  card.animate?.(
-    [{ boxShadow: '0 0 0 0 rgba(18,56,110,0)' }, { boxShadow: '0 0 0 4px rgba(18,56,110,.25)' },
-     { boxShadow: '0 0 0 0 rgba(18,56,110,0)' }],
-    { duration: 900 }
-  );
-};
 
 /**
  * The room, with the reader's language and accessibility settings.
