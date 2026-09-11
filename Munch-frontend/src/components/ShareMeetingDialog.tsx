@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { apiClient } from '../services/api';
 import toast from 'react-hot-toast';
+import { FigmaIcon } from '../assets/icons';
 
 const API_ROOT = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
 
@@ -38,7 +39,8 @@ export const ShareMeetingDialog: React.FC<Props> = ({
   // QR is sent to the join form instead, since they have no account.
   const link = `${window.location.origin}/meeting/${meetingCode}`;
   const guestLink = `${window.location.origin}/login?join=${meetingCode}`;
-  const [showQr, setShowQr] = useState(false);
+  const qrSrc =
+    `${API_ROOT}/meetings/${meetingCode}/qr/?url=${encodeURIComponent(guestLink)}`;
   const parsed = splitEmails(raw);
   const invalid = parsed.filter((e) => !EMAIL_RE.test(e));
   const valid = parsed.filter((e) => EMAIL_RE.test(e));
@@ -92,112 +94,167 @@ export const ShareMeetingDialog: React.FC<Props> = ({
     }
   };
 
+  /**
+   * Hand the QR to whatever the device shares with, or open it.
+   *
+   * Nothing here can send a file, so this offers the image the platform
+   * already has rather than pretending to deliver it somewhere.
+   */
+  const shareQr = async () => {
+    const url = qrSrc;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Join the meeting', text: guestLink, url: guestLink });
+        return;
+      } catch {
+        // Cancelled, or unsupported for this payload: fall through.
+      }
+    }
+    window.open(url, '_blank', 'noopener');
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="bg-white text-gray-800 rounded-lg shadow-2xl w-full max-w-lg p-6">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <h2 className="text-xl font-semibold">Share this meeting</h2>
-            <p className="text-sm text-gray-600">
-              Everyone you share with is counted as expected to attend.
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="manch-share-title"
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white border border-[#e3e8ef] rounded-[12px] shadow-2xl w-full max-w-[652px]
+          max-h-[92vh] overflow-y-auto"
+      >
+        {/* Header */}
+        <div className="bg-[#fcfcfc] flex items-start justify-between gap-2 py-3 px-5 rounded-t-[12px]">
+          <div className="py-2 min-w-0">
+            <h2
+              id="manch-share-title"
+              className="text-[24px] font-bold tracking-[-0.12px] text-black leading-[1.4]"
+            >
+              Share this meeting
+            </h2>
+            <p className="text-[16px] tracking-[-0.08px] text-black leading-[1.4]">
+              Everyone you share with is counted as expected to attend
             </p>
           </div>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="text-gray-400 hover:text-gray-700 px-2"
+            className="text-[#9ea8b7] hover:text-navy-800 text-[26px] leading-none px-2 pt-1 flex-none"
           >
             &#10005;
           </button>
         </div>
 
-        <label className="block text-sm font-medium mb-1">Meeting link</label>
-        <div className="flex gap-2 mb-5">
-          <input
-            readOnly
-            value={link}
-            onFocus={(e) => e.currentTarget.select()}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm"
-          />
-          <button
-            onClick={copyLink}
-            className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg text-sm font-semibold"
-          >
-            Copy
-          </button>
-        </div>
-
-        {/* For the door: a guest scans this and lands on the join form
-            with the code already filled in. */}
-        <div className="mb-5">
-          <button
-            onClick={() => setShowQr((v) => !v)}
-            className="text-sm text-blue-700 underline underline-offset-4"
-          >
-            {showQr ? 'Hide the QR code' : 'Show a QR code for the door'}
-          </button>
-
-          {showQr && (
-            <div className="mt-3 flex flex-col items-center gap-2">
-              <img
-                src={`${API_ROOT}/meetings/${meetingCode}/qr/?url=${encodeURIComponent(guestLink)}`}
-                alt={`QR code to join meeting ${meetingCode}`}
-                className="w-44 h-44 bg-white p-2 border border-gray-200 rounded-xl"
+        <div className="px-[23px] py-[13px] flex flex-col gap-3">
+          {/* Meeting link */}
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="manch-share-link"
+              className="text-[20px] font-medium tracking-[-0.1px] text-black leading-[1.4]"
+            >
+              Meeting Link
+            </label>
+            <div className="flex gap-[14px] items-center flex-wrap">
+              <input
+                id="manch-share-link"
+                readOnly
+                value={link}
+                onFocus={(e) => e.currentTarget.select()}
+                className="flex-1 min-w-[220px] bg-[#f9fafb] border border-[#e5e7eb] rounded-[12px]
+                  px-[14px] py-3 text-[16px] leading-6 text-[#101010]"
               />
-              <p className="text-xs text-gray-500">
-                Scanning opens the join form. Guests still wait for you to let them in.
-              </p>
+              <button
+                onClick={copyLink}
+                className="bg-navy-800 hover:bg-navy-700 text-white rounded-[12px] px-5 py-3
+                  flex items-center justify-center gap-1.5 text-[16px] font-medium leading-6"
+              >
+                <FigmaIcon name="copy" size={16} />
+                Copy
+              </button>
             </div>
-          )}
+          </div>
+
+          {/* QR code, for the door */}
+          <div className="flex flex-col gap-2">
+            <p className="text-[20px] font-medium tracking-[-0.1px] text-black leading-[1.4]">
+              QR Code
+            </p>
+            <div className="flex gap-2 items-center flex-wrap">
+              <img
+                src={qrSrc}
+                alt={`QR code to join meeting ${meetingCode}`}
+                width={167}
+                height={148}
+                style={{ width: 167, height: 148 }}
+                className="object-contain"
+              />
+              <button
+                onClick={shareQr}
+                className="bg-navy-800 hover:bg-navy-700 text-white rounded-[12px] px-5 py-3
+                  flex items-center justify-center gap-1.5 text-[16px] font-medium leading-6"
+              >
+                <FigmaIcon name="shareNodes" size={16} />
+                Share QR
+              </button>
+            </div>
+            <p className="text-[13px] text-[#656565]">
+              Scanning opens the join form. Guests still wait for you to let them in.
+            </p>
+          </div>
+
+          {/* Who it is going to */}
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="manch-share-emails"
+              className="text-[20px] font-medium tracking-[-0.1px] text-black leading-[1.4]"
+            >
+              Send to email address
+            </label>
+            <textarea
+              id="manch-share-emails"
+              value={raw}
+              onChange={(e) => setRaw(e.target.value)}
+              placeholder="alice@gmail.com, bob@gmail.com"
+              className="w-full h-[90px] bg-[#f9fafb] border border-[#e5e7eb] rounded-[12px]
+                px-4 py-[14px] text-[16px] leading-6 text-[#101010] resize-none
+                focus:outline-none focus:ring-2 focus:ring-navy-500"
+            />
+            <p className="text-[16px] leading-6 min-h-[24px]">
+              {invalid.length > 0 ? (
+                <span className="text-live">Not valid: {invalid.join(', ')}</span>
+              ) : valid.length > 0 ? (
+                <span className="text-[#101010]">
+                  {valid.length} recipient{valid.length === 1 ? '' : 's'} will be counted as
+                  expected
+                </span>
+              ) : (
+                <span className="text-[#656565]">
+                  Separate addresses with commas or spaces
+                </span>
+              )}
+            </p>
+          </div>
         </div>
 
-        <label className="block text-sm font-medium mb-1">
-          Send to email addresses
-        </label>
-        <textarea
-          value={raw}
-          onChange={(e) => setRaw(e.target.value)}
-          rows={3}
-          placeholder="alice@gmail.com, bob@gmail.com"
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-
-        <div className="min-h-[1.5rem] mt-1 mb-4 text-xs">
-          {invalid.length > 0 ? (
-            <span className="text-red-600">
-              Not valid: {invalid.join(', ')}
-            </span>
-          ) : valid.length > 0 ? (
-            <span className="text-gray-600">
-              {valid.length} recipient{valid.length === 1 ? '' : 's'} will be
-              counted as expected
-            </span>
-          ) : (
-            <span className="text-gray-400">
-              Separate addresses with commas or spaces
-            </span>
-          )}
-        </div>
-
-        <div className="flex gap-2">
+        {/* The one action this dialog is for */}
+        <div className="px-[59px] pb-6 pt-1">
           <button
             onClick={send}
             disabled={isSending || valid.length === 0}
-            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-semibold disabled:opacity-50"
+            className="w-full bg-navy-800 hover:bg-navy-700 text-white rounded-[12px] px-5 py-3
+              flex items-center justify-center gap-1.5 text-[16px] font-medium leading-6
+              disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isSending ? 'Recording...' : 'Share & count as invited'}
+            <FigmaIcon name="shareNodes" size={16} />
+            {isSending ? 'Recording…' : 'Share and count as invited'}
           </button>
-          <button
-            onClick={onClose}
-            className="px-5 border border-gray-300 hover:bg-gray-50 rounded-lg font-semibold"
-          >
-            Done
-          </button>
+          <p className="text-[13px] text-[#656565] text-center mt-2.5">
+            Guests who join by code instead are recorded when you admit them.
+          </p>
         </div>
-
-        <p className="text-xs text-gray-500 mt-3">
-          Guests who join by code instead are recorded when you admit them.
-        </p>
       </div>
     </div>
   );

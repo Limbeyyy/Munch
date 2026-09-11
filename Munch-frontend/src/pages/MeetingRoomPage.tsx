@@ -5,15 +5,16 @@ import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../services/api';
 import { RESOURCE_POLL_MS } from '../services/polling';
 import {
-  Artifact, AttendanceReport, ChatMessage, ChatSettings,
+  Artifact, AttendanceReport, ChatMessage, ChatSettings, Session,
   GuestAttendee, MeetingParticipant,
 } from '../types';
 import toast from 'react-hot-toast';
 import { ShareMeetingDialog } from '../components/ShareMeetingDialog';
 import { ResourceControls } from '../organizer/ResourceVisibility';
 import { PhotoUploads } from '../organizer/Photos';
+import { MessageBoard } from '../organizer/MessageBoard';
+import { FigmaIcon, FigmaIconName } from '../assets/icons';
 import { OrganizerProvider } from '../organizer/i18n';
-import { LiveTranscriptStage } from '../components/LiveTranscriptStage';
 
 
 const formatFileSize = (bytes?: number | null): string => {
@@ -73,6 +74,11 @@ const MeetingRoomInner: React.FC = () => {
   const [showEndChoice, setShowEndChoice] = useState(false);
   const [roomGuests, setRoomGuests] = useState<GuestAttendee[]>([]);
   const [showAttendance, setShowAttendance] = useState(false);
+  /** Panels the bar along the foot opens over the room. */
+  const [showPeople, setShowPeople] = useState(false);
+  const [showQuestions, setShowQuestions] = useState(false);
+  /** The meeting's running order, for the agenda down the left. */
+  const [agenda, setAgenda] = useState<Session[]>([]);
   const [attendance, setAttendance] = useState<AttendanceReport | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const showChatRef = useRef(false);
@@ -100,6 +106,11 @@ const MeetingRoomInner: React.FC = () => {
 
   useEffect(() => {
     meetingIdRef.current = meetingId;
+  }, [meetingId]);
+
+  useEffect(() => {
+    if (!meetingId) { setAgenda([]); return; }
+    apiClient.listSessions(meetingId).then(setAgenda).catch(() => setAgenda([]));
   }, [meetingId]);
 
   /** Refresh participants only - no spinner, no meeting object churn. */
@@ -749,26 +760,25 @@ const MeetingRoomInner: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-lg text-gray-600">Loading meeting...</p>
-        </div>
+      <div className="min-h-screen grid place-items-center bg-[#f1f4f8]">
+        <p className="text-[16px] text-[#4a5567]">Loading meeting…</p>
       </div>
     );
   }
 
   if (!currentMeeting) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-lg text-gray-600">Meeting not found</p>
-        </div>
+      <div className="min-h-screen grid place-items-center bg-[#f1f4f8]">
+        <p className="text-[16px] text-[#4a5567]">Meeting not found</p>
       </div>
     );
   }
 
+  const speaker =
+    agenda.find((s) => s.id === session?.id)?.speaker_name || '';
+
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <div className="min-h-screen bg-[#f1f4f8] text-[#030712] pb-[110px]">
       {showEndChoice && currentMeeting && (
         <div className="fixed inset-0 z-50 bg-black/60 grid place-items-center p-4">
           <div className="bg-white text-gray-900 rounded-2xl max-w-md w-full p-6">
@@ -791,18 +801,17 @@ const MeetingRoomInner: React.FC = () => {
 
             <button
               onClick={() => { setShowEndChoice(false); leaveMeeting(); }}
-              className="mt-3 w-full text-left rounded-xl border border-gray-200 hover:border-gray-400 p-4"
+              className="mt-3 w-full text-left rounded-xl border border-navy-800/15 hover:border-navy-800/40 p-4"
             >
               <span className="block font-semibold">Just leave</span>
               <span className="block text-sm text-gray-600 mt-0.5">
-                The meeting carries on without you — its speakers, attendees
-                and guests stay where they are.
+                The meeting carries on without you, and you can come back.
               </span>
             </button>
 
             <button
               onClick={() => setShowEndChoice(false)}
-              className="mt-4 w-full py-2 text-sm text-gray-600 hover:text-gray-900"
+              className="mt-4 w-full text-center text-sm text-gray-600 hover:text-gray-900"
             >
               Cancel
             </button>
@@ -819,29 +828,75 @@ const MeetingRoomInner: React.FC = () => {
         />
       )}
 
-      {showAttendance && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="bg-white text-gray-800 rounded-lg shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
-            <div className="p-6 border-b flex items-start justify-between">
-              <div>
-                <h2 className="text-xl font-semibold">Attendance</h2>
-                <p className="text-sm text-gray-600">
-                  Expected headcount comes from the links you shared.
-                </p>
-              </div>
-              <button
-                onClick={() => setShowAttendance(false)}
-                aria-label="Close attendance"
-                className="text-gray-400 hover:text-gray-700 px-2"
-              >
-                &#10005;
-              </button>
-            </div>
-
-            {!attendance ? (
-              <p className="p-6 text-sm text-gray-500">Loading...</p>
+      {/* Who is in the room, and what the host may do about it */}
+      {showPeople && (
+        <RoomPanel title="Participants" onClose={() => setShowPeople(false)}>
+          <div className="flex flex-col">
+            {(participants as MeetingParticipant[]).length === 0 ? (
+              <p className="text-[14px] text-[#656565] px-4 py-3">Nobody is here yet.</p>
             ) : (
-              <div className="p-6 overflow-y-auto space-y-6">
+              (participants as MeetingParticipant[]).map((p) => {
+                const isMe = p.user.id === user?.id;
+                return (
+                  <div
+                    key={p.id}
+                    className="flex items-center gap-3 px-4 py-3 border-b border-[#e3e8ef] last:border-0"
+                  >
+                    <RoomPortrait name={p.user.email} size={40} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[16px] font-medium text-black truncate">
+                        {p.user.email}
+                        {isMe && <span className="text-[#656565] font-normal"> (you)</span>}
+                      </p>
+                      <p className="text-[12px] text-[#656565] uppercase tracking-wide">
+                        {p.role.replace('_', '-')}
+                        {p.is_muted && ' · muted'}
+                      </p>
+                    </div>
+                    {isHost && !isMe && !(p as any).is_guest && (
+                      <select
+                        value={p.role}
+                        disabled={changingRole === p.id}
+                        onChange={(e) =>
+                          changeRole(
+                            p,
+                            e.target.value as 'host' | 'co_host' | 'presenter' | 'attendee'
+                          )
+                        }
+                        aria-label={`Role for ${p.user.email}`}
+                        className="border border-[#e3e8ef] rounded-md px-2 py-1 text-[13px] bg-white
+                          disabled:opacity-50 flex-none"
+                      >
+                        <option value="attendee">Attendee</option>
+                        <option value="presenter">Presenter</option>
+                        <option value="co_host">Co-host</option>
+                        <option value="host">Host (transfers ownership)</option>
+                      </select>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </RoomPanel>
+      )}
+
+      {/* The board of what the host has put up for everybody to read */}
+      {showQuestions && meetingId && (
+        <RoomPanel title="Questions" onClose={() => setShowQuestions(false)} wide>
+          <div className="p-4">
+            <MessageBoard meetingId={meetingId} refreshMs={20000} canAnswer={canOrganize} />
+          </div>
+        </RoomPanel>
+      )}
+
+      {showAttendance && (
+        <RoomPanel title="Attendance" onClose={() => setShowAttendance(false)} wide>
+          <div className="p-4">
+            {!attendance ? (
+              <p className="text-[14px] text-[#656565]">Loading…</p>
+            ) : (
+              <>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                   {[
                     ['On the roll', attendance.expected_total],
@@ -849,126 +904,97 @@ const MeetingRoomInner: React.FC = () => {
                     ['In meeting now', attendance.active_count],
                     ['Absent', attendance.absent_count],
                   ].map(([label, value]) => (
-                    <div key={label as string} className="bg-gray-50 rounded-lg p-3">
-                      <p className="text-2xl font-bold">{value as number}</p>
-                      <p className="text-xs text-gray-600">{label as string}</p>
+                    <div key={label as string} className="bg-[#fcfcfc] border border-[#e3e8ef] rounded-lg p-3">
+                      <p className="text-2xl font-semibold">{value as number}</p>
+                      <p className="text-[12px] text-[#656565]">{label as string}</p>
                     </div>
                   ))}
                 </div>
 
-                <div>
-                  <h3 className="font-semibold mb-2">
-                    Attended ({attendance.attended.length})
-                    <span className="ml-2 text-xs font-normal text-gray-500">
-                      {attendance.active_count} in meeting ·{' '}
-                      {attendance.inactive_count} left
-                    </span>
-                  </h3>
-                  <div className="space-y-1">
-                    {attendance.attended.map((a, i) => (
-                      <div
-                        key={`${a.type}-${a.email ?? a.phone}-${i}`}
-                        className="flex items-center justify-between text-sm border-b border-gray-100 py-2"
-                      >
-                        <div>
-                          <p className="font-medium">{a.name}</p>
-                          <p className="text-xs text-gray-500">
-                            {a.email ?? a.phone} &middot; {a.role}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span
-                            className={`text-xs px-2 py-1 rounded-full ${
-                              a.is_active
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-gray-200 text-gray-600'
-                            }`}
-                          >
-                            {a.is_active ? 'Active' : 'Left'}
-                          </span>
-                          <span
-                            className={`text-xs px-2 py-1 rounded-full ${
-                              a.type === 'guest'
-                                ? 'bg-purple-100 text-purple-800'
-                                : a.was_invited
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-gray-100 text-gray-700'
-                            }`}
-                          >
-                            {a.type === 'guest'
-                              ? 'Guest'
-                              : a.was_invited
-                              ? 'Invited'
-                              : 'By code'}
-                          </span>
-                        </div>
+                <h3 className="font-semibold mt-5 mb-2">
+                  Came ({attendance.attended.length})
+                </h3>
+                <div className="flex flex-col">
+                  {attendance.attended.map((a, i) => (
+                    <div
+                      key={`${a.type}-${i}`}
+                      className="flex items-center gap-3 py-2 border-b border-[#e3e8ef] last:border-0"
+                    >
+                      <RoomPortrait name={a.name} size={32} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[14px] truncate">{a.name}</p>
+                        <p className="text-[12px] text-[#656565] truncate">
+                          {a.email ?? a.phone ?? a.role}
+                        </p>
                       </div>
-                    ))}
-                  </div>
+                      <span
+                        className={`text-[12px] rounded-full px-2 py-0.5 flex-none ${
+                          a.is_active
+                            ? 'bg-ok/[.12] text-ok'
+                            : 'bg-navy-800/[.07] text-[#656565]'
+                        }`}
+                      >
+                        {a.is_active ? 'in the room' : 'left'}
+                      </span>
+                    </div>
+                  ))}
                 </div>
 
-                <div>
-                  <h3 className="font-semibold mb-2">
-                    Invited but did not join ({attendance.did_not_attend.length})
-                  </h3>
-                  {attendance.did_not_attend.length === 0 ? (
-                    <p className="text-sm text-gray-500">
-                      Everyone invited has joined.
-                    </p>
-                  ) : (
-                    <div className="space-y-1">
-                      {attendance.did_not_attend.map((n) => (
-                        <div
-                          key={n.email}
-                          className="flex items-center justify-between text-sm border-b border-gray-100 py-2"
+                {attendance.did_not_attend.length > 0 && (
+                  <>
+                    <h3 className="font-semibold mt-5 mb-2">
+                      Did not come ({attendance.did_not_attend.length})
+                    </h3>
+                    <div className="flex flex-col">
+                      {attendance.did_not_attend.map((a) => (
+                        <p
+                          key={a.email}
+                          className="text-[14px] text-[#656565] py-1.5 border-b border-[#e3e8ef] last:border-0"
                         >
-                          <span>{n.email}</span>
-                          <span className="text-xs px-2 py-1 rounded-full bg-red-100 text-red-800">
-                            No-show
-                          </span>
-                        </div>
+                          {a.email}
+                        </p>
                       ))}
                     </div>
-                  )}
-                </div>
-              </div>
+                  </>
+                )}
+              </>
             )}
           </div>
-        </div>
+        </RoomPanel>
       )}
 
-      {/* Waiting room: guests asking to be let in */}
+      {/* Guests knocking. They wait here rather than in a notification
+          that has already gone. */}
       {isHost && waitingGuests.length > 0 && (
-        <div className="fixed top-4 right-4 z-50 w-80 space-y-3">
+        <div className="fixed right-4 top-4 z-40 w-[300px] bg-white border border-[#e3e8ef]
+          rounded-[12px] shadow-lg overflow-hidden">
+          <p className="bg-[#fcfcfc] border-b border-[#e3e8ef] px-4 py-2.5 text-[14px] font-medium">
+            Asking to come in ({waitingGuests.length})
+          </p>
           {waitingGuests.map((g) => (
             <div
               key={g.id}
-              role="alertdialog"
               aria-label={`${g.full_name} is asking to join`}
-              className="bg-white text-gray-800 rounded-lg shadow-2xl p-4 border-l-4 border-blue-600"
+              className="px-4 py-3 border-b border-[#e3e8ef] last:border-0"
             >
-              <p className="text-xs uppercase tracking-wide text-blue-700 font-semibold mb-2">
-                Asking to join
-              </p>
-              <p className="font-semibold text-lg leading-tight">{g.full_name}</p>
-              <p className="text-sm text-gray-600 mb-3">{g.phone}</p>
-              <p className="text-xs text-gray-500 mb-3">
-                Verify these details before letting them in.
-              </p>
-              <div className="flex gap-2">
+              <p className="text-[14px] font-medium truncate">{g.full_name}</p>
+              <p className="text-[12px] text-[#656565]">{g.phone}</p>
+              <div className="flex gap-2 mt-2">
                 <button
                   onClick={() => decideGuest(g.id, 'admit')}
                   disabled={decidingGuest === g.id}
-                  className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded font-semibold text-sm disabled:opacity-50"
+                  className="flex-1 bg-navy-800 hover:bg-navy-700 text-white rounded-lg py-1.5
+                    text-[13px] font-medium disabled:opacity-50"
                 >
-                  Allow
+                  Let in
                 </button>
                 <button
                   onClick={() => decideGuest(g.id, 'deny')}
                   disabled={decidingGuest === g.id}
-                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 rounded font-semibold text-sm disabled:opacity-50"
+                  className="flex-1 border border-[#e3e8ef] hover:bg-cream rounded-lg py-1.5
+                    text-[13px] font-medium disabled:opacity-50"
                 >
-                  Deny
+                  Decline
                 </button>
               </div>
             </div>
@@ -976,154 +1002,292 @@ const MeetingRoomInner: React.FC = () => {
         </div>
       )}
 
-      <div className="flex h-screen">
-        {/* Main Video Area */}
-        <div className="flex-1 flex flex-col">
-          <div className="flex-1 bg-gray-950 flex flex-col relative min-h-0">
-            <LiveTranscriptStage transcript={transcript} />
-
-            {/* Session timer */}
-            <div className="absolute top-4 left-4 flex items-center gap-2 bg-black/60 px-3 py-1.5 rounded-full text-sm">
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              <span className="font-mono tabular-nums">
-                {startedAt ? formatElapsed(elapsed) : 'Not started'}
-              </span>
-            </div>
+      {/* The room itself: the running order, the stage, and the side panels */}
+      <div className="grid gap-4 p-4 xl:grid-cols-[332px_minmax(0,1fr)_358px] items-start">
+        {/* What the day runs through */}
+        <RoomCard className="xl:sticky xl:top-4">
+          <div className="bg-[#fcfcfc] h-12 grid place-items-center px-4">
+            <h2 className="text-[20px] font-medium text-black leading-[1.2]">Agenda Summary</h2>
           </div>
+          <div className="max-h-[458px] overflow-y-auto">
+            {agenda.length === 0 ? (
+              <p className="text-[14px] text-[#656565] px-4 py-3">
+                Nothing in the running order yet.
+              </p>
+            ) : (
+              agenda.map((item) => {
+                const onStage = item.id === session?.id;
+                return (
+                  <div
+                    key={item.id}
+                    aria-current={onStage}
+                    className={`flex items-center justify-between gap-2 px-1 py-2
+                      border-b-[0.5px] border-[#b3b3b3] last:border-0
+                      ${onStage ? 'bg-[#007092] text-white' : 'bg-[#fcfcfc]'}`}
+                  >
+                    <div className="flex gap-2 items-center p-1 min-w-0">
+                      <RoomPortrait name={item.speaker_name || item.title} size={48} />
+                      <div className="min-w-0">
+                        <p className={`text-[16px] font-medium leading-[1.2] truncate
+                          ${onStage ? 'text-white' : 'text-black'}`}>
+                          {item.title}
+                        </p>
+                        <p className={`text-[14px] leading-[1.5] truncate
+                          ${onStage ? 'text-white' : 'text-[#030712]'}`}>
+                          {item.speaker_name || 'No speaker named'}
+                        </p>
+                      </div>
+                    </div>
+                    {onStage && <FigmaIcon name="chevronDown" size={24} />}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </RoomCard>
 
-          {/* Controls */}
-          <div className="bg-gray-800 px-4 py-4 flex justify-center items-center gap-4">
-            {/* The room is a session, so the session is what it is called.
-                The meeting stays underneath as the context it sits in. */}
-            <div className="mr-auto min-w-0">
-              <h2 className="text-xl font-semibold truncate">
-                {session?.title || currentMeeting.title}
-              </h2>
-              {session?.title && (
-                <p className="text-xs text-gray-400 truncate">{currentMeeting.title}</p>
-              )}
+        {/* The stage */}
+        <div className="flex flex-col gap-3 min-w-0">
+          <RoomCard>
+            <div className="bg-white border-b border-[#e3e8ef] flex items-center justify-between
+              gap-3 px-4 py-2.5 flex-wrap">
+              <h1 className="flex-1 min-w-0 text-[24px] font-medium text-black text-center
+                leading-[1.2] truncate">
+                {currentMeeting.title}
+              </h1>
+
+              <div className="flex items-center gap-2 flex-none">
+                {isHost && (
+                  <button
+                    onClick={() => { setShowAttendance(true); loadAttendance(); }}
+                    className="border border-[#e3e8ef] hover:bg-cream rounded-[8px] px-3 py-1.5
+                      text-[13px] font-medium"
+                  >
+                    Attendance
+                  </button>
+                )}
+
+                {isHost && !startedAt && currentMeeting.entry?.can_start ? (
+                  <button
+                    onClick={startMeeting}
+                    className="bg-ok hover:brightness-110 text-white rounded-[8px] px-3 py-1.5
+                      text-[13px] font-medium"
+                  >
+                    Start meeting
+                  </button>
+                ) : isHost && startedAt ? (
+                  <button
+                    onClick={() => setShowEndChoice(true)}
+                    className="bg-live hover:brightness-110 text-white rounded-[8px] px-3 py-1.5
+                      text-[13px] font-medium"
+                  >
+                    End meeting
+                  </button>
+                ) : null}
+
+                {startedAt && (
+                  <span className="bg-[#fce2ef] text-[#f83995] text-[12px] tracking-[-0.06px]
+                    rounded-[4px] h-6 px-2 grid place-items-center">
+                    Live
+                  </span>
+                )}
+              </div>
             </div>
 
-            <button
-              onClick={() => setShowShare(true)}
-              className="px-6 py-2 rounded-lg font-semibold bg-gray-700 hover:bg-gray-600"
-            >
-              Share link
-            </button>
+            <div className="flex flex-col gap-3 px-4 py-2.5">
+              <div className="flex gap-2 items-center">
+                <RoomPortrait name={speaker || currentMeeting.title} size={84} />
+                <div className="min-w-0">
+                  <p className="text-[22px] font-medium text-black leading-[1.2] truncate">
+                    {session?.title || currentMeeting.title}
+                  </p>
+                  <p className="text-[18px] text-[#030712] leading-[1.5] truncate">
+                    {speaker || 'No speaker named'}
+                  </p>
+                </div>
+              </div>
 
-            {isHost && (
+              <div className="flex gap-3 items-center flex-wrap">
+                <span className="border border-[#e3e8ef] rounded-[4px] h-6 px-2 flex items-center gap-1.5">
+                  <i className="w-[5px] h-[5px] rounded-full bg-[#13cef7]" aria-hidden />
+                  <span className="text-[14px] text-[#030712] tracking-[-0.07px]">
+                    {currentMeeting.meeting_code}
+                  </span>
+                </span>
+                <span aria-hidden className="w-px h-3 bg-[#e3e8ef]" />
+                <span className="text-[14px] text-[#030712] tracking-[-0.07px] tabular-nums">
+                  {startedAt ? formatElapsed(elapsed) : 'Not started'}
+                </span>
+              </div>
+            </div>
+
+            {/* What is being said */}
+            <div className="border-t border-[#e3e8ef]">
+              <div className="bg-white border-b border-[#e3e8ef] px-4 py-2.5">
+                <h2 className="text-[20px] font-medium text-black text-center leading-[1.2]">
+                  Live Transcript
+                </h2>
+              </div>
+              <div className="flex flex-col gap-3 px-3 py-2.5 max-h-[420px] overflow-y-auto">
+                {transcript.length === 0 ? (
+                  <p className="text-[14px] text-[#656565]">
+                    Lines appear here once the hall device starts sending them.
+                  </p>
+                ) : (
+                  transcript.map((seg, idx) => (
+                    <div key={idx} className="flex gap-3 items-start">
+                      <span className="border border-[#e3e8ef] rounded-[4px] h-6 px-1 grid
+                        place-items-center flex-none text-[12px] text-[#656565]
+                        tracking-[-0.06px] tabular-nums">
+                        {seg.created_at
+                          ? new Date(seg.created_at).toLocaleTimeString([], {
+                              hour: '2-digit', minute: '2-digit',
+                            })
+                          : formatElapsed(Math.round(seg.start_time))}
+                      </span>
+                      <span aria-hidden className="w-px h-3 bg-[#e3e8ef] mt-1.5 flex-none" />
+                      <p className="flex-1 min-w-0 text-[14px] leading-[1.4] tracking-[-0.07px]
+                        text-[#383838]">
+                        {seg.speaker_name && (
+                          <span className="text-[#4a5567]">{seg.speaker_name}: </span>
+                        )}
+                        {seg.text}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </RoomCard>
+        </div>
+
+        {/* Resources and chat */}
+        <div className="flex flex-col gap-3 min-w-0">
+          <RoomCard id="manch-room-resources">
+            <div className="bg-[#fcfcfc] flex items-center justify-center px-4 pt-2 pb-1">
+              <h2 className="flex-1 text-[18px] text-black text-center tracking-[-0.09px]">
+                Resources ({resources.length})
+              </h2>
               <button
-                onClick={() => {
-                  setShowAttendance(true);
-                  loadAttendance();
-                }}
-                className="px-6 py-2 rounded-lg font-semibold bg-gray-700 hover:bg-gray-600"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadPercent !== null}
+                className="text-[13px] px-3 py-1.5 rounded-lg bg-navy-800 hover:bg-navy-700
+                  text-white disabled:opacity-50 flex-none"
               >
-                Attendance
+                {uploadPercent !== null ? `${uploadPercent}%` : '+ Upload'}
               </button>
+            </div>
+
+            <input ref={fileInputRef} type="file" onChange={handleUpload} className="hidden" />
+
+            {uploadPercent !== null && (
+              <div className="h-1 bg-[#e3e8ef] overflow-hidden">
+                <div
+                  className="h-full bg-navy-700 transition-all"
+                  style={{ width: `${uploadPercent}%` }}
+                />
+              </div>
             )}
 
-            <button
-              onClick={() => setShowChat((v) => !v)}
-              aria-label="Toggle chat"
-              className={`relative px-6 py-2 rounded-lg font-semibold ${
-                showChat ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-700 hover:bg-gray-600'
-              }`}
-            >
-              <span aria-hidden="true">&#128172;</span> Chat
-              {unread > 0 && !showChat && (
-                <span className="absolute -top-1 -right-1 min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-xs font-bold bg-red-500 rounded-full">
+            <div className="max-h-[276px] overflow-y-auto">
+              {resources.length === 0 ? (
+                <p className="text-[14px] text-[#656565] px-4 py-3">
+                  No files yet. Uploads are saved to the host's Google Drive and shared with
+                  everyone here.
+                </p>
+              ) : (
+                resources.map((r, i) => (
+                  <div key={r.id} className="border-b border-[#e3e8ef] last:border-0">
+                    <a
+                      href={r.web_view_link ?? '#'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-[21px] px-4 py-2.5 hover:bg-cream"
+                    >
+                      <FigmaIcon name="folder" size={24} />
+                      <span className="min-w-0">
+                        <span className="block text-[14px] text-[#383838] tracking-[-0.07px] truncate">
+                          {r.display_name}
+                        </span>
+                        <span className="block text-[12px] text-[#656565] truncate">
+                          {formatFileSize(r.file_size)}
+                          {r.metadata?.uploaded_by_email &&
+                            ` · ${
+                              r.metadata.uploaded_by_email === user?.email
+                                ? 'you'
+                                : r.metadata.uploaded_by_email
+                            }`}
+                          {r.is_released === false && ' · not open to the room yet'}
+                        </span>
+                      </span>
+                    </a>
+                    {canOrganize && meetingId && (
+                      <div className="px-4 pb-2.5">
+                        <ResourceControls
+                          meetingId={meetingId}
+                          resource={r}
+                          index={i}
+                          total={resources.length}
+                          onChanged={() => loadResources(meetingId)}
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </RoomCard>
+
+          {/* Photographs of the day. A different thing from the papers
+              circulated during it, so a section of its own. */}
+          {meetingCode && (
+            <RoomCard>
+              <div className="bg-[#fcfcfc] px-4 pt-2 pb-1">
+                <h2 className="text-[18px] text-black text-center tracking-[-0.09px]">
+                  Photos
+                </h2>
+              </div>
+              <div className="px-4 py-3">
+                <PhotoUploads meetingRef={meetingCode} />
+              </div>
+            </RoomCard>
+          )}
+
+          <RoomCard id="manch-room-chat">
+            <div className="bg-[#fcfcfc] flex items-center justify-center px-4 pt-2 pb-1">
+              <h2 className="flex-1 text-[18px] text-black text-center tracking-[-0.09px]">
+                Chat
+              </h2>
+              {unread > 0 && (
+                <span className="bg-live text-white text-[11px] font-bold rounded-full
+                  min-w-[20px] h-5 px-1 grid place-items-center flex-none">
                   {unread > 9 ? '9+' : unread}
                 </span>
               )}
-            </button>
-
-            {/* A host who has gathered early sees Start once the hour
-                comes; once it is under way, ending is a decision with two
-                meanings, so it asks which. */}
-            {isHost && !startedAt && currentMeeting.entry?.can_start ? (
-              <button
-                onClick={startMeeting}
-                className="px-6 py-2 bg-green-600 hover:bg-green-700 rounded-lg font-semibold"
-              >
-                Start Meeting
-              </button>
-            ) : isHost && !startedAt ? (
-              <button
-                onClick={leaveMeeting}
-                className="px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-semibold"
-                title={`Starts at ${new Date(currentMeeting.scheduled_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
-              >
-                Leave
-              </button>
-            ) : isHost ? (
-              <button
-                onClick={() => setShowEndChoice(true)}
-                className="px-6 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-semibold"
-              >
-                End Meeting
-              </button>
-            ) : (
-              <button
-                onClick={leaveMeeting}
-                className="px-6 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-semibold"
-              >
-                Leave
-              </button>
-            )}
-          </div>
-
-          {/* Live Transcript */}
-          {transcript.length > 0 && (
-            <div className="bg-gray-800 border-t border-gray-700 p-4 max-h-32 overflow-y-auto">
-              <h3 className="font-semibold mb-2">Live Transcript:</h3>
-              <div className="text-sm text-gray-300 space-y-1">
-                {transcript.slice(-5).map((seg, idx) => (
-                  <p key={idx} className="text-xs">
-                    <span className="font-semibold">{seg.speaker_name}:</span> {seg.text}
-                  </p>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Chat panel */}
-        {showChat && (
-          <div className="w-80 bg-gray-800 border-l border-gray-700 flex flex-col min-h-0">
-            <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-              <h3 className="font-semibold">Chat</h3>
-              <button
-                onClick={() => setShowChat(false)}
-                aria-label="Close chat"
-                className="text-gray-400 hover:text-white px-2"
-              >
-                &#10005;
-              </button>
             </div>
 
             {!chatSettings.chat_enabled ? (
-              <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
-                <span className="text-4xl" aria-hidden="true">&#128274;</span>
-                <p className="text-sm text-gray-300">
-                  Room needs to be enabled by host
+              <div className="flex flex-col items-center justify-center gap-3 p-6 text-center">
+                <p className="text-[14px] text-[#656565]">
+                  The room needs to be opened by the host.
                 </p>
                 {isHost && (
                   <button
                     onClick={() => toggleChatSetting({ chat_enabled: true })}
                     disabled={savingSettings}
-                    className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50"
+                    className="bg-navy-800 hover:bg-navy-700 text-white px-4 py-2 rounded-lg
+                      text-[13px] font-medium disabled:opacity-50"
                   >
-                    {savingSettings ? 'Enabling...' : 'Enable chat room'}
+                    {savingSettings ? 'Opening…' : 'Open the chat room'}
                   </button>
                 )}
               </div>
             ) : (
               <>
                 {isHost && (
-                  <div className="px-4 py-3 border-b border-gray-700 space-y-2 text-xs">
+                  <div className="px-4 py-3 border-b border-[#e3e8ef] flex flex-col gap-2 text-[12px]">
                     <label className="flex items-center justify-between gap-2">
-                      <span className="text-gray-300">Room open to everyone</span>
+                      <span className="text-[#4a5567]">Room open to everyone</span>
                       <input
                         type="checkbox"
                         checked={chatSettings.chat_enabled}
@@ -1132,7 +1296,7 @@ const MeetingRoomInner: React.FC = () => {
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2">
-                      <span className="text-gray-300">Allow direct messages</span>
+                      <span className="text-[#4a5567]">Allow direct messages</span>
                       <input
                         type="checkbox"
                         checked={chatSettings.direct_messages_enabled}
@@ -1146,37 +1310,37 @@ const MeetingRoomInner: React.FC = () => {
                 )}
 
                 {isHost && pending.length > 0 && (
-                  <div className="border-b border-gray-700 bg-yellow-900/20 p-3 space-y-2">
-                    <p className="text-xs font-semibold text-yellow-200">
+                  <div className="border-b border-[#e3e8ef] bg-amber/[.08] p-3 flex flex-col gap-2">
+                    <p className="text-[12px] font-semibold text-amber-700">
                       Awaiting your approval ({pending.length})
                     </p>
                     {pending.map((m) => (
-                      <div key={m.id} className="bg-gray-700 rounded p-2 text-xs">
-                        <p className="text-gray-300">
+                      <div key={m.id} className="bg-white border border-[#e3e8ef] rounded p-2 text-[12px]">
+                        <p className="text-[#4a5567]">
                           <span className="font-semibold">{m.sender_name}</span>
                           {' → '}
                           <span className="font-semibold">{m.recipient_name}</span>
                         </p>
-                        <p className="my-1 break-words">{m.body}</p>
+                        <p className="my-1 break-words text-[#030712]">{m.body}</p>
                         <div className="flex gap-1">
                           <button
                             onClick={() => moderate(m.id, 'approve')}
                             disabled={moderating === m.id}
-                            className="flex-1 bg-green-600 hover:bg-green-700 rounded py-1 disabled:opacity-50"
+                            className="flex-1 bg-ok text-white rounded py-1 disabled:opacity-50"
                           >
                             Accept
                           </button>
                           <button
                             onClick={() => moderate(m.id, 'decline')}
                             disabled={moderating === m.id}
-                            className="flex-1 bg-yellow-700 hover:bg-yellow-600 rounded py-1 disabled:opacity-50"
+                            className="flex-1 bg-amber-700 text-white rounded py-1 disabled:opacity-50"
                           >
                             Decline
                           </button>
                           <button
                             onClick={() => moderate(m.id, 'remove')}
                             disabled={moderating === m.id}
-                            className="flex-1 bg-red-700 hover:bg-red-600 rounded py-1 disabled:opacity-50"
+                            className="flex-1 bg-live text-white rounded py-1 disabled:opacity-50"
                           >
                             Remove
                           </button>
@@ -1186,8 +1350,7 @@ const MeetingRoomInner: React.FC = () => {
                   </div>
                 )}
 
-                {/* Room / Private */}
-                <div className="flex border-b border-gray-700" role="tablist">
+                <div className="flex border-b border-[#e3e8ef]" role="tablist">
                   {([
                     ['public', 'Room', unreadPublic],
                     ['private', 'Private', unreadPrivate],
@@ -1200,15 +1363,16 @@ const MeetingRoomInner: React.FC = () => {
                         setChatTab(key);
                         if (key === 'public') setDmTarget('');
                       }}
-                      className={`flex-1 py-2 text-sm font-semibold relative transition ${
+                      className={`flex-1 py-2 text-[13px] font-medium transition ${
                         chatTab === key
-                          ? 'text-white border-b-2 border-blue-500 bg-gray-700/40'
-                          : 'text-gray-400 hover:text-gray-200'
+                          ? 'text-black border-b-2 border-black'
+                          : 'text-[#49454f] hover:text-black'
                       }`}
                     >
                       {label}
                       {count > 0 && chatTab !== key && (
-                        <span className="ml-2 inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 text-[10px] font-bold bg-red-500 text-white rounded-full align-middle">
+                        <span className="ms-2 inline-grid place-items-center min-w-[18px] h-[18px]
+                          px-1 text-[10px] font-bold bg-live text-white rounded-full align-middle">
                           {count > 9 ? '9+' : count}
                         </span>
                       )}
@@ -1216,9 +1380,9 @@ const MeetingRoomInner: React.FC = () => {
                   ))}
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+                <div className="h-[280px] overflow-y-auto p-3 flex flex-col gap-3">
                   {visibleMessages.length === 0 ? (
-                    <p className="text-xs text-gray-400">
+                    <p className="text-[13px] text-[#656565]">
                       {chatTab === 'public'
                         ? 'No messages in the room yet.'
                         : 'No private messages yet.'}
@@ -1229,33 +1393,34 @@ const MeetingRoomInner: React.FC = () => {
                       return (
                         <div key={m.id} className={mine ? 'text-right' : ''}>
                           <div
-                            className={`inline-block max-w-[85%] text-left px-3 py-2 rounded-lg text-sm ${
-                              mine ? 'bg-blue-600' : 'bg-gray-700'
+                            className={`inline-block max-w-[85%] text-left px-3 py-2 rounded-[12px]
+                              text-[14px] ${
+                              mine
+                                ? 'bg-navy-800 text-white'
+                                : 'bg-[#f1f4f8] text-[#030712] border border-[#e3e8ef]'
                             }`}
                           >
-                            <p className="text-xs text-gray-200 mb-0.5">
+                            <p className={`text-[11px] mb-0.5 ${
+                              mine ? 'text-[#c9daf1]' : 'text-[#656565]'
+                            }`}>
                               {mine ? 'You' : m.sender_name}
                               {m.is_direct && (
-                                <span className="ml-1 text-yellow-300">
-                                  &#128274; {mine ? `to ${m.recipient_name}` : 'privately'}
+                                <span className={mine ? ' text-amber' : ' text-amber-700'}>
+                                  {' '}· {mine ? `to ${m.recipient_name}` : 'privately'}
                                 </span>
                               )}
                             </p>
                             <p className="break-words">{m.body}</p>
                             {mine && m.moderation_status === 'pending' && (
-                              <p className="text-[11px] text-yellow-200 mt-1">
-                                &#9203; Waiting for host approval
+                              <p className="text-[11px] text-amber mt-1">
+                                Waiting for host approval
                               </p>
                             )}
                             {mine && m.moderation_status === 'declined' && (
-                              <p className="text-[11px] text-red-200 mt-1">
-                                &#128683; Declined by host
-                              </p>
+                              <p className="text-[11px] text-[#ffb4b4] mt-1">Declined by host</p>
                             )}
                             {mine && m.moderation_status === 'approved' && (
-                              <p className="text-[11px] text-green-200 mt-1">
-                                &#10003; Forwarded by host
-                              </p>
+                              <p className="text-[11px] text-[#a9e5c8] mt-1">Forwarded by host</p>
                             )}
                           </div>
                         </div>
@@ -1265,14 +1430,14 @@ const MeetingRoomInner: React.FC = () => {
                   <div ref={messagesEndRef} />
                 </div>
 
-                <div className="p-3 border-t border-gray-700 space-y-2">
+                <div className="p-3 border-t border-[#e3e8ef] flex flex-col gap-2">
                   {chatTab === 'private' &&
                     chatSettings.direct_messages_enabled &&
                     dmTargets.length > 0 && (
                     <select
                       value={dmTarget}
                       onChange={(e) => setDmTarget(e.target.value)}
-                      className="w-full bg-gray-700 text-sm rounded px-2 py-1.5"
+                      className="w-full border border-[#e3e8ef] rounded-lg px-2 py-1.5 text-[13px] bg-white"
                     >
                       <option value="">Everyone in the room</option>
                       {dmTargets.map((target) => (
@@ -1297,179 +1462,188 @@ const MeetingRoomInner: React.FC = () => {
                       placeholder={
                         chatTab === 'private'
                           ? dmTarget
-                            ? 'Private message...'
+                            ? 'Private message…'
                             : 'Pick someone above first'
-                          : 'Message the room...'
+                          : 'Message the room…'
                       }
                       maxLength={2000}
-                      className="flex-1 bg-gray-700 text-sm rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="flex-1 min-w-0 bg-[#f9fafb] border border-[#e5e7eb] rounded-[12px]
+                        px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-navy-500"
                     />
                     <button
                       onClick={sendMessage}
-                      disabled={
-                        !draft.trim() || (chatTab === 'private' && !dmTarget)
-                      }
-                      className="bg-blue-600 hover:bg-blue-700 px-4 rounded text-sm font-semibold disabled:opacity-50"
+                      disabled={!draft.trim() || (chatTab === 'private' && !dmTarget)}
+                      className="bg-navy-800 hover:bg-navy-700 text-white px-4 rounded-[12px]
+                        text-[14px] font-medium disabled:opacity-50 flex-none"
                     >
                       Send
                     </button>
                   </div>
 
-                  {chatTab === 'public' ? (
-                    <p className="text-[11px] text-gray-400">
-                      Everyone in the meeting can see these messages.
-                    </p>
-                  ) : chatSettings.direct_messages_enabled ? (
-                    <p className="text-[11px] text-gray-400">
-                      {dmTarget && !isHost && myRole === 'attendee'
+                  <p className="text-[11px] text-[#656565]">
+                    {chatTab === 'public'
+                      ? 'Everyone in the meeting can see these messages.'
+                      : chatSettings.direct_messages_enabled
+                      ? dmTarget && !isHost && myRole === 'attendee'
                         ? 'The host reviews this before it reaches them.'
-                        : 'Direct messages are visible only to you and the recipient.'}
-                    </p>
-                  ) : (
-                    <p className="text-[11px] text-gray-400">
-                      Direct messages need to be enabled by the host.
-                    </p>
-                  )}
+                        : 'Direct messages are visible only to you and the recipient.'
+                      : 'Direct messages need to be enabled by the host.'}
+                  </p>
                 </div>
               </>
             )}
-          </div>
-        )}
-
-        {/* Sidebar - Participants & Chat */}
-        <div className="w-80 bg-gray-800 border-l border-gray-700 flex flex-col">
-          {/* Participants */}
-          <div className="flex-1 overflow-y-auto p-4 border-b border-gray-700">
-            <h3 className="font-semibold mb-4">Participants ({participants.length})</h3>
-            <div className="space-y-2">
-              {(participants as MeetingParticipant[]).map((p) => {
-                const isMe = p.user.id === user?.id;
-                return (
-                  <div key={p.id} className="bg-gray-700 p-3 rounded text-sm">
-                    <p className="font-semibold truncate">
-                      {p.user.email}
-                      {isMe && <span className="text-gray-300 font-normal"> (you)</span>}
-                    </p>
-                    <p className="text-gray-300 text-xs mt-1">
-                      <span className="uppercase tracking-wide">
-                        {p.role.replace('_', '-')}
-                      </span>
-                      {p.is_muted && ' · 🔇 Muted'}
-                      {p.is_video_on && ' · 📹 Video'}
-                    </p>
-
-                    {isHost && !isMe && !(p as any).is_guest && (
-                      <select
-                        value={p.role}
-                        disabled={changingRole === p.id}
-                        onChange={(e) =>
-                          changeRole(
-                            p,
-                            e.target.value as 'host' | 'co_host' | 'presenter' | 'attendee'
-                          )
-                        }
-                        aria-label={`Role for ${p.user.email}`}
-                        className="mt-2 w-full bg-gray-800 text-xs rounded px-2 py-1.5 disabled:opacity-50"
-                      >
-                        <option value="attendee">Attendee</option>
-                        <option value="presenter">Presenter</option>
-                        <option value="co_host">Co-host</option>
-                        <option value="host">Host (transfers ownership)</option>
-                      </select>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Photographs of the day. A different thing from the papers
-              circulated during it, so a section of its own. */}
-          {meetingCode && <PhotoUploads meetingRef={meetingCode} tone="dark" />}
-
-          {/* Shared Resources */}
-          <div className="flex-1 overflow-y-auto p-4 border-b border-gray-700 min-h-0">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">Resources ({resources.length})</h3>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploadPercent !== null}
-                className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50"
-              >
-                {uploadPercent !== null ? `${uploadPercent}%` : '+ Upload'}
-              </button>
-            </div>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              onChange={handleUpload}
-              className="hidden"
-            />
-
-            {uploadPercent !== null && (
-              <div className="h-1 bg-gray-700 rounded mb-3 overflow-hidden">
-                <div
-                  className="h-full bg-blue-500 transition-all"
-                  style={{ width: `${uploadPercent}%` }}
-                />
-              </div>
-            )}
-
-            {resources.length === 0 ? (
-              <p className="text-xs text-gray-400">
-                No files yet. Uploads are saved to the host's Google Drive and
-                shared with everyone here.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {resources.map((r, i) => (
-                  <div key={r.id} className="bg-gray-700 rounded text-sm">
-                    <a
-                      href={r.web_view_link ?? '#'}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block hover:bg-gray-600 p-3 rounded transition"
-                    >
-                      <p className="font-medium truncate">{r.display_name}</p>
-                      <p className="text-gray-300 text-xs mt-1 truncate">
-                        {formatFileSize(r.file_size)}
-                        {r.metadata?.uploaded_by_email &&
-                          ` · ${
-                            r.metadata.uploaded_by_email === user?.email
-                              ? 'you'
-                              : r.metadata.uploaded_by_email
-                          }`}
-                        {r.is_released === false && ' · not open to the room yet'}
-                      </p>
-                    </a>
-                    {/* Whoever runs the room decides who may read it, from
-                        here as well as from the dashboard. */}
-                    {canOrganize && meetingId && (
-                      <div className="px-3 pb-2.5">
-                        <ResourceControls
-                          meetingId={meetingId}
-                          resource={r}
-                          index={i}
-                          total={resources.length}
-                          onChanged={() => loadResources(meetingId)}
-                        />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Meeting Info */}
-          <div className="p-4 bg-gray-700 text-sm">
-            <p className="text-gray-300">Meeting Code:</p>
-            <p className="font-mono font-semibold text-lg">{currentMeeting.meeting_code}</p>
-          </div>
+          </RoomCard>
         </div>
       </div>
+
+      {/* The room's own controls, along the foot of it */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-30 bg-navy-800 flex items-center justify-center
+          gap-2 sm:gap-[38px] px-4 py-3 overflow-x-auto"
+        aria-label="Meeting controls"
+      >
+        <RoomBarButton
+          icon="participants"
+          label={`Participants${participants.length ? ` (${participants.length})` : ''}`}
+          onClick={() => setShowPeople(true)}
+        />
+        <RoomBarButton
+          icon="chat"
+          label="Chat"
+          badge={unread}
+          onClick={() => { setShowChat(true); scrollToRoomCard('manch-room-chat'); }}
+        />
+        <RoomBarButton
+          icon="questions"
+          label="Questions"
+          onClick={() => setShowQuestions(true)}
+        />
+        <RoomBarButton
+          icon="resources"
+          label="Resources"
+          onClick={() => scrollToRoomCard('manch-room-resources')}
+        />
+        <RoomBarButton icon="share" label="Share" onClick={() => setShowShare(true)} />
+
+        <span className="ms-auto ps-4 flex-none">
+          <RoomBarButton
+            icon="leave"
+            label="Leave"
+            tone="leave"
+            onClick={() => (isHost && startedAt ? setShowEndChoice(true) : leaveMeeting())}
+          />
+        </span>
+      </nav>
     </div>
+  );
+};
+
+/** A white card, the way every panel in this room is drawn. */
+const RoomCard: React.FC<{
+  id?: string;
+  className?: string;
+  children: React.ReactNode;
+}> = ({ id, className = '', children }) => (
+  <div
+    id={id}
+    className={`bg-white border border-[#e3e8ef] rounded-[12px] overflow-hidden ${className}`}
+  >
+    {children}
+  </div>
+);
+
+/**
+ * A round portrait.
+ *
+ * The mock uses a stock photograph for everybody; nobody here has one, so
+ * the initial stands on the same warm disc rather than a grey box where a
+ * face should be.
+ */
+const RoomPortrait: React.FC<{ name: string; size: number }> = ({ name, size }) => (
+  <span
+    className="bg-[#fbecd1] rounded-full grid place-items-center flex-none text-navy-900
+      font-semibold overflow-hidden"
+    style={{ width: size, height: size, fontSize: Math.round(size / 2.6) }}
+    aria-hidden
+  >
+    {(name || '?').trim().charAt(0).toUpperCase()}
+  </span>
+);
+
+/** One control on the bar along the foot of the room. */
+const RoomBarButton: React.FC<{
+  icon: FigmaIconName;
+  label: string;
+  onClick: () => void;
+  badge?: number;
+  tone?: 'default' | 'leave';
+}> = ({ icon, label, onClick, badge = 0, tone = 'default' }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="relative flex flex-col items-center gap-[9px] px-3 py-2 rounded-[12px] w-[92px]
+      flex-none hover:bg-white/[.08] transition-colors"
+  >
+    <FigmaIcon name={icon} size={24} />
+    <span
+      className={`text-[14px] tracking-[-0.07px] whitespace-nowrap ${
+        tone === 'leave' ? 'text-[#f75656]' : 'text-white'
+      }`}
+    >
+      {label}
+    </span>
+    {badge > 0 && (
+      <span className="absolute top-1 right-2 min-w-[18px] h-[18px] px-1 grid place-items-center
+        text-[10px] font-bold bg-live text-white rounded-full">
+        {badge > 9 ? '9+' : badge}
+      </span>
+    )}
+  </button>
+);
+
+/** A panel the bar opens over the room. */
+const RoomPanel: React.FC<{
+  title: string;
+  onClose: () => void;
+  wide?: boolean;
+  children: React.ReactNode;
+}> = ({ title, onClose, wide, children }) => (
+  <div
+    className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4"
+    onClick={onClose}
+  >
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      onClick={(e) => e.stopPropagation()}
+      className={`bg-white border border-[#e3e8ef] rounded-[12px] w-full overflow-hidden
+        max-h-[85vh] flex flex-col ${wide ? 'max-w-[760px]' : 'max-w-[420px]'}`}
+    >
+      <div className="bg-[#fcfcfc] border-b border-[#e3e8ef] flex items-center gap-2 px-4 py-2.5">
+        <h2 className="flex-1 text-[18px] text-black text-center tracking-[-0.09px]">{title}</h2>
+        <button
+          onClick={onClose}
+          aria-label={`Close ${title.toLowerCase()}`}
+          className="text-[#9ea8b7] hover:text-navy-800 text-[22px] leading-none px-2 flex-none"
+        >
+          &#10005;
+        </button>
+      </div>
+      <div className="overflow-y-auto">{children}</div>
+    </div>
+  </div>
+);
+
+/** Bring one of the side cards into view, for the bar's shortcuts. */
+const scrollToRoomCard = (id: string) => {
+  const card = document.getElementById(id);
+  if (!card) return;
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  card.animate?.(
+    [{ boxShadow: '0 0 0 0 rgba(18,56,110,0)' }, { boxShadow: '0 0 0 4px rgba(18,56,110,.25)' },
+     { boxShadow: '0 0 0 0 rgba(18,56,110,0)' }],
+    { duration: 900 }
   );
 };
 
