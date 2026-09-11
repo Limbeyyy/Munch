@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { MeetingRoomPage } from '../MeetingRoomPage';
 import { apiClient } from '../../services/api';
@@ -127,5 +127,70 @@ describe('the meeting room', () => {
     showRoom();
 
     expect(await screen.findByText('Photos')).toBeInTheDocument();
+  });
+});
+
+describe('the room as the design lays it out', () => {
+  it('puts the running order, the stage and the side panels on one screen', async () => {
+    showRoom();
+
+    // By heading: the bar along the foot names some of these too.
+    expect(
+      await screen.findByRole('heading', { name: 'Agenda Summary' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Live Transcript' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^Resources \(/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Chat' })).toBeInTheDocument();
+  });
+
+  it('carries the controls along its foot', async () => {
+    showRoom();
+
+    const bar = await screen.findByRole('navigation', { name: 'Meeting controls' });
+    for (const label of ['Chat', 'Questions', 'Resources', 'Share', 'Leave']) {
+      expect(
+        within(bar).getByRole('button', { name: new RegExp(label) })
+      ).toBeInTheDocument();
+    }
+  });
+
+  it('keeps the people in the room reachable, which the mock hides', async () => {
+    // The design ships the icon but hides the control; losing the roster
+    // and its role picker would lose the host real work.
+    showRoom();
+
+    const bar = await screen.findByRole('navigation', { name: 'Meeting controls' });
+    fireEvent.click(within(bar).getByRole('button', { name: /Participants/ }));
+
+    expect(await screen.findByRole('dialog', { name: 'Participants' })).toBeInTheDocument();
+  });
+
+  it('opens the board from the questions control', async () => {
+    showRoom();
+
+    const bar = await screen.findByRole('navigation', { name: 'Meeting controls' });
+    fireEvent.click(within(bar).getByRole('button', { name: /Questions/ }));
+
+    expect(await screen.findByRole('dialog', { name: 'Questions' })).toBeInTheDocument();
+  });
+
+  it('opens sharing from the share control', async () => {
+    showRoom();
+
+    const bar = await screen.findByRole('navigation', { name: 'Meeting controls' });
+    fireEvent.click(within(bar).getByRole('button', { name: /Share/ }));
+
+    expect(
+      await screen.findByRole('dialog', { name: 'Share this meeting' })
+    ).toBeInTheDocument();
+  });
+
+  it('has no browser chrome pretending to be part of the app', async () => {
+    // The mock was drawn inside a Safari window; the toolbar and its
+    // traffic lights are the picture frame, not the room.
+    showRoom();
+
+    await screen.findByText('Agenda Summary');
+    expect(screen.queryByText('zenwork.com')).not.toBeInTheDocument();
   });
 });

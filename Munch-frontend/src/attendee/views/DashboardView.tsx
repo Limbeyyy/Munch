@@ -1,11 +1,15 @@
-import React from 'react';
-import { EventMeeting, EventProgramme } from '../../types';
-import { useOrganizer } from '../../organizer/i18n';
-import { Btn, Card } from '../../organizer/ui';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { apiClient } from '../../services/api';
 import {
-  deskSession, doorway, howFarOff, sessionState,
-} from '../../organizer/sessionState';
-import { Spine, SpineItem, clock } from '../Spine';
+  Artifact, Conclusion, EventMeeting, EventProgramme, TranscriptionSegment,
+} from '../../types';
+import { useOrganizer } from '../../organizer/i18n';
+import { Empty } from '../../organizer/ui';
+import { MessageBoard } from '../../organizer/MessageBoard';
+import { PhotoAlbums } from '../../organizer/Photos';
+import { FigmaIcon } from '../../assets/icons';
+import { deskSession, doorway } from '../../organizer/sessionState';
+import { SpineItem, clock } from '../Spine';
 
 interface Props {
   event: EventProgramme | null;
@@ -19,345 +23,454 @@ interface Props {
   elapsed: number;
 }
 
-/**
- * The next session, whenever it is.
- *
- * Shown the same way whether it is eight hours off or eight minutes: what
- * changes with the clock is the door, not whether people are told what is
- * coming. Going in is refused until a quarter of an hour before, and the
- * button says so rather than failing when pressed.
- */
-const UpNext: React.FC<{
-  item: SpineItem;
-  onOpen: (item: SpineItem) => void;
-  onJoinRoom: (meeting: EventMeeting) => void;
-}> = ({ item, onOpen, onJoinRoom }) => {
-  const { t, num } = useOrganizer();
-  const [now, setNow] = React.useState(Date.now());
+/** The white card every panel on this screen is drawn on. */
+const Card: React.FC<{ className?: string; children: React.ReactNode }> = ({
+  className = '',
+  children,
+}) => (
+  <div
+    className={`bg-white border border-[#e3e8ef] rounded-[12px] overflow-hidden ${className}`}
+  >
+    {children}
+  </div>
+);
 
-  React.useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 20000);
-    return () => clearInterval(id);
-  }, []);
-
-  const door = doorway(item.session.starts_at, now);
-  const { amount, unit } = howFarOff(item.session.starts_at, now);
-  const away =
-    unit === 'minute'
-      ? t({ ne: `${num(amount)} मिनेटमा`, en: `in ${amount} min` })
-      : unit === 'hour'
-      ? t({ ne: `${num(amount)} घण्टामा`, en: `in ${amount} h` })
-      : t({ ne: `${num(amount)} दिनमा`, en: `in ${amount} d` });
-  const opens = new Date(door.opensAt).toLocaleTimeString([], {
-    hour: '2-digit', minute: '2-digit',
-  });
-
-  return (
-    <div
-      className="bg-navy-800 text-white rounded-[22px] px-6 py-5"
-      style={{ backgroundImage: 'radial-gradient(circle at 88% -20%, rgba(240,162,43,.22), transparent 55%)' }}
+/** A card's centred title bar. */
+const CardTitle: React.FC<{
+  children: React.ReactNode;
+  size?: number;
+  right?: React.ReactNode;
+}> = ({ children, size = 20, right }) => (
+  <div className="bg-white border-b border-[#e3e8ef] flex items-center gap-2 px-4 py-2.5">
+    <h2
+      className="flex-1 min-w-0 font-medium text-black text-center leading-[1.2]"
+      style={{ fontSize: size }}
     >
-      <div className="flex items-center gap-2.5 flex-wrap">
-        <span className="text-[12.5px] text-amber font-semibold">
-          {t({ ne: 'अर्को सत्र', en: 'Up next' })}
-        </span>
-        <span className="text-[12px] text-[#C9DAF1] bg-white/[.14] rounded-full px-2.5 leading-[20px]">
-          {away}
-        </span>
-        <span className="ms-auto text-[12.5px] text-[#AFC6E6]">
-          {item.meeting.title} · {clock(item.session.starts_at)}–{clock(item.session.ends_at)}
-        </span>
-      </div>
+      {children}
+    </h2>
+    {right}
+  </div>
+);
 
-      <h2 className="text-[23px] font-semibold mt-3 mb-1.5 tracking-tight">
-        {item.session.title}
-      </h2>
-      <p className="text-sm text-[#C9DAF1]">
-        {[
-          item.session.speaker_name || t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' }),
-          item.session.hall,
-        ].filter(Boolean).join(' · ')}
-      </p>
+/**
+ * A round portrait the way the design draws one.
+ *
+ * The mock uses a stock photograph; nobody here has one, so the initial
+ * stands in on the same warm disc rather than a grey box where a face
+ * should be.
+ */
+const Portrait: React.FC<{ name: string; size: number }> = ({ name, size }) => (
+  <span
+    className="bg-[#fbecd1] rounded-full grid place-items-center flex-none
+      text-navy-900 font-semibold overflow-hidden"
+    style={{ width: size, height: size, fontSize: Math.round(size / 2.6) }}
+    aria-hidden
+  >
+    {(name || '?').trim().charAt(0).toUpperCase()}
+  </span>
+);
 
-      <div className="flex gap-2.5 mt-4 flex-wrap items-center">
-        <button
-          onClick={() => onJoinRoom(item.meeting)}
-          disabled={!door.canEnter}
-          className="px-3.5 py-2 rounded-[10px] bg-amber text-[#20160A] text-[13.5px] font-semibold
-            disabled:opacity-45 disabled:cursor-not-allowed"
-        >
-          {t({ ne: 'कोठामा जानुहोस्', en: 'Enter the room' })}
-        </button>
-        <button
-          onClick={() => onOpen(item)}
-          className="px-3.5 py-2 rounded-[10px] border border-white/35 text-[13.5px] hover:bg-white/[.12]"
-        >
-          {t({ ne: 'विवरण हेर्नुहोस्', en: 'See the details' })}
-        </button>
-        {!door.canEnter && (
-          <span className="text-[12.5px] text-[#AFC6E6]">
-            {t({
-              ne: `कोठा ${opens} बजे खुल्छ`,
-              en: `The room opens at ${opens}`,
-            })}
-          </span>
-        )}
-      </div>
-    </div>
-  );
+/** The thin upright rule the design puts between two facts. */
+const Rule: React.FC = () => (
+  <span aria-hidden className="w-px h-3 bg-[#e3e8ef] flex-none" />
+);
+
+const timeRange = (from: string, minutes: number) => {
+  const start = new Date(from);
+  const end = new Date(+start + minutes * 60000);
+  return `${clock(start.toISOString())}-${clock(end.toISOString())}`;
 };
 
-/** What is happening now, what you have missed, and what is coming. */
+type PanelTab = 'slides' | 'questions' | 'photos';
+
+/**
+ * What is happening now, as the live dashboard draws it.
+ *
+ * The shape is the Figma's: the session on stage across the top left, the
+ * transcript running beside it, and the day's agenda underneath with
+ * whichever session is selected opened out. What fills those shapes is
+ * what the platform already knows - the running order, the published
+ * conclusions, the transcript lines - rather than anything new invented
+ * to match a picture.
+ */
 export const DashboardView: React.FC<Props> = ({
-  event, items, live, attendedIds, onOpen, onNavigate, onJoinRoom, elapsed,
+  items, live, onOpen, onJoinRoom,
 }) => {
   const { t, num } = useOrganizer();
 
-  // Attendance can only be judged on sessions that actually ran.
-  const done = items.filter((i) => sessionState(i.session, Date.now(), i.meeting) === 'finished');
-  const ahead = items
-    .filter((i) => sessionState(i.session, Date.now(), i.meeting) === 'upcoming')
-    .sort((a, b) => +new Date(a.session.starts_at) - +new Date(b.session.starts_at));
-  const upcoming = ahead.slice(0, 3);
-  /**
-   * What the panel shows when nothing is on stage: the session the desk
-   * would be holding, however far off it is. An empty panel saying
-   * "nothing is running" answers a question nobody asked - what people
-   * want to know is what is next and whether they can go in yet.
-   *
-   * The same rule the organizer's desk uses, so the two agree about which
-   * session the day has reached.
-   */
-  const onDesk = deskSession(
-    items.map((i) => i.session),
-    Date.now()
-  ).session;
-  const next = items.find((i) => i.session.id === onDesk?.id) ?? ahead[0] ?? null;
-  const attendedCount = done.filter((i) => attendedIds.has(i.session.id)).length;
-  const missed = done.filter((i) => !attendedIds.has(i.session.id));
+  /** The session the day has reached: on stage, else the one due next. */
+  const onDesk = useMemo(
+    () => deskSession(items.map((i) => i.session), Date.now()).session,
+    [items]
+  );
+  const current =
+    live ?? items.find((i) => i.session.id === onDesk?.id) ?? items[0] ?? null;
+  const door = doorway(current?.session.starts_at, Date.now());
 
-  const progress = live
-    ? Math.min(100, Math.round((elapsed / (live.session.duration_minutes * 60)) * 100))
-    : 0;
-  const leftMinutes = live
-    ? Math.max(0, live.session.duration_minutes - Math.floor(elapsed / 60))
-    : 0;
+  const [tab, setTab] = useState<PanelTab>('questions');
+  const [segments, setSegments] = useState<TranscriptionSegment[]>([]);
+  const [slides, setSlides] = useState<Artifact[]>([]);
+  const [conclusions, setConclusions] = useState<Conclusion[]>([]);
+  const [opened, setOpened] = useState<string>('');
+
+  const meetingId = current?.meeting.id ?? '';
+  const meetingCode = current?.meeting.meeting_code ?? '';
+
+  /** The transcript of whatever the day has reached. */
+  useEffect(() => {
+    if (!meetingCode) { setSegments([]); return; }
+    let gone = false;
+    const read = () => {
+      apiClient
+        .getMeetingSegments(meetingCode)
+        .then((lines) => { if (!gone) setSegments(lines); })
+        .catch(() => undefined);
+    };
+    read();
+    const timer = window.setInterval(read, 20000);
+    return () => { gone = true; window.clearInterval(timer); };
+  }, [meetingCode]);
+
+  useEffect(() => {
+    if (!meetingId) { setSlides([]); return; }
+    apiClient.getResources(meetingId).then(setSlides).catch(() => setSlides([]));
+  }, [meetingId]);
+
+  /** What each session came to, for the agenda underneath. */
+  const loadConclusions = useCallback(() => {
+    apiClient
+      .getConclusions()
+      .then((page) => setConclusions(page.conclusions))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => { loadConclusions(); }, [loadConclusions]);
+
+  const agenda = useMemo(
+    () =>
+      [...items].sort(
+        (a, b) => +new Date(a.session.starts_at) - +new Date(b.session.starts_at)
+      ),
+    [items]
+  );
+
+  const selected =
+    agenda.find((i) => i.session.id === opened) ??
+    agenda.find((i) => i.session.id === current?.session.id) ??
+    agenda[0] ??
+    null;
+
+  const summaryOf = (sessionId?: string) =>
+    conclusions.find((c) => c.session_id === sessionId) ?? null;
+
+  const summary = summaryOf(selected?.session.id);
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_326px] items-start">
-      <div className="min-w-0">
-        {/* What is on stage */}
-        {live ? (
-          <div
-            className="bg-navy-800 text-white rounded-[22px] px-6 py-5"
-            style={{ backgroundImage: 'radial-gradient(circle at 88% -20%, rgba(240,162,43,.32), transparent 55%)' }}
-          >
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber animate-pulse" />
-              <span className="text-[12.5px] text-amber font-semibold">
-                {t({ ne: 'अहिले चलिरहेको सत्र', en: 'On stage now' })}
-              </span>
-              <span className="ms-auto text-[12.5px] text-[#AFC6E6]">
-                {live.meeting.title} · {clock(live.session.starts_at)}–{clock(live.session.ends_at)}
-              </span>
-            </div>
-
-            <h2 className="text-[23px] font-semibold mt-3 mb-1.5 tracking-tight">
-              {live.session.title}
-            </h2>
-            <p className="text-sm text-[#C9DAF1]">
-              {live.session.speaker_name || t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' })}
-            </p>
-
-            <div className="mt-4">
-              <div className="h-1.5 rounded-md bg-white/[.18] overflow-hidden">
-                <i
-                  className="block h-full bg-amber rounded-md transition-[width] duration-1000"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              <div className="flex justify-between text-xs text-[#AFC6E6] mt-2">
-                <span>{t({ ne: 'चलिरहेको', en: 'Running' })}</span>
-                <span>
-                  {t({
-                    ne: `बाँकी ${num(leftMinutes)} मिनेट`,
-                    en: `${leftMinutes} minutes left`,
-                  })}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex gap-2.5 mt-4 flex-wrap">
-              <button
-                onClick={() => onJoinRoom(live.meeting)}
-                className="px-3.5 py-2 rounded-[10px] bg-amber text-[#20160A] text-[13.5px] font-semibold"
-              >
-                {t({ ne: 'कोठामा जानुहोस्', en: 'Enter the room' })}
-              </button>
-              <button
-                onClick={() => onOpen(live)}
-                className="px-3.5 py-2 rounded-[10px] border border-white/35 text-[13.5px] hover:bg-white/[.12]"
-              >
-                {t({ ne: 'ट्रान्सक्रिप्ट हेर्नुहोस्', en: 'Follow the transcript' })}
-              </button>
-            </div>
-          </div>
-        ) : next ? (
-          <UpNext item={next} onOpen={onOpen} onJoinRoom={onJoinRoom} />
-        ) : (
-          <Card className="text-center py-8">
-            <p className="text-[#6E7C8E]">
-              {items.length === 0
-                ? t({ ne: 'तपाईंको कुनै कार्यक्रम छैन।', en: 'You are not on any programme yet.' })
-                : t({ ne: 'तपाईंको कार्यक्रममा अब कुनै सत्र बाँकी छैन।', en: 'Nothing left on your programme.' })}
-            </p>
-          </Card>
-        )}
-
-        {/* Where you stand */}
-        <div
-          className="grid gap-px bg-navy-800/15 border border-navy-800/15 rounded-[14px] overflow-hidden my-5"
-          style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))' }}
-        >
-          {[
-            { value: `${num(attendedCount)}/${num(done.length)}`, label: { ne: 'सत्र उपस्थित', en: 'Sessions attended' }, ok: true },
-            { value: num(missed.length), label: { ne: 'छुटेका सत्र', en: 'Sessions missed' } },
-            { value: num(items.length), label: { ne: 'कुल सत्र', en: 'Sessions in all' } },
-            { value: num(event?.meeting_count ?? 0), label: { ne: 'बैठक', en: 'Meetings' } },
-          ].map((s, i) => (
-            <div key={i} className="bg-white px-4 py-3">
-              <b className={`block text-[21px] font-semibold tracking-tight tabular-nums ${s.ok ? 'text-ok' : ''}`}>
-                {s.value}
-              </b>
-              <span className="text-[12.5px] text-[#6E7C8E]">{t(s.label)}</span>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-6">
-          <div className="flex items-baseline gap-3 mb-3">
-            <h2 className="text-[18px] font-semibold">{t({ ne: 'आजको एजेन्डा', en: "Today's agenda" })}</h2>
-            <button
-              onClick={() => onNavigate('agenda')}
-              className="ms-auto text-[13px] text-navy-700 underline underline-offset-4"
-            >
-              {t({ ne: 'पूरा एजेन्डा', en: 'The full agenda' })}
-            </button>
-          </div>
-          <Spine items={items.slice(0, 6)} onOpen={onOpen} />
-        </div>
-      </div>
-
-      {/* Side */}
-      <aside className="flex flex-col gap-4 xl:sticky xl:top-[84px]">
-        {missed.length > 0 && (
-          <Card className="border-s-4 border-s-amber">
-            <h3 className="text-[15.5px] font-semibold">{t({ ne: 'छुटेका सत्र', en: 'What you missed' })}</h3>
-            <p className="text-[13px] text-[#6E7C8E] mt-1">
-              {t({
-                ne: `${num(missed.length)} सत्रमा तपाईंको उपस्थिति दर्ता भएन। ट्रान्सक्रिप्टबाट पढ्न सकिन्छ।`,
-                en: `You were not recorded at ${missed.length} session${missed.length === 1 ? '' : 's'}. The transcript is there to read.`,
-              })}
-            </p>
-            <ul className="mt-3 ps-4 font-read text-[13.5px] leading-[1.75] text-ink-2 list-disc">
-              {missed.slice(0, 3).map((m) => (
-                <li key={m.session.id}>{m.session.title}</li>
-              ))}
-            </ul>
-            <Btn tone="solid" className="mt-3" onClick={() => onOpen(missed[0])}>
-              {t({ ne: 'पहिलो सत्र पढ्नुहोस्', en: 'Read the first one' })}
-            </Btn>
-          </Card>
-        )}
-
-        <Card>
-          <h3 className="text-[15.5px] font-semibold">{t({ ne: 'आउँदै', en: 'Coming up' })}</h3>
-          {upcoming.length === 0 ? (
-            <p className="text-[13px] text-[#6E7C8E] mt-1">
-              {t({ ne: 'यसपछि केही छैन।', en: 'Nothing after this.' })}
-            </p>
-          ) : (
-            upcoming.map((u) => (
-              <button
-                key={u.session.id}
-                onClick={() => onOpen(u)}
-                className="flex gap-3 items-start py-2.5 border-t border-navy-800/[.08] first:border-0 w-full text-start"
-              >
-                <span className="text-xs text-[#6E7C8E] tabular-nums pt-0.5 w-11 flex-none">
-                  {clock(u.session.starts_at)}
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium truncate">{u.session.title}</span>
-                  <span className="block text-[12.5px] text-[#6E7C8E] truncate">
-                    {u.session.speaker_name || u.meeting.title}
-                  </span>
-                </span>
-              </button>
-            ))
-          )}
-        </Card>
-
-        <Card>
-          <h3 className="text-[15.5px] font-semibold">{t({ ne: 'मेरो उपस्थिति', en: 'My attendance' })}</h3>
-          <p className="text-[13px] text-[#6E7C8E] mt-1">
+    <>
+      {/* Title, and the way back into the room */}
+      <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
+        <div className="min-w-0">
+          <h1 className="text-[24px] font-medium text-[#030712] leading-[1.2]">
+            {t({ ne: 'लाइभ ड्यासबोर्ड', en: 'Live Dashboard' })}
+          </h1>
+          <p className="text-[14px] text-[#4a5567] leading-[1.5]">
             {t({
-              ne: 'सत्र सकिँदा हलमा हुनुभएको भए उपस्थिति आफैँ दर्ता हुन्छ।',
-              en: 'If you are in the room when a session ends, your attendance is recorded for you.',
+              ne: 'अहिले के भइरहेको छ, र दिनले कहाँसम्म पुग्यो।',
+              en: 'What is happening now, and how far the day has come.',
             })}
           </p>
-          <div className="mt-3">
-            {done.length === 0 ? (
-              <p className="text-[12.5px] text-[#6E7C8E]">
-                {t({ ne: 'अझै कुनै सत्र सकिएको छैन।', en: 'No session has finished yet.' })}
+        </div>
+        <button
+          onClick={() => current && onJoinRoom(current.meeting)}
+          disabled={!current || !door.canEnter}
+          title={
+            current && !door.canEnter
+              ? t({
+                  ne: 'सत्र सुरु हुनु १५ मिनेट अघि कोठा खुल्छ',
+                  en: 'The room opens a quarter of an hour before the session',
+                })
+              : undefined
+          }
+          className="bg-navy-800 hover:bg-navy-700 text-white rounded-[8px] px-3 py-2
+            flex items-center gap-1.5 text-[14px] font-medium leading-[1.5]
+            disabled:opacity-45 disabled:cursor-not-allowed"
+        >
+          <FigmaIcon name="layoutGrid" size={14} />
+          {t({ ne: 'कोठामा फर्कनुहोस्', en: 'Back to Live Room' })}
+        </button>
+      </div>
+
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_385px] items-start">
+        <div className="flex flex-col gap-3 min-w-0">
+          {/* What is on stage */}
+          <Card>
+            <CardTitle
+              size={24}
+              right={
+                live ? (
+                  <span className="bg-[#fce2ef] text-[#f83995] text-[12px] tracking-[-0.06px]
+                    rounded-[4px] h-6 px-2 grid place-items-center flex-none">
+                    {t({ ne: 'लाइभ', en: 'Live' })}
+                  </span>
+                ) : null
+              }
+            >
+              {current?.meeting.title ?? t({ ne: 'कुनै बैठक छैन', en: 'No meeting' })}
+            </CardTitle>
+
+            {current ? (
+              <div className="flex flex-col gap-3 px-4 py-2.5">
+                <div className="flex gap-2 items-center">
+                  <Portrait name={current.session.speaker_name} size={84} />
+                  <div className="min-w-0">
+                    <p className="text-[22px] font-medium text-black leading-[1.2]">
+                      {current.session.title}
+                    </p>
+                    <p className="text-[18px] text-[#030712] leading-[1.5]">
+                      {current.session.speaker_name ||
+                        t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' })}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 items-center flex-wrap">
+                  <span className="border border-[#e3e8ef] rounded-[4px] h-6 px-2
+                    flex items-center gap-1.5">
+                    <i className="w-[5px] h-[5px] rounded-full bg-[#13cef7]" aria-hidden />
+                    <span className="text-[14px] text-[#030712] tracking-[-0.07px]">
+                      {current.session.hall ||
+                        t({ ne: 'हल तोकिएको छैन', en: 'No hall named' })}
+                    </span>
+                  </span>
+                  <Rule />
+                  <span className="text-[14px] text-[#030712] tracking-[-0.07px]">
+                    {timeRange(current.session.starts_at, current.session.duration_minutes)}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <Empty>
+                {t({
+                  ne: 'तपाईंको कुनै कार्यक्रम छैन।',
+                  en: 'You are not on any programme yet.',
+                })}
+              </Empty>
+            )}
+          </Card>
+
+          {/* Slides, questions and photographs of whatever is on stage */}
+          <Card>
+            <div className="bg-[#fcfcfc] border-b border-[#e3e8ef] flex">
+              {(
+                [
+                  ['slides', { ne: 'स्लाइड', en: 'Slides' }],
+                  ['questions', { ne: 'प्रश्न', en: 'Questions' }],
+                  ['photos', { ne: 'फोटो', en: 'Photos' }],
+                ] as [PanelTab, { ne: string; en: string }][]
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === id}
+                  onClick={() => setTab(id)}
+                  className={`flex-1 h-12 text-[14px] transition-colors ${
+                    tab === id
+                      ? 'text-black font-medium border-b-2 border-black'
+                      : 'text-[#49454f] hover:text-black'
+                  }`}
+                >
+                  {t(label)}
+                </button>
+              ))}
+            </div>
+
+            <div className="p-4 min-h-[156px]">
+              {!current ? (
+                <Empty>{t({ ne: 'कुनै सत्र छैन।', en: 'No session yet.' })}</Empty>
+              ) : tab === 'photos' ? (
+                <PhotoAlbums meetingRef={meetingCode} canManage={false} />
+              ) : tab === 'questions' ? (
+                <MessageBoard meetingId={meetingId} refreshMs={30000} />
+              ) : slides.length === 0 ? (
+                <Empty>
+                  {t({
+                    ne: 'यो बैठकमा अझै कुनै फाइल राखिएको छैन।',
+                    en: 'Nothing has been shared for this meeting yet.',
+                  })}
+                </Empty>
+              ) : (
+                <ul className="flex flex-col">
+                  {slides.map((file) => (
+                    <li
+                      key={file.id}
+                      className="flex items-center gap-3 py-2.5 border-b border-[#e3e8ef]
+                        last:border-0"
+                    >
+                      <FigmaIcon name="folder" size={24} />
+                      <span className="text-[14px] text-[#383838] tracking-[-0.07px] truncate">
+                        {file.display_name}
+                      </span>
+                      {file.web_view_link && (
+                        <a
+                          href={file.web_view_link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="ms-auto text-[13px] text-navy-700 underline flex-none"
+                        >
+                          {t({ ne: 'खोल्नुहोस्', en: 'Open' })}
+                        </a>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </Card>
+        </div>
+
+        {/* What is being said */}
+        <Card className="xl:sticky xl:top-4">
+          <CardTitle>{t({ ne: 'लाइभ ट्रान्सक्रिप्ट', en: 'Live Transcript' })}</CardTitle>
+          <div className="flex flex-col gap-3 px-3 py-2.5 max-h-[420px] overflow-y-auto">
+            {segments.length === 0 ? (
+              <Empty>
+                {t({
+                  ne: 'हलको यन्त्रले बोली पठाउन थालेपछि यहाँ देखिन्छ।',
+                  en: 'Lines appear here once the hall device starts sending them.',
+                })}
+              </Empty>
+            ) : (
+              segments.map((line, i) => (
+                <div key={`${line.start_time}-${i}`} className="flex gap-3 items-start">
+                  <span className="border border-[#e3e8ef] rounded-[4px] h-6 px-1
+                    grid place-items-center flex-none text-[12px] text-[#656565]
+                    tracking-[-0.06px] tabular-nums">
+                    {line.created_at ? clock(line.created_at) : num(Math.round(line.start_time))}
+                  </span>
+                  <Rule />
+                  <p className="flex-1 min-w-0 text-[14px] leading-[1.4] tracking-[-0.07px]
+                    text-[#383838]">
+                    {line.speaker_name && (
+                      <span className="text-[#4a5567]">{line.speaker_name}: </span>
+                    )}
+                    {line.text}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </Card>
+      </div>
+
+      {/* The day, and what each part of it came to */}
+      <Card className="mt-3">
+        <div className="bg-[#fcfcfc] h-12 grid place-items-center">
+          <h2 className="text-[20px] font-medium text-black leading-[1.2]">
+            {t({ ne: 'एजेन्डा सारांश', en: 'Agenda Summary' })}
+          </h2>
+        </div>
+
+        <div className="grid md:grid-cols-[339px_minmax(0,1fr)] items-stretch">
+          <div className="max-h-[363px] overflow-y-auto border-b md:border-b-0 md:border-e
+            border-[#b3b3b3]/40">
+            {agenda.length === 0 ? (
+              <Empty>{t({ ne: 'कुनै सत्र छैन।', en: 'Nothing scheduled.' })}</Empty>
+            ) : (
+              agenda.map((item) => {
+                const chosen = item.session.id === selected?.session.id;
+                return (
+                  <button
+                    key={item.session.id}
+                    type="button"
+                    aria-current={chosen}
+                    onClick={() => setOpened(item.session.id)}
+                    onDoubleClick={() => onOpen(item)}
+                    className={`w-full text-start flex items-center justify-between gap-2
+                      px-1 py-2 border-b-[0.5px] border-[#b3b3b3] last:border-0
+                      ${chosen ? 'bg-[#007092] text-white' : 'bg-[#fcfcfc] hover:bg-cream'}`}
+                  >
+                    <span className="flex gap-2 items-center p-1 min-w-0">
+                      <Portrait name={item.session.speaker_name} size={48} />
+                      <span className="min-w-0">
+                        <span className={`block text-[16px] font-medium leading-[1.2] truncate
+                          ${chosen ? 'text-white' : 'text-black'}`}>
+                          {item.session.title}
+                        </span>
+                        <span className={`block text-[14px] leading-[1.5] truncate
+                          ${chosen ? 'text-white' : 'text-[#030712]'}`}>
+                          {item.session.speaker_name ||
+                            t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' })}
+                        </span>
+                      </span>
+                    </span>
+                    {chosen && <FigmaIcon name="arrowRight" size={24} />}
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <div className="bg-[#007092] text-white p-4 min-h-[363px]">
+            {!selected ? (
+              <p className="text-[16px] opacity-90">
+                {t({ ne: 'कुनै सत्र छानिएको छैन।', en: 'No session chosen.' })}
               </p>
             ) : (
               <>
-                {done.slice(0, 5).map((d) => {
-                  const was = attendedIds.has(d.session.id);
-                  return (
-                    <div key={d.session.id} className="flex gap-2.5 items-center py-1.5">
-                      <span
-                        className={`w-[18px] h-[18px] rounded-[5px] grid place-items-center text-[11px] flex-none ${
-                          was ? 'bg-ok/[.12] text-ok' : 'bg-cream-200 text-[#6E7C8E]'
-                        }`}
-                      >
-                        {was ? '✓' : '—'}
-                      </span>
-                      <span className="text-[13.5px] truncate">{d.session.title}</span>
-                    </div>
-                  );
-                })}
-                <div className="mt-2.5 pt-2.5 border-t border-navy-800/[.08]">
-                  <div className="h-1.5 rounded-md bg-cream-200 overflow-hidden">
-                    <i
-                      className={`block h-full rounded-md ${
-                        attendedCount / Math.max(1, done.length) >= 0.75 ? 'bg-ok' : 'bg-amber'
-                      }`}
-                      style={{ width: `${Math.round((attendedCount / Math.max(1, done.length)) * 100)}%` }}
-                    />
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0 text-center">
+                    <p className="text-[20px] font-medium leading-[1.2]">
+                      {t({ ne: 'सारांश', en: 'Summary' })}
+                    </p>
+                    <p className="text-[16px] leading-[1.5]">
+                      {selected.session.speaker_name ||
+                        t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' })}
+                    </p>
                   </div>
-                  <p className="text-[13px] text-[#6E7C8E] mt-2">
-                    {t({
-                      ne: `सकिएका ${num(done.length)} मध्ये ${num(attendedCount)} मा उपस्थित।`,
-                      en: `Present at ${attendedCount} of the ${done.length} that have finished.`,
-                    })}
-                  </p>
+                  <span className="bg-white border border-[#e3e8ef] rounded-[4px] h-6 px-1
+                    grid place-items-center flex-none text-[12px] text-[#030712]
+                    tracking-[-0.06px] tabular-nums">
+                    {timeRange(
+                      selected.session.starts_at, selected.session.duration_minutes
+                    )}
+                  </span>
+                </div>
+
+                <div className="mt-6 flex flex-col gap-3 text-[14px] leading-[1.4]
+                  tracking-[-0.07px] text-[#fcfcfc] max-h-[240px] overflow-y-auto">
+                  {summary && summary.findings.length > 0 ? (
+                    summary.findings.map((point, i) => <p key={i}>{point}</p>)
+                  ) : (
+                    <p className="opacity-80">
+                      {t({
+                        ne: 'यो सत्रको निष्कर्ष अझै प्रकाशित भएको छैन।',
+                        en: 'Nothing has been published for this session yet.',
+                      })}
+                    </p>
+                  )}
+
+                  {summary && summary.actions.length > 0 && (
+                    <div className="pt-3 border-t border-white/25">
+                      <p className="text-[12px] uppercase tracking-wide opacity-80 mb-1.5">
+                        {t({ ne: 'कार्यसूची', en: 'Actions' })}
+                      </p>
+                      {summary.actions.map((action, i) => (
+                        <p key={i} className="flex gap-2 justify-between">
+                          <span>{action.task}</span>
+                          <span className="opacity-85 flex-none">
+                            {[action.owner, action.due].filter(Boolean).join(' · ')}
+                          </span>
+                        </p>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </>
             )}
           </div>
-        </Card>
-
-        <div className="bg-navy-900 text-white rounded-[14px] p-4">
-          <h3 className="text-[15.5px] font-semibold">{t({ ne: 'तपाईंको डाटा तपाईंकै', en: 'Your data is yours' })}</h3>
-          <p className="text-[13px] text-[#A9C0E2] mt-1">
-            {t({
-              ne: 'हलको यन्त्रले बोलेको कुरा पाठमा पठाउँछ। कुनै अडियो वा भिडियो राखिँदैन।',
-              en: 'The hall device sends speech as text. No audio or video is kept.',
-            })}
-          </p>
         </div>
-      </aside>
-    </div>
+      </Card>
+    </>
   );
 };
