@@ -103,6 +103,12 @@ logs/
 # Static files collected by Django
 staticfiles/
 assets/
+# ...but not the frontend's own. "assets/" was written for what Django
+# collects and matches any directory of that name at any depth, which
+# quietly swallowed src/assets - the icons exported from the design and
+# the module that imports them. They are source, and without them the
+# frontend does not compile from a fresh clone.
+!Munch-frontend/src/assets/
 
 # Node modules (if using frontend)
 node_modules/

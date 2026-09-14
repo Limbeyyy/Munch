@@ -12,7 +12,7 @@ import toast from 'react-hot-toast';
 import { ShareMeetingDialog } from '../components/ShareMeetingDialog';
 import { ResourceControls } from '../organizer/ResourceVisibility';
 import { PhotoUploads } from '../organizer/Photos';
-import { MessageBoard } from '../organizer/MessageBoard';
+import { RoomQuestions } from '../organizer/RoomQuestions';
 import { FigmaIcon } from '../assets/icons';
 import { RoomAgenda } from '../organizer/RoomAgenda';
 import { RoomBarButton, RoomCard, RoomPanel, RoomPortrait, SidePanelHead } from './roomChrome';
@@ -1584,11 +1584,13 @@ const MeetingRoomInner: React.FC = () => {
                 {panel === 'questions' && (
           <RoomCard>
             <SidePanelHead title="Questions" onClose={() => closeSide('questions')} />
-            <div className="p-3 max-h-[520px] overflow-y-auto">
-              {meetingId && (
-                <MessageBoard meetingId={meetingId} refreshMs={20000} canAnswer={canOrganize} />
-              )}
-            </div>
+            {meetingId && (
+              <RoomQuestions
+                meetingId={meetingId}
+                refreshMs={20000}
+                canSort={canOrganize}
+              />
+            )}
           </RoomCard>
                 )}
               </React.Fragment>

@@ -5,7 +5,7 @@ import { RESOURCE_POLL_MS } from '../services/polling';
 import { ChatMessage, ChatPerson, ChatSettings, GuestResource } from '../types';
 import toast from 'react-hot-toast';
 import { TranscriptionSegment } from '../types';
-import { MessageBoard } from '../organizer/MessageBoard';
+import { RoomQuestions } from '../organizer/RoomQuestions';
 import { OrganizerProvider } from '../organizer/i18n';
 import { RoomAgenda } from '../organizer/RoomAgenda';
 import { RoomBarButton, RoomCard, RoomPortrait, SidePanelHead } from './roomChrome';
@@ -568,11 +568,9 @@ export const GuestMeetingPage: React.FC = () => {
                       title="Questions"
                       onClose={() => closeSide('questions')}
                     />
-                    <div className="p-3 max-h-[520px] overflow-y-auto">
-                      {token && (
-                        <MessageBoard guestToken={token} refreshMs={20000} />
-                      )}
-                    </div>
+                    {token && (
+                      <RoomQuestions guestToken={token} refreshMs={20000} />
+                    )}
                   </RoomCard>
                 )}
 

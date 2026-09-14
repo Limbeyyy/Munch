@@ -187,6 +187,29 @@ describe('the room as the design lays it out', () => {
     await openSide('Questions');
 
     expect(await screen.findByRole('heading', { name: 'Questions' })).toBeInTheDocument();
+    // The board is what people asked, sorted into two - and, for the
+    // host, the queue of what has not been sorted yet.
+    expect(await screen.findByRole('tab', { name: /Questions/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Suggestions/ })).toBeInTheDocument();
+  });
+
+  it('lets the host sort what people wrote without leaving the room', async () => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
+    api.getPendingMessages.mockResolvedValue([{
+      id: 'm9', body: 'Please slow down', created_at: new Date().toISOString(),
+      is_direct: true, moderation_status: 'pending', sender_id: 'g1',
+      sender_name: 'Rahul', sender_is_guest: true, recipient_name: 'The host',
+    }] as any);
+
+    showRoom();
+    await openSide('Questions');
+    fireEvent.click(await screen.findByRole('tab', { name: /Requests \(1\)/ }));
+
+    expect(await screen.findByText('Please slow down')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Question' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Suggestion' })).toBeInTheDocument();
+    useAuthStore.setState({ user: null });
   });
 
   it('opens sharing from the share control', async () => {
