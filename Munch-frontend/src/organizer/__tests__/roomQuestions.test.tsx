@@ -9,6 +9,8 @@ jest.mock('../../services/api', () => ({
     getMeetingBoard: jest.fn(),
     getGuestBoard: jest.fn(),
     getPendingMessages: jest.fn(),
+    getReviewedMessages: jest.fn(),
+    sortMessage: jest.fn(),
     moderateMessage: jest.fn(),
     voteOnBoard: jest.fn(),
     guestVoteOnBoard: jest.fn(),
@@ -62,6 +64,7 @@ beforeEach(() => {
   );
   api.getMeetingBoard.mockResolvedValue({ faq: [entry()], suggestions: [] } as any);
   api.getPendingMessages.mockResolvedValue([held()] as any);
+  api.getReviewedMessages.mockResolvedValue({ from_users: [], from_guests: [] } as any);
 });
 
 const show = (props: any = {}) =>
@@ -148,7 +151,7 @@ describe('sorting what people write, from inside the room', () => {
     show({ canSort: true });
     fireEvent.click(await screen.findByRole('tab', { name: /Requests/ }));
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Question' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'To questions' }));
 
     await waitFor(() => expect(api.moderateMessage).toHaveBeenCalledWith(
       'm1', 'm1', 'approve', 'faq'
@@ -160,7 +163,7 @@ describe('sorting what people write, from inside the room', () => {
     show({ canSort: true });
     fireEvent.click(await screen.findByRole('tab', { name: /Requests/ }));
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Suggestion' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'To suggestions' }));
 
     await waitFor(() => expect(api.moderateMessage).toHaveBeenCalledWith(
       'm1', 'm1', 'approve', 'suggestion'
@@ -187,7 +190,7 @@ describe('sorting what people write, from inside the room', () => {
     fireEvent.click(await screen.findByRole('tab', { name: /Requests/ }));
     await screen.findByText(/slow down the transcript/);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Question' }));
+    fireEvent.click(screen.getByRole('button', { name: 'To questions' }));
 
     await waitFor(() =>
       expect(screen.queryByText(/slow down the transcript/)).toBeNull()
@@ -251,10 +254,80 @@ describe('what the socket heard arrive', () => {
     show({ canSort: true, waiting: [held({ id: 'live1' })] });
     fireEvent.click(await screen.findByRole('tab', { name: /Requests/ }));
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Question' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'To questions' }));
 
     await waitFor(() =>
       expect(screen.queryByText(/slow down the transcript/)).toBeNull()
     );
+  });
+});
+
+/**
+ * A message that reached its reader and was never given a place.
+ *
+ * Letting one through says it may be read; it does not say what it is. One
+ * approved with no topic is on nobody's board and in nobody's queue - it
+ * has disappeared into having been read, which is where a question put to
+ * the host used to go. It is still unanswered, so it is still a request.
+ */
+describe('what was let through but never filed', () => {
+  const seen = (over: any = {}) => held({
+    id: 'seen1',
+    body: 'What is this meeting agendas?',
+    moderation_status: 'approved',
+    topic: 'none',
+    ...over,
+  });
+
+  it('is in the queue with everything else waiting', async () => {
+    api.getPendingMessages.mockResolvedValue([] as any);
+    api.getReviewedMessages.mockResolvedValue(
+      { from_users: [], from_guests: [seen()] } as any
+    );
+    show({ canSort: true });
+
+    fireEvent.click(await screen.findByRole('tab', { name: /Requests \(1\)/ }));
+
+    expect(await screen.findByText('What is this meeting agendas?')).toBeInTheDocument();
+  });
+
+  it('is given its place without being approved a second time', async () => {
+    api.getPendingMessages.mockResolvedValue([] as any);
+    api.getReviewedMessages.mockResolvedValue(
+      { from_users: [], from_guests: [seen()] } as any
+    );
+    api.sortMessage.mockResolvedValue({} as any);
+    show({ canSort: true });
+    fireEvent.click(await screen.findByRole('tab', { name: /Requests/ }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'To questions' }));
+
+    await waitFor(() =>
+      expect(api.sortMessage).toHaveBeenCalledWith('m1', 'seen1', 'faq')
+    );
+    expect(api.moderateMessage).not.toHaveBeenCalled();
+  });
+
+  it('offers no Decline, having already been read', async () => {
+    api.getPendingMessages.mockResolvedValue([] as any);
+    api.getReviewedMessages.mockResolvedValue(
+      { from_users: [], from_guests: [seen()] } as any
+    );
+    show({ canSort: true });
+    fireEvent.click(await screen.findByRole('tab', { name: /Requests/ }));
+    await screen.findByText('What is this meeting agendas?');
+
+    expect(screen.queryByRole('button', { name: 'Decline' })).toBeNull();
+  });
+
+  it('leaves alone one that already has a place', async () => {
+    api.getPendingMessages.mockResolvedValue([] as any);
+    api.getReviewedMessages.mockResolvedValue(
+      { from_users: [seen({ id: 'filed', topic: 'faq' })], from_guests: [] } as any
+    );
+    show({ canSort: true });
+
+    expect(await screen.findByRole('tab', { name: /Requests \(0\)/ }))
+      .toBeInTheDocument();
   });
 });

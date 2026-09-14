@@ -87,6 +87,9 @@ beforeEach(() => {
   // The board answers with two lists, not the bare array the tolerant
   // default hands back for everything else.
   api.getMeetingBoard.mockResolvedValue({ faq: [], suggestions: [] } as any);
+  api.getReviewedMessages.mockResolvedValue(
+    { from_users: [], from_guests: [] } as any
+  );
   api.getPhotos.mockResolvedValue({
     meeting_id: 'm1', meeting_code: 'ABC123', meeting_title: 'Opening day',
     meeting_is_finished: false, can_upload: false, is_a_photographer: true,
@@ -207,8 +210,8 @@ describe('the room as the design lays it out', () => {
     fireEvent.click(await screen.findByRole('tab', { name: /Requests \(1\)/ }));
 
     expect(await screen.findByText('Please slow down')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Question' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Suggestion' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'To questions' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'To suggestions' })).toBeInTheDocument();
     useAuthStore.setState({ user: null });
   });
 
