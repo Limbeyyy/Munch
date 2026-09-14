@@ -205,3 +205,195 @@ class GuestRoomStatusTests(TestCase):
         response = self.client.get(f'{API}/meetings/guest/status/?token=made-up')
 
         self.assertEqual(response.status_code, 401)
+
+
+class GuestsAreNotKeptTests(TestCase):
+    """A guest is a name at a door for one afternoon, and nothing after it.
+
+    They give a name - not a telephone number, which was collected because
+    the form had a box for it and used for nothing - and their row lasts as
+    long as the meeting. What outlives the meeting is the register: the
+    name, against what they attended. Nothing that can be joined to
+    anything, because there is no guest to look up.
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.host = make_host('host@example.com')
+        start = timezone.now() - timezone.timedelta(minutes=5)
+        self.meeting = make_meeting(self.host, start=start, minutes=120)
+        self.meeting.status = Meeting.Status.ACTIVE
+        self.meeting.started_at = start
+        self.meeting.save()
+        self.session = make_session(self.meeting, start, 60, 'Haldi')
+
+    def knock(self, name, **extra):
+        return self.client.post(
+            f'{API}/meetings/guest/knock/',
+            {'meeting_code': self.meeting.meeting_code, 'full_name': name, **extra},
+            content_type='application/json',
+        )
+
+    def admit(self, guest):
+        from src.apps.meetings.lifecycle import record_guest_attendance
+
+        guest.status = GuestAttendee.Status.ADMITTED
+        guest.decided_at = timezone.now()
+        guest.save()
+        record_guest_attendance(self.meeting, guest.full_name, guest.decided_at)
+        return guest
+
+    def end_it(self):
+        from src.apps.meetings.services.meeting_service import MeetingService
+
+        MeetingService.end_meeting(self.meeting.id)
+        self.meeting.refresh_from_db()
+
+    # -- what is asked for ------------------------------------------------
+
+    def test_a_name_is_all_that_is_asked_for(self):
+        response = self.knock('Bishnu Prasad')
+
+        self.assertEqual(response.status_code, 201)
+        guest = GuestAttendee.objects.get(meeting=self.meeting)
+        self.assertEqual(guest.full_name, 'Bishnu Prasad')
+        self.assertEqual(guest.phone, '')
+
+    def test_a_number_sent_by_an_older_client_is_ignored_not_refused(self):
+        response = self.knock('Bishnu Prasad', phone='9812345678')
+
+        self.assertEqual(response.status_code, 201)
+
+    def test_a_name_too_short_to_be_one_is_refused(self):
+        self.assertEqual(self.knock('B').status_code, 400)
+
+    # -- coming back ------------------------------------------------------
+
+    def test_the_token_they_hold_gets_them_back_to_their_seat(self):
+        from src.apps.meetings.guest_tokens import make_guest_token
+
+        guest = self.admit(GuestAttendee.objects.create(
+            meeting=self.meeting, full_name='Bishnu Prasad',
+        ))
+
+        response = self.knock('Bishnu Prasad', token=make_guest_token(guest))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['rejoined'])
+
+    def test_a_name_alone_does_not_walk_in_on_somebody_elses_approval(self):
+        # The old rule looked guests up by what they typed, so anybody who
+        # knew an admitted guest's details was admitted as them. A name is
+        # not a credential.
+        self.admit(GuestAttendee.objects.create(
+            meeting=self.meeting, full_name='Bishnu Prasad',
+        ))
+
+        response = self.knock('Bishnu Prasad')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(response.json()['rejoined'])
+        self.assertEqual(response.json()['guest']['status'], 'pending')
+
+    # -- and afterwards ---------------------------------------------------
+
+    def test_the_rows_are_gone_when_the_meeting_is_over(self):
+        self.admit(GuestAttendee.objects.create(
+            meeting=self.meeting, full_name='Bishnu Prasad',
+        ))
+
+        self.end_it()
+
+        self.assertEqual(GuestAttendee.objects.filter(meeting=self.meeting).count(), 0)
+
+    def test_even_the_ones_who_were_never_let_in(self):
+        GuestAttendee.objects.create(meeting=self.meeting, full_name='Never Admitted')
+
+        self.end_it()
+
+        self.assertEqual(GuestAttendee.objects.count(), 0)
+
+    def test_but_the_register_remembers_who_attended(self):
+        self.admit(GuestAttendee.objects.create(
+            meeting=self.meeting, full_name='Bishnu Prasad',
+        ))
+
+        self.end_it()
+
+        self.assertEqual(
+            [entry['name'] for entry in self.meeting.guest_attendance],
+            ['Bishnu Prasad'],
+        )
+
+    def test_and_only_the_ones_who_did(self):
+        GuestAttendee.objects.create(meeting=self.meeting, full_name='Never Admitted')
+
+        self.end_it()
+
+        self.assertEqual(self.meeting.guest_attendance, [])
+
+    def test_the_session_register_keeps_the_name_too(self):
+        from src.apps.meetings.models import Session, SessionAttendance
+
+        self.session.status = Session.Status.LIVE
+        self.session.started_at = timezone.now()
+        self.session.save()
+        self.admit(GuestAttendee.objects.create(
+            meeting=self.meeting, full_name='Bishnu Prasad',
+        ))
+
+        self.end_it()
+
+        seat = SessionAttendance.objects.get(session=self.session, user__isnull=True)
+        self.assertEqual(seat.guest_name, 'Bishnu Prasad')
+        self.assertIsNone(seat.guest_id)
+
+    def test_the_host_can_still_read_the_attendance_afterwards(self):
+        from django.test import Client
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        self.admit(GuestAttendee.objects.create(
+            meeting=self.meeting, full_name='Bishnu Prasad',
+        ))
+        self.end_it()
+
+        client = Client(HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(self.host)}')
+        report = client.get(f'{API}/meetings/{self.meeting.id}/attendance/').json()
+
+        self.assertEqual(report['guests_admitted'], 1)
+        guest_rows = [a for a in report['attended'] if a['type'] == 'guest']
+        self.assertEqual([g['name'] for g in guest_rows], ['Bishnu Prasad'])
+        # And nothing about them that was never asked for.
+        self.assertIsNone(guest_rows[0]['phone'])
+
+    def test_a_meeting_that_ended_untidily_is_swept_up(self):
+        from src.apps.meetings.tasks import forget_guests_of_ended_meetings
+
+        GuestAttendee.objects.create(
+            meeting=self.meeting, full_name='Left Behind',
+            status=GuestAttendee.Status.ADMITTED,
+        )
+        Meeting.objects.filter(id=self.meeting.id).update(
+            status=Meeting.Status.ENDED
+        )
+
+        forget_guests_of_ended_meetings()
+
+        self.assertEqual(GuestAttendee.objects.count(), 0)
+        self.meeting.refresh_from_db()
+        self.assertEqual(
+            [e['name'] for e in self.meeting.guest_attendance], ['Left Behind']
+        )
+
+    def test_a_meeting_still_running_keeps_its_guests(self):
+        from src.apps.meetings.tasks import forget_guests_of_ended_meetings
+
+        GuestAttendee.objects.create(
+            meeting=self.meeting, full_name='Still Here',
+            status=GuestAttendee.Status.ADMITTED,
+        )
+
+        forget_guests_of_ended_meetings()
+
+        self.assertEqual(GuestAttendee.objects.count(), 1)

@@ -558,10 +558,33 @@ class MeetingViewSet(viewsets.ModelViewSet):
         guests = meeting.guests.filter(status=GuestAttendee.Status.ADMITTED)
         if everyone:
             # Somebody the host admitted was in the room, whether or not
-            # they are still in it.
+            # they are still in it - and whether or not their row is, since
+            # guests are forgotten when the meeting ends. The register is
+            # what answers then, and it holds a name and nothing else.
+            from src.apps.meetings.lifecycle import guests_who_attended
+
             guests = meeting.guests.filter(
                 status__in=[GuestAttendee.Status.ADMITTED, GuestAttendee.Status.LEFT]
             )
+            if not guests.exists():
+                for entry in guests_who_attended(meeting):
+                    people.append({
+                        'id': f"guest:{entry['name']}",
+                        'user': {
+                            'id': f"guest:{entry['name']}",
+                            'email': entry['name'],
+                            'first_name': entry['name'],
+                            'last_name': '',
+                        },
+                        'role': 'guest',
+                        'is_active': False,
+                        'is_muted': False,
+                        'is_video_on': False,
+                        'is_screen_sharing': False,
+                        'joined_at': entry['at'],
+                        'left_at': None,
+                        'is_guest': True,
+                    })
 
         for g in guests:
             people.append({
@@ -731,14 +754,14 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
         # Admitted guests attended; guests who then left still attended.
         # Pending and denied guests never entered, so they are excluded.
-        guests = list(
-            meeting.guests.filter(
-                status__in=[
-                    GuestAttendee.Status.ADMITTED,
-                    GuestAttendee.Status.LEFT,
-                ]
-            ).order_by('created_at')
-        )
+        #
+        # Read through the register rather than straight off the rows: a
+        # guest is forgotten when the meeting ends, and this report is
+        # mostly read afterwards. The register holds a name and the moment
+        # they were let in, which is all attendance ever needed.
+        from src.apps.meetings.lifecycle import guests_who_attended
+
+        guests = guests_who_attended(meeting)
 
         invited_emails = {i.email.lower() for i in invites}
 
@@ -757,16 +780,23 @@ class MeetingViewSet(viewsets.ModelViewSet):
             for p in participants
         ]
 
+        in_the_room = set(
+            meeting.guests.filter(
+                status=GuestAttendee.Status.ADMITTED
+            ).values_list('full_name', flat=True)
+        )
         attended_guests = [
             {
                 'type': 'guest',
-                'name': g.full_name,
+                'name': g['name'],
                 'email': None,
-                'phone': g.phone,
+                # Never asked for, so never answered. A guest gives a name
+                # at a door and that is the whole of it.
+                'phone': None,
                 'role': 'guest',
-                'joined_at': g.decided_at or g.created_at,
+                'joined_at': g['at'],
                 'left_at': None,
-                'is_active': g.status == GuestAttendee.Status.ADMITTED,
+                'is_active': g['name'] in in_the_room,
                 'was_invited': False,
             }
             for g in guests
@@ -888,6 +918,13 @@ class MeetingViewSet(viewsets.ModelViewSet):
         guest.decided_by = request.user
         guest.decided_at = timezone.now()
         guest.save(update_fields=['status', 'decided_by', 'decided_at', 'updated_at'])
+
+        if guest.status == GuestAttendee.Status.ADMITTED:
+            # Written now, because this is the moment they were in the
+            # hall - and because their row will not be here to ask later.
+            from src.apps.meetings.lifecycle import record_guest_attendance
+
+            record_guest_attendance(meeting, guest.full_name, guest.decided_at)
 
         notify_guest_of_decision(guest)
         return Response(GuestAttendeeSerializer(guest).data)

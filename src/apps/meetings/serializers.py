@@ -151,23 +151,29 @@ class ChatSettingsSerializer(serializers.Serializer):
 
 
 class GuestJoinSerializer(serializers.Serializer):
-    """A guest knocking on a meeting: both fields are required."""
+    """A guest knocking on a meeting: a code and a name.
+
+    A telephone number used to be required as well. Nothing was ever done
+    with it - the host decides on the name, the register keeps the name -
+    so it was personal data collected because a form had a box for it. The
+    field is still accepted so an older client is not broken by this, and
+    is ignored.
+
+    ``token`` is what a guest already inside holds. It is how somebody
+    whose browser reloaded gets back to their seat without asking the host
+    again; without one, every knock is a fresh request, because there is
+    nothing to look them up by and nothing that should be.
+    """
     meeting_code = serializers.CharField(max_length=20)
     full_name = serializers.CharField(max_length=120)
-    phone = serializers.CharField(max_length=32)
+    phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
+    token = serializers.CharField(required=False, allow_blank=True)
 
     def validate_full_name(self, value):
         name = ' '.join(value.split())
         if len(name) < 2:
-            raise serializers.ValidationError("Please enter your full name")
+            raise serializers.ValidationError("Please enter your name")
         return name
-
-    def validate_phone(self, value):
-        phone = value.strip()
-        digits = [c for c in phone if c.isdigit()]
-        if len(digits) < 7:
-            raise serializers.ValidationError("Please enter a valid phone number")
-        return phone
 
     def validate_meeting_code(self, value):
         return value.strip().upper()

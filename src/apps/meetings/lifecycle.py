@@ -70,11 +70,15 @@ def close_session(session, now):
         recorded += int(created)
 
     admitted_guests = session.meeting.guests.filter(status='admitted').values_list(
-        'id', flat=True
+        'id', 'full_name'
     )
-    for guest_id in admitted_guests:
+    for guest_id, guest_name in admitted_guests:
+        # The name goes down with the seat. The guest's own row is
+        # forgotten when the meeting ends, and the register has to still
+        # say who was there.
         _, created = SessionAttendance.objects.get_or_create(
-            session=session, guest_id=guest_id
+            session=session, guest_id=guest_id,
+            defaults={'guest_name': guest_name},
         )
         recorded += int(created)
 
@@ -122,7 +126,85 @@ def clear_room(meeting, now=None):
         meeting=meeting, status=GuestAttendee.Status.ADMITTED
     ).update(status=GuestAttendee.Status.LEFT)
 
+    forget_guests(meeting)
     return left + sent_home
+
+
+def record_guest_attendance(meeting, name, when=None):
+    """Write a guest's name on the meeting's own register.
+
+    Called the moment the host admits somebody, because that is when they
+    were in the hall - and because their row will not be here later to ask.
+    The register belongs to the meeting: it says who attended this
+    afternoon, and it is not a list of people that anything else can join
+    to. Idempotent, so a guest who drops out and comes back is one name.
+    """
+    now = when or timezone.now()
+    register = list(meeting.guest_attendance or [])
+    if any((entry.get('name') or '').casefold() == name.casefold() for entry in register):
+        return False
+    register.append({'name': name, 'at': now.isoformat()})
+    meeting.guest_attendance = register
+    meeting.save(update_fields=['guest_attendance', 'updated_at'])
+    return True
+
+
+def guests_who_attended(meeting):
+    """The guests this meeting had, whether or not their rows are still here.
+
+    While it is running they are the admitted rows; afterwards they are the
+    register, which is all that is kept. One reader for both so a report
+    written during the meeting and the same report a week later do not
+    disagree about who was there.
+    """
+    register = [
+        {'name': entry.get('name') or 'Guest', 'at': entry.get('at')}
+        for entry in (meeting.guest_attendance or [])
+        if (entry.get('name') or '').strip()
+    ]
+    if register:
+        return register
+
+    # Nothing written down: a meeting from before the register existed, or
+    # one whose guests are still in the room.
+    return [
+        {'name': guest.full_name, 'at': (guest.decided_at or guest.created_at).isoformat()}
+        for guest in meeting.guests.filter(
+            status__in=[GuestAttendee.Status.ADMITTED, GuestAttendee.Status.LEFT]
+        ).order_by('created_at')
+    ]
+
+
+def forget_guests(meeting):
+    """Delete the guest rows once the meeting they belonged to is over.
+
+    A guest gave a name at a door to sit in a hall for an afternoon. That
+    is not a relationship with this platform, and a row about them sitting
+    in the database for years afterwards would quietly make it one - so
+    they are kept for exactly as long as the meeting and then forgotten.
+
+    What survives is the register: their name against the sessions they
+    were actually present for, which is attendance and nothing else. It
+    was written when each session closed, which is why this can only be
+    called after that has happened.
+
+    The meeting's own list of who attended is topped up here before
+    anything is deleted. It is normally written the moment the host admits
+    somebody, but this is the last point at which the rows exist to be
+    asked, so it is also the place that cannot miss one.
+    """
+    for guest in meeting.guests.filter(
+        status__in=[GuestAttendee.Status.ADMITTED, GuestAttendee.Status.LEFT]
+    ).order_by('created_at'):
+        record_guest_attendance(meeting, guest.full_name, guest.decided_at)
+
+    gone, _ = GuestAttendee.objects.filter(meeting=meeting).delete()
+    if gone:
+        logger.info(
+            f"Forgot {gone} guest row(s) from {meeting.meeting_code}; "
+            f"their names stay in the register"
+        )
+    return gone
 
 
 def broadcast_meeting_ended(meeting, reason='host_ended'):

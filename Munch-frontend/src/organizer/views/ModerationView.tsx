@@ -714,7 +714,9 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
                           </span>
                           <div className="min-w-0">
                             <p className="text-[13.5px] font-medium">{item.guest!.full_name}</p>
-                            <p className="text-[12.5px] text-[#6E7C8E]">{item.guest!.phone}</p>
+                            <p className="text-[12.5px] text-[#6E7C8E]">
+                              {t({ ne: 'पाहुनाका रूपमा', en: 'Joining as a guest' })}
+                            </p>
                           </div>
                           <span className="ml-auto flex gap-1.5 flex-none items-center">
                             <Chip tone="warn">{t({ ne: 'पर्खिरहेको', en: 'Waiting' })}</Chip>

@@ -167,12 +167,13 @@ class GuestsAreOnlyEverAttendeesTests(TestCase):
 
     def test_a_blank_speaker_phone_turns_nobody_away(self):
         # Most sessions have no speaker phone; matching on empty would shut
-        # the door on everybody.
+        # the door on everybody. A guest gives no number at all now, so
+        # empty against empty is the ordinary case rather than the edge.
         self.session.speaker_phone = ''
         self.session.save(update_fields=['speaker_phone'])
 
-        self.assertEqual(self.knock('Anybody', '').status_code, 400)
-        self.assertEqual(self.knock('Anybody', '9812345678').status_code, 201)
+        self.assertEqual(self.knock('Anybody', '').status_code, 201)
+        self.assertEqual(self.knock('Anybody Else', '').status_code, 201)
 
     def test_a_presenter_at_another_meeting_is_only_a_guest_here(self):
         elsewhere_host = make_host('elsewhere@example.com')

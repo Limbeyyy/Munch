@@ -47,3 +47,26 @@ def write_reminders():
     if written:
         logger.info(f"Wrote {written} reminder(s)")
     return written
+
+
+@shared_task(name='src.apps.meetings.tasks.forget_guests_of_ended_meetings')
+def forget_guests_of_ended_meetings():
+    """Delete guest rows left behind by meetings that are over.
+
+    Every ordinary way a meeting ends forgets its guests on the way out.
+    This is for the rest: a meeting that ended before there was a rule
+    about it, or one whose closing did not run to the end. A guest gave a
+    name at a door for an afternoon, and a row about them should not
+    outlive the afternoon by a year because a worker was restarted.
+    """
+    from src.apps.meetings.lifecycle import forget_guests
+    from src.apps.meetings.models import GuestAttendee, Meeting
+
+    stale = Meeting.objects.filter(
+        status=Meeting.Status.ENDED,
+        id__in=GuestAttendee.objects.values('meeting_id'),
+    )
+    forgotten = sum(forget_guests(meeting) for meeting in stale)
+    if forgotten:
+        logger.info(f"Forgot {forgotten} guest row(s) from meetings that are over")
+    return forgotten
