@@ -96,10 +96,50 @@ class EventViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='import_template')
     def import_template(self, request):
-        """The blank sheet to fill in, with its notes and an example."""
+        """The blank sheet to fill in: three tables, and an example in each.
+
+        ``?shape=xlsx`` asks for the workbook instead of the CSV. Same
+        tables either way; the workbook adds the one thing a CSV cannot
+        carry, which is the sessions table picking its event and meeting
+        from the ids typed above rather than having them typed again.
+        """
         from django.http import HttpResponse
 
-        from src.apps.meetings.importing import template_csv
+        from src.apps.meetings.importing import (
+            WorkbookUnavailable, template_csv, template_workbook,
+        )
+
+        # Not "format": DRF spends that one on content negotiation, and a
+        # value it does not know is a 404 before this method is reached.
+        wants_excel = str(
+            request.query_params.get('shape', '')
+        ).lower() in ('xlsx', 'excel')
+
+        if wants_excel:
+            try:
+                body = template_workbook()
+            except WorkbookUnavailable:
+                return Response(
+                    {
+                        'error': (
+                            'The Excel template is not available on this '
+                            'server. The CSV one has the same three tables.'
+                        ),
+                        'code': 'no_workbook',
+                    },
+                    status=status.HTTP_501_NOT_IMPLEMENTED,
+                )
+            response = HttpResponse(
+                body,
+                content_type=(
+                    'application/vnd.openxmlformats-officedocument'
+                    '.spreadsheetml.sheet'
+                ),
+            )
+            response['Content-Disposition'] = (
+                'attachment; filename="manch-programme-template.xlsx"'
+            )
+            return response
 
         response = HttpResponse(template_csv(), content_type='text/csv; charset=utf-8')
         response['Content-Disposition'] = (

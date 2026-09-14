@@ -5,10 +5,19 @@ each speaker's name, address and number - are usually already in a
 spreadsheet somebody keeps. So: a template to fill in, and a reader that
 turns it back into the same programme the form would have made.
 
-Deliberately CSV. It opens and saves in Excel, in LibreOffice and in
-Google Sheets, needs no library on either side, and survives being
-emailed round an office. A .xlsx reader would mean a new dependency for a
-format every one of those tools can already export.
+The sheet is three tables, one under the other: the programmes, then the
+meetings, then the sessions. Each row is one thing, and the tables are
+joined by id - a meeting names the event it belongs to, a session names
+the meeting. It used to be one very wide table with the programme and the
+meeting repeated on every session's row, which meant fourteen columns to
+scroll through sideways and the same title typed ten times, with nothing
+to stop the tenth disagreeing with the first.
+
+Two files, the same shape in both. The CSV opens anywhere and survives
+being emailed round an office. The Excel one adds what a CSV cannot
+carry: the id columns in the sessions table are dropdowns, filled from
+the events and meetings typed above, so a session cannot point at a
+meeting that is not there. Either can be filled in and sent back.
 
 Nothing here validates a programme itself. The rows are turned into the
 same payload the form sends and handed to the same serializer, so the
@@ -24,6 +33,72 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
+#: The three tables the sheet is made of, in the order they appear.
+EVENT_COLUMNS = ['event_id', 'event_title', 'event_date', 'venue']
+
+MEETING_COLUMNS = [
+    'meeting_id', 'event_id', 'meeting_title',
+    'meeting_starts_at', 'meeting_duration_minutes',
+]
+
+SESSION_COLUMNS = [
+    'session_id', 'event_id', 'meeting_id', 'session_title',
+    'session_starts_at', 'session_duration_minutes', 'hall',
+    'speaker_name', 'speaker_email', 'speaker_phone', 'speaker_visibility',
+]
+
+TABLES = [
+    ('EVENTS', EVENT_COLUMNS),
+    ('MEETINGS', MEETING_COLUMNS),
+    ('SESSIONS', SESSION_COLUMNS),
+]
+
+#: How many blank rows each table is given to be filled in. Enough for a
+#: long day; more can be added underneath, and the reader does not count.
+ROOM_TO_FILL = {'EVENTS': 8, 'MEETINGS': 12, 'SESSIONS': 30}
+
+#: Said once at the top rather than in a note under every column, so the
+#: tables themselves are the clean thing the eye lands on.
+HOW_TO = [
+    'Three tables: the programmes, the meetings inside them, the sessions '
+    'inside those.',
+    'Give every event and every meeting an id - 1, 2, 3 will do - and use '
+    'those ids to say what belongs to what.',
+    'A meeting names its event_id. A session names its meeting_id, and the '
+    'event_id that meeting belongs to.',
+    'Dates and times are YYYY-MM-DD HH:MM, on the 24-hour clock: '
+    '2026-09-14 14:40.',
+    'The first session of a meeting starts when the meeting starts.',
+    'speaker_name, speaker_email and speaker_phone are required; the email '
+    'is what makes them a presenter when they sign in.',
+    'speaker_visibility is private or public, and private if left blank.',
+    'session_duration_minutes is 30 if left blank; a meeting is as long as '
+    'the sessions in it.',
+    'Lines beginning with # are ignored, so this guidance can stay where it is.',
+]
+
+#: One filled-in programme, so the shape is obvious before anything is typed.
+EXAMPLE_ROWS = {
+    'EVENTS': [
+        ['1', 'National Health Workers Conference', '2026-10-02',
+         'National Assembly Hall'],
+    ],
+    'MEETINGS': [
+        ['1', '1', 'Opening day', '2026-10-02 09:00', '240'],
+    ],
+    'SESSIONS': [
+        ['1001', '1', '1', 'Health service delivery in federalism',
+         '2026-10-02 09:00', '60', 'Hall A', 'Dr Sarita Poudel',
+         'sarita.poudel@example.org', '9800000001', 'private'],
+        ['1002', '1', '1', 'Digital health records', '2026-10-02 10:15', '45',
+         'Hall A', 'Bikash Shrestha', 'bikash.shrestha@example.org',
+         '9800000002', 'public'],
+    ],
+}
+
+#: The old shape: one very wide table, the programme and the meeting
+#: repeated on every session's row. Sheets already filled in against it
+#: are still read, so nobody is stranded halfway through one.
 #: The columns, in the order the template lays them out.
 COLUMNS = [
     'event_title',
@@ -115,21 +190,144 @@ class ImportProblem(Exception):
         }
 
 
-def template_csv() -> bytes:
-    """The blank template: the columns, what each is for, and an example.
+def _layout():
+    """The sheet, row by row, as plain values.
 
-    The notes and the example are rows rather than a separate sheet, since
-    a CSV has only one - and they are removed on the way back in, so the
-    file can be filled in underneath them and returned as it stands.
+    One description of the layout, used to write the CSV and the workbook
+    alike, so the two cannot drift apart. Each entry is a list of cells;
+    the second value says what kind of row it is, which the workbook uses
+    to decide what to make bold and where the dropdowns go.
+    """
+    rows = [(['Manch programme template'], 'title'), ([], 'blank')]
+    for line in HOW_TO:
+        rows.append(([f'# {line}'], 'note'))
+
+    for name, columns in TABLES:
+        rows.append(([], 'blank'))
+        rows.append(([name], 'marker'))
+        rows.append((list(columns), 'header'))
+        for example in EXAMPLE_ROWS[name]:
+            rows.append((list(example), 'example'))
+        for _ in range(ROOM_TO_FILL[name]):
+            rows.append(([''] * len(columns), 'empty'))
+    return rows
+
+
+def template_csv() -> bytes:
+    """The blank template: three tables, an example in each, and how to fill it.
+
+    The guidance is comment rows rather than a separate sheet, since a CSV
+    has only one - and lines beginning with # are skipped on the way back
+    in, so the file can be filled in as it stands and returned.
     """
     out = io.StringIO()
     writer = csv.writer(out)
-    writer.writerow(COLUMNS)
-    writer.writerow([f'# {NOTES[column]}' for column in COLUMNS])
-    for row in EXAMPLE:
-        writer.writerow([row[column] for column in COLUMNS])
+    for cells, _kind in _layout():
+        writer.writerow(cells)
     # A byte-order mark, so Excel opens Nepali text as UTF-8.
     return b'\xef\xbb\xbf' + out.getvalue().encode('utf-8')
+
+
+class WorkbookUnavailable(Exception):
+    """The Excel template needs openpyxl, and it is not installed."""
+
+
+def template_workbook() -> bytes:
+    """The same template as a workbook, with the id columns as dropdowns.
+
+    This is the one thing a CSV cannot carry. The sessions table has to
+    name the meeting each session belongs to, and typing an id by hand is
+    exactly the sort of thing that goes wrong quietly - a 2 where a 3 was
+    meant points a session at the wrong meeting and nothing looks amiss.
+    So in the workbook those two cells are lists, drawn from the ids typed
+    into the tables above: you pick a meeting rather than remembering one.
+    """
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.utils import get_column_letter
+        from openpyxl.worksheet.datavalidation import DataValidation
+    except ImportError as missing:  # pragma: no cover - depends on the install
+        raise WorkbookUnavailable(str(missing))
+
+    book = Workbook()
+    sheet = book.active
+    sheet.title = 'Programme'
+
+    grey = Font(color='6E7C8E', italic=True)
+    heading = Font(bold=True, color='0A2550')
+    banner = Font(bold=True, size=13, color='0A2550')
+    header_fill = PatternFill('solid', fgColor='EFE8D8')
+
+    # Where each table's id column lives, so the dropdowns can point at it.
+    id_ranges = {}
+    widest = {}
+
+    for index, (cells, kind) in enumerate(_layout(), start=1):
+        for column, value in enumerate(cells, start=1):
+            cell = sheet.cell(row=index, column=column, value=value)
+            if kind == 'title':
+                cell.font = banner
+            elif kind == 'note':
+                cell.font = grey
+            elif kind == 'marker':
+                cell.font = heading
+            elif kind == 'header':
+                cell.font = heading
+                cell.fill = header_fill
+                cell.alignment = Alignment(vertical='center')
+            widest[column] = max(widest.get(column, 10), len(str(value or '')) + 2)
+
+        if kind == 'header':
+            name = sheet.cell(row=index - 1, column=1).value
+            first = index + 1
+            last = index + len(EXAMPLE_ROWS[name]) + ROOM_TO_FILL[name]
+            id_ranges[name] = (first, last)
+
+    for column, width in widest.items():
+        sheet.column_dimensions[get_column_letter(column)].width = min(width, 42)
+
+    # The dropdowns: a session's event and meeting are picked from the ids
+    # typed above rather than typed again.
+    session_first, session_last = id_ranges['SESSIONS']
+    picks = (
+        ('EVENTS', 'event_id', 'programme', 'Events'),
+        ('MEETINGS', 'meeting_id', 'meeting', 'Meetings'),
+    )
+    for name, column_name, thing, table in picks:
+        source_first, source_last = id_ranges[name]
+        source = get_column_letter(1)
+        validation = DataValidation(
+            type='list',
+            formula1=f'=${source}${source_first}:${source}${source_last}',
+            allowBlank=True,
+            # openpyxl passes this through to Excel, where it is inverted:
+            # False is what puts the arrow on the cell.
+            showDropDown=False,
+            # Without these two the list is decoration - the arrow appears
+            # but anything typed is accepted, which is the whole thing this
+            # is here to prevent.
+            showErrorMessage=True,
+            showInputMessage=True,
+            errorStyle='stop',
+        )
+        validation.errorTitle = 'Not one of the ids above'
+        validation.error = (
+            f'Pick the {thing} from the {table} table above. '
+            'If it is not there yet, add it there first.'
+        )
+        validation.promptTitle = f'Which {thing}?'
+        validation.prompt = f'Choose one of the ids in the {table} table above.'
+        sheet.add_data_validation(validation)
+
+        at = get_column_letter(SESSION_COLUMNS.index(column_name) + 1)
+        validation.add(f'{at}{session_first}:{at}{session_last}')
+
+    sheet.freeze_panes = 'A2'
+
+    stream = io.BytesIO()
+    book.save(stream)
+    return stream.getvalue()
 
 
 def _clean(value):
@@ -193,12 +391,45 @@ def _minutes(raw, default, *, row, column):
     return value
 
 
-def read_sheet(raw_bytes) -> list:
-    """Turn a filled-in template into programmes ready for the serializer.
+def _text_of(value):
+    """One cell as the sheet would show it.
 
-    Rows are grouped by programme and then by meeting, in the order they
-    appear, so the sheet reads the way the day runs.
+    A workbook hands back real dates and real numbers where a CSV hands
+    back the text somebody typed. Both end up as that text, so there is one
+    parser after this and not two.
     """
+    if value is None:
+        return ''
+    if isinstance(value, datetime):
+        return value.strftime('%Y-%m-%d %H:%M')
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _rows_from_workbook(raw_bytes):
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        raise ImportProblem(
+            'That looks like a workbook rather than a CSV. In Excel choose '
+            'File → Save As → CSV UTF-8, then send that file.'
+        )
+
+    try:
+        book = load_workbook(io.BytesIO(raw_bytes), data_only=True, read_only=True)
+    except Exception:
+        raise ImportProblem('That workbook could not be opened.')
+
+    sheet = book.active
+    return [[_text_of(cell) for cell in row] for row in sheet.iter_rows(values_only=True)]
+
+
+def _rows_from(raw_bytes):
+    """The sheet as rows of text, whether it arrived as a CSV or a workbook."""
+    if raw_bytes[:2] == b'PK':
+        return _rows_from_workbook(raw_bytes)
+
     try:
         text = raw_bytes.decode('utf-8-sig')
     except UnicodeDecodeError:
@@ -210,17 +441,230 @@ def read_sheet(raw_bytes) -> list:
                 '"CSV UTF-8" when saving.'
             )
 
-    if '\x00' in text[:400] or text[:2] == 'PK':
+    if '\x00' in text[:400]:
         raise ImportProblem(
             'That looks like a workbook rather than a CSV. In Excel choose '
             'File → Save As → CSV UTF-8, then send that file.'
         )
 
-    reader = csv.DictReader(io.StringIO(text))
-    if not reader.fieldnames:
+    return [row for row in csv.reader(io.StringIO(text))]
+
+
+TABLE_NAMES = {name for name, _ in TABLES}
+
+
+def _blank(cells) -> bool:
+    return not any(_clean(cell) for cell in cells)
+
+
+def _marker(cells):
+    """The name of the table this row announces, if it announces one."""
+    if not cells:
+        return None
+    first = _clean(cells[0]).upper().strip(':')
+    if first in TABLE_NAMES and _blank(cells[1:]):
+        return first
+    return None
+
+
+def read_sheet(raw_bytes) -> list:
+    """Turn a filled-in template into programmes ready for the serializer.
+
+    Two shapes are read. The three tables the template is made of now, and
+    the one wide table it used to be - a sheet somebody started filling in
+    last week is still a sheet, and telling them to start again because the
+    template has changed would be a poor way to repay the typing.
+    """
+    rows = _rows_from(raw_bytes)
+    if not rows:
         raise ImportProblem('The sheet is empty.')
 
-    got = {(name or '').strip().lower() for name in reader.fieldnames}
+    if any(_marker(cells) for cells in rows):
+        return _read_tables(rows)
+    return _read_flat(rows)
+
+
+def _read_tables(rows) -> list:
+    """Read the three tables and join them by the ids they carry."""
+    gathered = {name: [] for name in TABLE_NAMES}
+    table = None
+    header = None
+
+    for number, cells in enumerate(rows, start=1):
+        marker = _marker(cells)
+        if marker:
+            table, header = marker, None
+            continue
+        if table is None or _blank(cells):
+            continue
+        if _clean(cells[0]).startswith('#'):
+            continue
+        if header is None:
+            header = [_clean(cell).lower() for cell in cells]
+            continue
+        gathered[table].append(
+            (number, {name: cells[i] if i < len(cells) else ''
+                      for i, name in enumerate(header) if name})
+        )
+
+    events = []
+    by_event_id = {}
+
+    for number, row in gathered['EVENTS']:
+        title = _clean(row.get('event_title'))
+        if not title:
+            raise ImportProblem(
+                'Every programme needs a title.', row=number, column='event_title'
+            )
+        entry = {
+            'title': title,
+            'description': '',
+            'venue': _clean(row.get('venue')),
+            'event_date': _day(row.get('event_date'), row=number),
+            'meetings': [],
+        }
+        key = _clean(row.get('event_id')) or title.lower()
+        if key in by_event_id:
+            raise ImportProblem(
+                f'Two programmes share the id “{key}”. Each needs its own.',
+                row=number, column='event_id',
+            )
+        by_event_id[key] = entry
+        events.append(entry)
+
+    if not events:
+        raise ImportProblem('There are no programmes in that sheet.')
+
+    def the_event(key, *, number, column):
+        """The programme an id points at, forgiving a blank when there is one."""
+        key = _clean(key)
+        if not key:
+            if len(events) == 1:
+                return events[0]
+            raise ImportProblem(
+                'Which programme does this belong to? Put its event_id here.',
+                row=number, column=column,
+            )
+        found = by_event_id.get(key)
+        if found is None:
+            raise ImportProblem(
+                f'There is no programme with the id “{key}” in the EVENTS table.',
+                row=number, column=column,
+            )
+        return found
+
+    meetings = []
+    by_meeting_id = {}
+
+    for number, row in gathered['MEETINGS']:
+        title = _clean(row.get('meeting_title'))
+        if not title:
+            raise ImportProblem(
+                'Every meeting needs a title.', row=number, column='meeting_title'
+            )
+        event = the_event(row.get('event_id'), number=number, column='event_id')
+        meeting = {
+            'title': title,
+            'description': '',
+            'scheduled_start': _moment(
+                row.get('meeting_starts_at'), row=number, column='meeting_starts_at'
+            ),
+            'duration_minutes': _minutes(
+                row.get('meeting_duration_minutes'), 60,
+                row=number, column='meeting_duration_minutes',
+            ),
+            'sessions': [],
+        }
+        key = _clean(row.get('meeting_id')) or title.lower()
+        if key in by_meeting_id:
+            raise ImportProblem(
+                f'Two meetings share the id “{key}”. Each needs its own.',
+                row=number, column='meeting_id',
+            )
+        by_meeting_id[key] = (meeting, event)
+        event['meetings'].append(meeting)
+        meetings.append(meeting)
+
+    for number, row in gathered['SESSIONS']:
+        title = _clean(row.get('session_title'))
+        if not title:
+            raise ImportProblem(
+                'Every session needs a title.', row=number, column='session_title'
+            )
+
+        key = _clean(row.get('meeting_id'))
+        if not key:
+            if len(meetings) != 1:
+                raise ImportProblem(
+                    'Which meeting is this session in? Put its meeting_id here.',
+                    row=number, column='meeting_id',
+                )
+            meeting, event = meetings[0], None
+        else:
+            found = by_meeting_id.get(key)
+            if found is None:
+                raise ImportProblem(
+                    f'There is no meeting with the id “{key}” in the MEETINGS table.',
+                    row=number, column='meeting_id',
+                )
+            meeting, event = found
+
+        # Both ids are on the row, so they can disagree. Saying so is the
+        # whole reason for asking for both: a session pointing at a meeting
+        # in another programme is a typo, and a silent one.
+        said_event = _clean(row.get('event_id'))
+        if said_event and event is not None and by_event_id.get(said_event) is not event:
+            raise ImportProblem(
+                f'Meeting “{key}” is not in programme “{said_event}”. '
+                'Check the two ids against the tables above.',
+                row=number, column='event_id',
+            )
+
+        visibility = _clean(row.get('speaker_visibility')).lower() or 'private'
+        if visibility not in ('private', 'public'):
+            raise ImportProblem(
+                f'“{visibility}” should be private or public.',
+                row=number, column='speaker_visibility',
+            )
+
+        meeting['sessions'].append({
+            'title': title,
+            'description': '',
+            'speaker_name': _clean(row.get('speaker_name')),
+            'speaker_email': _clean(row.get('speaker_email')),
+            'speaker_phone': _clean(row.get('speaker_phone')),
+            'speaker_visibility': visibility,
+            'hall': _clean(row.get('hall')),
+            'starts_at': _moment(
+                row.get('session_starts_at'), row=number, column='session_starts_at'
+            ),
+            'duration_minutes': _minutes(
+                row.get('session_duration_minutes'), 30,
+                row=number, column='session_duration_minutes',
+            ),
+            'position': len(meeting['sessions']) + 1,
+        })
+
+    for meeting in meetings:
+        if not meeting['sessions']:
+            raise ImportProblem(
+                f'“{meeting["title"]}” has no sessions under it. '
+                'Every meeting needs at least one.'
+            )
+
+    return events
+
+
+def _read_flat(rows) -> list:
+    """The old shape: one wide row per session, everything repeated.
+
+    Kept so a sheet filled in against the previous template still imports.
+    """
+    fieldnames = [(name or '').strip() for name in rows[0]]
+    if not any(fieldnames):
+        raise ImportProblem('The sheet is empty.')
+
+    got = {name.lower() for name in fieldnames}
     missing = [c for c in COLUMNS if c not in got and c not in (
         'venue', 'meeting_duration_minutes', 'session_duration_minutes',
         'hall', 'speaker_visibility',
@@ -234,8 +678,11 @@ def read_sheet(raw_bytes) -> list:
     events = []
     by_event = {}
 
-    for number, raw in enumerate(reader, start=2):
-        row = {(k or '').strip().lower(): v for k, v in raw.items()}
+    for number, cells in enumerate(rows[1:], start=2):
+        row = {
+            name.strip().lower(): (cells[i] if i < len(cells) else '')
+            for i, name in enumerate(fieldnames) if name
+        }
         if _is_guidance(row):
             continue
         if not any(_clean(v) for v in row.values()):
