@@ -79,15 +79,27 @@ const MeetingRoomInner: React.FC = () => {
   /**
    * What the bar has been asked to put beside the room, in the order it
    * was asked for. First clicked sits at the top; clicking it again takes
-   * it away. Nothing else may occupy that column, so the transcript keeps
-   * the width until somebody actually wants something there.
+   * it away. Nothing but these three may occupy that column, so the
+   * transcript keeps the width until somebody actually wants something
+   * there.
    */
   const [side, setSide] = useState<SidePanelId[]>([]);
   const [resourceTab, setResourceTab] = useState<'slides' | 'photos'>('slides');
+  /**
+   * Two at a time, and the third pushes out the first.
+   *
+   * A queue with a length. Stacking all three left each one a letterbox
+   * with a scrollbar - a chat you cannot read is not a chat - so the
+   * column holds two, and asking for another lets the one that has been
+   * there longest go. Which is the same rule the order already follows:
+   * first in, first out.
+   */
+  const ROOM_BESIDE = 2;
   const toggleSide = (panel: SidePanelId) =>
-    setSide((open) =>
-      open.includes(panel) ? open.filter((x) => x !== panel) : [...open, panel]
-    );
+    setSide((open) => {
+      if (open.includes(panel)) return open.filter((x) => x !== panel);
+      return [...open, panel].slice(-ROOM_BESIDE);
+    });
   const closeSide = (panel: SidePanelId) =>
     setSide((open) => open.filter((x) => x !== panel));
 

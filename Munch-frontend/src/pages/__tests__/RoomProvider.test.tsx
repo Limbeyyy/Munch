@@ -84,6 +84,9 @@ beforeEach(() => {
   api.getChatSettings.mockResolvedValue(
     { chat_enabled: true, direct_messages_enabled: true } as any
   );
+  // The board answers with two lists, not the bare array the tolerant
+  // default hands back for everything else.
+  api.getMeetingBoard.mockResolvedValue({ faq: [], suggestions: [] } as any);
   api.getPhotos.mockResolvedValue({
     meeting_id: 'm1', meeting_code: 'ABC123', meeting_title: 'Opening day',
     meeting_is_finished: false, can_upload: false, is_a_photographer: true,
@@ -230,6 +233,47 @@ describe('the room as the design lays it out', () => {
       .map((h) => h.textContent?.replace(/\s+/g, ' ').trim())
       .filter((text) => text === 'Resources' || text?.startsWith('Chat'));
     expect(reversed[0]?.startsWith('Chat')).toBe(true);
+  });
+
+  it('holds two beside the room, and the third pushes out the first', async () => {
+    // Three stacked left each one a letterbox with a scrollbar. The
+    // column holds two, and the one that has been there longest goes -
+    // the same first-in-first-out the order already follows.
+    showRoom();
+
+    await openSide('Chat');
+    await openSide('Resources');
+    await openSide('Questions');
+
+    const beside = () =>
+      screen
+        .getAllByRole('heading')
+        .map((h) => h.textContent?.replace(/\s+/g, ' ').trim())
+        .filter((text) =>
+          text === 'Resources' || text === 'Questions' || text?.startsWith('Chat')
+        );
+
+    // Chat was first in, so Chat is first out; the other two keep their order.
+    expect(beside()).toEqual(['Resources', 'Questions']);
+  });
+
+  it('lets the one that was pushed out come back, in its turn', async () => {
+    showRoom();
+
+    await openSide('Chat');
+    await openSide('Resources');
+    await openSide('Questions');
+    await openSide('Chat');
+
+    const beside = screen
+      .getAllByRole('heading')
+      .map((h) => h.textContent?.replace(/\s+/g, ' ').trim())
+      .filter((text) =>
+        text === 'Resources' || text === 'Questions' || text?.startsWith('Chat')
+      );
+
+    // Resources is now the oldest, so it makes way for Chat.
+    expect(beside).toEqual(['Questions', 'Chat']);
   });
 
   it('sends a panel away when its control is pressed again', async () => {
