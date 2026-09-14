@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from src.apps.meetings.lifecycle import (
-    close_meeting_if_spent, deadline_passed, has_more_to_run, sweep_expired,
+    close_meeting_if_spent, deadline_passed, has_more_to_run,
 )
 from src.apps.meetings.models import Meeting, Session
 from src.apps.meetings.tests.factories import (
@@ -122,69 +122,69 @@ class EndingTests(TestCase):
 
     def test_a_session_running_long_is_left_alone(self):
         # Two hours past its half hour, and still the room's session: it
-        # ends when the host ends it. Closing it here would take the stage
-        # out from under somebody still standing on it.
+        # ends when the host ends it. Its end time is a plan, printed on a
+        # programme; the person at the front is what is happening.
         started = self.now - timezone.timedelta(hours=2)
         meeting = make_meeting(self.host, self.event, start=started)
         session = make_session(meeting, started, 30, status=Session.Status.LIVE)
         session.started_at = started
         session.save(update_fields=['started_at'])
 
-        self.assertEqual(sweep_expired(), 0)
+        self.client.get(f'{API}/sessions/?meeting={meeting.id}')
+
         self.assertEqual(Session.objects.get(id=session.id).status, Session.Status.LIVE)
 
-    def test_a_session_left_on_stage_and_abandoned_is_closed(self):
-        # The hall that emptied out on Friday, still showing a live session
-        # on Monday. Half a day past its slot is nobody running long.
-        started = self.now - timezone.timedelta(hours=20)
+    def test_and_so_is_one_left_on_stage_for_days(self):
+        """There is no grace period, because there is no rule to be
+        graceful about.
+
+        A sweep used to close anything still live half a day past its slot,
+        on the reasoning that nobody could still be in the room. But the
+        clock does not know that, and being wrong about it takes a meeting
+        away from people who are in it. Only a person ends a session now.
+        """
+        started = self.now - timezone.timedelta(days=3)
         meeting = make_meeting(self.host, self.event, start=started)
         session = make_session(meeting, started, 30, status=Session.Status.LIVE)
         session.started_at = started
         session.save(update_fields=['started_at'])
 
-        self.assertEqual(sweep_expired(), 1)
+        self.client.get(f'{API}/sessions/?meeting={meeting.id}')
+        self.client.get(f'{API}/events/')
 
-        closed = Session.objects.get(id=session.id)
-        self.assertEqual(closed.status, Session.Status.DONE)
-        # It is recorded as finishing when it was meant to, not when the
-        # sweep happened to notice.
-        self.assertEqual(closed.ended_at, started + timezone.timedelta(minutes=30))
+        still = Session.objects.get(id=session.id)
+        self.assertEqual(still.status, Session.Status.LIVE)
+        self.assertIsNone(still.ended_at)
 
     def test_a_session_nobody_started_is_never_ended(self):
         past = self.now - timezone.timedelta(days=1)
         meeting = make_meeting(self.host, self.event, start=past)
         session = make_session(meeting, past, 60)
 
-        sweep_expired()
+        self.client.get(f'{API}/sessions/?meeting={meeting.id}')
 
         untouched = Session.objects.get(id=session.id)
         self.assertEqual(untouched.status, Session.Status.SCHEDULED)
         self.assertIsNone(untouched.ended_at)
         self.assertIsNone(untouched.started_at)
 
-    def test_a_session_still_inside_its_slot_keeps_running(self):
-        meeting = make_meeting(self.host, self.event, start=self.now)
-        session = make_session(meeting, self.now, 60, status=Session.Status.LIVE)
-
-        self.assertEqual(sweep_expired(), 0)
-        self.assertEqual(Session.objects.get(id=session.id).status, Session.Status.LIVE)
-
-    def test_the_sweep_can_be_run_twice_without_harm(self):
-        started = self.now - timezone.timedelta(hours=20)
+    def test_the_host_ending_it_is_what_ends_it(self):
+        # The other half of the same rule: it does end, when somebody says
+        # so, and nothing about the clock is involved either way.
+        started = self.now - timezone.timedelta(hours=5)
         meeting = make_meeting(self.host, self.event, start=started)
-        make_session(meeting, started, 30, status=Session.Status.LIVE)
-
-        self.assertEqual(sweep_expired(), 1)
-        self.assertEqual(sweep_expired(), 0)
-
-    def test_reading_the_running_order_closes_what_was_abandoned(self):
-        started = self.now - timezone.timedelta(hours=20)
-        meeting = make_meeting(self.host, self.event, start=started)
+        meeting.status = Meeting.Status.ACTIVE
+        meeting.started_at = started
+        meeting.save()
         session = make_session(meeting, started, 30, status=Session.Status.LIVE)
+        session.started_at = started
+        session.save(update_fields=['started_at'])
 
-        self.client.get(f'{API}/sessions/?meeting={meeting.id}')
+        self.client.post(f'{API}/sessions/{session.id}/end/')
 
-        self.assertEqual(Session.objects.get(id=session.id).status, Session.Status.DONE)
+        closed = Session.objects.get(id=session.id)
+        self.assertEqual(closed.status, Session.Status.DONE)
+        self.assertIsNotNone(closed.ended_at)
 
     def test_a_spent_meeting_closes_once_nothing_is_running(self):
         started = self.now - timezone.timedelta(hours=3)

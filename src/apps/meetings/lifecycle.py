@@ -277,64 +277,22 @@ def close_meeting_if_spent(meeting, now=None, wait_for_window=True):
     return True
 
 
-#: How long past its slot a session on stage is taken to be abandoned
-#: rather than merely running long. A talk can overrun by an hour; a
-#: half-day means nobody is in the room and the host never came back.
-ABANDONED_AFTER = timezone.timedelta(hours=12)
-
-
-def sweep_expired(sessions=None, now=None):
-    """Close a session that was left on stage and forgotten.
-
-    Not one that is simply running long. A session ends when the host ends
-    it - that is the whole of the rule now, and the slot it was given is a
-    plan the timetable corrects itself against afterwards. Closing a talk
-    because its hour struck would take the stage out from under a speaker
-    who is still speaking, and empty a room that is still full.
-
-    So this is only a backstop, for the hall that emptied out on Friday and
-    is still showing a live session on Monday. A session nobody ever
-    started is untouched either way: "never started" and "ended" are
-    different things.
-
-    Safe to call often: it is a narrow indexed query that usually matches
-    nothing, and it takes each row under a lock before closing it so two
-    callers cannot both record attendance.
-    """
-    now = now or timezone.now()
-    queryset = sessions if sessions is not None else Session.objects.all()
-
-    overdue = list(
-        queryset.filter(status=Session.Status.LIVE)
-        .select_related('meeting')
-        .values_list('id', flat=True)
-    )
-    if not overdue:
-        return 0
-
-    closed = 0
-    for session_id in overdue:
-        with transaction.atomic():
-            session = (
-                Session.objects.select_for_update()
-                .select_related('meeting')
-                .filter(id=session_id, status=Session.Status.LIVE)
-                .first()
-            )
-            # Another caller may have closed it between the two queries.
-            if session is None or now <= scheduled_end(session) + ABANDONED_AFTER:
-                continue
-            # Recorded as ending when it was meant to, not half a day
-            # later: nobody was in the room for the hours in between, and
-            # the day is not stretched to cover them.
-            close_session(session, scheduled_end(session))
-            closed += 1
-            logger.info(f"Session {session.id} closed: left on stage and abandoned")
-
-        broadcast(session.meeting.meeting_code, session, 'session_ended')
-        close_meeting_if_spent(session.meeting, now)
-
-    return closed
+# Nothing here ends a session by the clock, and nothing anywhere else
+# does either.
+#
+# There used to be a sweep: anything still on stage past the slot it was
+# given was closed, first at the stroke of its hour and later after half a
+# day's grace. Both were wrong for the same reason. A session's end time
+# is a plan - a prefix, a formality, something to print on a programme -
+# and the timetable already corrects itself against what actually happens.
+# The talk itself ends when the host ends it. A speaker still speaking is
+# still speaking whatever the clock says, and taking the stage out from
+# under them because a number passed is not a rule, it is a bug with a
+# schedule attached.
+#
+# So a live session stays live until somebody says otherwise. The host
+# ends it, or ends the meeting; either way it is a person's decision, and
+# there is no longer any code that makes it for them.
 
 
 def broadcast(meeting_code, session, event_type):

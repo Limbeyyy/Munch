@@ -22,7 +22,6 @@ from src.apps.meetings.event_serializers import (
 )
 from src.apps.meetings.lifecycle import (
     broadcast as _broadcast,
-    sweep_expired,
     close_session as _close_session,
     session_is_over as _session_is_over,
 )
@@ -50,10 +49,6 @@ class EventViewSet(viewsets.ModelViewSet):
         # are prefetched because the list view always renders the tree.
         from src.apps.meetings.access import events_visible_to
         from src.apps.meetings.access import sessions_visible_to
-
-        # Close anything that overran before drawing the programme, so the
-        # tree never shows a session as live past the time it was given.
-        sweep_expired(Session.objects.filter(sessions_visible_to(self.request.user)))
 
         return (
             Event.objects.filter(events_visible_to(self.request.user))
@@ -442,11 +437,6 @@ class SessionViewSet(viewsets.ModelViewSet):
             .distinct()
             .select_related('meeting')
         )
-
-        # Anything left on stage past its slot is closed before the running
-        # order is handed out, so nobody reads a session as live when its
-        # time ran out an hour ago.
-        sweep_expired(queryset)
 
         # A meeting is addressed by its id or its room code, and only one of
         # those parses as a UUID.
