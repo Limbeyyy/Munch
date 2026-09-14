@@ -108,32 +108,41 @@ class EvictionTests(TransactionTestCase):
         self.assertEqual(said['type'], 'meeting_ended')
         await comm.disconnect()
 
-    async def test_the_room_is_emptied_when_the_time_runs_out(self):
-        # Not the host's button: the sweep that closes a session left on
-        # stage and abandoned. That path closed the books and left
-        # everybody sitting in a meeting that had ended.
-        from src.apps.meetings.lifecycle import sweep_expired
+    async def test_the_room_is_emptied_when_the_meetings_own_time_runs_out(self):
+        """Not a session's clock - the meeting's.
 
+        Nothing ends a session by the clock any more; a talk runs until the
+        host ends it. A meeting is different: its window is the room's
+        booking, and once that has passed with nothing left to run, the
+        room closes. That path used to close the books and leave everybody
+        sitting in a meeting that had ended.
+        """
         def wind_forward():
-            past = timezone.now() - timezone.timedelta(hours=20)
+            past = timezone.now() - timezone.timedelta(hours=2)
             self.session.starts_at = past
             self.session.duration_minutes = 30
+            self.session.status = Session.Status.DONE
+            self.session.started_at = past
+            self.session.ended_at = past + timezone.timedelta(minutes=30)
             self.session.save()
             self.meeting.scheduled_end = past + timezone.timedelta(minutes=30)
             self.meeting.save()
+
+        def read_the_meeting():
+            from django.test import Client
+
+            client = Client(
+                HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(self.host)}',
+                HTTP_HOST='localhost',
+            )
+            return client.get(f'{API}/meetings/{self.meeting.id}/')
 
         await database_sync_to_async(wind_forward)()
         comm = await joined(self.meeting, self.attendee)
         await comm.receive_json_from()
 
-        closed = await database_sync_to_async(sweep_expired)()
-        self.assertEqual(closed, 1)
-
-        # The session going off stage is announced first; the room being
-        # shut follows it.
-        first = await comm.receive_json_from()
-        self.assertEqual(first['type'], 'state_update')
-        self.assertTrue(first['state'].get('session_ended'))
+        response = await database_sync_to_async(read_the_meeting)()
+        self.assertEqual(response.status_code, 200)
 
         said = await comm.receive_json_from()
         self.assertEqual(said['type'], 'meeting_ended')
@@ -146,6 +155,31 @@ class EvictionTests(TransactionTestCase):
             ).count()
         )()
         self.assertEqual(left, 0)
+
+    async def test_but_a_talk_still_on_stage_keeps_the_room_open(self):
+        # The window has passed and somebody is still speaking. The room is
+        # theirs until they are done with it.
+        def wind_forward():
+            past = timezone.now() - timezone.timedelta(hours=2)
+            self.meeting.scheduled_end = past
+            self.meeting.save()
+
+        def read_the_meeting():
+            from django.test import Client
+
+            client = Client(
+                HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(self.host)}',
+                HTTP_HOST='localhost',
+            )
+            return client.get(f'{API}/meetings/{self.meeting.id}/')
+
+        await database_sync_to_async(wind_forward)()
+        await database_sync_to_async(read_the_meeting)()
+
+        still = await database_sync_to_async(
+            lambda: Meeting.objects.get(id=self.meeting.id).status
+        )()
+        self.assertEqual(still, Meeting.Status.ACTIVE)
 
     def test_the_register_is_taken_before_the_room_is_emptied(self):
         # The order matters and nothing else here proves it: attendance is

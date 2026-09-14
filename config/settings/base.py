@@ -178,12 +178,6 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': 604800.0,  # weekly
         'kwargs': {'days': 30},
     },
-    'close-expired-sessions': {
-        # A session left on stage past its slot is ended by whoever next
-        # reads the running order; this catches the hall nobody looks at.
-        'task': 'src.apps.meetings.tasks.close_expired_sessions',
-        'schedule': 300.0,  # every five minutes
-    },
     'write-reminders': {
         # The app writes these as it reads them, which covers anybody with
         # the page open. This is for whoever will not open it until the
