@@ -255,6 +255,25 @@ export const RoomAgenda: React.FC<Props> = ({
             </button>
           )}
 
+          {settled && (
+            <button
+              onClick={() => setReading(open ? null : session.id)}
+              aria-expanded={open}
+              aria-label={t({
+                ne: `“${session.title}” को सारांश`,
+                en: `Summary of “${session.title}”`,
+              })}
+              className="order-last flex-none w-6 h-6 grid place-items-center rounded-md
+                text-[#6E7C8E] hover:bg-navy-800/[.06] hover:text-navy-800"
+            >
+              <span aria-hidden className={`block leading-none text-[14px] ${
+                open ? 'rotate-180' : ''
+              }`}>
+                ⌄
+              </span>
+            </button>
+          )}
+
           {/* Where it comes in the running order. */}
           <span className="bg-[#efefef] rounded-[17px] w-5 h-5 grid place-items-center
             flex-none mt-1 text-[12px] leading-4 font-medium text-[#102c55] tabular-nums">
@@ -277,15 +296,10 @@ export const RoomAgenda: React.FC<Props> = ({
 
         {settled && (
           <>
-            <button
-              onClick={() => setReading(open ? null : session.id)}
-              aria-expanded={open}
-              className="self-start flex items-center gap-1.5 bg-ok/[.10] text-ok
-                rounded-[4px] h-6 px-2 text-[12px] font-medium hover:bg-ok/[.16]"
-            >
+            <span className="self-start bg-ok/[.10] text-ok rounded-[4px] h-6 px-2
+              flex items-center text-[12px] font-medium">
               {t({ ne: 'सारांश तयार', en: 'Summary ready' })}
-              <span aria-hidden className={open ? 'rotate-180' : ''}>⌄</span>
-            </button>
+            </span>
 
             {open && (
               <div className="w-full rounded-[8px] bg-[#fbfbfb] border border-[#e5e7eb]

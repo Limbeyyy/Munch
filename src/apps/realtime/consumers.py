@@ -197,9 +197,10 @@ class MeetingConsumer(AsyncWebsocketConsumer):
         recipient_id = data.get('recipient_id') or None
         settings_ = await self.get_chat_settings()
 
-        if not settings_['chat_enabled']:
-            await self._send_chat_error('Chat room needs to be enabled by the host')
-            return
+        # The room itself is not a thing to be opened any more. There is no
+        # room-wide thread to open: everything written here goes to one
+        # person, so the only switch that means anything is the one below,
+        # and it is the host's.
         if recipient_id and not settings_['direct_messages_enabled']:
             await self._send_chat_error('Direct messages need to be enabled by the host')
             return

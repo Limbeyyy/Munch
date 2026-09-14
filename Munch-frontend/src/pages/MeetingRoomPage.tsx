@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import { ShareMeetingDialog } from '../components/ShareMeetingDialog';
 import { ResourceControls } from '../organizer/ResourceVisibility';
 import { PhotoUploads } from '../organizer/Photos';
+import { RoomChat } from '../organizer/RoomChat';
 import { RoomQuestions } from '../organizer/RoomQuestions';
 import { FigmaIcon } from '../assets/icons';
 import { RoomAgenda } from '../organizer/RoomAgenda';
@@ -63,8 +64,6 @@ const MeetingRoomInner: React.FC = () => {
     direct_messages_enabled: false,
   });
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [draft, setDraft] = useState('');
-  const [dmTarget, setDmTarget] = useState<string>('');
   const [unread, setUnread] = useState(0);
   const [savingSettings, setSavingSettings] = useState(false);
   const [pending, setPending] = useState<ChatMessage[]>([]);
@@ -360,14 +359,8 @@ const MeetingRoomInner: React.FC = () => {
     }
   }, []);
 
-  const sendMessage = () => {
-    const body = draft.trim();
-    if (!body) return;
-    // Every message is written to somebody: the host, or the speaker.
-    if (!dmTarget) {
-      toast.error('Choose who this is for');
-      return;
-    }
+  const sendTo = (to: string, body: string) => {
+    if (!body || !to) return;
 
     const socket = wsRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -378,9 +371,8 @@ const MeetingRoomInner: React.FC = () => {
     socket.send(JSON.stringify({
       type: 'chat_message',
       message: body,
-      recipient_id: dmTarget,
+      recipient_id: to,
     }));
-    setDraft('');
   };
 
   /**
@@ -571,14 +563,13 @@ const MeetingRoomInner: React.FC = () => {
         );
         navigate('/');
       } else if (data.type === 'chat_settings_update') {
+        // The room itself is always open; what the host turns on and off
+        // is whether anybody may write in it. Nothing is cleared either
+        // way - a conversation that happened still happened.
         setChatSettings({
-          chat_enabled: data.chat_enabled,
+          chat_enabled: true,
           direct_messages_enabled: data.direct_messages_enabled,
         });
-        if (!data.chat_enabled) {
-          setMessages([]);
-          setDmTarget('');
-        }
       } else if (data.type === 'chat_error') {
         toast.error(data.error);
       }
@@ -1261,163 +1252,23 @@ const MeetingRoomInner: React.FC = () => {
                 )}
                 {panel === 'chat' && (
           <RoomCard>
-            <SidePanelHead title="Chat" badge={unread} onClose={() => closeSide('chat')} />
-
-            {!chatSettings.chat_enabled ? (
-              <div className="flex flex-col items-center justify-center gap-3 p-6 text-center">
-                <p className="text-[14px] text-[#656565]">
-                  The room needs to be opened by the host.
-                </p>
-                {isHost && (
-                  <button
-                    onClick={() => toggleChatSetting({ chat_enabled: true })}
-                    disabled={savingSettings}
-                    className="bg-navy-800 hover:bg-navy-700 text-white px-4 py-2 rounded-lg
-                      text-[13px] font-medium disabled:opacity-50"
-                  >
-                    {savingSettings ? 'Opening…' : 'Open the chat room'}
-                  </button>
-                )}
-              </div>
-            ) : (
-              <>
-                {isHost && (
-                  <div className="px-4 py-3 border-b border-[#e3e8ef] flex flex-col gap-2 text-[12px]">
-                    <label className="flex items-center justify-between gap-2">
-                      <span className="text-[#4a5567]">Room open to everyone</span>
-                      <input
-                        type="checkbox"
-                        checked={chatSettings.chat_enabled}
-                        disabled={savingSettings}
-                        onChange={(e) => toggleChatSetting({ chat_enabled: e.target.checked })}
-                      />
-                    </label>
-                    <label className="flex items-center justify-between gap-2">
-                      <span className="text-[#4a5567]">Allow direct messages</span>
-                      <input
-                        type="checkbox"
-                        checked={chatSettings.direct_messages_enabled}
-                        disabled={savingSettings}
-                        onChange={(e) =>
-                          toggleChatSetting({ direct_messages_enabled: e.target.checked })
-                        }
-                      />
-                    </label>
-                  </div>
-                )}
-
-                {/* What people write to the front of the room is decided in
-                    one place - the Questions panel's Requests tab - and not
-                    here as well. There used to be a queue in this panel
-                    whose Accept let a message through without saying what
-                    it was, which took it out of Requests and put it on no
-                    board: the question vanished into having been read. */}
-                <div className="h-[280px] overflow-y-auto p-3 flex flex-col gap-3">
-                  {visibleMessages.length === 0 ? (
-                    <p className="text-[13px] text-[#656565]">
-                      No messages yet. Write to the host or to the speaker.
-                    </p>
-                  ) : (
-                    visibleMessages.map((m) => {
-                      const mine = m.sender_id === user?.id && !m.sender_is_guest;
-                      return (
-                        <div key={m.id} className={mine ? 'text-right' : ''}>
-                          <div
-                            className={`inline-block max-w-[85%] text-left px-3 py-2 rounded-[12px]
-                              text-[14px] ${
-                              mine
-                                ? 'bg-navy-800 text-white'
-                                : 'bg-[#f1f4f8] text-[#030712] border border-[#e3e8ef]'
-                            }`}
-                          >
-                            <p className={`text-[11px] mb-0.5 ${
-                              mine ? 'text-[#c9daf1]' : 'text-[#656565]'
-                            }`}>
-                              {mine ? 'You' : m.sender_name}
-                              {m.is_direct && (
-                                <span className={mine ? ' text-amber' : ' text-amber-700'}>
-                                  {' '}· {mine ? `to ${m.recipient_name}` : 'privately'}
-                                </span>
-                              )}
-                            </p>
-                            <p className="break-words">{m.body}</p>
-                            {mine && m.moderation_status === 'pending' && (
-                              <p className="text-[11px] text-amber mt-1">
-                                Waiting for host approval
-                              </p>
-                            )}
-                            {mine && m.moderation_status === 'declined' && (
-                              <p className="text-[11px] text-[#ffb4b4] mt-1">Declined by host</p>
-                            )}
-                            {mine && m.moderation_status === 'approved' && (
-                              <p className="text-[11px] text-[#a9e5c8] mt-1">Forwarded by host</p>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                  <div ref={messagesEndRef} />
-                </div>
-
-                <div className="p-3 border-t border-[#e3e8ef] flex flex-col gap-2">
-                  {chatSettings.direct_messages_enabled && dmTargets.length > 0 && (
-                    <select
-                      value={dmTarget}
-                      onChange={(e) => setDmTarget(e.target.value)}
-                      aria-label="Who to write to"
-                      className="w-full border border-[#e3e8ef] rounded-lg px-2 py-1.5 text-[13px] bg-white"
-                    >
-                      <option value="">Who is this for?</option>
-                      {dmTargets.map((target) => (
-                        <option key={target.id} value={target.id}>
-                          {target.label}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          sendMessage();
-                        }
-                      }}
-                      placeholder={
-                        dmTarget ? 'Write your message here' : 'Pick someone above first'
-                      }
-                      maxLength={2000}
-                      className="flex-1 min-w-0 bg-[#f9fafb] border border-[#e5e7eb] rounded-[12px]
-                        px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-navy-500"
-                    />
-                    <button
-                      onClick={sendMessage}
-                      aria-label="Send"
-                      disabled={!draft.trim() || !dmTarget}
-                      className="text-navy-700 hover:text-navy-900 px-2 flex-none
-                        disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
-                        <path d="M3 20.5v-6l8-2.5-8-2.5v-6l19 8.5-19 8.5Z" fill="currentColor" />
-                      </svg>
-                    </button>
-                  </div>
-
-                  <p className="text-[11px] text-[#656565]">
-                    {!chatSettings.direct_messages_enabled
-                      ? 'Messages need to be enabled by the host.'
-                      : dmTarget && !isHost && myRole === 'attendee'
-                      ? 'The host reviews this before it reaches them.'
-                      : 'Only you and the person you write to can see this.'}
-                  </p>
-                </div>
-              </>
-            )}
+            <RoomChat
+              people={dmTargets.map((who) => ({
+                id: who.id,
+                name: who.label,
+              }))}
+              messages={visibleMessages}
+              meId={user?.id}
+              directEnabled={chatSettings.direct_messages_enabled}
+              canSwitch={isHost}
+              switching={savingSettings}
+              onSwitch={(on) =>
+                toggleChatSetting({ direct_messages_enabled: on })
+              }
+              reviewed={!isHost && myRole === 'attendee'}
+              onSend={(to, body) => sendTo(to, body)}
+              onClose={() => closeSide('chat')}
+            />
           </RoomCard>
                 )}
                 {panel === 'participants' && (
