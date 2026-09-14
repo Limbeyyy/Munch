@@ -8,6 +8,7 @@ import { TranscriptionSegment } from '../types';
 import { RoomQuestions } from '../organizer/RoomQuestions';
 import { OrganizerProvider } from '../organizer/i18n';
 import { RoomAgenda } from '../organizer/RoomAgenda';
+import { RoomChat } from '../organizer/RoomChat';
 import { RoomBarButton, RoomCard, RoomPortrait, SidePanelHead } from './roomChrome';
 
 /** The only three things allowed to sit beside a guest's room. */
@@ -71,8 +72,6 @@ export const GuestMeetingPage: React.FC = () => {
   });
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [people, setPeople] = useState<ChatPerson[]>([]);
-  const [draft, setDraft] = useState('');
-  const [dmTarget, setDmTarget] = useState('');
   const [unread, setUnread] = useState(0);
   const [myGuestId, setMyGuestId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -237,14 +236,12 @@ export const GuestMeetingPage: React.FC = () => {
         );
         leave();
       } else if (data.type === 'chat_settings_update') {
+        // The room is always open; what the host turns on and off is
+        // whether anybody may write in it.
         setChatSettings({
-          chat_enabled: data.chat_enabled,
+          chat_enabled: true,
           direct_messages_enabled: data.direct_messages_enabled,
         });
-        if (!data.chat_enabled) {
-          setMessages([]);
-          setDmTarget('');
-        }
       } else if (data.type === 'chat_moderated') {
         setMessages((prev) =>
           prev.map((m) =>
@@ -291,13 +288,8 @@ export const GuestMeetingPage: React.FC = () => {
    */
   const visibleMessages = messages.filter((m) => m.is_direct);
 
-  const sendMessage = () => {
-    const body = draft.trim();
-    if (!body) return;
-    if (!dmTarget) {
-      toast.error('Choose who this is for');
-      return;
-    }
+  const sendTo = (to: string, body: string) => {
+    if (!body || !to) return;
     const socket = wsRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       toast.error('Not connected to the meeting');
@@ -306,9 +298,8 @@ export const GuestMeetingPage: React.FC = () => {
     socket.send(JSON.stringify({
       type: 'chat_message',
       message: body,
-      recipient_id: dmTarget,
+      recipient_id: to,
     }));
-    setDraft('');
   };
 
   useEffect(() => {
@@ -576,127 +567,20 @@ export const GuestMeetingPage: React.FC = () => {
 
                 {panel === 'chat' && (
                   <RoomCard>
-                    <SidePanelHead
-                      title="Chat"
-                      badge={unread}
+                    <RoomChat
+                      people={people.map((person) => ({
+                        id: person.id,
+                        name: person.name,
+                        role: person.role,
+                      }))}
+                      messages={visibleMessages}
+                      meId={myGuestId}
+                      meIsGuest
+                      directEnabled={chatSettings.direct_messages_enabled}
+                      reviewed
+                      onSend={(to, body) => sendTo(to, body)}
                       onClose={() => closeSide('chat')}
                     />
-                    {!chatSettings.chat_enabled ? (
-                      <p className="text-[13px] text-[#656565] px-4 py-6 text-center">
-                        Messages need to be enabled by the host.
-                      </p>
-                    ) : (
-                      <>
-                        <div className="h-[280px] overflow-y-auto p-3 flex flex-col gap-3">
-                          {visibleMessages.length === 0 ? (
-                            <p className="text-[13px] text-[#656565]">
-                              No messages yet. Write to the host or to the speaker.
-                            </p>
-                          ) : (
-                            visibleMessages.map((m) => {
-                              const mine =
-                                m.sender_is_guest && m.sender_id === myGuestId;
-                              return (
-                                <div key={m.id} className={mine ? 'text-right' : ''}>
-                                  <div
-                                    className={`inline-block max-w-[85%] text-left px-3 py-2
-                                      rounded-[12px] text-[14px] ${
-                                      mine
-                                        ? 'bg-navy-800 text-white'
-                                        : 'bg-[#f1f4f8] text-[#030712] border border-[#e3e8ef]'
-                                    }`}
-                                  >
-                                    <p className={`text-[11px] mb-0.5 ${
-                                      mine ? 'text-[#c9daf1]' : 'text-[#656565]'
-                                    }`}>
-                                      {mine ? 'You' : m.sender_name}
-                                      {m.is_direct && (
-                                        <span className={mine ? ' text-amber' : ' text-amber-700'}>
-                                          {' '}· {mine ? `to ${m.recipient_name}` : 'privately'}
-                                        </span>
-                                      )}
-                                    </p>
-                                    <p className="break-words">{m.body}</p>
-                                    {mine && m.moderation_status === 'pending' && (
-                                      <p className="text-[11px] text-amber mt-1">
-                                        Waiting for host approval
-                                      </p>
-                                    )}
-                                    {mine && m.moderation_status === 'declined' && (
-                                      <p className="text-[11px] text-live mt-1">
-                                        Declined by host
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })
-                          )}
-                          <div ref={messagesEndRef} />
-                        </div>
-
-                        <div className="p-3 border-t border-[#e3e8ef] flex flex-col gap-2">
-                          {chatSettings.direct_messages_enabled && people.length > 0 && (
-                            <select
-                              value={dmTarget}
-                              onChange={(e) => setDmTarget(e.target.value)}
-                              aria-label="Who to write to"
-                              className="w-full border border-[#e3e8ef] rounded-lg px-2 py-1.5
-                                text-[13px] bg-white"
-                            >
-                              <option value="">Who is this for?</option>
-                              {people.map((person) => (
-                                <option key={person.id} value={person.id}>
-                                  {person.name} ({person.role.replace('_', '-')})
-                                </option>
-                              ))}
-                            </select>
-                          )}
-
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={draft}
-                              onChange={(e) => setDraft(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                  e.preventDefault();
-                                  sendMessage();
-                                }
-                              }}
-                              placeholder={
-                                dmTarget
-                                  ? 'Write your message here'
-                                  : 'Pick someone above first'
-                              }
-                              maxLength={2000}
-                              className="flex-1 min-w-0 bg-[#f9fafb] border border-[#e5e7eb]
-                                rounded-[12px] px-3 py-2 text-[14px] focus:outline-none
-                                focus:ring-2 focus:ring-navy-500"
-                            />
-                            <button
-                              onClick={sendMessage}
-                              aria-label="Send"
-                              disabled={!draft.trim() || !dmTarget}
-                              className="text-navy-700 hover:text-navy-900 px-2 flex-none
-                                disabled:opacity-40 disabled:cursor-not-allowed"
-                            >
-                              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
-                                <path d="M3 20.5v-6l8-2.5-8-2.5v-6l19 8.5-19 8.5Z" fill="currentColor" />
-                              </svg>
-                            </button>
-                          </div>
-
-                          <p className="text-[11px] text-[#656565]">
-                            {!chatSettings.direct_messages_enabled
-                              ? 'Messages need to be enabled by the host.'
-                              : dmTarget
-                              ? 'The host reviews this before it reaches them.'
-                              : 'Pick someone above to write to them.'}
-                          </p>
-                        </div>
-                      </>
-                    )}
                   </RoomCard>
                 )}
               </React.Fragment>

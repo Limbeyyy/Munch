@@ -380,12 +380,12 @@ def guest_chat(request):
         )
 
     meeting = guest.meeting
+    # The room is open, always: there is no room-wide thread to close, and
+    # whether anybody may write is the one switch below.
     settings_payload = {
-        'chat_enabled': meeting.chat_enabled,
+        'chat_enabled': True,
         'direct_messages_enabled': meeting.direct_messages_enabled,
     }
-    if not meeting.chat_enabled:
-        return Response({'settings': settings_payload, 'messages': []})
 
     deliverable = db_models.Q(moderation_status__in=[
         ChatMessage.Moderation.NOT_REQUIRED,

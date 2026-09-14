@@ -614,9 +614,12 @@ class MeetingViewSet(viewsets.ModelViewSet):
         """Read the chat settings, or change them (host only)."""
         meeting = self.get_object()
 
+        # There is no room-wide thread to open or close: everything written
+        # in the room goes to one person. So the room reads as open, always,
+        # and the only switch is whether people may write at all.
         if request.method == 'GET':
             return Response({
-                'chat_enabled': meeting.chat_enabled,
+                'chat_enabled': True,
                 'direct_messages_enabled': meeting.direct_messages_enabled,
             })
 
@@ -632,14 +635,15 @@ class MeetingViewSet(viewsets.ModelViewSet):
         for field, value in serializer.validated_data.items():
             setattr(meeting, field, value)
 
-        # Direct messages live inside the room; closing the room closes them.
-        if not meeting.chat_enabled:
-            meeting.direct_messages_enabled = False
+        # Kept true on the row so an older client, which still asks whether
+        # the room is open before showing its composer, is not looking at a
+        # closed room that no longer exists as an idea.
+        meeting.chat_enabled = True
 
         meeting.save(update_fields=['chat_enabled', 'direct_messages_enabled', 'updated_at'])
 
         settings_payload = {
-            'chat_enabled': meeting.chat_enabled,
+            'chat_enabled': True,
             'direct_messages_enabled': meeting.direct_messages_enabled,
         }
         broadcast_chat_settings(meeting.meeting_code, settings_payload)
@@ -652,12 +656,6 @@ class MeetingViewSet(viewsets.ModelViewSet):
         Public room messages, plus direct messages they sent or received.
         """
         meeting = self.get_object()
-
-        if not meeting.chat_enabled:
-            return Response(
-                {'error': 'Chat room needs to be enabled by the host'},
-                status=status.HTTP_403_FORBIDDEN
-            )
 
         deliverable = models.Q(moderation_status__in=[
             ChatMessage.Moderation.NOT_REQUIRED,

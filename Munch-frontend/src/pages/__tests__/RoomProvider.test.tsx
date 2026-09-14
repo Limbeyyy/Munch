@@ -74,8 +74,12 @@ beforeEach(() => {
   // keeps its newest message in view through one.
   (Element.prototype as any).scrollIntoView = jest.fn();
   (window as any).WebSocket = class {
+    // The room refuses to send down a socket that is not open, so the
+    // stand-in has to say it is one - including the constant the check
+    // reads it against.
+    static OPEN = 1;
     onmessage: any; onopen: any; onerror: any; onclose: any;
-    readyState = 0;
+    readyState = 1;
     constructor() { (window as any).__roomSocket = this; }
     close() {}
     send() {}
@@ -613,16 +617,23 @@ describe('the running order inside the room', () => {
 /**
  * Nothing in the room is said to the room.
  *
- * There is no public thread on either side of it any more: what people
- * have to say goes to the host or to the speaker, and the host decides
- * what to do with it - which is the moderation queue that was already
- * there. A message with nobody to receive it cannot be sent.
+ * There is no public thread on either side of it: what people have to say
+ * goes to the host or to the speaker. So the panel is a list of people
+ * rather than a box with a dropdown over it - a conversation with somebody
+ * has a face, a name and a last line.
  */
 describe('the room chat', () => {
   const openChat = async () => {
     await openSide('Chat');
-    return screen.findByPlaceholderText(/Pick someone above first|Write your message here/);
+    return screen.findByRole('heading', { name: 'Chat' });
   };
+
+  beforeEach(() => {
+    api.getParticipants.mockResolvedValue([
+      { id: 'p1', role: 'presenter', is_active: true,
+        user: { id: 'u5', email: 'speaker@example.com' } },
+    ] as any);
+  });
 
   it('has no room-wide thread to write into', async () => {
     showRoom();
@@ -632,9 +643,103 @@ describe('the room chat', () => {
     expect(screen.queryByText(/Everyone in the meeting can see these/)).toBeNull();
   });
 
-  it('asks who the message is for, and will not send until it knows', async () => {
+  it('offers the people there are to write to, by name', async () => {
+    showRoom();
+    await openChat();
+
+    expect(await screen.findByText('Chats')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /speaker@example.com/ }))
+      .toBeInTheDocument();
+    // The dropdown it replaces is gone.
+    expect(screen.queryByLabelText('Who to write to')).toBeNull();
+  });
+
+  it('opens a conversation with whoever is chosen', async () => {
+    showRoom();
+    await openChat();
+
+    fireEvent.click(await screen.findByRole('button', { name: /speaker@example.com/ }));
+
+    expect(await screen.findByPlaceholderText('Write your message here'))
+      .toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back to chats' })).toBeInTheDocument();
+  });
+
+  it('sends what is written to the person it is open with', async () => {
+    showRoom();
+    await openChat();
+
+    // The socket the room itself opened, not one left over from before.
+    const sent: any[] = [];
+    (window as any).__roomSocket.send = (raw: string) => sent.push(JSON.parse(raw));
+
+    fireEvent.click(await screen.findByRole('button', { name: /speaker@example.com/ }));
+
+    const box = await screen.findByPlaceholderText('Write your message here');
+    fireEvent.change(box, { target: { value: 'A question' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(sent).toContainEqual({
+      type: 'chat_message', message: 'A question', recipient_id: 'u5',
+    });
+  });
+});
+
+/**
+ * The room is open; whether anybody may write in it is the host's.
+ *
+ * "Room open to everyone" went with the public thread it described. What
+ * is left is one switch, and until it is on there is nothing to send with.
+ */
+describe('the one chat switch', () => {
+  const asHost = () => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
+  };
+
+  afterEach(() => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: null });
+  });
+
+  it('has nothing to say about opening the room', async () => {
+    asHost();
+    showRoom();
+    await openSide('Chat');
+
+    expect(await screen.findByRole('heading', { name: 'Chat' })).toBeInTheDocument();
+    expect(screen.queryByText('Room open to everyone')).toBeNull();
+  });
+
+  it('is a switch, and the host is the one who has it', async () => {
+    asHost();
+    api.updateChatSettings.mockResolvedValue(
+      { chat_enabled: true, direct_messages_enabled: false } as any
+    );
+    showRoom();
+    await openSide('Chat');
+
+    const control = await screen.findByRole('switch', { name: 'Allow direct messages' });
+    expect(control).toHaveAttribute('aria-checked', 'true');
+
+    fireEvent.click(control);
+
+    await waitFor(() => expect(api.updateChatSettings).toHaveBeenCalledWith(
+      'm1', { direct_messages_enabled: false }
+    ));
+  });
+
+  it('nobody else has it', async () => {
+    showRoom();
+    await openSide('Chat');
+
+    await screen.findByRole('heading', { name: 'Chat' });
+    expect(screen.queryByRole('switch')).toBeNull();
+  });
+
+  it('and until it is on, there is nothing to send with', async () => {
     api.getChatSettings.mockResolvedValue(
-      { chat_enabled: true, direct_messages_enabled: true } as any
+      { chat_enabled: true, direct_messages_enabled: false } as any
     );
     api.getParticipants.mockResolvedValue([
       { id: 'p1', role: 'presenter', is_active: true,
@@ -642,18 +747,144 @@ describe('the room chat', () => {
     ] as any);
 
     showRoom();
-    const box = await openChat();
+    await openSide('Chat');
+    fireEvent.click(await screen.findByRole('button', { name: /speaker@example.com/ }));
 
-    expect(box).toHaveAttribute('placeholder', 'Pick someone above first');
-    fireEvent.change(box, { target: { value: 'A question' } });
+    const sent: any[] = [];
+    (window as any).__roomSocket.send = (raw: string) => sent.push(JSON.parse(raw));
+
+    const box = await screen.findByPlaceholderText(/has not opened messages/);
+    expect(box).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
 
-    fireEvent.change(await screen.findByLabelText('Who to write to'), {
-      target: { value: 'u5' },
-    });
-    expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
+    // And pressing it anyway writes nothing down the socket.
+    fireEvent.change(box, { target: { value: 'A question' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(sent).toEqual([]);
   });
 });
+
+/**
+ * The running order, live, inside the room.
+ *
+ * The host rearranges what is left of the meeting they are standing in and
+ * everybody else's copy follows. The times are on show for both, because
+ * the whole point is watching them move when a talk runs long.
+ */
+describe('the running order inside the room', () => {
+  const hour = 3600000;
+  const start = new Date(Date.now() - hour).toISOString();
+  const running = [
+    {
+      id: 's1', title: 'Haldi', speaker_name: 'Asha', hall: '', status: 'live',
+      starts_at: start, duration_minutes: 40, meeting: 'm1', position: 0,
+    },
+    {
+      id: 's2', title: 'Mehendi', speaker_name: 'Bina', hall: '', status: 'scheduled',
+      starts_at: new Date(Date.now() + hour).toISOString(),
+      duration_minutes: 60, meeting: 'm1', position: 1,
+    },
+    {
+      id: 's3', title: 'Sangeet', speaker_name: 'Chandra', hall: '', status: 'scheduled',
+      starts_at: new Date(Date.now() + 3 * hour).toISOString(),
+      duration_minutes: 60, meeting: 'm1', position: 2,
+    },
+  ];
+
+  const asHost = () => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
+  };
+  const asAttendee = () => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: { id: 'u9', email: 'someone@example.com' } });
+  };
+
+  afterEach(() => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: null });
+  });
+
+  beforeEach(() => {
+    api.listSessions.mockResolvedValue(running as any);
+  });
+
+  const order = async () =>
+    within(await screen.findByRole('list', { name: 'Running order' }))
+      .getAllByRole('listitem')
+      .map((row) => row.textContent);
+
+  it('shows every talk with the time it now runs at', async () => {
+    asAttendee();
+    showRoom();
+
+    const rows = await order();
+    expect(rows[0]).toContain('Haldi');
+    expect(rows[1]).toContain('Mehendi');
+    // A time range, and how long it runs for.
+    expect(rows[1]).toMatch(/\d{1,2}:\d{2}/);
+    expect(rows[1]).toContain('60 min');
+  });
+
+  it('is read-only for anybody who is not the host', async () => {
+    asAttendee();
+    showRoom();
+
+    const list = await screen.findByRole('list', { name: 'Running order' });
+    expect(within(list).queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('gives the host a handle on every talk still to run', async () => {
+    asHost();
+    showRoom();
+
+    const list = await screen.findByRole('list', { name: 'Running order' });
+    expect(await within(list).findByRole('button', { name: /Move “Mehendi”/ }))
+      .toBeEnabled();
+    // The one on stage is not the host's to move: somebody is speaking.
+    expect(within(list).getByRole('button', { name: /Move “Haldi”/ })).toBeDisabled();
+  });
+
+  it('writes the new order down the moment one is dropped on another', async () => {
+    asHost();
+    api.rescheduleSessions.mockResolvedValue({ moved: [], moved_count: 2 } as any);
+    showRoom();
+
+    const list = await screen.findByRole('list', { name: 'Running order' });
+    const handle = await within(list).findByRole('button', { name: /Move “Sangeet”/ });
+    const rows = within(list).getAllByRole('listitem');
+
+    const dataTransfer = { setData: jest.fn(), getData: () => 's3', effectAllowed: '' };
+    fireEvent.dragStart(handle, { dataTransfer });
+    fireEvent.drop(rows[1], { dataTransfer });
+
+    await waitFor(() => expect(api.rescheduleSessions).toHaveBeenCalled());
+    const sent = api.rescheduleSessions.mock.calls[0][0];
+    // Both talks move: they have changed places.
+    expect(sent.map((c: any) => c.id).sort()).toEqual(['s2', 's3']);
+    // Sangeet takes the hour Mehendi held.
+    expect(sent.find((c: any) => c.id === 's3')!.starts_at)
+      .toBe(new Date(running[1].starts_at).toISOString());
+  });
+
+  it('re-reads the running order when the host elsewhere moves it', async () => {
+    asAttendee();
+    showRoom();
+    await screen.findByRole('list', { name: 'Running order' });
+    const readsBefore = api.listSessions.mock.calls.length;
+
+    // The socket the room opened, told the day has been rearranged.
+    const socket = (window as any).__roomSocket;
+    socket.onmessage({
+      data: JSON.stringify({ type: 'state_update', state: { schedule_changed: true } }),
+    });
+
+    await waitFor(() =>
+      expect(api.listSessions.mock.calls.length).toBeGreaterThan(readsBefore)
+    );
+  });
+});
+
 
 /**
  * What the host is asked when they press Leave.
@@ -848,7 +1079,10 @@ describe('a summary on the agenda', () => {
     api.getConclusions.mockResolvedValue(published as any);
     showRoom();
 
-    expect(await screen.findByRole('button', { name: /Summary ready/ }))
+    // The tag says a summary exists; the control that opens it is its own
+    // thing, at the top of the card where an expander belongs.
+    expect(await screen.findByText('Summary ready')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Summary of “Kataho”/ }))
       .toBeInTheDocument();
   });
 
@@ -856,26 +1090,34 @@ describe('a summary on the agenda', () => {
     api.getConclusions.mockResolvedValue(published as any);
     showRoom();
 
-    const tag = await screen.findByRole('button', { name: /Summary ready/ });
-    expect(tag).toHaveAttribute('aria-expanded', 'false');
-    fireEvent.click(tag);
+    const opener = await screen.findByRole('button', { name: /Summary of “Kataho”/ });
+    expect(opener).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(opener);
 
     expect(await screen.findByText('The grant is released in two parts.'))
       .toBeInTheDocument();
     expect(screen.getByText(/Send the letter/)).toBeInTheDocument();
-    expect(tag).toHaveAttribute('aria-expanded', 'true');
+    expect(opener).toHaveAttribute('aria-expanded', 'true');
   });
 
-  it('closes again when the tag is pressed a second time', async () => {
+  it('closes again when it is pressed a second time', async () => {
     api.getConclusions.mockResolvedValue(published as any);
     showRoom();
 
-    const tag = await screen.findByRole('button', { name: /Summary ready/ });
-    fireEvent.click(tag);
+    const opener = await screen.findByRole('button', { name: /Summary of “Kataho”/ });
+    fireEvent.click(opener);
     await screen.findByText('The grant is released in two parts.');
-    fireEvent.click(tag);
+    fireEvent.click(opener);
 
     expect(screen.queryByText('The grant is released in two parts.')).toBeNull();
+  });
+
+  it('has no opener at all on a talk with nothing published', async () => {
+    api.getConclusions.mockResolvedValue({ conclusions: [], mine: [] } as any);
+    showRoom();
+
+    await screen.findByRole('list', { name: 'Running order' });
+    expect(screen.queryByRole('button', { name: /Summary of/ })).toBeNull();
   });
 
   it('says nothing where nothing has been published', async () => {
@@ -883,7 +1125,7 @@ describe('a summary on the agenda', () => {
     showRoom();
 
     await screen.findByRole('list', { name: 'Running order' });
-    expect(screen.queryByRole('button', { name: /Summary ready/ })).toBeNull();
+    expect(screen.queryByText('Summary ready')).toBeNull();
   });
 
   it('and nothing about another meeting', async () => {
@@ -894,6 +1136,6 @@ describe('a summary on the agenda', () => {
     showRoom();
 
     await screen.findByRole('list', { name: 'Running order' });
-    expect(screen.queryByRole('button', { name: /Summary ready/ })).toBeNull();
+    expect(screen.queryByText('Summary ready')).toBeNull();
   });
 });
