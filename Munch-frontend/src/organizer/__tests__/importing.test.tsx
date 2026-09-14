@@ -99,3 +99,55 @@ describe('the programme template', () => {
     );
   });
 });
+
+/**
+ * What the preview shows has to be what the sheet says.
+ *
+ * The preview printed clock times only, so a session dated a fortnight
+ * after its meeting - a date left over from the example, usually - read as
+ * simply the next talk that afternoon. The one thing that would have shown
+ * the mistake was the one thing left out.
+ */
+describe('the day the preview shows', () => {
+  const programme = (sessionStart: string) => ([{
+    title: 'National Addressing Concept',
+    event_date: '2026-09-14',
+    venue: 'National Assembly Hall',
+    meetings: [{
+      title: 'Breaking News',
+      scheduled_start: '2026-09-14T15:00:00+05:45',
+      sessions: [
+        { title: 'Kataho', starts_at: '2026-09-14T15:00:00+05:45',
+          speaker_name: 'Dr Sumin Maharjan', hall: 'Hall A' },
+        { title: 'Digipin', starts_at: sessionStart,
+          speaker_name: 'Dr Darpan Pandey', hall: 'Hall A' },
+      ],
+    }],
+  }]);
+
+  const preview = async (sessionStart: string) => {
+    api.importProgrammeSheet.mockResolvedValue(
+      { programmes: programme(sessionStart) } as any
+    );
+    const { container } = show();
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(['x'], 'plan.csv', { type: 'text/csv' })] },
+    });
+    await screen.findByText(/Kataho/);
+  };
+
+  it('names the day when a session falls on another one', async () => {
+    await preview('2026-10-02T15:15:00+05:45');
+
+    // The sheet said 2 October; the preview used to say only "09:00 PM".
+    // Which way round the day and the month read is the reader's locale.
+    expect(screen.getByText(/Digipin/).textContent).toMatch(/Oct/);
+  });
+
+  it("leaves the day out when everything is on the meeting's own day", async () => {
+    await preview('2026-09-14T15:15:00+05:45');
+
+    expect(screen.getByText(/Digipin/).textContent).not.toMatch(/Sep/);
+  });
+});

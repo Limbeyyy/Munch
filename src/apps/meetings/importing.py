@@ -29,6 +29,8 @@ import io
 import logging
 from datetime import datetime
 
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -67,7 +69,8 @@ HOW_TO = [
     'A meeting names its event_id. A session names its meeting_id, and the '
     'event_id that meeting belongs to.',
     'Dates and times are YYYY-MM-DD HH:MM, on the 24-hour clock: '
-    '2026-09-14 14:40.',
+    '2026-09-14 14:40. They are read as the clock in the hall, so type '
+    'the time the thing actually happens.',
     'The first session of a meeting starts when the meeting starts.',
     'speaker_name, speaker_email and speaker_phone are required; the email '
     'is what makes them a presenter when they sign in.',
@@ -340,8 +343,31 @@ def _is_guidance(row) -> bool:
     return first.startswith('#')
 
 
+def sheet_timezone():
+    """The clock a time written into the sheet is on.
+
+    Not the server's. Everything is stored in UTC and rendered in each
+    reader's own zone, which is right for a time the app itself recorded -
+    but a time somebody typed into a spreadsheet carries no zone with it.
+    "2026-09-14 15:00" in the meeting_starts_at column means three in the
+    afternoon in the hall, and reading it as UTC put every imported
+    programme five and three quarter hours out: a three o'clock meeting
+    turned up on the organizer's screen at a quarter to nine.
+    """
+    from django.conf import settings
+
+    name = getattr(settings, 'LOCAL_TIME_ZONE', None)
+    if not name:
+        return timezone.get_current_timezone()
+    try:
+        return ZoneInfo(name)
+    except ZoneInfoNotFoundError:  # pragma: no cover - a misconfigured server
+        logger.warning(f"LOCAL_TIME_ZONE {name!r} is not a timezone; using the server's")
+        return timezone.get_current_timezone()
+
+
 def _moment(raw, *, row, column):
-    """A date and time from the sheet, in the server's own timezone.
+    """A date and time from the sheet, on the clock in the hall.
 
     Accepts what a spreadsheet is likely to produce rather than one exact
     shape: a T or a space, seconds or none, and a date on its own.
@@ -359,7 +385,7 @@ def _moment(raw, *, row, column):
             naive = datetime.strptime(text, shape)
         except ValueError:
             continue
-        return timezone.make_aware(naive, timezone.get_current_timezone())
+        return timezone.make_aware(naive, sheet_timezone())
 
     raise ImportProblem(
         f'“{text}” is not a date and time. Use 2026-10-02 09:00.',

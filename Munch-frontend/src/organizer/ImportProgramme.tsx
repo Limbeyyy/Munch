@@ -9,6 +9,14 @@ type Reading = Awaited<ReturnType<typeof apiClient.importProgrammeSheet>>['progr
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+/** The day something falls on, as the reader's own calendar has it. */
+const dayOf = (iso: string) => new Date(iso).toLocaleDateString('en-CA');
+
+const dayAndClock = (iso: string) =>
+  `${new Date(iso).toLocaleDateString(undefined, {
+    day: 'numeric', month: 'short',
+  })} ${clock(iso)}`;
+
 /**
  * Build a day from a spreadsheet rather than a form.
  *
@@ -177,25 +185,42 @@ export const ImportProgramme: React.FC<{ onImported: () => void }> = ({
                     {event.venue ? ` · ${event.venue}` : ''}
                   </span>
                 </p>
-                {event.meetings.map((meeting) => (
+                {event.meetings.map((meeting) => {
+                  const meetingDay = dayOf(meeting.scheduled_start);
+                  const elsewhere = meetingDay !== event.event_date.slice(0, 10);
+                  return (
                   <div key={meeting.title} className="mt-1.5 ps-3 border-s-2 border-navy-800/15">
                     <p className="text-[13px] font-medium">
                       {meeting.title}
-                      <span className="ms-2 text-[12px] text-[#6E7C8E] font-normal">
-                        {clock(meeting.scheduled_start)}
+                      <span className={`ms-2 text-[12px] font-normal ${
+                        elsewhere ? 'text-amber-700' : 'text-[#6E7C8E]'
+                      }`}>
+                        {elsewhere
+                          ? dayAndClock(meeting.scheduled_start)
+                          : clock(meeting.scheduled_start)}
                       </span>
                     </p>
                     <ul className="mt-0.5">
-                      {meeting.sessions.map((session, i) => (
+                      {meeting.sessions.map((session, i) => {
+                        // A session on another day than its meeting is
+                        // almost always a typed date nobody re-read. The
+                        // clock alone hid it: it read as the next talk.
+                        const otherDay = dayOf(session.starts_at) !== meetingDay;
+                        return (
                         <li key={`${session.title}-${i}`} className="text-[12.5px] text-[#6E7C8E]">
-                          {clock(session.starts_at)} · {session.title}
+                          <span className={otherDay ? 'text-amber-700 font-medium' : ''}>
+                            {otherDay ? dayAndClock(session.starts_at) : clock(session.starts_at)}
+                          </span>
+                          {' · '}{session.title}
                           {session.speaker_name ? ` — ${session.speaker_name}` : ''}
                           {session.hall ? ` · ${session.hall}` : ''}
                         </li>
-                      ))}
+                        );
+                      })}
                     </ul>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             ))}
 
