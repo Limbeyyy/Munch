@@ -107,3 +107,40 @@ describe('what a meeting reads as', () => {
     expect(meetingState(m('scheduled', 10, false), NOW)).toBe('never-started');
   });
 });
+
+/**
+ * What the running order reads as once the meeting is over.
+ *
+ * Ending a meeting settles every talk in it: the ones that ran are
+ * finished, and the ones nobody opened never started. The second half of
+ * that used to depend on the clock, which the elastic timetable made
+ * unreliable - a talk nobody reached is usually left sitting in the
+ * future, because the running order slides forward as the day runs late.
+ */
+describe('a session in a meeting that has ended', () => {
+  const ended = { status: 'ended' };
+  const running = { status: 'active' };
+
+  it('reads as finished if it ran', () => {
+    expect(sessionState(s('done', 9), NOW, ended)).toBe('finished');
+  });
+
+  it('reads as never started if nobody opened it', () => {
+    expect(sessionState(s('scheduled', 9), NOW, ended)).toBe('never-started');
+  });
+
+  it('reads as never started even where its slot is still ahead', () => {
+    // The case the clock got wrong: the host ran late, the talk slid into
+    // the evening, and the meeting ended without it. "Upcoming" promised
+    // a talk that is not going to happen.
+    expect(sessionState(s('scheduled', 20), NOW, ended)).toBe('never-started');
+  });
+
+  it('still reads as upcoming while the meeting is running', () => {
+    expect(sessionState(s('scheduled', 20), NOW, running)).toBe('upcoming');
+  });
+
+  it('and as overdue while the meeting runs on past its slot', () => {
+    expect(sessionState(s('scheduled', 9), NOW, running)).toBe('overdue');
+  });
+});

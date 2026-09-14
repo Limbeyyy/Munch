@@ -4,8 +4,14 @@ import { apiClient } from '../services/api';
 import { RESOURCE_POLL_MS } from '../services/polling';
 import { ChatMessage, ChatPerson, ChatSettings, GuestResource } from '../types';
 import toast from 'react-hot-toast';
-import { LiveTranscriptStage } from '../components/LiveTranscriptStage';
 import { TranscriptionSegment } from '../types';
+import { MessageBoard } from '../organizer/MessageBoard';
+import { OrganizerProvider } from '../organizer/i18n';
+import { RoomAgenda } from '../organizer/RoomAgenda';
+import { RoomBarButton, RoomCard, RoomPortrait, SidePanelHead } from './roomChrome';
+
+/** The only three things allowed to sit beside a guest's room. */
+type GuestPanel = 'chat' | 'questions' | 'resources';
 
 const API_BASE = (
   process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1'
@@ -72,8 +78,33 @@ export const GuestMeetingPage: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   // Shared files
-  const [showResources, setShowResources] = useState(false);
   const [resources, setResources] = useState<GuestResource[]>([]);
+
+  /**
+   * What sits beside the room, in the order it was asked for.
+   *
+   * The same rule as the account holders' room, because it is the same
+   * room: two at a time, and a third lets the oldest go.
+   */
+  const [side, setSide] = useState<GuestPanel[]>([]);
+  const toggleSide = (panel: GuestPanel) =>
+    setSide((open) => {
+      if (open.includes(panel)) return open.filter((x) => x !== panel);
+      return [...open, panel].slice(-2);
+    });
+  const closeSide = (panel: GuestPanel) =>
+    setSide((open) => open.filter((x) => x !== panel));
+
+  // "The chat is open" is now "the chat is one of the two beside the
+  // room". The socket reads it through a ref to decide whether a message
+  // arriving counts as unread, so it follows the column rather than a
+  // second switch that could disagree with it.
+  const chatBeside = side.includes('chat');
+  useEffect(() => { setShowChat(chatBeside); }, [chatBeside]);
+
+  /** The running order, and the meeting's own hours, to read only. */
+  const [agenda, setAgenda] = useState<any[]>([]);
+  const [meeting, setMeeting] = useState<any>(null);
 
   const leave = useCallback(async () => {
     if (token) {
@@ -137,6 +168,8 @@ export const GuestMeetingPage: React.FC = () => {
         const { meeting } = await apiClient.guestStatus(token);
         if (cancelled) return;
         const running = (meeting as any)?.current_session;
+        setMeeting(meeting);
+        setAgenda((meeting as any)?.sessions ?? []);
         // The room's session, if one is on stage. Between talks there is
         // no title and no clock - and the room is still the guest's to sit
         // in, because the room belongs to the meeting.
@@ -338,249 +371,378 @@ export const GuestMeetingPage: React.FC = () => {
     return () => clearInterval(id);
   }, [startedAt]);
 
+  const onStage = (meeting as any)?.current_session ?? null;
+  const speaker =
+    agenda.find((item) => item.id === onStage?.id)?.speaker_name || '';
+
+  /*
+   * A transcript belongs to the talk it was said during, so the room shows
+   * the lines of whatever is on stage and the next speaker starts on a
+   * clean page. Between talks, what there is to show is the record so far.
+   */
+  const roomLines = onStage?.id
+    ? transcript.filter(
+        (line: any) => !line.session_id || line.session_id === onStage.id
+      )
+    : transcript;
+
   return (
-    <div className="min-h-screen bg-gray-900 text-white flex">
-      <div className="flex-1 flex flex-col min-w-0">
-      <div className="flex-1 bg-gray-950 flex flex-col relative min-h-0">
-        <LiveTranscriptStage transcript={transcript} />
+    <OrganizerProvider>
+    <div className="min-h-screen bg-[#f1f4f8] text-[#030712] pb-[110px]">
+      <div
+        className={`grid gap-4 p-4 items-start ${
+          side.length > 0
+            ? 'xl:grid-cols-[332px_minmax(0,1fr)_358px]'
+            : 'xl:grid-cols-[332px_minmax(0,1fr)]'
+        }`}
+      >
+        {/* The running order, exactly as everybody else in the room sees
+            it - and to read only, like every other guest thing. */}
+        <RoomCard className="xl:sticky xl:top-4">
+          <RoomAgenda
+            meeting={{
+              id: meeting?.id ?? '',
+              title: meetingTitle,
+              meeting_code: meetingCode,
+              status: meeting?.status ?? 'active',
+              scheduled_start: meeting?.scheduled_start ?? new Date().toISOString(),
+              scheduled_end: meeting?.scheduled_end ?? new Date().toISOString(),
+            } as any}
+            sessions={agenda as any}
+            liveSessionId={onStage?.id ?? null}
+            canEdit={false}
+            onChanged={() => {}}
+          />
+        </RoomCard>
 
-        <div className="absolute top-4 left-4 flex items-center gap-2 bg-black/60 px-3 py-1.5 rounded-full text-sm">
-          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-          <span className="font-mono tabular-nums">
-            {startedAt ? formatElapsed(elapsed) : 'Not started'}
-          </span>
-        </div>
-
-        <div className="absolute top-4 right-4 bg-black/60 px-3 py-1.5 rounded-full text-xs">
-          Joined as guest &middot; {guestName}
-        </div>
-      </div>
-
-      <div className="bg-gray-800 px-4 py-4 flex flex-wrap justify-center items-center gap-3">
-        {/* The session is what people are sitting through; the meeting is
-            the part of the day it belongs to. */}
-        <div className="mr-auto min-w-0">
-          <h2 className="text-lg font-semibold truncate">
-            {sessionTitle || meetingTitle}
-          </h2>
-          <p className="text-xs text-gray-400 truncate">
-            {sessionTitle
-              ? `${meetingTitle} · `
-              : nextTitle
-                ? `Between sessions · up next ${nextTitle} · `
-                : 'Between sessions · '}
-            Code {meetingCode}
-          </p>
-        </div>
-
-        <button
-          onClick={() => {
-            setShowResources((v) => !v);
-            loadResources();
-          }}
-          className={`px-6 py-2 rounded-lg font-semibold ${
-            showResources ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-700 hover:bg-gray-600'
-          }`}
-        >
-          <span aria-hidden="true">&#128206;</span> Files ({resources.length})
-        </button>
-
-        <button
-          onClick={() => setShowChat((v) => !v)}
-          aria-label="Toggle chat"
-          className={`relative px-6 py-2 rounded-lg font-semibold ${
-            showChat ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-700 hover:bg-gray-600'
-          }`}
-        >
-          <span aria-hidden="true">&#128172;</span> Chat
-          {unread > 0 && !showChat && (
-            <span className="absolute -top-1 -right-1 min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-xs font-bold bg-red-500 rounded-full">
-              {unread > 9 ? '9+' : unread}
-            </span>
-          )}
-        </button>
-
-        <button
-          onClick={leave}
-          className="px-6 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-semibold"
-        >
-          Leave
-        </button>
-      </div>
-      </div>
-
-      {showResources && (
-        <div className="w-80 bg-gray-800 border-l border-gray-700 flex flex-col min-h-0">
-          <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-            <h3 className="font-semibold">Shared files</h3>
-            <button
-              onClick={() => setShowResources(false)}
-              aria-label="Close files"
-              className="text-gray-400 hover:text-white px-2"
-            >
-              &#10005;
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4 min-h-0">
-            {resources.length === 0 ? (
-              <p className="text-xs text-gray-400">
-                Nothing shared yet. Files the host or presenters add will appear
-                here.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {resources.map((r) => (
-                  <a
-                    key={r.id}
-                    href={`${API_BASE}${r.download_url}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block bg-gray-700 hover:bg-gray-600 p-3 rounded text-sm transition"
-                  >
-                    <p className="font-medium truncate">{r.display_name}</p>
-                    <p className="text-gray-300 text-xs mt-1 truncate">
-                      {formatFileSize(r.file_size)}
-                      {r.uploaded_by && ` · ${r.uploaded_by}`}
-                    </p>
-                    <p className="text-[11px] text-blue-300 mt-1">
-                      &#11015; Download
-                    </p>
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <p className="p-3 text-[11px] text-gray-400 border-t border-gray-700">
-            Files are downloaded through this meeting - you do not need a
-            Google account.
-          </p>
-        </div>
-      )}
-
-      {showChat && (
-        <div className="w-80 bg-gray-800 border-l border-gray-700 flex flex-col min-h-0">
-          <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-            <h3 className="font-semibold">Chat</h3>
-            <button
-              onClick={() => setShowChat(false)}
-              aria-label="Close chat"
-              className="text-gray-400 hover:text-white px-2"
-            >
-              &#10005;
-            </button>
-          </div>
-
-          {!chatSettings.chat_enabled ? (
-            <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
-              <span className="text-4xl" aria-hidden="true">&#128274;</span>
-              <p className="text-sm text-gray-300">
-                Room needs to be enabled by host
-              </p>
+        {/* The stage */}
+        <div className="flex flex-col gap-3 min-w-0">
+          <RoomCard>
+            <div className="bg-white border-b border-[#e3e8ef] flex items-center justify-between
+              gap-3 px-4 py-2.5 flex-wrap">
+              <h1 className="flex-1 min-w-0 text-[24px] font-medium text-black text-center
+                leading-[1.2] truncate">
+                {meetingTitle}
+              </h1>
+              <span className="text-[12px] text-[#4a5567] flex-none">
+                Joined as guest · {guestName}
+              </span>
+              {startedAt && (
+                <span className="bg-[#fce2ef] text-[#f83995] text-[12px] tracking-[-0.06px]
+                  rounded-[4px] h-6 px-2 grid place-items-center flex-none">
+                  Live
+                </span>
+              )}
             </div>
-          ) : (
-            <>
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
-                {visibleMessages.length === 0 ? (
-                  <p className="text-xs text-gray-400">
-                    No messages yet. Write to the host or to the speaker.
+
+            <div className="flex flex-col gap-3 px-4 py-2.5">
+              <div className="flex gap-2 items-center">
+                <RoomPortrait name={speaker || sessionTitle || meetingTitle} size={84} />
+                <div className="min-w-0">
+                  <p className="text-[22px] font-medium text-black leading-[1.2] truncate">
+                    {sessionTitle || meetingTitle}
+                  </p>
+                  <p className="text-[18px] text-[#030712] leading-[1.5] truncate">
+                    {speaker || 'No speaker named'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3 items-center flex-wrap">
+                <span className="border border-[#e3e8ef] rounded-[4px] h-6 px-2 flex items-center gap-1.5">
+                  <i className="w-[5px] h-[5px] rounded-full bg-[#13cef7]" aria-hidden />
+                  <span className="text-[14px] text-[#030712] tracking-[-0.07px]">
+                    {meetingCode}
+                  </span>
+                </span>
+                <span aria-hidden className="w-px h-3 bg-[#e3e8ef]" />
+                <span className="text-[14px] text-[#030712] tracking-[-0.07px] tabular-nums">
+                  {startedAt ? formatElapsed(elapsed) : 'Not started'}
+                </span>
+              </div>
+
+              {!sessionTitle && (
+                <div className="rounded-[10px] border border-dashed border-[#cfd8e6]
+                  bg-[#f8fafc] px-4 py-3">
+                  <p className="text-[16px] font-medium text-[#030712]">
+                    Between sessions
+                  </p>
+                  <p className="text-[14px] text-[#4a5567]">
+                    {nextTitle
+                      ? `Up next: ${nextTitle}`
+                      : 'The host will start the next session shortly.'}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* What is being said */}
+            <div className="border-t border-[#e3e8ef]">
+              <div className="bg-white border-b border-[#e3e8ef] px-4 py-2.5">
+                <h2 className="text-[20px] font-medium text-black text-center leading-[1.2]">
+                  Live Transcript
+                </h2>
+              </div>
+              <div className="flex flex-col gap-3 px-3 py-2.5 max-h-[420px] overflow-y-auto">
+                {roomLines.length === 0 ? (
+                  <p className="text-[14px] text-[#656565]">
+                    Waiting for the room device. Whatever is said in the hall
+                    will appear here.
                   </p>
                 ) : (
-                  visibleMessages.map((m) => {
-                    const mine = m.sender_is_guest && m.sender_id === myGuestId;
-                    return (
-                      <div key={m.id} className={mine ? 'text-right' : ''}>
-                        <div
-                          className={`inline-block max-w-[85%] text-left px-3 py-2 rounded-lg text-sm ${
-                            mine ? 'bg-blue-600' : 'bg-gray-700'
-                          }`}
-                        >
-                          <p className="text-xs text-gray-200 mb-0.5">
-                            {mine ? 'You' : m.sender_name}
-                            {m.sender_is_guest && !mine && (
-                              <span className="ml-1 text-purple-200">(guest)</span>
-                            )}
-                            {m.is_direct && (
-                              <span className="ml-1 text-yellow-300">
-                                &#128274; {mine ? `to ${m.recipient_name}` : 'privately'}
-                              </span>
-                            )}
-                          </p>
-                          <p className="break-words">{m.body}</p>
-                          {mine && m.moderation_status === 'pending' && (
-                            <p className="text-[11px] text-yellow-200 mt-1">
-                              &#9203; Waiting for host approval
-                            </p>
-                          )}
-                          {mine && m.moderation_status === 'declined' && (
-                            <p className="text-[11px] text-red-200 mt-1">
-                              &#128683; Declined by host
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
+                  roomLines.map((line: any, index: number) => (
+                    <div key={index} className="flex gap-3 items-start">
+                      <span className="border border-[#e3e8ef] rounded-[4px] h-6 px-1 grid
+                        place-items-center flex-none text-[12px] text-[#656565]
+                        tracking-[-0.06px] tabular-nums">
+                        {line.created_at
+                          ? new Date(line.created_at).toLocaleTimeString([], {
+                              hour: '2-digit', minute: '2-digit',
+                            })
+                          : formatElapsed(Math.round(line.start_time ?? 0))}
+                      </span>
+                      <span aria-hidden className="w-px h-3 bg-[#e3e8ef] mt-1.5 flex-none" />
+                      <p className="flex-1 min-w-0 text-[14px] leading-[1.4] tracking-[-0.07px]
+                        text-[#383838]">
+                        {line.speaker_name && (
+                          <span className="text-[#4a5567]">{line.speaker_name}: </span>
+                        )}
+                        {line.text}
+                      </p>
+                    </div>
+                  ))
                 )}
-                <div ref={messagesEndRef} />
               </div>
-
-              <div className="p-3 border-t border-gray-700 space-y-2">
-                {chatSettings.direct_messages_enabled && people.length > 0 && (
-                  <select
-                    value={dmTarget}
-                    onChange={(e) => setDmTarget(e.target.value)}
-                    aria-label="Who to write to"
-                    className="w-full bg-gray-700 text-sm rounded px-2 py-1.5"
-                  >
-                    <option value="">Who is this for?</option>
-                    {people.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.role.replace('_', '-')})
-                      </option>
-                    ))}
-                  </select>
-                )}
-
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        sendMessage();
-                      }
-                    }}
-                    placeholder={
-                      dmTarget ? 'Write your message here' : 'Pick someone above first'
-                    }
-                    maxLength={2000}
-                    className="flex-1 bg-gray-700 text-sm rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <button
-                    onClick={sendMessage}
-                    disabled={!draft.trim() || !dmTarget}
-                    className="bg-blue-600 hover:bg-blue-700 px-4 rounded text-sm font-semibold disabled:opacity-50"
-                  >
-                    Send
-                  </button>
-                </div>
-
-                <p className="text-[11px] text-gray-400">
-                  {!chatSettings.direct_messages_enabled
-                    ? 'Messages need to be enabled by the host.'
-                    : dmTarget
-                    ? 'The host reviews this before it reaches them.'
-                    : 'Pick someone above to write to them.'}
-                </p>
-              </div>
-            </>
-          )}
+            </div>
+          </RoomCard>
         </div>
-      )}
+
+        {/* Whatever the bar has been asked for, in the order it was asked. */}
+        {side.length > 0 && (
+          <div className="flex flex-col gap-3 min-w-0">
+            {side.map((panel) => (
+              <React.Fragment key={panel}>
+                {panel === 'resources' && (
+                  <RoomCard>
+                    <SidePanelHead
+                      title="Resources"
+                      onClose={() => closeSide('resources')}
+                    />
+                    <div className="p-3 max-h-[420px] overflow-y-auto flex flex-col gap-2">
+                      {resources.length === 0 ? (
+                        <p className="text-[13px] text-[#656565]">
+                          Nothing shared yet. Files the host or presenters add
+                          will appear here.
+                        </p>
+                      ) : (
+                        resources.map((file) => (
+                          <a
+                            key={file.id}
+                            href={`${API_BASE}${file.download_url}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block border border-[#e3e8ef] hover:border-navy-800/40
+                              rounded-[10px] px-3 py-2"
+                          >
+                            <p className="text-[14px] font-medium truncate">
+                              {file.display_name}
+                            </p>
+                            <p className="text-[12px] text-[#656565] truncate">
+                              {formatFileSize(file.file_size)}
+                              {file.uploaded_by && ` · ${file.uploaded_by}`}
+                            </p>
+                          </a>
+                        ))
+                      )}
+                      <p className="text-[11px] text-[#656565] mt-1">
+                        Files are downloaded through this meeting — you do not
+                        need a Google account.
+                      </p>
+                    </div>
+                  </RoomCard>
+                )}
+
+                {panel === 'questions' && (
+                  <RoomCard>
+                    <SidePanelHead
+                      title="Questions"
+                      onClose={() => closeSide('questions')}
+                    />
+                    <div className="p-3 max-h-[520px] overflow-y-auto">
+                      {token && (
+                        <MessageBoard guestToken={token} refreshMs={20000} />
+                      )}
+                    </div>
+                  </RoomCard>
+                )}
+
+                {panel === 'chat' && (
+                  <RoomCard>
+                    <SidePanelHead
+                      title="Chat"
+                      badge={unread}
+                      onClose={() => closeSide('chat')}
+                    />
+                    {!chatSettings.chat_enabled ? (
+                      <p className="text-[13px] text-[#656565] px-4 py-6 text-center">
+                        Messages need to be enabled by the host.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="h-[280px] overflow-y-auto p-3 flex flex-col gap-3">
+                          {visibleMessages.length === 0 ? (
+                            <p className="text-[13px] text-[#656565]">
+                              No messages yet. Write to the host or to the speaker.
+                            </p>
+                          ) : (
+                            visibleMessages.map((m) => {
+                              const mine =
+                                m.sender_is_guest && m.sender_id === myGuestId;
+                              return (
+                                <div key={m.id} className={mine ? 'text-right' : ''}>
+                                  <div
+                                    className={`inline-block max-w-[85%] text-left px-3 py-2
+                                      rounded-[12px] text-[14px] ${
+                                      mine
+                                        ? 'bg-navy-800 text-white'
+                                        : 'bg-[#f1f4f8] text-[#030712] border border-[#e3e8ef]'
+                                    }`}
+                                  >
+                                    <p className={`text-[11px] mb-0.5 ${
+                                      mine ? 'text-[#c9daf1]' : 'text-[#656565]'
+                                    }`}>
+                                      {mine ? 'You' : m.sender_name}
+                                      {m.is_direct && (
+                                        <span className={mine ? ' text-amber' : ' text-amber-700'}>
+                                          {' '}· {mine ? `to ${m.recipient_name}` : 'privately'}
+                                        </span>
+                                      )}
+                                    </p>
+                                    <p className="break-words">{m.body}</p>
+                                    {mine && m.moderation_status === 'pending' && (
+                                      <p className="text-[11px] text-amber mt-1">
+                                        Waiting for host approval
+                                      </p>
+                                    )}
+                                    {mine && m.moderation_status === 'declined' && (
+                                      <p className="text-[11px] text-live mt-1">
+                                        Declined by host
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                          <div ref={messagesEndRef} />
+                        </div>
+
+                        <div className="p-3 border-t border-[#e3e8ef] flex flex-col gap-2">
+                          {chatSettings.direct_messages_enabled && people.length > 0 && (
+                            <select
+                              value={dmTarget}
+                              onChange={(e) => setDmTarget(e.target.value)}
+                              aria-label="Who to write to"
+                              className="w-full border border-[#e3e8ef] rounded-lg px-2 py-1.5
+                                text-[13px] bg-white"
+                            >
+                              <option value="">Who is this for?</option>
+                              {people.map((person) => (
+                                <option key={person.id} value={person.id}>
+                                  {person.name} ({person.role.replace('_', '-')})
+                                </option>
+                              ))}
+                            </select>
+                          )}
+
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={draft}
+                              onChange={(e) => setDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                  e.preventDefault();
+                                  sendMessage();
+                                }
+                              }}
+                              placeholder={
+                                dmTarget
+                                  ? 'Write your message here'
+                                  : 'Pick someone above first'
+                              }
+                              maxLength={2000}
+                              className="flex-1 min-w-0 bg-[#f9fafb] border border-[#e5e7eb]
+                                rounded-[12px] px-3 py-2 text-[14px] focus:outline-none
+                                focus:ring-2 focus:ring-navy-500"
+                            />
+                            <button
+                              onClick={sendMessage}
+                              aria-label="Send"
+                              disabled={!draft.trim() || !dmTarget}
+                              className="text-navy-700 hover:text-navy-900 px-2 flex-none
+                                disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+                                <path d="M3 20.5v-6l8-2.5-8-2.5v-6l19 8.5-19 8.5Z" fill="currentColor" />
+                              </svg>
+                            </button>
+                          </div>
+
+                          <p className="text-[11px] text-[#656565]">
+                            {!chatSettings.direct_messages_enabled
+                              ? 'Messages need to be enabled by the host.'
+                              : dmTarget
+                              ? 'The host reviews this before it reaches them.'
+                              : 'Pick someone above to write to them.'}
+                          </p>
+                        </div>
+                      </>
+                    )}
+                  </RoomCard>
+                )}
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* The bar. A guest has no roster to open, no register to read and
+          no meeting to end - only the three things beside the room, and
+          the way out. */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-30 bg-navy-800 px-4 py-3"
+        aria-label="Meeting controls"
+      >
+        <div className="flex items-center justify-center gap-2 sm:gap-[38px] overflow-x-auto">
+          <RoomBarButton
+            icon="chat"
+            label="Chat"
+            badge={side.includes('chat') ? 0 : unread}
+            open={side.includes('chat')}
+            onClick={() => toggleSide('chat')}
+          />
+          <RoomBarButton
+            icon="questions"
+            label="Questions"
+            open={side.includes('questions')}
+            onClick={() => toggleSide('questions')}
+          />
+          <RoomBarButton
+            icon="resources"
+            label="Resources"
+            open={side.includes('resources')}
+            onClick={() => { toggleSide('resources'); loadResources(); }}
+          />
+        </div>
+        <span className="absolute end-4 top-1/2 -translate-y-1/2 hidden sm:block">
+          <RoomBarButton icon="leave" label="Leave" tone="leave" onClick={leave} />
+        </span>
+        <div className="sm:hidden flex justify-center mt-1">
+          <RoomBarButton icon="leave" label="Leave" tone="leave" onClick={leave} />
+        </div>
+      </nav>
     </div>
+    </OrganizerProvider>
   );
 };

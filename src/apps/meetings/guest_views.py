@@ -247,6 +247,7 @@ def guest_status(request):
     return Response({
         'guest': GuestAttendeeSerializer(guest).data,
         'meeting': {
+            'id': str(guest.meeting.id),
             'meeting_code': guest.meeting.meeting_code,
             'title': guest.meeting.title,
             'status': guest.meeting.status,
@@ -254,9 +255,30 @@ def guest_status(request):
                 guest.meeting.started_at.isoformat()
                 if guest.meeting.started_at else None
             ),
-            # The room is a session; its clock and its closing time come
-            # from whatever is on stage, not from the whole morning.
+            'scheduled_start': guest.meeting.scheduled_start.isoformat(),
+            'scheduled_end': (
+                guest.meeting.scheduled_end.isoformat()
+                if guest.meeting.scheduled_end else None
+            ),
+            # What is on stage, and its clock.
             'current_session': session_room_state(guest.meeting),
+            # The running order, so a guest sees the same list of talks as
+            # everybody else in the room, with the same times on it. To
+            # read only: the host moves it, nobody else. Nothing private
+            # here - the titles, the speakers' names and the halls are on
+            # the wall of the venue.
+            'sessions': [
+                {
+                    'id': str(session.id),
+                    'title': session.title,
+                    'speaker_name': session.speaker_name,
+                    'hall': session.hall,
+                    'starts_at': session.starts_at.isoformat(),
+                    'duration_minutes': session.duration_minutes,
+                    'status': session.status,
+                }
+                for session in guest.meeting.sessions.order_by('starts_at', 'position')
+            ],
         },
     })
 

@@ -138,3 +138,70 @@ class GuestDoorTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()['code'], 'presenter_must_sign_in')
+
+
+class GuestRoomStatusTests(TestCase):
+    """What a guest's room is told about the day it is part of.
+
+    A guest sits in the same room as everybody else now, so they read the
+    same running order - the talks, their speakers, their times, moving as
+    the host moves them. To read only: nothing here lets a guest change
+    anything, and nothing private is in it. The speaker's name and hall are
+    on the wall of the venue; their address and telephone number are not,
+    and are not here either.
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.host = make_host('host@example.com')
+        start = timezone.now() - timezone.timedelta(minutes=5)
+        self.meeting = make_meeting(self.host, start=start, minutes=120)
+        self.meeting.status = Meeting.Status.ACTIVE
+        self.meeting.started_at = start
+        self.meeting.save()
+        self.first = make_session(self.meeting, start, 60, 'Haldi')
+        self.second = make_session(
+            self.meeting, start + timezone.timedelta(minutes=75), 30, 'Mehendi'
+        )
+        self.guest = GuestAttendee.objects.create(
+            meeting=self.meeting, full_name='Bishnu Prasad', phone='9812345678',
+            status=GuestAttendee.Status.ADMITTED,
+        )
+
+    def status(self):
+        from src.apps.meetings.guest_tokens import make_guest_token
+
+        token = make_guest_token(self.guest)
+        return self.client.get(f'{API}/meetings/guest/status/?token={token}').json()
+
+    def test_the_running_order_comes_with_it(self):
+        meeting = self.status()['meeting']
+
+        self.assertEqual(
+            [s['title'] for s in meeting['sessions']], ['Haldi', 'Mehendi']
+        )
+
+    def test_with_the_times_the_room_is_working_to(self):
+        meeting = self.status()['meeting']
+
+        self.assertEqual(
+            meeting['sessions'][0]['starts_at'], self.first.starts_at.isoformat()
+        )
+        self.assertEqual(meeting['sessions'][0]['duration_minutes'], 60)
+        self.assertEqual(
+            meeting['scheduled_start'], self.meeting.scheduled_start.isoformat()
+        )
+
+    def test_and_the_speakers_address_does_not(self):
+        meeting = self.status()['meeting']
+
+        for session in meeting['sessions']:
+            self.assertNotIn('speaker_email', session)
+            self.assertNotIn('speaker_phone', session)
+            self.assertNotIn('speaker_contact', session)
+
+    def test_somebody_who_is_not_in_the_room_is_told_nothing(self):
+        response = self.client.get(f'{API}/meetings/guest/status/?token=made-up')
+
+        self.assertEqual(response.status_code, 401)

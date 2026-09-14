@@ -604,3 +604,69 @@ describe('the room chat', () => {
     expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
   });
 });
+
+/**
+ * What the host is asked when they press Leave.
+ *
+ * Ending a session and ending the meeting are different things - one
+ * closes off a talk and leaves the room standing, the other closes the
+ * room for everybody - and so is simply stepping out. The button asks
+ * rather than guessing.
+ */
+describe('the end choice', () => {
+  const asHost = () => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
+  };
+
+  afterEach(() => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: null });
+  });
+
+  const openIt = async () => {
+    asHost();
+    showRoom();
+    const bar = await screen.findByRole('navigation', { name: 'Meeting controls' });
+    fireEvent.click(within(bar).getByRole('button', { name: /Leave/ }));
+  };
+
+  it('offers the session and the meeting, and neither by accident', async () => {
+    await openIt();
+
+    expect(await screen.findByRole('button', { name: /End the session/ }))
+      .toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /End the meeting/ })).toBeInTheDocument();
+    // Stepping out is still there: the host has to be able to leave.
+    expect(screen.getByRole('button', { name: /Just leave/ })).toBeInTheDocument();
+  });
+
+  it('ends only the session, and stays in the room', async () => {
+    api.endSession.mockResolvedValue({} as any);
+    await openIt();
+
+    fireEvent.click(await screen.findByRole('button', { name: /End the session/ }));
+
+    await waitFor(() => expect(api.endSession).toHaveBeenCalledWith('s1'));
+    expect(api.endMeeting).not.toHaveBeenCalled();
+    // Still the room, not the page it navigates to on the way out.
+    expect(
+      await screen.findByRole('navigation', { name: 'Meeting controls' })
+    ).toBeInTheDocument();
+  });
+
+  it('offers nothing to end when nothing is on stage', async () => {
+    api.getMeeting.mockResolvedValue({
+      ...meeting,
+      current_session: {
+        id: null, title: '', started_at: null, ends_at: null, is_over: false,
+        between_sessions: true, awaiting_next: false,
+      },
+    } as any);
+    await openIt();
+
+    expect(await screen.findByRole('button', { name: /End the meeting/ }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /End the session/ })).toBeNull();
+  });
+});

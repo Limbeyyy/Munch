@@ -13,8 +13,9 @@ import { ShareMeetingDialog } from '../components/ShareMeetingDialog';
 import { ResourceControls } from '../organizer/ResourceVisibility';
 import { PhotoUploads } from '../organizer/Photos';
 import { MessageBoard } from '../organizer/MessageBoard';
-import { FigmaIcon, FigmaIconName } from '../assets/icons';
+import { FigmaIcon } from '../assets/icons';
 import { RoomAgenda } from '../organizer/RoomAgenda';
+import { RoomBarButton, RoomCard, RoomPanel, RoomPortrait, SidePanelHead } from './roomChrome';
 import { OrganizerProvider } from '../organizer/i18n';
 
 
@@ -802,6 +803,32 @@ const MeetingRoomInner: React.FC = () => {
     }
   };
 
+  /**
+   * End the talk on stage. The room is not ended with it.
+   *
+   * Its transcript, its chat and its resources are closed off and belong
+   * to it; the meeting carries on and offers the host the next speaker.
+   * The other half of the same button, one line down, ends the meeting -
+   * which is a different thing, and worth being asked which you meant.
+   */
+  const [endingSession, setEndingSession] = useState(false);
+  const endSession = async () => {
+    const onStage = currentMeeting?.current_session?.id;
+    if (!onStage) return;
+    setEndingSession(true);
+    try {
+      await apiClient.endSession(onStage);
+      setShowEndChoice(false);
+      await refreshRef.current.meeting();
+      await refreshAgenda();
+      toast.success('Session ended. The room stays open.');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error ?? 'Could not end that session');
+    } finally {
+      setEndingSession(false);
+    }
+  };
+
   /** Everyone else: step out, meeting carries on. */
   const leaveMeeting = async () => {
     if (!currentMeeting) return;
@@ -856,20 +883,39 @@ const MeetingRoomInner: React.FC = () => {
       {showEndChoice && currentMeeting && (
         <div className="fixed inset-0 z-50 bg-black/60 grid place-items-center p-4">
           <div className="bg-white text-gray-900 rounded-2xl max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold">What would you like to do?</h3>
+            <h3 className="text-lg font-semibold">What would you like to end?</h3>
             <p className="mt-1 text-sm text-gray-600">
-              Leaving and ending are different things, so this asks rather
-              than guesses.
+              A session and the meeting are different things, and so is
+              simply leaving, so this asks rather than guesses.
             </p>
+
+            {session?.id && (
+              <button
+                onClick={endSession}
+                disabled={endingSession}
+                className="mt-5 w-full text-left rounded-xl border border-navy-800/15
+                  hover:border-navy-800/40 p-4 disabled:opacity-60"
+              >
+                <span className="block font-semibold">
+                  End the session{session.title ? ` — “${session.title}”` : ''}
+                </span>
+                <span className="block text-sm text-gray-600 mt-0.5">
+                  Its transcript, its chat and its files are closed off and
+                  kept with it. The room stays open, and you can start the
+                  next speaker.
+                </span>
+              </button>
+            )}
 
             <button
               onClick={endMeeting}
-              className="mt-5 w-full text-left rounded-xl border border-red-200 hover:border-red-400 p-4"
+              className="mt-3 w-full text-left rounded-xl border border-red-200 hover:border-red-400 p-4"
             >
               <span className="block font-semibold text-red-700">End the meeting</span>
               <span className="block text-sm text-gray-600 mt-0.5">
-                It closes for everybody. Speakers, attendees and guests are
-                all shown out, and nobody can rejoin.
+                Everything ends with it. Whatever is on stage is finished,
+                anything never opened reads as never started, and the room
+                closes for everybody — speakers, attendees and guests.
               </span>
             </button>
 
@@ -1591,144 +1637,17 @@ const MeetingRoomInner: React.FC = () => {
             icon="leave"
             label="Leave"
             tone="leave"
-            onClick={() => (isHost && startedAt ? setShowEndChoice(true) : leaveMeeting())}
+            // The host is always asked. It used to depend on something
+            // being on stage, which left them no way to end the meeting
+            // from inside the room between two talks - and the room lives
+            // between two talks now.
+            onClick={() => (isHost ? setShowEndChoice(true) : leaveMeeting())}
           />
         </span>
       </nav>
     </div>
   );
 };
-
-/**
- * The head of a side panel: its name centred, and the cross that sends
- * it away again.
- */
-const SidePanelHead: React.FC<{
-  title: string;
-  badge?: number;
-  onClose: () => void;
-}> = ({ title, badge = 0, onClose }) => (
-  <div className="bg-[#fcfcfc] flex items-center gap-2 px-4 pt-2 pb-1">
-    <span className="w-6 flex-none" aria-hidden />
-    <h2 className="flex-1 text-[18px] text-black text-center tracking-[-0.09px]">
-      {title}
-      {badge > 0 && (
-        <span className="ms-2 inline-grid place-items-center min-w-[20px] h-5 px-1 align-middle
-          text-[11px] font-bold bg-live text-white rounded-full">
-          {badge > 9 ? '9+' : badge}
-        </span>
-      )}
-    </h2>
-    <button
-      onClick={onClose}
-      aria-label={`Close ${title.toLowerCase()}`}
-      className="w-6 flex-none text-[#9ea8b7] hover:text-navy-800 text-[20px] leading-none"
-    >
-      &#10005;
-    </button>
-  </div>
-);
-
-/** A white card, the way every panel in this room is drawn. */
-const RoomCard: React.FC<{
-  id?: string;
-  className?: string;
-  children: React.ReactNode;
-}> = ({ id, className = '', children }) => (
-  <div
-    id={id}
-    className={`bg-white border border-[#e3e8ef] rounded-[12px] overflow-hidden ${className}`}
-  >
-    {children}
-  </div>
-);
-
-/**
- * A round portrait.
- *
- * The mock uses a stock photograph for everybody; nobody here has one, so
- * the initial stands on the same warm disc rather than a grey box where a
- * face should be.
- */
-const RoomPortrait: React.FC<{ name: string; size: number }> = ({ name, size }) => (
-  <span
-    className="bg-[#fbecd1] rounded-full grid place-items-center flex-none text-navy-900
-      font-semibold overflow-hidden"
-    style={{ width: size, height: size, fontSize: Math.round(size / 2.6) }}
-    aria-hidden
-  >
-    {(name || '?').trim().charAt(0).toUpperCase()}
-  </span>
-);
-
-/** One control on the bar along the foot of the room. */
-const RoomBarButton: React.FC<{
-  icon: FigmaIconName;
-  label: string;
-  onClick: () => void;
-  badge?: number;
-  tone?: 'default' | 'leave';
-  /** Whether the panel this opens is currently beside the room. */
-  open?: boolean;
-}> = ({ icon, label, onClick, badge = 0, tone = 'default', open }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    aria-pressed={open}
-    className={`relative flex flex-col items-center gap-[9px] px-3 py-2 rounded-[12px] w-[92px]
-      flex-none transition-colors ${open ? 'bg-white/[.16]' : 'hover:bg-white/[.08]'}`}
-  >
-    <FigmaIcon name={icon} size={24} />
-    <span
-      className={`text-[14px] tracking-[-0.07px] whitespace-nowrap ${
-        tone === 'leave' ? 'text-[#f75656]' : 'text-white'
-      }`}
-    >
-      {label}
-    </span>
-    {badge > 0 && (
-      <span className="absolute top-1 right-2 min-w-[18px] h-[18px] px-1 grid place-items-center
-        text-[10px] font-bold bg-live text-white rounded-full">
-        {badge > 9 ? '9+' : badge}
-      </span>
-    )}
-  </button>
-);
-
-/** A panel the bar opens over the room. */
-const RoomPanel: React.FC<{
-  title: string;
-  onClose: () => void;
-  wide?: boolean;
-  children: React.ReactNode;
-}> = ({ title, onClose, wide, children }) => (
-  <div
-    className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4"
-    onClick={onClose}
-  >
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-      onClick={(e) => e.stopPropagation()}
-      className={`bg-white border border-[#e3e8ef] rounded-[12px] w-full overflow-hidden
-        max-h-[85vh] flex flex-col ${wide ? 'max-w-[760px]' : 'max-w-[420px]'}`}
-    >
-      <div className="bg-[#fcfcfc] border-b border-[#e3e8ef] flex items-center gap-2 px-4 py-2.5">
-        <h2 className="flex-1 text-[18px] text-black text-center tracking-[-0.09px]">{title}</h2>
-        <button
-          onClick={onClose}
-          aria-label={`Close ${title.toLowerCase()}`}
-          className="text-[#9ea8b7] hover:text-navy-800 text-[22px] leading-none px-2 flex-none"
-        >
-          &#10005;
-        </button>
-      </div>
-      <div className="overflow-y-auto">{children}</div>
-    </div>
-  </div>
-);
-
 
 /**
  * The room, with the reader's language and accessibility settings.
