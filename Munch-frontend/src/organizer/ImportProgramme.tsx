@@ -46,13 +46,13 @@ export const ImportProgramme: React.FC<{ onImported: () => void }> = ({
     toast.error(refusal?.error || fallback, { duration: 8000 });
   };
 
-  const getTemplate = async () => {
+  const getTemplate = async (shape: 'csv' | 'xlsx') => {
     try {
-      const blob = await apiClient.downloadProgrammeTemplate();
+      const blob = await apiClient.downloadProgrammeTemplate(shape);
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = 'manch-programme-template.csv';
+      link.download = `manch-programme-template.${shape}`;
       link.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -110,8 +110,11 @@ export const ImportProgramme: React.FC<{ onImported: () => void }> = ({
       title={t({ ne: 'पानाबाट ल्याउने', en: 'Import from a sheet' })}
       actions={
         <>
-          <Btn sm onClick={getTemplate}>
-            {t({ ne: 'टेम्प्लेट डाउनलोड', en: 'Download template' })}
+          <Btn sm onClick={() => getTemplate('xlsx')}>
+            {t({ ne: 'एक्सेल टेम्प्लेट', en: 'Excel template' })}
+          </Btn>
+          <Btn sm onClick={() => getTemplate('csv')}>
+            {t({ ne: 'CSV टेम्प्लेट', en: 'CSV template' })}
           </Btn>
           <Btn sm tone="amber" onClick={() => fileRef.current?.click()}>
             {busy === 'reading'
@@ -124,7 +127,7 @@ export const ImportProgramme: React.FC<{ onImported: () => void }> = ({
       <input
         ref={fileRef}
         type="file"
-        accept=".csv,text/csv"
+        accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         hidden
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -135,16 +138,16 @@ export const ImportProgramme: React.FC<{ onImported: () => void }> = ({
       <div className="px-4 py-3.5">
         <p className="text-[13px] text-ink-2 leading-relaxed">
           {t({
-            ne: 'टेम्प्लेट डाउनलोड गर्नुहोस्, एक्सेलमा भर्नुहोस् (एक पङ्क्ति = एक सत्र), CSV UTF-8 मा सेभ गरी यहाँ हाल्नुहोस्। बनाउनुअघि पूरा दिन देखाइन्छ।',
-            en: 'Download the template, fill it in with Excel — one row per session — save it as CSV UTF-8 and choose it here. The whole day is shown back before anything is created.',
+            ne: 'टेम्प्लेटमा तीन तालिका छन् — कार्यक्रम, बैठक, सत्र — र तिनीहरू id ले जोडिन्छन्। भरेर यहीँ फर्काउनुहोस् (.xlsx वा CSV UTF-8)। बनाउनुअघि पूरा दिन देखाइन्छ।',
+            en: 'The template is three tables — the programmes, the meetings inside them, the sessions inside those — joined by id. Fill it in and choose it here, as .xlsx or CSV UTF-8. The whole day is shown back before anything is created.',
           })}
         </p>
 
         {reading === null ? (
           <p className="text-[12.5px] text-[#6E7C8E] mt-2.5">
             {t({
-              ne: 'फारमका सबै नियम यहाँ पनि लागू हुन्छन् — वक्ताको विवरण, पहिलो सत्रको समय, र सत्रबीचको अन्तराल।',
-              en: 'Every rule the form applies applies here too: the speaker details, the first session pinned to the meeting, and the interval between sessions.',
+              ne: 'एक्सेल टेम्प्लेटमा सत्रको event_id र meeting_id माथिका तालिकाबाट छानिन्छ, टाइप गर्नुपर्दैन। फारमका सबै नियम यहाँ पनि लागू हुन्छन् — वक्ताको विवरण, पहिलो सत्रको समय, र सत्रबीचको अन्तराल।',
+              en: 'In the Excel one a session picks its event_id and meeting_id from the tables above rather than repeating them by hand. Every rule the form applies applies here too: the speaker details, the first session pinned to the meeting, and the interval between sessions.',
             })}
           </p>
         ) : reading.length === 0 ? (

@@ -12,7 +12,8 @@ from django.utils import timezone
 from rest_framework_simplejwt.tokens import AccessToken
 
 from src.apps.meetings.importing import (
-    COLUMNS, ImportProblem, read_sheet, template_csv,
+    COLUMNS, EVENT_COLUMNS, MEETING_COLUMNS, SESSION_COLUMNS,
+    ImportProblem, read_sheet, template_csv, template_workbook,
 )
 from src.apps.meetings.models import Event, Meeting, Session
 from src.apps.meetings.tests.factories import make_host
@@ -52,17 +53,42 @@ def a_session(**over):
 
 
 class TemplateTests(TestCase):
-    def test_it_carries_every_column_the_reader_expects(self):
+    def headers(self):
+        """The header line under each of the three table markers."""
+        lines = template_csv().decode('utf-8-sig').splitlines()
+        found = {}
+        for index, line in enumerate(lines):
+            name = line.strip().rstrip(',').upper()
+            if name in ('EVENTS', 'MEETINGS', 'SESSIONS'):
+                found[name] = lines[index + 1].split(',')
+        return found
+
+    def test_it_is_three_tables_one_under_the_other(self):
+        found = self.headers()
+
+        self.assertEqual(found['EVENTS'], EVENT_COLUMNS)
+        self.assertEqual(found['MEETINGS'], MEETING_COLUMNS)
+        self.assertEqual(found['SESSIONS'], SESSION_COLUMNS)
+
+    def test_the_tables_are_joined_by_id(self):
+        # What makes it three tables rather than three lists: a meeting
+        # names its event, and a session names its meeting.
+        self.assertIn('event_id', MEETING_COLUMNS)
+        self.assertIn('meeting_id', SESSION_COLUMNS)
+        self.assertIn('event_id', SESSION_COLUMNS)
+
+    def test_it_says_how_to_fill_it_in(self):
         text = template_csv().decode('utf-8-sig')
-        header = text.splitlines()[0].split(',')
 
-        self.assertEqual(header, COLUMNS)
-
-    def test_it_says_what_each_column_is_for(self):
-        text = template_csv().decode('utf-8-sig')
-
-        self.assertIn('# ', text.splitlines()[1])
+        self.assertIn('# ', text.splitlines()[2])
         self.assertIn('YYYY-MM-DD', text)
+
+    def test_it_leaves_room_to_type_in(self):
+        # Blank rows under each table, so nothing has to be inserted.
+        lines = template_csv().decode('utf-8-sig').splitlines()
+        empty = [line for line in lines if line and set(line) == {','}]
+
+        self.assertGreater(len(empty), 20)
 
     def test_it_opens_as_utf_eight_in_excel(self):
         self.assertTrue(template_csv().startswith(b'\xef\xbb\xbf'))
@@ -182,13 +208,11 @@ class ReadingTests(TestCase):
         with self.assertRaises(ImportProblem):
             read_sheet(sheet())
 
-    def test_a_workbook_is_recognised_and_explained(self):
-        # Somebody will send the .xlsx. Say what to do rather than failing
-        # on a decode error.
+    def test_a_workbook_that_is_not_a_sheet_is_explained(self):
         with self.assertRaises(ImportProblem) as problem:
             read_sheet(b'PK\x03\x04' + b'\x00' * 40)
 
-        self.assertIn('CSV UTF-8', str(problem.exception))
+        self.assertIn('could not be opened', str(problem.exception))
 
     def test_blank_rows_between_meetings_are_ignored(self):
         raw = sheet(a_session()).decode('utf-8')
@@ -218,6 +242,34 @@ class ImportEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('text/csv', response['Content-Type'])
         self.assertIn('attachment', response['Content-Disposition'])
+
+    def test_the_workbook_downloads_too(self):
+        response = self.as_host().get(f'{API}/events/import_template/?shape=xlsx')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('spreadsheetml', response['Content-Type'])
+        self.assertIn('.xlsx', response['Content-Disposition'])
+        self.assertTrue(response.content.startswith(b'PK'))
+
+    def test_a_filled_in_workbook_is_accepted(self):
+        # The loop closes at the endpoint too: what is handed out comes
+        # back, dropdowns and all, without a detour through Save As.
+        from src.apps.meetings.importing import template_workbook
+
+        response = self.as_host().post(
+            f'{API}/events/import_sheet/',
+            {'file': SimpleUploadedFile(
+                'plan.xlsx',
+                template_workbook(),
+                content_type=(
+                    'application/vnd.openxmlformats-officedocument'
+                    '.spreadsheetml.sheet'
+                ),
+            )},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Event.objects.count(), 1)
 
     def test_it_needs_signing_in(self):
         from django.test import Client
@@ -307,3 +359,270 @@ class ImportEndpointTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()['code'], 'no_file')
+
+
+def tables(events=(), meetings=(), sessions=()):
+    """A sheet in the shape the template now has: three tables, one under
+    the other, joined by the ids they carry."""
+    lines = ['Manch programme template', '# guidance goes here', '']
+    for name, columns, rows in (
+        ('EVENTS', EVENT_COLUMNS, events),
+        ('MEETINGS', MEETING_COLUMNS, meetings),
+        ('SESSIONS', SESSION_COLUMNS, sessions),
+    ):
+        lines += [name, ','.join(columns)]
+        for row in rows:
+            lines.append(','.join(row.get(column, '') for column in columns))
+        lines += ['', ',' * (len(columns) - 1), '']
+    return ('\n'.join(lines)).encode('utf-8')
+
+
+AN_EVENT = {
+    'event_id': '1', 'event_title': 'Nepal Can Move',
+    'event_date': '2026-09-14', 'venue': 'National Assembly Hall',
+}
+A_MEETING = {
+    'meeting_id': '1', 'event_id': '1', 'meeting_title': 'Opening day',
+    'meeting_starts_at': '2026-09-14 12:40', 'meeting_duration_minutes': '30',
+}
+
+
+def a_row(**over):
+    row = {
+        'session_id': '1001', 'event_id': '1', 'meeting_id': '1',
+        'session_title': 'Health service delivery in federalism',
+        'session_starts_at': '2026-09-14 12:40', 'session_duration_minutes': '5',
+        'hall': 'Hall A', 'speaker_name': 'Dr Sarita Poudel',
+        'speaker_email': 'sarita@example.org', 'speaker_phone': '9800000001',
+        'speaker_visibility': 'private',
+    }
+    row.update(over)
+    return row
+
+
+class ThreeTablesTests(TestCase):
+    """The sheet as three tables, joined by id.
+
+    One row is one thing - one programme, one meeting, one session - and
+    nothing is typed twice. What used to hold the programme together was
+    repeating its title on every session's row, which meant the tenth row
+    could quietly disagree with the first.
+    """
+
+    def test_it_reads_the_shape_the_template_is_in(self):
+        programmes = read_sheet(template_csv())
+
+        self.assertEqual(len(programmes), 1)
+        self.assertEqual(len(programmes[0]['meetings']), 1)
+        self.assertEqual(len(programmes[0]['meetings'][0]['sessions']), 2)
+
+    def test_a_session_lands_in_the_meeting_its_id_names(self):
+        raw = tables(
+            events=[AN_EVENT],
+            meetings=[
+                A_MEETING,
+                {'meeting_id': '2', 'event_id': '1', 'meeting_title': 'Afternoon',
+                 'meeting_starts_at': '2026-09-14 14:00'},
+            ],
+            sessions=[
+                a_row(meeting_id='2', session_title='Second',
+                      session_starts_at='2026-09-14 14:00'),
+                a_row(session_title='First'),
+            ],
+        )
+
+        [programme] = read_sheet(raw)
+        first, second = programme['meetings']
+        self.assertEqual([s['title'] for s in first['sessions']], ['First'])
+        self.assertEqual([s['title'] for s in second['sessions']], ['Second'])
+
+    def test_a_meeting_lands_in_the_programme_its_id_names(self):
+        raw = tables(
+            events=[
+                AN_EVENT,
+                {'event_id': '2', 'event_title': 'Nepal Cannot Move',
+                 'event_date': '2026-09-14'},
+            ],
+            meetings=[{**A_MEETING, 'event_id': '2'}],
+            sessions=[a_row(event_id='2')],
+        )
+
+        one, two = read_sheet(raw)
+        self.assertEqual(one['meetings'], [])
+        self.assertEqual(len(two['meetings']), 1)
+
+    def test_a_programme_with_nothing_under_it_yet_is_still_made(self):
+        # Set the programme up now, fill in its day later. The form allows
+        # that, so the sheet does too.
+        raw = tables(
+            events=[AN_EVENT, {'event_id': '2', 'event_title': 'Later',
+                               'event_date': '2026-09-14'}],
+            meetings=[A_MEETING],
+            sessions=[a_row()],
+        )
+
+        programmes = read_sheet(raw)
+        self.assertEqual([p['title'] for p in programmes],
+                         ['Nepal Can Move', 'Later'])
+
+    def test_the_order_of_the_rows_is_the_order_of_the_day(self):
+        raw = tables(
+            events=[AN_EVENT], meetings=[A_MEETING],
+            sessions=[
+                a_row(session_id='1', session_title='One'),
+                a_row(session_id='2', session_title='Two',
+                      session_starts_at='2026-09-14 13:00'),
+            ],
+        )
+
+        [programme] = read_sheet(raw)
+        sessions = programme['meetings'][0]['sessions']
+        self.assertEqual([s['title'] for s in sessions], ['One', 'Two'])
+        self.assertEqual([s['position'] for s in sessions], [1, 2])
+
+    def test_a_meeting_id_that_is_not_there_is_named(self):
+        raw = tables(events=[AN_EVENT], meetings=[A_MEETING],
+                     sessions=[a_row(meeting_id='9')])
+
+        with self.assertRaises(ImportProblem) as problem:
+            read_sheet(raw)
+
+        self.assertIn('no meeting with the id “9”', str(problem.exception))
+        self.assertEqual(problem.exception.column, 'meeting_id')
+
+    def test_an_event_id_that_is_not_there_is_named(self):
+        raw = tables(events=[AN_EVENT], meetings=[{**A_MEETING, 'event_id': '7'}],
+                     sessions=[a_row()])
+
+        with self.assertRaises(ImportProblem) as problem:
+            read_sheet(raw)
+
+        self.assertIn('no programme with the id “7”', str(problem.exception))
+
+    def test_two_ids_that_disagree_are_caught(self):
+        # The session says programme 2; its meeting is in programme 1. One
+        # of the two is a typo, and it would not show up anywhere else.
+        raw = tables(
+            events=[AN_EVENT, {'event_id': '2', 'event_title': 'Other',
+                               'event_date': '2026-09-14'}],
+            meetings=[A_MEETING],
+            sessions=[a_row(event_id='2')],
+        )
+
+        with self.assertRaises(ImportProblem) as problem:
+            read_sheet(raw)
+
+        self.assertIn('not in programme', str(problem.exception))
+        self.assertEqual(problem.exception.column, 'event_id')
+
+    def test_two_things_cannot_share_an_id(self):
+        raw = tables(
+            events=[AN_EVENT, {**AN_EVENT, 'event_title': 'Same id'}],
+            meetings=[A_MEETING], sessions=[a_row()],
+        )
+
+        with self.assertRaises(ImportProblem) as problem:
+            read_sheet(raw)
+
+        self.assertIn('share the id', str(problem.exception))
+
+    def test_a_single_meeting_needs_no_id_typed_at_all(self):
+        # One programme, one meeting: there is nothing to be ambiguous
+        # about, so the ids can be left blank.
+        raw = tables(
+            events=[{'event_title': 'Small day', 'event_date': '2026-09-14'}],
+            meetings=[{'meeting_title': 'The morning',
+                       'meeting_starts_at': '2026-09-14 09:00'}],
+            sessions=[a_row(event_id='', meeting_id='',
+                            session_starts_at='2026-09-14 09:00')],
+        )
+
+        [programme] = read_sheet(raw)
+        self.assertEqual(len(programme['meetings'][0]['sessions']), 1)
+
+    def test_a_meeting_with_no_sessions_is_refused(self):
+        raw = tables(events=[AN_EVENT], meetings=[A_MEETING], sessions=[])
+
+        with self.assertRaises(ImportProblem) as problem:
+            read_sheet(raw)
+
+        self.assertIn('no sessions under it', str(problem.exception))
+
+    def test_the_row_number_of_a_bad_cell_is_the_one_in_the_spreadsheet(self):
+        raw = tables(events=[AN_EVENT], meetings=[A_MEETING],
+                     sessions=[a_row(session_starts_at='the afternoon')])
+        lines = raw.decode('utf-8').splitlines()
+        expected = lines.index(
+            [line for line in lines if 'the afternoon' in line][0]
+        ) + 1
+
+        with self.assertRaises(ImportProblem) as problem:
+            read_sheet(raw)
+
+        self.assertEqual(problem.exception.row, expected)
+
+    def test_the_old_wide_sheet_is_still_read(self):
+        # Somebody halfway through filling in last week's template is not
+        # made to start again.
+        programmes = read_sheet(sheet(a_session()))
+
+        self.assertEqual(len(programmes), 1)
+        self.assertEqual(len(programmes[0]['meetings'][0]['sessions']), 1)
+
+
+class WorkbookTests(TestCase):
+    """The Excel template, which carries what a CSV cannot: the dropdowns."""
+
+    def test_it_is_a_workbook(self):
+        self.assertTrue(template_workbook().startswith(b'PK'))
+
+    def test_it_holds_the_same_three_tables(self):
+        from openpyxl import load_workbook
+
+        book = load_workbook(io.BytesIO(template_workbook()))
+        sheet_ = book.active
+        markers = [
+            row[0].value for row in sheet_.iter_rows(min_col=1, max_col=1)
+            if row[0].value in ('EVENTS', 'MEETINGS', 'SESSIONS')
+        ]
+
+        self.assertEqual(markers, ['EVENTS', 'MEETINGS', 'SESSIONS'])
+
+    def test_the_session_ids_are_chosen_rather_than_typed(self):
+        from openpyxl import load_workbook
+
+        book = load_workbook(io.BytesIO(template_workbook()))
+        lists = book.active.data_validations.dataValidation
+
+        self.assertEqual(len(lists), 2)
+        for validation in lists:
+            self.assertEqual(validation.type, 'list')
+            # Each points at the id column of a table above.
+            self.assertTrue(validation.formula1.startswith('=$A$'))
+            # And is enforced rather than decorative: without this the
+            # arrow appears but anything typed is accepted.
+            self.assertTrue(validation.showErrorMessage)
+            self.assertEqual(validation.errorStyle, 'stop')
+
+    def test_the_dropdowns_sit_on_the_two_id_columns_of_the_sessions_table(self):
+        from openpyxl import load_workbook
+
+        book = load_workbook(io.BytesIO(template_workbook()))
+        columns = sorted(
+            str(v.sqref).split('$')[0][0]
+            for v in book.active.data_validations.dataValidation
+        )
+
+        # event_id is the second column of the sessions table, meeting_id
+        # the third.
+        self.assertEqual(columns, ['B', 'C'])
+        self.assertEqual(SESSION_COLUMNS[1], 'event_id')
+        self.assertEqual(SESSION_COLUMNS[2], 'meeting_id')
+
+    def test_a_filled_in_workbook_can_be_read_straight_back(self):
+        # The loop has to close: the file we hand out has to be one we
+        # accept back, or the dropdowns are decoration.
+        programmes = read_sheet(template_workbook())
+
+        self.assertEqual(len(programmes), 1)
+        self.assertEqual(len(programmes[0]['meetings'][0]['sessions']), 2)

@@ -503,8 +503,16 @@ class ApiClient {
   }
 
   /** The blank template, fetched with this person's sign-in. */
-  async downloadProgrammeTemplate(): Promise<Blob> {
+  /**
+   * The blank programme template.
+   *
+   * The same three tables either way. The workbook adds the one thing a
+   * CSV cannot carry: the sessions table picks its event and meeting from
+   * the ids typed above rather than having them typed again.
+   */
+  async downloadProgrammeTemplate(shape: 'csv' | 'xlsx' = 'csv'): Promise<Blob> {
     const response = await this.client.get('/events/import_template/', {
+      params: shape === 'xlsx' ? { shape: 'xlsx' } : undefined,
       responseType: 'blob',
     });
     return response.data;
