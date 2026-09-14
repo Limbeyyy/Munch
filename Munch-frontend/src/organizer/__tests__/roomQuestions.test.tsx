@@ -211,3 +211,50 @@ describe('a guest reading the same board', () => {
     expect(screen.queryByRole('tab', { name: /Requests/ })).toBeNull();
   });
 });
+
+/**
+ * The queue is watched while a talk runs, so it has to be live.
+ *
+ * It is fetched on a timer, which suits a list that changes every few
+ * minutes and not one somebody is looking at during a meeting. The room's
+ * socket already hears each message arrive; this is the room passing that
+ * on, so a question asked at the front is sortable now rather than in
+ * twenty seconds.
+ */
+describe('what the socket heard arrive', () => {
+  it('is in the queue without waiting for the next read', async () => {
+    api.getPendingMessages.mockResolvedValue([] as any);
+    show({
+      canSort: true,
+      waiting: [held({ id: 'live1', body: 'Asked just now' })],
+    });
+
+    fireEvent.click(await screen.findByRole('tab', { name: /Requests \(1\)/ }));
+
+    expect(await screen.findByText('Asked just now')).toBeInTheDocument();
+  });
+
+  it('is not counted twice when the read catches up with it', async () => {
+    api.getPendingMessages.mockResolvedValue([held({ id: 'live1' })] as any);
+    show({ canSort: true, waiting: [held({ id: 'live1' })] });
+
+    expect(await screen.findByRole('tab', { name: /Requests \(1\)/ }))
+      .toBeInTheDocument();
+  });
+
+  it('does not come back once it has been dealt with', async () => {
+    // The poll still has it - it was in flight when the host pressed - and
+    // the socket copy is still in the room's own list. Neither should put
+    // a sorted message back in the queue.
+    api.moderateMessage.mockResolvedValue({} as any);
+    api.getPendingMessages.mockResolvedValue([held({ id: 'live1' })] as any);
+    show({ canSort: true, waiting: [held({ id: 'live1' })] });
+    fireEvent.click(await screen.findByRole('tab', { name: /Requests/ }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Question' }));
+
+    await waitFor(() =>
+      expect(screen.queryByText(/slow down the transcript/)).toBeNull()
+    );
+  });
+});

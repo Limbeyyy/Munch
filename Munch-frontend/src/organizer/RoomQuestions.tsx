@@ -20,6 +20,16 @@ interface Props {
    * co-hosts'; everybody else only reads the board and votes on it.
    */
   canSort?: boolean;
+  /**
+   * What the room's own socket has heard arrive since the last read.
+   *
+   * The queue is fetched on a timer, which is fine for a list that
+   * changes every few minutes and wrong for one somebody is watching
+   * while a talk runs: a question asked at the front should be sortable
+   * now, not in twenty seconds. The socket already tells the room; this
+   * is the room passing it on.
+   */
+  waiting?: ChatMessage[];
 }
 
 /**
@@ -39,11 +49,13 @@ interface Props {
  * decision, taken where it happens.
  */
 export const RoomQuestions: React.FC<Props> = ({
-  meetingId, guestToken, refreshMs, canSort,
+  meetingId, guestToken, refreshMs, canSort, waiting: alsoWaiting,
 }) => {
   const { t, num } = useOrganizer();
   const [board, setBoard] = useState<MeetingBoard | null>(null);
-  const [waiting, setWaiting] = useState<ChatMessage[]>([]);
+  const [fetched, setFetched] = useState<ChatMessage[]>([]);
+  /** What has been dealt with here, so a poll cannot bring it back. */
+  const [settled, setSettled] = useState<string[]>([]);
   const [tab, setTab] = useState<Tab>('faq');
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -56,9 +68,9 @@ export const RoomQuestions: React.FC<Props> = ({
       setBoard({ faq: [], suggestions: [] });
     }
 
-    if (!canSort || !meetingId) { setWaiting([]); return; }
+    if (!canSort || !meetingId) { setFetched([]); return; }
     try {
-      setWaiting(await apiClient.getPendingMessages(meetingId));
+      setFetched(await apiClient.getPendingMessages(meetingId));
     } catch {
       // The queue is the host's own view; a dropped refresh is not worth
       // interrupting a meeting for.
@@ -103,7 +115,7 @@ export const RoomQuestions: React.FC<Props> = ({
     try {
       setBusy(message.id);
       await apiClient.moderateMessage(meetingId, message.id, decision, topic);
-      setWaiting((queue) => queue.filter((m) => m.id !== message.id));
+      setSettled((done) => [...done, message.id]);
       toast.success(
         topic === 'faq'
           ? t({ ne: 'प्रश्नमा राखियो', en: 'Up as a question' })
@@ -116,6 +128,18 @@ export const RoomQuestions: React.FC<Props> = ({
       toast.error(errorText(e, t({ ne: 'गर्न सकिएन', en: 'That did not work' })));
     } finally { setBusy(null); }
   };
+
+  /*
+   * The queue: what the last read found, plus whatever has arrived over
+   * the socket since, minus anything already dealt with here.
+   */
+  const waiting: ChatMessage[] = [];
+  const seen = new Set<string>();
+  [...fetched, ...(alsoWaiting ?? [])].forEach((m) => {
+    if (settled.includes(m.id) || seen.has(m.id)) return;
+    seen.add(m.id);
+    waiting.push(m);
+  });
 
   const rows: BoardEntry[] =
     (tab === 'faq' ? board?.faq : tab === 'suggestions' ? board?.suggestions : []) ?? [];

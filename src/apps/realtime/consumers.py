@@ -439,9 +439,23 @@ class MeetingConsumer(AsyncWebsocketConsumer):
     def save_chat_message(self, body, recipient_id=None):
         """Persist a message and decide whether the host must review it.
 
-        Sender and recipient may each be an account holder or a guest. A
-        direct message from an attendee or guest to anyone other than the host
-        is held pending so the host can approve, decline or remove it.
+        Sender and recipient may each be an account holder or a guest.
+        Anything an attendee or a guest writes to somebody running the room
+        - the host, a co-host, a speaker - is held for the host, who then
+        decides what becomes of it: a question for the board, a suggestion,
+        or nothing.
+
+        A message addressed to the host used to skip that, on the reasoning
+        that the host reviewing their own post is a circle. But the review
+        is not about whether the host may read it - they see it either way,
+        the moment it arrives - it is about whether the room should. Going
+        straight through meant a question put to the host could never be
+        put up as a question, which is the one thing most likely to be
+        asked of them.
+
+        Organizers writing to each other are not held. That is the working
+        channel between the front of the room and the desk, and nobody is
+        moderating it.
         """
         from src.apps.meetings.models import GuestAttendee
 
@@ -495,11 +509,7 @@ class MeetingConsumer(AsyncWebsocketConsumer):
                 ).values_list('role', flat=True).first()
                 sender_is_attendee = sender_role == MeetingParticipant.Role.ATTENDEE
 
-            recipient_is_host = (
-                recipient_user is not None
-                and str(recipient_user.id) == str(meeting.host_id)
-            )
-            if sender_is_attendee and not recipient_is_host:
+            if sender_is_attendee:
                 moderation = ChatMessage.Moderation.PENDING
 
         message = ChatMessage.objects.create(
