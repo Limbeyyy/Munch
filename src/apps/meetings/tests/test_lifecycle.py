@@ -22,7 +22,14 @@ def signed_in(user):
 
 
 class DeadlineTests(TestCase):
-    """A slot that has been and gone cannot simply be opened late."""
+    """A slot that has been and gone is a plan the host has fallen behind.
+
+    It used to be a refusal: the schedule was what everybody else was
+    reading, so it had to be corrected before the session could run. The
+    timetable is elastic now - it follows the host rather than the other
+    way round - so starting late moves the session to now and takes the
+    rest of the day with it.
+    """
 
     def setUp(self):
         self.host = make_host()
@@ -35,20 +42,36 @@ class DeadlineTests(TestCase):
     def test_deadline_passed_reads_the_schedule(self):
         self.assertTrue(deadline_passed(self.overdue))
 
-    def test_starting_after_the_deadline_is_refused(self):
+    def test_starting_after_the_slot_begins_it_now(self):
         response = self.client.post(f'{API}/sessions/{self.overdue.id}/start/')
 
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.json()['code'], 'deadline_passed')
-        self.assertEqual(
-            Session.objects.get(id=self.overdue.id).status, Session.Status.SCHEDULED
+        self.assertEqual(response.status_code, 200)
+        started = Session.objects.get(id=self.overdue.id)
+        self.assertEqual(started.status, Session.Status.LIVE)
+        # Its hour begins now, not three hours ago.
+        self.assertLess(
+            abs((started.starts_at - timezone.now()).total_seconds()), 90
         )
+        # And it still gets the hour it was given.
+        self.assertEqual(started.duration_minutes, 60)
 
-    def test_the_refusal_leaves_the_meeting_alone(self):
+    def test_starting_it_opens_the_meeting(self):
         self.client.post(f'{API}/sessions/{self.overdue.id}/start/')
         self.assertEqual(
-            Meeting.objects.get(id=self.meeting.id).status, Meeting.Status.SCHEDULED
+            Meeting.objects.get(id=self.meeting.id).status, Meeting.Status.ACTIVE
         )
+
+    def test_the_rest_of_the_day_follows_it_down(self):
+        later = make_session(
+            self.meeting, self.past + timezone.timedelta(minutes=75), 30, 'After'
+        )
+
+        self.client.post(f'{API}/sessions/{self.overdue.id}/start/')
+
+        moved = Session.objects.get(id=later.id)
+        # It kept its quarter of an hour behind the first one's hour.
+        gap = moved.starts_at - Session.objects.get(id=self.overdue.id).starts_at
+        self.assertEqual(gap, timezone.timedelta(minutes=75))
 
     def test_rescheduling_makes_it_startable_again(self):
         soon = timezone.now() + timezone.timedelta(minutes=30)
@@ -97,8 +120,23 @@ class EndingTests(TestCase):
         self.assertEqual(closed.status, Session.Status.DONE)
         self.assertIsNotNone(closed.ended_at)
 
-    def test_a_session_left_running_past_its_slot_is_closed(self):
+    def test_a_session_running_long_is_left_alone(self):
+        # Two hours past its half hour, and still the room's session: it
+        # ends when the host ends it. Closing it here would take the stage
+        # out from under somebody still standing on it.
         started = self.now - timezone.timedelta(hours=2)
+        meeting = make_meeting(self.host, self.event, start=started)
+        session = make_session(meeting, started, 30, status=Session.Status.LIVE)
+        session.started_at = started
+        session.save(update_fields=['started_at'])
+
+        self.assertEqual(sweep_expired(), 0)
+        self.assertEqual(Session.objects.get(id=session.id).status, Session.Status.LIVE)
+
+    def test_a_session_left_on_stage_and_abandoned_is_closed(self):
+        # The hall that emptied out on Friday, still showing a live session
+        # on Monday. Half a day past its slot is nobody running long.
+        started = self.now - timezone.timedelta(hours=20)
         meeting = make_meeting(self.host, self.event, start=started)
         session = make_session(meeting, started, 30, status=Session.Status.LIVE)
         session.started_at = started
@@ -132,15 +170,15 @@ class EndingTests(TestCase):
         self.assertEqual(Session.objects.get(id=session.id).status, Session.Status.LIVE)
 
     def test_the_sweep_can_be_run_twice_without_harm(self):
-        started = self.now - timezone.timedelta(hours=2)
+        started = self.now - timezone.timedelta(hours=20)
         meeting = make_meeting(self.host, self.event, start=started)
         make_session(meeting, started, 30, status=Session.Status.LIVE)
 
         self.assertEqual(sweep_expired(), 1)
         self.assertEqual(sweep_expired(), 0)
 
-    def test_reading_the_running_order_closes_what_overran(self):
-        started = self.now - timezone.timedelta(hours=2)
+    def test_reading_the_running_order_closes_what_was_abandoned(self):
+        started = self.now - timezone.timedelta(hours=20)
         meeting = make_meeting(self.host, self.event, start=started)
         session = make_session(meeting, started, 30, status=Session.Status.LIVE)
 

@@ -288,3 +288,108 @@ describe('the room as the design lays it out', () => {
     expect(screen.queryByText('zenwork.com')).not.toBeInTheDocument();
   });
 });
+
+/**
+ * The room is the meeting's, and it outlives every talk inside it.
+ *
+ * A meeting of ten sessions is one room that all ten happen in: a session
+ * ending closes off that session - its transcript, its chat, its resources
+ * - and the room goes on, offering the host the next speaker. It used to
+ * show everybody the door the moment a talk's clock ran out.
+ */
+describe('the room between two sessions', () => {
+  const waiting = {
+    ...meeting,
+    current_session: {
+      id: null, title: '', starts_at: undefined,
+      started_at: null, ends_at: null,
+      duration_minutes: null, status: null, is_over: false,
+      between_sessions: true, awaiting_next: true,
+      next_id: 's2', next_title: 'Mehendi',
+      next_starts_at: new Date(Date.now() + 300000).toISOString(),
+    },
+  };
+
+  it('stays open and says what is coming', async () => {
+    api.getMeeting.mockResolvedValue(waiting as any);
+
+    showRoom();
+
+    expect(await screen.findByText('Between sessions')).toBeInTheDocument();
+    expect(screen.getByText('Up next: Mehendi')).toBeInTheDocument();
+  });
+
+  it('does not show anybody out because a talk finished', async () => {
+    // The shape the room used to be given when a session closed: over,
+    // with its hour behind it. That navigated everybody home.
+    api.getMeeting.mockResolvedValue({
+      ...meeting,
+      current_session: {
+        ...meeting.current_session,
+        ends_at: new Date(Date.now() - 60000).toISOString(),
+        status: 'done',
+        is_over: true,
+      },
+    } as any);
+
+    showRoom();
+
+    // Still the room, not the page it navigated to on the way out.
+    expect(
+      await screen.findByRole('navigation', { name: 'Meeting controls' })
+    ).toBeInTheDocument();
+  });
+
+  it('offers the host the next speaker, and starts them', async () => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
+    api.getMeeting.mockResolvedValue(waiting as any);
+    api.startSession.mockResolvedValue({ id: 's2' } as any);
+
+    showRoom();
+
+    const start = await screen.findByRole('button', { name: 'Start Mehendi' });
+    fireEvent.click(start);
+
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledWith('s2'));
+    useAuthStore.setState({ user: null });
+  });
+
+  it('says nothing about starting one when the running order is spent', async () => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
+    api.getMeeting.mockResolvedValue({
+      ...meeting,
+      current_session: {
+        ...waiting.current_session,
+        awaiting_next: false, next_id: null, next_title: '',
+      },
+    } as any);
+
+    showRoom();
+
+    const band = (
+      await screen.findByText(/Nothing left in the running order/)
+    ).closest('div')!.parentElement!;
+    // The band says the room stays open, and offers nothing to start:
+    // there is nothing left in the running order to put on stage.
+    expect(within(band).queryByRole('button')).toBeNull();
+    useAuthStore.setState({ user: null });
+  });
+
+  it('shows only the lines said during the talk on stage', async () => {
+    // A transcript belongs to its session: the next speaker should not
+    // start underneath the last one's words.
+    api.getMeetingSegments.mockResolvedValue([
+      { text: 'From the first talk', session_id: 's0', created_at: new Date().toISOString(),
+        start_time: 0, end_time: 1, speaker_name: 'Asha', is_final: true },
+      { text: 'From the one on stage', session_id: 's1', created_at: new Date().toISOString(),
+        start_time: 0, end_time: 1, speaker_name: 'Bina', is_final: true },
+    ] as any);
+
+    showRoom();
+
+    expect(await screen.findByText(/From the one on stage/)).toBeInTheDocument();
+    expect(screen.queryByText(/From the first talk/)).toBeNull();
+  });
+});

@@ -95,19 +95,44 @@ describe('the live dashboard', () => {
   });
 
   it('will not send somebody in before the door opens', async () => {
-    // The same quarter of an hour every other screen keeps.
+    // The same quarter of an hour every other screen keeps - counted from
+    // the meeting, because the room is the meeting's.
+    const later = {
+      ...meeting,
+      status: 'scheduled',
+      scheduled_start: new Date(Date.now() + 3 * 3600000).toISOString(),
+      scheduled_end: new Date(Date.now() + 5 * 3600000).toISOString(),
+    };
     show({
       live: null,
-      items: [item({
-        id: 's9', status: 'scheduled',
-        starts_at: new Date(Date.now() + 3 * 3600000).toISOString(),
-        ends_at: new Date(Date.now() + 4 * 3600000).toISOString(),
-      })],
+      items: [{
+        meeting: later,
+        session: session({
+          id: 's9', status: 'scheduled',
+          starts_at: new Date(Date.now() + 3 * 3600000).toISOString(),
+        }),
+      }],
     });
 
     expect(
       await screen.findByRole('button', { name: /Back to Live Room/ })
     ).toBeDisabled();
+  });
+
+  it('still lets somebody in between two talks', async () => {
+    // Nothing on stage and the next talk three hours off, but the meeting
+    // is running: the room holds the whole running order, gaps and all.
+    show({
+      live: null,
+      items: [item({
+        id: 's9', status: 'scheduled',
+        starts_at: new Date(Date.now() + 3 * 3600000).toISOString(),
+      })],
+    });
+
+    expect(
+      await screen.findByRole('button', { name: /Back to Live Room/ })
+    ).toBeEnabled();
   });
 
   it('reads the transcript as it arrives', async () => {

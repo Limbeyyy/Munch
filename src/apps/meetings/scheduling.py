@@ -371,3 +371,185 @@ def _restretch_meetings(sessions):
 
         if changed:
             meeting.save(update_fields=changed + ['updated_at'])
+
+
+# ---------------------------------------------------------------------------
+# The timetable as it actually runs
+#
+# Everything above this line is about the timetable as it is *planned*: an
+# organizer typing times into a form, and the rules that stop the day
+# folding in on itself.
+#
+# What follows is about the day as it *happens*, which is a different
+# thing. A session ends when the host says it ends, not when the clock it
+# was given runs out, and once that is true the times underneath it can no
+# longer be fixed. A talk that runs half an hour long pushes the rest of
+# the morning half an hour later; one that finishes early pulls it earlier.
+# The running order and the length of each remaining slot are preserved -
+# only the whole block slides - because nobody agreed to have their talk
+# shortened by somebody else's overrun.
+# ---------------------------------------------------------------------------
+
+#: Movements smaller than this are rounding, not a change of plan. Ending a
+#: session eleven seconds late should not rewrite the afternoon.
+SLIP_TOLERANCE = timezone.timedelta(seconds=30)
+
+
+def _later_sessions(session):
+    """The sessions still to come after this one, in order.
+
+    Only ones nobody has run: a session already done or on stage has a
+    place in the record and is not moved out from under it.
+    """
+    from src.apps.meetings.models import Session as _Session
+
+    return list(
+        session.meeting.sessions.filter(
+            status=_Session.Status.SCHEDULED, starts_at__gt=session.starts_at
+        )
+        .exclude(id=session.id)
+        .order_by('starts_at')
+    )
+
+
+def _slide(sessions, delta):
+    """Move a block of sessions by the same amount, keeping their spacing."""
+    moved = []
+    for session in sessions:
+        session.starts_at = session.starts_at + delta
+        session.save(update_fields=['starts_at', 'updated_at'])
+        moved.append(session)
+    return moved
+
+
+def stretch_meeting(meeting):
+    """Grow a meeting's window to hold its running order.
+
+    Only ever outwards. A meeting is a room, and the room stays open for
+    the time it was advertised for even if the last talk finished early -
+    the host may yet start another. Shrinking the window on an early finish
+    would shut the door on the very thing the host is about to do.
+    """
+    last = None
+    for session in meeting.sessions.all():
+        end = session.starts_at + timezone.timedelta(minutes=session.duration_minutes)
+        if last is None or end > last:
+            last = end
+
+    if last is None or not meeting.scheduled_end or last <= meeting.scheduled_end:
+        return False
+
+    meeting.scheduled_end = last
+    meeting.save(update_fields=['scheduled_end', 'updated_at'])
+    return True
+
+
+def _push_later_meetings(meeting):
+    """Move the day's remaining meetings clear of one that has run long.
+
+    Each meeting is its own room, and they run one after another. A morning
+    that overran cannot be allowed to sit on top of the afternoon, so the
+    meetings behind it are pushed only as far as they have to be: one with
+    an hour of slack in front of it does not move at all.
+
+    Meetings that have started, or finished, keep their times - they are
+    part of the record now.
+    """
+    if not meeting.event_id:
+        return []
+
+    gap = gap_for(meeting)
+    later = list(
+        Meeting.objects.filter(
+            event_id=meeting.event_id,
+            status=Meeting.Status.SCHEDULED,
+            scheduled_start__gte=meeting.scheduled_start,
+        )
+        .exclude(id=meeting.id)
+        .order_by('scheduled_start')
+    )
+
+    moved = []
+    previous_end = meeting.scheduled_end
+    for other in later:
+        push = (previous_end + gap) - other.scheduled_start
+        if push > timezone.timedelta(0):
+            _slide(list(other.sessions.order_by('starts_at')), push)
+            other.scheduled_start = other.scheduled_start + push
+            other.scheduled_end = other.scheduled_end + push
+            other.save(
+                update_fields=['scheduled_start', 'scheduled_end', 'updated_at']
+            )
+            moved.append(other)
+        previous_end = other.scheduled_end
+
+    return moved
+
+
+@transaction.atomic
+def absorb_overrun(session, actual_end):
+    """Write down how long a session really took, and move the rest of the day.
+
+    The length a session was given is a plan; the length it took is a fact,
+    and once the host has ended it the fact is what the timetable should
+    say. The difference between the two - late or early - is applied to
+    everything still to come, so the running order stays contiguous and the
+    next speaker's slot is as long as it always was.
+
+    Returns the sessions whose times changed.
+    """
+    planned_end = session.starts_at + timezone.timedelta(
+        minutes=session.duration_minutes
+    )
+    if abs(actual_end - planned_end) < SLIP_TOLERANCE:
+        return []
+
+    ran_for = max(
+        MIN_DURATION_MINUTES,
+        round((actual_end - session.starts_at).total_seconds() / 60),
+    )
+    delta = timezone.timedelta(minutes=ran_for - session.duration_minutes)
+    if not delta:
+        return []
+
+    following = _later_sessions(session)
+
+    session.duration_minutes = ran_for
+    session.save(update_fields=['duration_minutes', 'updated_at'])
+
+    moved = _slide(following, delta)
+    stretch_meeting(session.meeting)
+    _push_later_meetings(session.meeting)
+    logger.info(
+        f"Session {session.id} ran {delta} against its slot; "
+        f"moved {len(moved)} session(s) with it"
+    )
+    return moved
+
+
+@transaction.atomic
+def begin_now(session, now):
+    """Slide a session that is being started late so it begins now.
+
+    The counterpart of :func:`absorb_overrun` at the other end. A host who
+    comes back to the desk twenty minutes after the last talk finished is
+    starting this one now, whatever the timetable still says, and the rest
+    of the day follows it down.
+
+    Starting *early* moves nothing: the room is the host's to open when
+    they like, and pulling everybody else's slot forward because one
+    speaker was ready would be a surprise, not a convenience.
+    """
+    delta = now - session.starts_at
+    if delta < SLIP_TOLERANCE:
+        return []
+
+    following = _later_sessions(session)
+
+    session.starts_at = now
+    session.save(update_fields=['starts_at', 'updated_at'])
+
+    moved = _slide(following, delta)
+    stretch_meeting(session.meeting)
+    _push_later_meetings(session.meeting)
+    return moved

@@ -680,34 +680,50 @@ const MeetingRoomInner: React.FC = () => {
   };
 
   /**
-   * The room shuts when the session it is holding is over.
+   * A session ending does not end the room.
    *
-   * A room is one session. Once that session's time is up there is nothing
-   * left to be in, so everybody is shown out rather than left sitting in a
-   * room whose clock has stopped meaning anything. The server closes the
-   * session itself; this is the room noticing.
+   * The room belongs to the meeting, not to one talk in it: a meeting of
+   * ten sessions is one room that all ten happen in. When a session comes
+   * off stage its transcript, its chat and its resources are closed off
+   * and belong to it, and the room goes on - waiting for the host to start
+   * the next speaker. Only the meeting ending shows anybody the door, and
+   * that arrives over the socket as ``meeting_ended``.
+   *
+   * This is all that is left of the old behaviour: saying so, once, rather
+   * than navigating away.
    */
+  const lastOnStage = useRef<string | null>(null);
   useEffect(() => {
-    if (!session?.ends_at) return;
+    const now = session?.id ?? null;
+    const before = lastOnStage.current;
+    lastOnStage.current = now;
+    if (before && !now) {
+      toast('That session has finished. The room stays open.', {
+        icon: '\u2705',
+        duration: 4000,
+      });
+    }
+  }, [session?.id]);
 
-    const shut = () => {
-      toast(
-        session.title
-          ? `“${session.title}” has finished.`
-          : 'This session has finished.',
-        { icon: '\u2705', duration: 5000 }
-      );
-      navigate('/');
-    };
-
-    if (session.is_over) { shut(); return; }
-
-    const remaining = +new Date(session.ends_at) - Date.now();
-    if (remaining <= 0) { shut(); return; }
-
-    const id = setTimeout(shut, remaining);
-    return () => clearTimeout(id);
-  }, [session?.ends_at, session?.is_over, session?.title, navigate]);
+  /** Put the next speaker on stage. The host advances the running order. */
+  const [starting, setStarting] = useState(false);
+  const startNext = async () => {
+    const nextId = currentMeeting?.current_session?.next_id;
+    if (!nextId) return;
+    setStarting(true);
+    try {
+      await apiClient.startSession(nextId);
+      await refreshRef.current.meeting();
+      const fresh = meetingIdRef.current
+        ? await apiClient.listSessions(meetingIdRef.current)
+        : [];
+      setAgenda(fresh);
+    } catch (error: any) {
+      toast.error(error.response?.data?.error ?? 'Could not start that session');
+    } finally {
+      setStarting(false);
+    }
+  };
 
   // Session timer, anchored to the server's started_at so every participant
   // sees the same count, and leaving and returning resumes rather than resets.
@@ -793,6 +809,25 @@ const MeetingRoomInner: React.FC = () => {
 
   const speaker =
     agenda.find((s) => s.id === session?.id)?.speaker_name || '';
+
+  /** Nothing on stage: the room is between talks, not finished. */
+  const room = currentMeeting.current_session;
+  const waiting = !session?.id;
+  const nextTitle = room?.next_title || '';
+
+  /*
+   * A transcript belongs to the talk it was said during.
+   *
+   * While a session is on stage the room shows that session's lines, so
+   * the next speaker starts on a clean page rather than underneath the
+   * last one. Between talks there is nothing being said, and what the
+   * room has is the record of the meeting so far.
+   */
+  const roomLines = session?.id
+    ? transcript.filter(
+        (seg: any) => !seg.session_id || seg.session_id === session.id
+      )
+    : transcript;
 
   return (
     <div className="min-h-screen bg-[#f1f4f8] text-[#030712] pb-[110px]">
@@ -1133,6 +1168,34 @@ const MeetingRoomInner: React.FC = () => {
                   {startedAt ? formatElapsed(elapsed) : 'Not started'}
                 </span>
               </div>
+
+              {/* The room outlives every talk in it. Between two of them it
+                  says so, and offers the host the next one. */}
+              {waiting && (
+                <div className="rounded-[10px] border border-dashed border-[#cfd8e6]
+                  bg-[#f8fafc] px-4 py-3 flex items-center gap-3 flex-wrap">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[16px] font-medium text-[#030712]">
+                      Between sessions
+                    </p>
+                    <p className="text-[14px] text-[#4a5567]">
+                      {nextTitle
+                        ? `Up next: ${nextTitle}`
+                        : 'Nothing left in the running order. The room stays open.'}
+                    </p>
+                  </div>
+                  {isHost && room?.next_id && (
+                    <button
+                      onClick={startNext}
+                      disabled={starting}
+                      className="bg-navy-800 hover:bg-navy-700 disabled:opacity-60
+                        text-white rounded-[8px] px-4 py-2 text-[13px] font-medium"
+                    >
+                      {starting ? 'Starting…' : `Start ${nextTitle}`}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* What is being said */}
@@ -1143,12 +1206,12 @@ const MeetingRoomInner: React.FC = () => {
                 </h2>
               </div>
               <div className="flex flex-col gap-3 px-3 py-2.5 max-h-[420px] overflow-y-auto">
-                {transcript.length === 0 ? (
+                {roomLines.length === 0 ? (
                   <p className="text-[14px] text-[#656565]">
                     Lines appear here once the hall device starts sending them.
                   </p>
                 ) : (
-                  transcript.map((seg, idx) => (
+                  roomLines.map((seg, idx) => (
                     <div key={idx} className="flex gap-3 items-start">
                       <span className="border border-[#e3e8ef] rounded-[4px] h-6 px-1 grid
                         place-items-center flex-none text-[12px] text-[#656565]

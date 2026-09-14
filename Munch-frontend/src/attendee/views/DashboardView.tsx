@@ -105,7 +105,19 @@ export const DashboardView: React.FC<Props> = ({
   );
   const current =
     live ?? items.find((i) => i.session.id === onDesk?.id) ?? items[0] ?? null;
-  const door = doorway(current?.session.starts_at, Date.now());
+  /*
+   * When the room may be entered.
+   *
+   * The room belongs to the meeting, not to one talk in it: a meeting of
+   * ten sessions is one room that all ten happen in, and it stays open
+   * across the gaps between them. Keyed to the session, this button went
+   * dead every time a talk finished - locking people out of a room they
+   * were sitting in.
+   */
+  const door = doorway(current?.meeting.scheduled_start, Date.now());
+  const canEnter =
+    (current?.meeting as any)?.entry?.is_open ??
+    (current?.meeting.status === 'active' || door.canEnter);
 
   const [tab, setTab] = useState<PanelTab>('questions');
   const [segments, setSegments] = useState<TranscriptionSegment[]>([]);
@@ -182,12 +194,12 @@ export const DashboardView: React.FC<Props> = ({
         </div>
         <button
           onClick={() => current && onJoinRoom(current.meeting)}
-          disabled={!current || !door.canEnter}
+          disabled={!current || !canEnter}
           title={
-            current && !door.canEnter
+            current && !canEnter
               ? t({
-                  ne: 'सत्र सुरु हुनु १५ मिनेट अघि कोठा खुल्छ',
-                  en: 'The room opens a quarter of an hour before the session',
+                  ne: 'बैठक सुरु हुनु १५ मिनेट अघि कोठा खुल्छ',
+                  en: 'The room opens a quarter of an hour before the meeting',
                 })
               : undefined
           }

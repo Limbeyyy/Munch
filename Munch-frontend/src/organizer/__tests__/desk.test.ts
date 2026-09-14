@@ -32,31 +32,46 @@ describe('which session a live desk holds', () => {
     expect(deskSession(day(), NOW('11:30')).state).toBe('due');
   });
 
-  it('moves on to the next once the slot has gone', () => {
-    // A was never started; the desk is about what to do now, and the
-    // agenda still says A never ran.
+  it('keeps holding one whose slot has slipped by', () => {
+    // A was never started and its hour has gone. The timetable follows the
+    // room now: the thing to do about that is to start A, so A is what the
+    // desk holds - moving on would leave the host nothing to press.
     const desk = deskSession(day(), NOW('12:30'));
+
+    expect(desk.session?.title).toBe('A');
+    expect(desk.state).toBe('due');
+  });
+
+  it('moves on once that one has actually been run', () => {
+    const sessions = [
+      session('A', '11:00', 60, 'done'),
+      session('B', '13:00', 60),
+      session('C', '21:00', 60),
+    ];
+
+    const desk = deskSession(sessions, NOW('12:30'));
 
     expect(desk.session?.title).toBe('B');
     expect(desk.state).toBe('upcoming');
   });
 
-  it('moves on again, however far off the next one is', () => {
-    const desk = deskSession(day(), NOW('14:30'));
+  it('reads as due at exactly the hour the one it holds starts', () => {
+    const sessions = [
+      session('A', '11:00', 60, 'done'),
+      session('B', '13:00', 60, 'done'),
+      session('C', '21:00', 60),
+    ];
 
-    expect(desk.session?.title).toBe('C');
-    expect(desk.state).toBe('upcoming');
-  });
-
-  it('reads as due at exactly the hour that one starts', () => {
-    const desk = deskSession(day(), NOW('21:00'));
+    const desk = deskSession(sessions, NOW('21:00'));
 
     expect(desk.session?.title).toBe('C');
     expect(desk.state).toBe('due');
   });
 
   it('holds nothing once the running order is spent', () => {
-    expect(deskSession(day(), NOW('23:30'))).toEqual({ session: null, state: null });
+    const spent = day().map((s) => ({ ...s, status: 'done' }));
+
+    expect(deskSession(spent, NOW('23:30'))).toEqual({ session: null, state: null });
   });
 
   it('lets whatever is on stage win, whatever the clock says', () => {

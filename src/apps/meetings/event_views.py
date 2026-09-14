@@ -22,12 +22,11 @@ from src.apps.meetings.event_serializers import (
 )
 from src.apps.meetings.lifecycle import (
     broadcast as _broadcast,
-    deadline_passed,
-    scheduled_end,
     sweep_expired,
     close_session as _close_session,
     session_is_over as _session_is_over,
 )
+from src.apps.meetings.scheduling import absorb_overrun, begin_now
 from src.apps.meetings.models import (
     RoleGrant,
     SessionSummary,
@@ -557,33 +556,22 @@ class SessionViewSet(viewsets.ModelViewSet):
         if session.status == Session.Status.LIVE:
             return Response(SessionSerializer(session).data)
 
-        # A slot that has already been and gone cannot simply be opened
-        # late: the schedule is what everyone else is reading, so it has to
-        # be corrected before the session can run. Starting early is a
-        # different matter and only warrants the warning the organizer
-        # panel already gives.
-        if deadline_passed(session):
-            from src.apps.meetings.scheduling import earliest_start
-
-            over_at = scheduled_end(session)
-            soonest = earliest_start(session.meeting, exclude_id=session.id)
-            return Response(
-                {
-                    'error': (
-                        f'"{session.title}" was scheduled to finish at '
-                        f'{timezone.localtime(over_at):%d %b %H:%M}. '
-                        'Give it a new time before starting it.'
-                    ),
-                    'code': 'deadline_passed',
-                    'scheduled_end': over_at.isoformat(),
-                    'earliest_start': soonest.isoformat() if soonest else None,
-                },
-                status=status.HTTP_409_CONFLICT,
-            )
-
         now = timezone.now()
+
+        # Only one session at a time, so anything else on stage comes off
+        # it first - and takes the time it really ran with it, the same as
+        # if the host had pressed end.
         for other in session.meeting.sessions.filter(status=Session.Status.LIVE):
             _close_session(other, now)
+            absorb_overrun(other, now)
+
+        # A session started late begins now, and the rest of the running
+        # order follows it down. The timetable is a plan; the host with
+        # their hand on the button is what is actually happening, and the
+        # plan is corrected to match rather than refusing them.
+        moved = begin_now(session, now)
+        if moved:
+            session.refresh_from_db()
 
         # A new run, not a rejoin: anything already on stage returned
         # further up, so reaching here means the clock starts now. Keeping
@@ -615,29 +603,38 @@ class SessionViewSet(viewsets.ModelViewSet):
         if denied:
             return denied
 
-        recorded = _close_session(session, timezone.now())
+        now = timezone.now()
+        recorded = _close_session(session, now)
+
+        # However long it really took is what the timetable now says it
+        # took, and everything still to come moves with it - later if it
+        # ran over, earlier if it finished early.
+        moved = absorb_overrun(session, now)
+        session.refresh_from_db()
+
         _broadcast(session.meeting.meeting_code, session, 'session_ended')
 
-        from src.apps.meetings.lifecycle import close_meeting_if_spent
         from src.apps.meetings.views import broadcast_attendance_changed
 
         broadcast_attendance_changed(session.meeting)
 
-        # The host ending the last session has ended the meeting. Not at
-        # half past when its window happens to close - now, with the room
-        # emptied and everybody told, so no screen is left saying a meeting
-        # is running that the host has finished with.
-        meeting_ended = close_meeting_if_spent(
-            session.meeting, wait_for_window=False
-        )
-        if meeting_ended:
-            session.meeting.refresh_from_db()
+        # The meeting is the room, and the room is not one talk. Ending a
+        # session ends the session: its transcript, its chat and its
+        # resources are closed off and belong to it, and the room stays
+        # open for the host to start the next one. Only the host ending the
+        # meeting - or its window running out - shuts the door.
+        session.meeting.refresh_from_db()
 
         return Response({
             **SessionSerializer(session).data,
             'attendance_recorded': recorded,
             'meeting_status': session.meeting.status,
-            'meeting_ended': meeting_ended,
+            'meeting_ended': False,
+            'sessions_moved': [str(s.id) for s in moved],
+            'meeting_scheduled_end': (
+                session.meeting.scheduled_end.isoformat()
+                if session.meeting.scheduled_end else None
+            ),
         })
 
     @action(detail=True, methods=['get'])

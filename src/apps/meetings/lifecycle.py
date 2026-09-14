@@ -195,13 +195,25 @@ def close_meeting_if_spent(meeting, now=None, wait_for_window=True):
     return True
 
 
-def sweep_expired(sessions=None, now=None):
-    """End anything that is still on stage past the time it was given.
+#: How long past its slot a session on stage is taken to be abandoned
+#: rather than merely running long. A talk can overrun by an hour; a
+#: half-day means nobody is in the room and the host never came back.
+ABANDONED_AFTER = timezone.timedelta(hours=12)
 
-    Only a session that actually started is closed here. One that was never
-    put on stage is left exactly as it is, because "never started" and
-    "ended" are different things and turning the first into the second
-    would quietly invent a meeting that never happened.
+
+def sweep_expired(sessions=None, now=None):
+    """Close a session that was left on stage and forgotten.
+
+    Not one that is simply running long. A session ends when the host ends
+    it - that is the whole of the rule now, and the slot it was given is a
+    plan the timetable corrects itself against afterwards. Closing a talk
+    because its hour struck would take the stage out from under a speaker
+    who is still speaking, and empty a room that is still full.
+
+    So this is only a backstop, for the hall that emptied out on Friday and
+    is still showing a live session on Monday. A session nobody ever
+    started is untouched either way: "never started" and "ended" are
+    different things.
 
     Safe to call often: it is a narrow indexed query that usually matches
     nothing, and it takes each row under a lock before closing it so two
@@ -228,11 +240,14 @@ def sweep_expired(sessions=None, now=None):
                 .first()
             )
             # Another caller may have closed it between the two queries.
-            if session is None or now <= scheduled_end(session):
+            if session is None or now <= scheduled_end(session) + ABANDONED_AFTER:
                 continue
+            # Recorded as ending when it was meant to, not half a day
+            # later: nobody was in the room for the hours in between, and
+            # the day is not stretched to cover them.
             close_session(session, scheduled_end(session))
             closed += 1
-            logger.info(f"Session {session.id} closed: its slot ran out")
+            logger.info(f"Session {session.id} closed: left on stage and abandoned")
 
         broadcast(session.meeting.meeting_code, session, 'session_ended')
         close_meeting_if_spent(session.meeting, now)
@@ -268,36 +283,36 @@ def broadcast(meeting_code, session, event_type):
 
 
 def current_session(meeting, now=None):
-    """The session the room is actually in.
+    """The session the room is holding, if one is on stage.
 
-    A room is a session, not a meeting. A meeting is a morning or an
-    afternoon and may run for hours; what people are sitting through is one
-    talk with its own start and its own end, and that is what the clock on
-    the wall should be counting.
+    A room is a **meeting**, not a session. The meeting is the morning; the
+    sessions are the talks that happen inside it one after another, and the
+    room outlives all of them - it opens before the first and stays until
+    the host closes the meeting or its window runs out. Between two talks
+    the room is still there, waiting for the host to start the next one.
 
-    Whatever is on stage and still within its own slot. Otherwise whatever
-    the timetable says is happening at this moment - somebody arriving
-    during a slot has arrived for that session even if the host has not
-    pressed anything yet. Nothing outside a slot: between sessions the room
-    is between sessions.
+    So this is only ever what is actually on stage. Not "whatever the
+    timetable says should be happening": the timetable is a plan, and since
+    a session now runs until the host ends it, the plan is no longer
+    entitled to put somebody on stage or take them off it. An overrunning
+    session is still the session - it is over when it is ended, not when
+    its slot runs out.
     """
     now = now or timezone.now()
+    return (
+        meeting.sessions.filter(status=Session.Status.LIVE)
+        .order_by('starts_at')
+        .first()
+    )
 
-    # Something on stage and still inside its own slot. A live session that
-    # has overrun is over, whether or not the sweep has closed it yet -
-    # counting from one made the room's clock jump between the overrun
-    # session and the slot actually happening, depending on whether a sweep
-    # had run between two reads.
-    for live in meeting.sessions.filter(
-        status=Session.Status.LIVE
-    ).order_by('starts_at'):
-        if now <= scheduled_end(live):
-            return live
 
-    for session in meeting.sessions.order_by('starts_at'):
-        if session.starts_at <= now <= scheduled_end(session):
-            return session
-    return None
+def next_up(meeting, now=None):
+    """The next session the host could put on stage, if any is left."""
+    return (
+        meeting.sessions.filter(status=Session.Status.SCHEDULED)
+        .order_by('starts_at')
+        .first()
+    )
 
 
 def session_room_state(meeting, now=None) -> dict:
@@ -305,39 +320,36 @@ def session_room_state(meeting, now=None) -> dict:
 
     Worked out here rather than in each client so the two rooms - the one
     account holders use and the one guests use - cannot disagree about
-    whose clock is running or when the door shuts.
+    whose clock is running.
+
+    Between sessions there is no clock and no title, but there is still a
+    room: ``awaiting_next`` says so, and names what is coming. Nobody is
+    shown the door because a talk finished - the door is the meeting's.
     """
     now = now or timezone.now()
     session = current_session(meeting, now)
 
     if session is None:
-        # Nothing is running. If a session has just been and gone, say so -
-        # somebody opening the page a minute late should be told the talk
-        # is over, not left sitting in a room whose clock never starts.
-        finished = (
-            meeting.sessions.filter(starts_at__lte=now)
-            .order_by('-starts_at').first()
-        )
-        if finished is not None and now > scheduled_end(finished):
-            return {
-                'id': str(finished.id),
-                'title': finished.title,
-                'starts_at': finished.starts_at.isoformat(),
-                'started_at': (
-                    finished.started_at.isoformat() if finished.started_at else None
-                ),
-                'ends_at': scheduled_end(finished).isoformat(),
-                'duration_minutes': finished.duration_minutes,
-                'status': finished.status,
-                'is_over': True,
-            }
-        # Nothing has run yet: the room is waiting, not finished.
+        coming = next_up(meeting, now)
+        ran = meeting.sessions.filter(
+            status__in=[Session.Status.DONE, Session.Status.SKIPPED]
+        ).exists()
         return {
             'id': None,
             'title': '',
+            'starts_at': None,
             'started_at': None,
             'ends_at': None,
+            'duration_minutes': None,
+            'status': None,
+            # The room is not over. Only the meeting can be over, and if it
+            # were, nobody would be reading this.
             'is_over': False,
+            'between_sessions': ran,
+            'awaiting_next': coming is not None,
+            'next_id': str(coming.id) if coming else None,
+            'next_title': coming.title if coming else '',
+            'next_starts_at': coming.starts_at.isoformat() if coming else None,
         }
 
     return {
@@ -347,8 +359,15 @@ def session_room_state(meeting, now=None) -> dict:
         # The clock counts from when it actually went on stage, not from
         # when it was meant to.
         'started_at': session.started_at.isoformat() if session.started_at else None,
+        # What it was given. It runs past this if the host lets it, and the
+        # timetable is corrected afterwards.
         'ends_at': scheduled_end(session).isoformat(),
         'duration_minutes': session.duration_minutes,
         'status': session.status,
-        'is_over': session.status in (Session.Status.DONE, Session.Status.SKIPPED),
+        'is_over': False,
+        'between_sessions': False,
+        'awaiting_next': False,
+        'next_id': None,
+        'next_title': '',
+        'next_starts_at': None,
     }
