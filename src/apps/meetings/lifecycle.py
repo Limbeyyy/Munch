@@ -282,6 +282,39 @@ def broadcast(meeting_code, session, event_type):
         logger.warning(f"Could not broadcast {event_type} for {meeting_code}: {e}")
 
 
+def broadcast_schedule_changed(meeting):
+    """Tell the room its running order has been rearranged.
+
+    The host edits the timetable from inside the room now - dragging one
+    talk above another between sessions - and everybody else's copy has to
+    follow without a reload. Best effort, like every other announcement:
+    the times in the database are the times whether or not the news got
+    out, and the next poll picks them up anyway.
+    """
+    try:
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+
+        layer = get_channel_layer()
+        if layer is None:
+            return
+        async_to_sync(layer.group_send)(
+            f'meeting_{meeting.meeting_code}',
+            {
+                'type': 'state_update',
+                'user_id': '',
+                'user_name': '',
+                'state': {'schedule_changed': True},
+                'timestamp': timezone.now().isoformat(),
+            },
+        )
+    except Exception as e:
+        logger.warning(
+            f"Could not announce the new running order for "
+            f"{meeting.meeting_code}: {e}"
+        )
+
+
 def current_session(meeting, now=None):
     """The session the room is holding, if one is on stage.
 

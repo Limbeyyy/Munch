@@ -535,6 +535,15 @@ class SessionViewSet(viewsets.ModelViewSet):
             edits[session.id] = edit
 
         moved = apply_reschedule(meeting, edits)
+
+        # Every room whose running order this touched, told at once: the
+        # host rearranges the day from inside the room, and the people in
+        # it are looking at the same list.
+        from src.apps.meetings.lifecycle import broadcast_schedule_changed
+
+        for touched in {s.meeting for s in moved} | {meeting}:
+            broadcast_schedule_changed(touched)
+
         return Response({
             'moved': SessionSerializer(moved, many=True).data,
             'moved_count': len(moved),
@@ -572,6 +581,9 @@ class SessionViewSet(viewsets.ModelViewSet):
         moved = begin_now(session, now)
         if moved:
             session.refresh_from_db()
+            from src.apps.meetings.lifecycle import broadcast_schedule_changed
+
+            broadcast_schedule_changed(session.meeting)
 
         # A new run, not a rejoin: anything already on stage returned
         # further up, so reaching here means the clock starts now. Keeping
@@ -611,6 +623,10 @@ class SessionViewSet(viewsets.ModelViewSet):
         # ran over, earlier if it finished early.
         moved = absorb_overrun(session, now)
         session.refresh_from_db()
+        if moved:
+            from src.apps.meetings.lifecycle import broadcast_schedule_changed
+
+            broadcast_schedule_changed(session.meeting)
 
         _broadcast(session.meeting.meeting_code, session, 'session_ended')
 

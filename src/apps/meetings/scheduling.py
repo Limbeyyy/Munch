@@ -126,14 +126,33 @@ def _slots(sessions, underway_meeting_ids):
     ]
 
 
-def _underway_meeting_ids(sessions):
+def _underway_meeting_ids(sessions, editing=None):
+    """Meetings whose sessions hold their times whatever else moves.
+
+    A finished one always. A meeting under way as well - its day should not
+    be moved out from under a room full of people - unless the edit is
+    coming from inside it, which is what the room's own running order is:
+    the host rearranges what is left of the meeting they are standing in,
+    between one talk and the next, and that is the point of it.
+
+    What has actually run, or is running, is fixed either way: those are
+    sessions, and they are settled on their own account.
+    """
     meeting_ids = {s.meeting_id for s in sessions}
-    return set(
+    held = set(
         Meeting.objects.filter(
             id__in=meeting_ids,
             status__in=[Meeting.Status.ACTIVE, Meeting.Status.ENDED],
         ).values_list('id', flat=True)
     )
+    if editing is not None:
+        ended = set(
+            Meeting.objects.filter(
+                id__in=meeting_ids, status=Meeting.Status.ENDED
+            ).values_list('id', flat=True)
+        )
+        held = {m for m in held if m != editing or m in ended}
+    return held
 
 
 def resolve(slots, anchored_id=None, gap=GAP):
@@ -298,6 +317,17 @@ def reschedule(meeting, changes, anchored_id=None):
         session = by_id.get(session_id)
         if session is None:
             continue
+        # A talk that has run, or is on stage, has a real time and keeps
+        # it. The agenda already refuses to move one; this is the same rule
+        # where it cannot be got round, now that the running order is
+        # edited from inside a room with a speaker standing in it.
+        if session.status != Session.Status.SCHEDULED:
+            if 'hall' in change:
+                session.hall = change['hall']
+            logger.info(
+                f"Left {session.id} where it is: it has already run or is running"
+            )
+            continue
         if 'starts_at' in change:
             session.starts_at = change['starts_at']
         if 'duration_minutes' in change:
@@ -307,7 +337,7 @@ def reschedule(meeting, changes, anchored_id=None):
         if 'hall' in change:
             session.hall = change['hall']
 
-    underway = _underway_meeting_ids(locked)
+    underway = _underway_meeting_ids(locked, editing=meeting.id)
     settled = resolve(
         _slots(locked, underway), anchored_id=anchored_id, gap=gap_for(meeting)
     )
@@ -348,6 +378,11 @@ def _restretch_meetings(sessions):
     for meeting_id, own in by_meeting.items():
         meeting = own[0].meeting
         if meeting.status == Meeting.Status.ACTIVE:
+            # A room full of people. Its window may grow to hold a running
+            # order the host has just lengthened - that is the live
+            # tracking the desk shows - but its start is where the day
+            # actually began and is not moved out from under anybody.
+            stretch_meeting(meeting)
             continue
 
         starts_at = min(s.starts_at for s in own)

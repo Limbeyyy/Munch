@@ -76,6 +76,7 @@ beforeEach(() => {
   (window as any).WebSocket = class {
     onmessage: any; onopen: any; onerror: any; onclose: any;
     readyState = 0;
+    constructor() { (window as any).__roomSocket = this; }
     close() {}
     send() {}
   };
@@ -391,5 +392,171 @@ describe('the room between two sessions', () => {
 
     expect(await screen.findByText(/From the one on stage/)).toBeInTheDocument();
     expect(screen.queryByText(/From the first talk/)).toBeNull();
+  });
+});
+
+/**
+ * The running order, live, inside the room.
+ *
+ * The host rearranges what is left of the meeting they are standing in and
+ * everybody else's copy follows. The times are on show for both, because
+ * the whole point is watching them move when a talk runs long.
+ */
+describe('the running order inside the room', () => {
+  const hour = 3600000;
+  const start = new Date(Date.now() - hour).toISOString();
+  const running = [
+    {
+      id: 's1', title: 'Haldi', speaker_name: 'Asha', hall: '', status: 'live',
+      starts_at: start, duration_minutes: 40, meeting: 'm1', position: 0,
+    },
+    {
+      id: 's2', title: 'Mehendi', speaker_name: 'Bina', hall: '', status: 'scheduled',
+      starts_at: new Date(Date.now() + hour).toISOString(),
+      duration_minutes: 60, meeting: 'm1', position: 1,
+    },
+    {
+      id: 's3', title: 'Sangeet', speaker_name: 'Chandra', hall: '', status: 'scheduled',
+      starts_at: new Date(Date.now() + 3 * hour).toISOString(),
+      duration_minutes: 60, meeting: 'm1', position: 2,
+    },
+  ];
+
+  const asHost = () => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
+  };
+  const asAttendee = () => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: { id: 'u9', email: 'someone@example.com' } });
+  };
+
+  afterEach(() => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: null });
+  });
+
+  beforeEach(() => {
+    api.listSessions.mockResolvedValue(running as any);
+  });
+
+  const order = async () =>
+    within(await screen.findByRole('list', { name: 'Running order' }))
+      .getAllByRole('listitem')
+      .map((row) => row.textContent);
+
+  it('shows every talk with the time it now runs at', async () => {
+    asAttendee();
+    showRoom();
+
+    const rows = await order();
+    expect(rows[0]).toContain('Haldi');
+    expect(rows[1]).toContain('Mehendi');
+    // A time range, and how long it runs for.
+    expect(rows[1]).toMatch(/\d{1,2}:\d{2}/);
+    expect(rows[1]).toContain('60 min');
+  });
+
+  it('is read-only for anybody who is not the host', async () => {
+    asAttendee();
+    showRoom();
+
+    const list = await screen.findByRole('list', { name: 'Running order' });
+    expect(within(list).queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('gives the host a handle on every talk still to run', async () => {
+    asHost();
+    showRoom();
+
+    const list = await screen.findByRole('list', { name: 'Running order' });
+    expect(await within(list).findByRole('button', { name: /Move “Mehendi”/ }))
+      .toBeEnabled();
+    // The one on stage is not the host's to move: somebody is speaking.
+    expect(within(list).getByRole('button', { name: /Move “Haldi”/ })).toBeDisabled();
+  });
+
+  it('writes the new order down the moment one is dropped on another', async () => {
+    asHost();
+    api.rescheduleSessions.mockResolvedValue({ moved: [], moved_count: 2 } as any);
+    showRoom();
+
+    const list = await screen.findByRole('list', { name: 'Running order' });
+    const handle = await within(list).findByRole('button', { name: /Move “Sangeet”/ });
+    const rows = within(list).getAllByRole('listitem');
+
+    const dataTransfer = { setData: jest.fn(), getData: () => 's3', effectAllowed: '' };
+    fireEvent.dragStart(handle, { dataTransfer });
+    fireEvent.drop(rows[1], { dataTransfer });
+
+    await waitFor(() => expect(api.rescheduleSessions).toHaveBeenCalled());
+    const sent = api.rescheduleSessions.mock.calls[0][0];
+    // Both talks move: they have changed places.
+    expect(sent.map((c: any) => c.id).sort()).toEqual(['s2', 's3']);
+    // Sangeet takes the hour Mehendi held.
+    expect(sent.find((c: any) => c.id === 's3')!.starts_at)
+      .toBe(new Date(running[1].starts_at).toISOString());
+  });
+
+  it('re-reads the running order when the host elsewhere moves it', async () => {
+    asAttendee();
+    showRoom();
+    await screen.findByRole('list', { name: 'Running order' });
+    const readsBefore = api.listSessions.mock.calls.length;
+
+    // The socket the room opened, told the day has been rearranged.
+    const socket = (window as any).__roomSocket;
+    socket.onmessage({
+      data: JSON.stringify({ type: 'state_update', state: { schedule_changed: true } }),
+    });
+
+    await waitFor(() =>
+      expect(api.listSessions.mock.calls.length).toBeGreaterThan(readsBefore)
+    );
+  });
+});
+
+/**
+ * Nothing in the room is said to the room.
+ *
+ * There is no public thread on either side of it any more: what people
+ * have to say goes to the host or to the speaker, and the host decides
+ * what to do with it - which is the moderation queue that was already
+ * there. A message with nobody to receive it cannot be sent.
+ */
+describe('the room chat', () => {
+  const openChat = async () => {
+    await openSide('Chat');
+    return screen.findByPlaceholderText(/Pick someone above first|Write your message here/);
+  };
+
+  it('has no room-wide thread to write into', async () => {
+    showRoom();
+    await openChat();
+
+    expect(screen.queryByRole('tab', { name: /Room/ })).toBeNull();
+    expect(screen.queryByText(/Everyone in the meeting can see these/)).toBeNull();
+  });
+
+  it('asks who the message is for, and will not send until it knows', async () => {
+    api.getChatSettings.mockResolvedValue(
+      { chat_enabled: true, direct_messages_enabled: true } as any
+    );
+    api.getParticipants.mockResolvedValue([
+      { id: 'p1', role: 'presenter', is_active: true,
+        user: { id: 'u5', email: 'speaker@example.com' } },
+    ] as any);
+
+    showRoom();
+    const box = await openChat();
+
+    expect(box).toHaveAttribute('placeholder', 'Pick someone above first');
+    fireEvent.change(box, { target: { value: 'A question' } });
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+
+    fireEvent.change(await screen.findByLabelText('Who to write to'), {
+      target: { value: 'u5' },
+    });
+    expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
   });
 });
