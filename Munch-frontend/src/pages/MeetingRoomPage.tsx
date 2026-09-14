@@ -1589,6 +1589,7 @@ const MeetingRoomInner: React.FC = () => {
                 meetingId={meetingId}
                 refreshMs={20000}
                 canSort={canOrganize}
+                waiting={pending}
               />
             )}
           </RoomCard>
