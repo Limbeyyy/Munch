@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
-import { Meeting, Session } from '../types';
+import { Conclusion, Meeting, Session } from '../types';
 import { errorText } from './errors';
 import { useOrganizer } from './i18n';
 import { useSessionGap } from './sessionGap';
@@ -32,6 +32,16 @@ interface Props {
    * actually in the hall can go on without the day being rearranged first.
    */
   onStart?: (sessionId: string) => void | Promise<void>;
+  /**
+   * What each finished talk settled, for the ones that have been written
+   * up and published. Keyed by session.
+   *
+   * A talk that is over is not nothing - it is the part of the day people
+   * most often want back, and until now the running order forgot it the
+   * moment it finished. Where there is a summary the card says so and
+   * opens to show it.
+   */
+  summaries?: Record<string, Conclusion>;
 }
 
 /**
@@ -56,7 +66,7 @@ interface Props {
  * it: for everyone else it is the same times, read-only, following along.
  */
 export const RoomAgenda: React.FC<Props> = ({
-  meeting, sessions, liveSessionId, canEdit, onChanged, onStart,
+  meeting, sessions, liveSessionId, canEdit, onChanged, onStart, summaries,
 }) => {
   const { t, num } = useOrganizer();
   const gapMinutes = useSessionGap();
@@ -73,6 +83,8 @@ export const RoomAgenda: React.FC<Props> = ({
   const [plan, setPlan] = useState<PlannedMeeting[]>(fromServer);
   useEffect(() => { setPlan(fromServer); }, [fromServer]);
 
+  /** The finished talk whose summary is open, if any. */
+  const [reading, setReading] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -184,6 +196,8 @@ export const RoomAgenda: React.FC<Props> = ({
     const onStage = state === 'live';
     const fixed = state !== 'ahead';
     const running = onStage && session.startsAt + session.durationMinutes * MS < tick;
+    const settled = summaries?.[session.id];
+    const open = reading === session.id;
 
     return (
       <li
@@ -260,6 +274,63 @@ export const RoomAgenda: React.FC<Props> = ({
             </div>
           </div>
         </div>
+
+        {settled && (
+          <>
+            <button
+              onClick={() => setReading(open ? null : session.id)}
+              aria-expanded={open}
+              className="self-start flex items-center gap-1.5 bg-ok/[.10] text-ok
+                rounded-[4px] h-6 px-2 text-[12px] font-medium hover:bg-ok/[.16]"
+            >
+              {t({ ne: 'सारांश तयार', en: 'Summary ready' })}
+              <span aria-hidden className={open ? 'rotate-180' : ''}>⌄</span>
+            </button>
+
+            {open && (
+              <div className="w-full rounded-[8px] bg-[#fbfbfb] border border-[#e5e7eb]
+                px-3 py-2 flex flex-col gap-2">
+                {settled.findings.length > 0 && (
+                  <ul className="flex flex-col gap-1">
+                    {settled.findings.map((line, i) => (
+                      <li key={i} className="text-[13px] leading-5 text-[#24262b]">
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {settled.actions.length > 0 && (
+                  <div className="flex flex-col gap-1">
+                    <p className="text-[12px] font-medium text-[#656565]">
+                      {t({ ne: 'गर्नुपर्ने', en: 'To do' })}
+                    </p>
+                    {settled.actions.map((action, i) => (
+                      <p key={i} className="text-[13px] leading-5 text-[#24262b]">
+                        {action.task}
+                        {action.owner && (
+                          <span className="text-[#656565]"> — {action.owner}</span>
+                        )}
+                        {action.due && (
+                          <span className="text-[#656565]"> · {action.due}</span>
+                        )}
+                      </p>
+                    ))}
+                  </div>
+                )}
+
+                {settled.findings.length === 0 && settled.actions.length === 0 && (
+                  <p className="text-[13px] text-[#656565]">
+                    {t({
+                      ne: 'सारांश खाली छ।',
+                      en: 'The summary is empty.',
+                    })}
+                  </p>
+                )}
+              </div>
+            )}
+          </>
+        )}
 
         <div className="flex items-center justify-between gap-2 w-full">
           <div className="flex items-center gap-1.5 min-w-0">

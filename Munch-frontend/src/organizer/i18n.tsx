@@ -29,7 +29,16 @@ export const useOrganizer = () => {
 const STORE_KEY = 'manch.organizer.prefs';
 
 export const OrganizerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [lang, setLang] = useState<Lang>('ne');
+  /*
+   * English until somebody says otherwise.
+   *
+   * Nepali is the source language and every string is written in it
+   * first, which is why it used to be the default as well - but most
+   * people arriving here read the English, and the ones who want Nepali
+   * are the ones who reach for the switch. A stored choice always wins;
+   * this is only what a browser that has never chosen is shown.
+   */
+  const [lang, setLang] = useState<Lang>('en');
   const [a11y, setA11y] = useState({ big: false, contrast: false, calm: false });
 
   // Language and accessibility are per-person conveniences, so they live in

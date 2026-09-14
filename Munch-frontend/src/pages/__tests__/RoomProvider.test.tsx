@@ -811,3 +811,89 @@ describe('the agenda cards', () => {
     expect(within(list).queryByRole('button', { name: 'Start Session' })).toBeNull();
   });
 });
+
+/**
+ * What a finished talk settled.
+ *
+ * A talk that is over is not nothing - it is the part of the day people
+ * most often want back - and the running order used to forget it the
+ * moment it finished. Where the host has written one up and published it,
+ * the card says so and opens to show it.
+ */
+describe('a summary on the agenda', () => {
+  const finished = [{
+    id: 's0', title: 'Kataho', speaker_name: 'Sumin', hall: '', status: 'done',
+    starts_at: new Date(Date.now() - 7200000).toISOString(),
+    duration_minutes: 60, meeting: 'm1', position: 0,
+  }];
+
+  const published = {
+    conclusions: [{
+      session_id: 's0', session_title: 'Kataho',
+      session_starts_at: new Date().toISOString(),
+      speaker_name: 'Sumin', hall: '', meeting_id: 'm1', meeting_title: 'Opening day',
+      event_id: 'e1', event_title: 'NEA',
+      findings: ['The grant is released in two parts.'],
+      actions: [{ task: 'Send the letter', owner: 'Bina', due: 'Friday' }],
+      published_at: new Date().toISOString(),
+    }],
+    mine: [],
+  };
+
+  beforeEach(() => {
+    api.listSessions.mockResolvedValue(finished as any);
+  });
+
+  it('says so on the talk it belongs to', async () => {
+    api.getConclusions.mockResolvedValue(published as any);
+    showRoom();
+
+    expect(await screen.findByRole('button', { name: /Summary ready/ }))
+      .toBeInTheDocument();
+  });
+
+  it('opens it where the card is, rather than somewhere else', async () => {
+    api.getConclusions.mockResolvedValue(published as any);
+    showRoom();
+
+    const tag = await screen.findByRole('button', { name: /Summary ready/ });
+    expect(tag).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(tag);
+
+    expect(await screen.findByText('The grant is released in two parts.'))
+      .toBeInTheDocument();
+    expect(screen.getByText(/Send the letter/)).toBeInTheDocument();
+    expect(tag).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('closes again when the tag is pressed a second time', async () => {
+    api.getConclusions.mockResolvedValue(published as any);
+    showRoom();
+
+    const tag = await screen.findByRole('button', { name: /Summary ready/ });
+    fireEvent.click(tag);
+    await screen.findByText('The grant is released in two parts.');
+    fireEvent.click(tag);
+
+    expect(screen.queryByText('The grant is released in two parts.')).toBeNull();
+  });
+
+  it('says nothing where nothing has been published', async () => {
+    api.getConclusions.mockResolvedValue({ conclusions: [], mine: [] } as any);
+    showRoom();
+
+    await screen.findByRole('list', { name: 'Running order' });
+    expect(screen.queryByRole('button', { name: /Summary ready/ })).toBeNull();
+  });
+
+  it('and nothing about another meeting', async () => {
+    api.getConclusions.mockResolvedValue({
+      conclusions: [{ ...published.conclusions[0], meeting_id: 'somewhere-else' }],
+      mine: [],
+    } as any);
+    showRoom();
+
+    await screen.findByRole('list', { name: 'Running order' });
+    expect(screen.queryByRole('button', { name: /Summary ready/ })).toBeNull();
+  });
+});

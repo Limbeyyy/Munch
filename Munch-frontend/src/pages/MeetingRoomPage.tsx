@@ -134,6 +134,29 @@ const MeetingRoomInner: React.FC = () => {
     meetingIdRef.current = meetingId;
   }, [meetingId]);
 
+  /**
+   * What the finished talks settled, where it has been written up.
+   *
+   * Read once on the way in and again whenever the running order moves:
+   * a summary is published from the desk after a talk, so it appears
+   * between one session and the next rather than second by second.
+   */
+  const [summaries, setSummaries] = useState<Record<string, any>>({});
+  const refreshSummaries = useCallback(async () => {
+    const id = meetingIdRef.current;
+    if (!id) return;
+    try {
+      const { conclusions } = await apiClient.getConclusions();
+      const mine: Record<string, any> = {};
+      conclusions
+        .filter((one) => one.meeting_id === id)
+        .forEach((one) => { mine[one.session_id] = one; });
+      setSummaries(mine);
+    } catch {
+      // Nothing published, or not this reader's to see.
+    }
+  }, []);
+
   /** Re-read the running order. The host moves it; the room follows. */
   const refreshAgenda = useCallback(async () => {
     const id = meetingIdRef.current;
@@ -148,7 +171,8 @@ const MeetingRoomInner: React.FC = () => {
   useEffect(() => {
     if (!meetingId) { setAgenda([]); return; }
     apiClient.listSessions(meetingId).then(setAgenda).catch(() => setAgenda([]));
-  }, [meetingId]);
+    refreshSummaries();
+  }, [meetingId, refreshSummaries]);
 
   /** Refresh participants only - no spinner, no meeting object churn. */
   const refreshParticipants = useCallback(async () => {
@@ -607,9 +631,12 @@ const MeetingRoomInner: React.FC = () => {
       },
       attendance: () => loadAttendance(),
       meeting: () => refreshMeeting(),
-      agenda: () => { refreshAgenda(); },
+      agenda: () => { refreshAgenda(); refreshSummaries(); },
     };
-  }, [loadResources, loadAttendance, setParticipants, refreshMeeting, refreshAgenda]);
+  }, [
+    loadResources, loadAttendance, setParticipants, refreshMeeting,
+    refreshAgenda, refreshSummaries,
+  ]);
 
   // The device streams new lines over the socket; this fills in what was
   // said before we arrived.
@@ -970,8 +997,8 @@ const MeetingRoomInner: React.FC = () => {
       <div
         className={`grid gap-4 p-4 items-start ${
           side.length > 0
-            ? 'xl:grid-cols-[332px_minmax(0,1fr)_358px]'
-            : 'xl:grid-cols-[332px_minmax(0,1fr)]'
+            ? 'xl:grid-cols-[398px_minmax(0,1fr)_358px]'
+            : 'xl:grid-cols-[398px_minmax(0,1fr)]'
         }`}
       >
         {/* What the day runs through, as it actually stands. The host
@@ -984,6 +1011,8 @@ const MeetingRoomInner: React.FC = () => {
             canEdit={isHost}
             onChanged={refreshAgenda}
             onStart={startSession}
+            summaries={summaries}
+
           />
         </RoomCard>
 
