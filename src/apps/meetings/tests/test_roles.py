@@ -44,7 +44,9 @@ class GoogleUserHostsTests(TestCase):
     def setUp(self):
         self.user = google_user('oauth-host@example.com')
         self.client = signed_in(self.user)
-        self.tomorrow = timezone.now() + timezone.timedelta(days=1)
+        # Within the hour, so starting it is about who may - not about a
+        # meeting set for another day being opened by mistake.
+        self.tomorrow = timezone.now() + timezone.timedelta(minutes=30)
 
     def create_event(self):
         return self.client.post(f'{API}/events/', {

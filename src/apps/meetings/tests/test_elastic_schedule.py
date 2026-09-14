@@ -26,7 +26,9 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from src.apps.meetings.models import Meeting, Session
-from src.apps.meetings.scheduling import absorb_overrun, begin_now
+from src.apps.meetings.scheduling import (
+    absorb_overrun, begin_meeting_now, begin_now,
+)
 from src.apps.meetings.tests.factories import (
     at, make_event, make_host, make_meeting, make_session,
 )
@@ -153,26 +155,130 @@ class ElasticScheduleTests(TestCase):
 
         self.assertEqual(self.b.starts_at, at(self.ten, 1))
 
-    # -- starting late ---------------------------------------------------
+    # -- starting late, and the wait in between --------------------------
 
-    def test_starting_late_begins_the_talk_now_and_moves_the_rest(self):
-        begin_now(self.b, at(self.ten, 1, 20))
+    def test_the_wait_between_talks_is_added_to_what_is_left(self):
+        """A ends at eleven; the host starts B at twenty-five past.
+
+        The half hour nobody was speaking for belongs to nobody: it is not
+        taken out of B's hour. B runs its full hour from when it started,
+        and C follows it.
+        """
+        self.a.status = Session.Status.DONE
+        self.a.ended_at = at(self.ten, 1)
+        self.a.save()
+
+        begin_now(self.b, at(self.ten, 1, 35))
         self.refreshed()
 
-        self.assertEqual(self.b.starts_at, at(self.ten, 1, 20))
+        self.assertEqual(self.b.starts_at, at(self.ten, 1, 35))
         self.assertEqual(self.b.duration_minutes, 60)
-        self.assertEqual(self.c.starts_at, at(self.ten, 2, 20))
-        self.assertEqual(self.meeting.scheduled_end, at(self.ten, 3, 20))
+        self.assertEqual(self.c.starts_at, at(self.ten, 2, 35))
+        self.assertEqual(self.meeting.scheduled_end, at(self.ten, 3, 35))
 
-    def test_starting_early_moves_nothing(self):
-        # The host is ready before the hour. That is their business; it is
-        # not a reason to pull everybody else's slot forward.
-        moved = begin_now(self.b, at(self.ten, 0, 50))
+    def test_a_talk_that_has_run_is_left_where_it_ran(self):
+        self.a.status = Session.Status.DONE
+        self.a.save(update_fields=['status'])
+
+        begin_now(self.b, at(self.ten, 1, 35))
+        self.refreshed()
+
+        self.assertEqual(self.a.starts_at, self.ten)
+
+    def test_the_next_one_up_need_not_be_the_next_one_listed(self):
+        """The speaker who is actually in the hall goes on.
+
+        The host starts C while B is still to run. C takes the hour that is
+        happening and B queues behind it - it has not been dropped, it is
+        simply later than the talk that is on stage.
+        """
+        self.a.status = Session.Status.DONE
+        self.a.save(update_fields=['status'])
+
+        begin_now(self.c, at(self.ten, 1, 35))
+        self.refreshed()
+
+        self.assertEqual(self.c.starts_at, at(self.ten, 1, 35))
+        self.assertEqual(self.b.starts_at, at(self.ten, 2, 35))
+
+    def test_the_day_keeps_the_breathing_room_it_was_given(self):
+        # A quarter of an hour between each talk, and it survives the
+        # rearrangement rather than the day closing up.
+        spaced = make_meeting(
+            self.host, self.event, start=self.ten, minutes=240, title='Spaced'
+        )
+        first = make_session(spaced, self.ten, 60, 'One')
+        second = make_session(spaced, at(self.ten, 1, 15), 60, 'Two')
+        third = make_session(spaced, at(self.ten, 2, 30), 60, 'Three')
+        first.status = Session.Status.DONE
+        first.save(update_fields=['status'])
+
+        begin_now(second, at(self.ten, 1, 45))
+        second.refresh_from_db()
+        third.refresh_from_db()
+
+        self.assertEqual(second.starts_at, at(self.ten, 1, 45))
+        self.assertEqual(third.starts_at, at(self.ten, 3))
+
+    def test_nothing_moves_when_a_talk_starts_on_time(self):
+        self.a.status = Session.Status.DONE
+        self.a.save(update_fields=['status'])
+
+        moved = begin_now(self.b, at(self.ten, 1))
         self.refreshed()
 
         self.assertEqual(moved, [])
-        self.assertEqual(self.b.starts_at, at(self.ten, 1))
         self.assertEqual(self.c.starts_at, at(self.ten, 2))
+
+    # -- starting early --------------------------------------------------
+
+    def test_opening_the_day_early_brings_the_whole_meeting_forward(self):
+        """Ten to one, started at nine, is nine to twelve.
+
+        The same three hours, an hour earlier - not two hours of open room
+        followed by the day it was always going to be.
+        """
+        begin_now(self.a, at(self.ten, -1))
+        self.refreshed()
+
+        self.assertEqual(self.a.starts_at, at(self.ten, -1))
+        self.assertEqual(self.b.starts_at, self.ten)
+        self.assertEqual(self.c.starts_at, at(self.ten, 1))
+        self.assertEqual(self.meeting.scheduled_start, at(self.ten, -1))
+        self.assertEqual(self.meeting.scheduled_end, at(self.ten, 2))
+
+    def test_a_later_talk_starting_early_leaves_the_meetings_hour_alone(self):
+        # B is not what opens the day, so the meeting still began at ten
+        # whatever time B goes on.
+        self.a.status = Session.Status.DONE
+        self.a.save(update_fields=['status'])
+
+        begin_now(self.b, at(self.ten, 0, 50))
+        self.refreshed()
+
+        self.assertEqual(self.b.starts_at, at(self.ten, 0, 50))
+        self.assertEqual(self.c.starts_at, at(self.ten, 1, 50))
+        self.assertEqual(self.meeting.scheduled_start, self.ten)
+
+    def test_the_meeting_button_brings_the_day_forward_too(self):
+        moved = begin_meeting_now(self.meeting, at(self.ten, -1))
+        self.refreshed()
+
+        self.assertEqual(len(moved), 3)
+        self.assertEqual(self.meeting.scheduled_start, at(self.ten, -1))
+        self.assertEqual(self.meeting.scheduled_end, at(self.ten, 2))
+        self.assertEqual(self.a.starts_at, at(self.ten, -1))
+        self.assertEqual(self.c.starts_at, at(self.ten, 1))
+
+    def test_opening_it_late_moves_nothing_by_itself(self):
+        # The meeting is simply late. Where the day has actually got to is
+        # said by the sessions, as each one is started.
+        moved = begin_meeting_now(self.meeting, at(self.ten, 0, 20))
+        self.refreshed()
+
+        self.assertEqual(moved, [])
+        self.assertEqual(self.meeting.scheduled_start, self.ten)
+        self.assertEqual(self.a.starts_at, self.ten)
 
     # -- the meeting after this one --------------------------------------
 
@@ -336,3 +442,33 @@ class RearrangedFromInsideTheRoomTests(TestCase):
 
         self.b.refresh_from_db()
         self.assertEqual(self.b.starts_at, at(self.ten, 1, 15))
+
+
+class StartingAgainOnAMeetingUnderWayTests(TestCase):
+    """Pressing start on a meeting that is already running changes nothing.
+
+    Rejoining is not starting. A meeting under way has a day the sessions
+    themselves are moving as they run, and the start button must not haul
+    it about underneath a speaker.
+    """
+
+    def setUp(self):
+        self.host = make_host()
+        self.event = make_event(self.host)
+        self.ten = timezone.now().replace(hour=10, minute=0, second=0, microsecond=0)
+        self.meeting = make_meeting(self.host, self.event, start=self.ten, minutes=180)
+        self.meeting.status = Meeting.Status.ACTIVE
+        self.meeting.started_at = timezone.now()
+        self.meeting.save()
+        self.only = make_session(self.meeting, self.ten, 60, 'Opening')
+        self.only.status = Session.Status.LIVE
+        self.only.started_at = timezone.now()
+        self.only.save()
+
+    def test_the_day_stays_where_the_sessions_have_put_it(self):
+        signed_in(self.host).post(f'{API}/meetings/{self.meeting.id}/start/')
+
+        self.meeting.refresh_from_db()
+        self.only.refresh_from_db()
+        self.assertEqual(self.meeting.scheduled_start, self.ten)
+        self.assertEqual(self.only.starts_at, self.ten)

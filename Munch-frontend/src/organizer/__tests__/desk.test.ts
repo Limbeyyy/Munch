@@ -1,4 +1,4 @@
-import { deskSession } from '../sessionState';
+import { deskSession, startableNow } from '../sessionState';
 
 const at = (hhmm: string) => `2026-09-08T${hhmm}:00.000Z`;
 const NOW = (hhmm: string) => +new Date(at(hhmm));
@@ -97,5 +97,34 @@ describe('which session a live desk holds', () => {
 
   it('holds nothing at all when there are no sessions', () => {
     expect(deskSession([], NOW('11:00')).session).toBeNull();
+  });
+});
+
+/**
+ * Whether the host may put a talk on stage yet.
+ *
+ * Its hour need not have come. Starting early is not refused any more - it
+ * brings the talk, and the rest of the day behind it, forward to now,
+ * which is what the host means by pressing it. What is refused is opening
+ * something set for another day by mistake.
+ */
+describe('starting before the hour', () => {
+  const inMinutes = (n: number) => Date.now() + n * 60000;
+
+  it('is allowed an hour early, which is the host being ready', () => {
+    expect(startableNow(inMinutes(60))).toBe(true);
+  });
+
+  it('is allowed once its hour has come, and after', () => {
+    expect(startableNow(inMinutes(0))).toBe(true);
+    expect(startableNow(inMinutes(-90))).toBe(true);
+  });
+
+  it('is refused for something set for another day', () => {
+    expect(startableNow(inMinutes(60 * 24))).toBe(false);
+  });
+
+  it('has nothing to say about a session that is not there', () => {
+    expect(startableNow(null)).toBe(false);
   });
 });
