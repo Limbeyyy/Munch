@@ -15,12 +15,12 @@ import { PhotoUploads } from '../organizer/Photos';
 import { RoomQuestions } from '../organizer/RoomQuestions';
 import { FigmaIcon } from '../assets/icons';
 import { RoomAgenda } from '../organizer/RoomAgenda';
-import { RoomBarButton, RoomCard, RoomPanel, RoomPortrait, SidePanelHead } from './roomChrome';
+import { RoomBarButton, RoomCard, RoomPortrait, SidePanelHead } from './roomChrome';
 import { OrganizerProvider } from '../organizer/i18n';
 
 
-/** The only three things allowed to sit beside the room. */
-type SidePanelId = 'chat' | 'resources' | 'questions';
+/** The only things allowed to sit beside the room. */
+type SidePanelId = 'chat' | 'resources' | 'questions' | 'participants';
 
 const formatFileSize = (bytes?: number | null): string => {
   if (!bytes) return '—';
@@ -73,9 +73,8 @@ const MeetingRoomInner: React.FC = () => {
   const [showShare, setShowShare] = useState(false);
   const [showEndChoice, setShowEndChoice] = useState(false);
   const [roomGuests, setRoomGuests] = useState<GuestAttendee[]>([]);
-  const [showAttendance, setShowAttendance] = useState(false);
-  /** Panels the bar along the foot opens over the room. */
-  const [showPeople, setShowPeople] = useState(false);
+  /** Which half of the participants panel is being read. */
+  const [peopleTab, setPeopleTab] = useState<'here' | 'attendance'>('here');
   /**
    * What the bar has been asked to put beside the room, in the order it
    * was asked for. First clicked sits at the top; clicking it again takes
@@ -164,9 +163,11 @@ const MeetingRoomInner: React.FC = () => {
 
   useEffect(() => {
     showChatRef.current = showChat;
-    showAttendanceRef.current = showAttendance;
+    // The register is only re-read for somebody actually looking at it.
+    showAttendanceRef.current =
+      side.includes('participants') && peopleTab === 'attendance';
     if (showChat) setUnread(0);
-  }, [showChat, showAttendance]);
+  }, [showChat, side, peopleTab]);
 
   const isHost = !!user && currentMeeting?.host?.id === user.id;
 
@@ -710,8 +711,8 @@ const MeetingRoomInner: React.FC = () => {
 
   /** Put the next speaker on stage. The host advances the running order. */
   const [starting, setStarting] = useState(false);
-  const startNext = async () => {
-    const nextId = currentMeeting?.current_session?.next_id;
+  const startSession = async (sessionId?: string | null) => {
+    const nextId = sessionId ?? currentMeeting?.current_session?.next_id;
     if (!nextId) return;
     setStarting(true);
     try {
@@ -926,131 +927,6 @@ const MeetingRoomInner: React.FC = () => {
       )}
 
       {/* Who is in the room, and what the host may do about it */}
-      {showPeople && (
-        <RoomPanel title="Participants" onClose={() => setShowPeople(false)}>
-          <div className="flex flex-col">
-            {(participants as MeetingParticipant[]).length === 0 ? (
-              <p className="text-[14px] text-[#656565] px-4 py-3">Nobody is here yet.</p>
-            ) : (
-              (participants as MeetingParticipant[]).map((p) => {
-                const isMe = p.user.id === user?.id;
-                return (
-                  <div
-                    key={p.id}
-                    className="flex items-center gap-3 px-4 py-3 border-b border-[#e3e8ef] last:border-0"
-                  >
-                    <RoomPortrait name={p.user.email} size={40} />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[16px] font-medium text-black truncate">
-                        {p.user.email}
-                        {isMe && <span className="text-[#656565] font-normal"> (you)</span>}
-                      </p>
-                      <p className="text-[12px] text-[#656565] uppercase tracking-wide">
-                        {p.role.replace('_', '-')}
-                        {p.is_muted && ' · muted'}
-                      </p>
-                    </div>
-                    {isHost && !isMe && !(p as any).is_guest && (
-                      <select
-                        value={p.role}
-                        disabled={changingRole === p.id}
-                        onChange={(e) =>
-                          changeRole(
-                            p,
-                            e.target.value as 'host' | 'co_host' | 'presenter' | 'attendee'
-                          )
-                        }
-                        aria-label={`Role for ${p.user.email}`}
-                        className="border border-[#e3e8ef] rounded-md px-2 py-1 text-[13px] bg-white
-                          disabled:opacity-50 flex-none"
-                      >
-                        <option value="attendee">Attendee</option>
-                        <option value="presenter">Presenter</option>
-                        <option value="co_host">Co-host</option>
-                        <option value="host">Host (transfers ownership)</option>
-                      </select>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </RoomPanel>
-      )}
-
-      {showAttendance && (
-        <RoomPanel title="Attendance" onClose={() => setShowAttendance(false)} wide>
-          <div className="p-4">
-            {!attendance ? (
-              <p className="text-[14px] text-[#656565]">Loading…</p>
-            ) : (
-              <>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                  {[
-                    ['On the roll', attendance.expected_total],
-                    ['Attended', attendance.attended_count],
-                    ['In meeting now', attendance.active_count],
-                    ['Absent', attendance.absent_count],
-                  ].map(([label, value]) => (
-                    <div key={label as string} className="bg-[#fcfcfc] border border-[#e3e8ef] rounded-lg p-3">
-                      <p className="text-2xl font-semibold">{value as number}</p>
-                      <p className="text-[12px] text-[#656565]">{label as string}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <h3 className="font-semibold mt-5 mb-2">
-                  Came ({attendance.attended.length})
-                </h3>
-                <div className="flex flex-col">
-                  {attendance.attended.map((a, i) => (
-                    <div
-                      key={`${a.type}-${i}`}
-                      className="flex items-center gap-3 py-2 border-b border-[#e3e8ef] last:border-0"
-                    >
-                      <RoomPortrait name={a.name} size={32} />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[14px] truncate">{a.name}</p>
-                        <p className="text-[12px] text-[#656565] truncate">
-                          {a.email ?? a.phone ?? a.role}
-                        </p>
-                      </div>
-                      <span
-                        className={`text-[12px] rounded-full px-2 py-0.5 flex-none ${
-                          a.is_active
-                            ? 'bg-ok/[.12] text-ok'
-                            : 'bg-navy-800/[.07] text-[#656565]'
-                        }`}
-                      >
-                        {a.is_active ? 'in the room' : 'left'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                {attendance.did_not_attend.length > 0 && (
-                  <>
-                    <h3 className="font-semibold mt-5 mb-2">
-                      Did not come ({attendance.did_not_attend.length})
-                    </h3>
-                    <div className="flex flex-col">
-                      {attendance.did_not_attend.map((a) => (
-                        <p
-                          key={a.email}
-                          className="text-[14px] text-[#656565] py-1.5 border-b border-[#e3e8ef] last:border-0"
-                        >
-                          {a.email}
-                        </p>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </>
-            )}
-          </div>
-        </RoomPanel>
-      )}
-
       {/* Guests knocking. They wait here rather than in a notification
           that has already gone. */}
       {isHost && waitingGuests.length > 0 && (
@@ -1107,6 +983,7 @@ const MeetingRoomInner: React.FC = () => {
             liveSessionId={session?.id ?? null}
             canEdit={isHost}
             onChanged={refreshAgenda}
+            onStart={startSession}
           />
         </RoomCard>
 
@@ -1121,15 +998,6 @@ const MeetingRoomInner: React.FC = () => {
               </h1>
 
               <div className="flex items-center gap-2 flex-none">
-                {isHost && (
-                  <button
-                    onClick={() => { setShowAttendance(true); loadAttendance(); }}
-                    className="border border-[#e3e8ef] hover:bg-cream rounded-[8px] px-3 py-1.5
-                      text-[13px] font-medium"
-                  >
-                    Attendance
-                  </button>
-                )}
 
                 {isHost && !startedAt && currentMeeting.entry?.can_start ? (
                   <button
@@ -1201,7 +1069,7 @@ const MeetingRoomInner: React.FC = () => {
                   </div>
                   {isHost && room?.next_id && (
                     <button
-                      onClick={startNext}
+                      onClick={() => startSession()}
                       disabled={starting}
                       className="bg-navy-800 hover:bg-navy-700 disabled:opacity-60
                         text-white rounded-[8px] px-4 py-2 text-[13px] font-medium"
@@ -1523,6 +1391,164 @@ const MeetingRoomInner: React.FC = () => {
             )}
           </RoomCard>
                 )}
+                {panel === 'participants' && (
+          <RoomCard>
+            <SidePanelHead
+              title="Participants"
+              onClose={() => closeSide('participants')}
+            />
+
+            <div className="flex border-b border-[#e3e8ef]" role="tablist">
+              {([
+                ['here', `In the room (${participants.length})`],
+                ['attendance', 'Attendance'],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  role="tab"
+                  aria-selected={peopleTab === key}
+                  onClick={() => {
+                    setPeopleTab(key);
+                    if (key === 'attendance') loadAttendance();
+                  }}
+                  className={`flex-1 py-2 text-[13px] font-medium transition ${
+                    peopleTab === key
+                      ? 'text-black border-b-2 border-black'
+                      : 'text-[#49454f] hover:text-black'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="max-h-[460px] overflow-y-auto">
+              {peopleTab === 'here' ? (
+                (participants as MeetingParticipant[]).length === 0 ? (
+                  <p className="text-[14px] text-[#656565] px-4 py-3">
+                    Nobody is here yet.
+                  </p>
+                ) : (
+                  (participants as MeetingParticipant[]).map((p) => {
+                    const isMe = p.user.id === user?.id;
+                    return (
+                      <div
+                        key={p.id}
+                        className="flex items-center gap-3 px-3 py-2.5 border-b
+                          border-[#e3e8ef] last:border-0"
+                      >
+                        <RoomPortrait name={p.user.email} size={36} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[14px] font-medium text-black truncate">
+                            {p.user.email}
+                            {isMe && (
+                              <span className="text-[#656565] font-normal"> (you)</span>
+                            )}
+                          </p>
+                          <p className="text-[12px] text-[#656565] uppercase tracking-wide">
+                            {p.role.replace('_', '-')}
+                            {p.is_muted && ' · muted'}
+                          </p>
+                        </div>
+                        {isHost && !isMe && !(p as any).is_guest && (
+                          <select
+                            value={p.role}
+                            disabled={changingRole === p.id}
+                            onChange={(e) =>
+                              changeRole(
+                                p,
+                                e.target.value as
+                                  'host' | 'co_host' | 'presenter' | 'attendee'
+                              )
+                            }
+                            aria-label={`Role for ${p.user.email}`}
+                            className="border border-[#e3e8ef] rounded-md px-1.5 py-1
+                              text-[12px] bg-white disabled:opacity-50 flex-none"
+                          >
+                            <option value="attendee">Attendee</option>
+                            <option value="presenter">Presenter</option>
+                            <option value="co_host">Co-host</option>
+                            <option value="host">Host (transfers ownership)</option>
+                          </select>
+                        )}
+                      </div>
+                    );
+                  })
+                )
+              ) : !attendance ? (
+                <p className="text-[14px] text-[#656565] px-4 py-3">Loading…</p>
+              ) : (
+                <div className="p-3">
+                  <div className="grid grid-cols-2 gap-2 text-center">
+                    {[
+                      ['On the roll', attendance.expected_total],
+                      ['Attended', attendance.attended_count],
+                      ['In meeting now', attendance.active_count],
+                      ['Absent', attendance.absent_count],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label as string}
+                        className="bg-[#fcfcfc] border border-[#e3e8ef] rounded-lg p-2"
+                      >
+                        <p className="text-[20px] font-semibold leading-tight">
+                          {value as number}
+                        </p>
+                        <p className="text-[11px] text-[#656565]">{label as string}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <h3 className="font-semibold text-[13px] mt-4 mb-1.5">
+                    Came ({attendance.attended.length})
+                  </h3>
+                  <div className="flex flex-col">
+                    {attendance.attended.map((a, i) => (
+                      <div
+                        key={`${a.type}-${i}`}
+                        className="flex items-center gap-2.5 py-1.5 border-b
+                          border-[#e3e8ef] last:border-0"
+                      >
+                        <RoomPortrait name={a.name} size={28} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[13px] truncate">{a.name}</p>
+                          <p className="text-[11px] text-[#656565] truncate">
+                            {a.email ?? a.role}
+                          </p>
+                        </div>
+                        <span
+                          className={`text-[11px] rounded-full px-2 py-0.5 flex-none ${
+                            a.is_active
+                              ? 'bg-ok/[.12] text-ok'
+                              : 'bg-navy-800/[.07] text-[#656565]'
+                          }`}
+                        >
+                          {a.is_active ? 'in the room' : 'left'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {attendance.did_not_attend.length > 0 && (
+                    <>
+                      <h3 className="font-semibold text-[13px] mt-4 mb-1.5">
+                        Did not come ({attendance.did_not_attend.length})
+                      </h3>
+                      {attendance.did_not_attend.map((a) => (
+                        <p
+                          key={a.email}
+                          className="text-[13px] text-[#656565] py-1 border-b
+                            border-[#e3e8ef] last:border-0"
+                        >
+                          {a.email}
+                        </p>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </RoomCard>
+                )}
                 {panel === 'questions' && (
           <RoomCard>
             <SidePanelHead title="Questions" onClose={() => closeSide('questions')} />
@@ -1553,7 +1579,8 @@ const MeetingRoomInner: React.FC = () => {
           <RoomBarButton
             icon="participants"
             label={`Participants${participants.length ? ` (${participants.length})` : ''}`}
-            onClick={() => setShowPeople(true)}
+            open={side.includes('participants')}
+            onClick={() => toggleSide('participants')}
           />
           <RoomBarButton
             icon="chat"

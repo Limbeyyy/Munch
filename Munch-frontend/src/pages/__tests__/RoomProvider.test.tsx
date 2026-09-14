@@ -173,15 +173,39 @@ describe('the room as the design lays it out', () => {
     }
   });
 
-  it('keeps the people in the room reachable, which the mock hides', async () => {
-    // The design ships the icon but hides the control; losing the roster
-    // and its role picker would lose the host real work.
+  it('opens the people beside the room, like everything else', async () => {
+    // It used to open over the room. Nothing does now: a roster is
+    // something you consult while the meeting carries on, not a door you
+    // shut behind you.
     showRoom();
 
-    const bar = await screen.findByRole('navigation', { name: 'Meeting controls' });
-    fireEvent.click(within(bar).getByRole('button', { name: /Participants/ }));
+    await openSide('Participants');
 
-    expect(await screen.findByRole('dialog', { name: 'Participants' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Participants' }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('has both halves of it: who is here, and who came', async () => {
+    api.getAttendance.mockResolvedValue({
+      expected_total: 2, attended_count: 2, active_count: 2, absent_count: 0,
+      attended: [
+        { type: 'user', name: 'Rahul Ingnam', email: 'rahul@example.com',
+          role: 'attendee', is_active: true },
+        { type: 'guest', name: 'Rahul Ingnam', email: null, role: 'guest',
+          is_active: true },
+      ],
+      did_not_attend: [],
+    } as any);
+
+    showRoom();
+    await openSide('Participants');
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Attendance' }));
+
+    expect(await screen.findByText('On the roll')).toBeInTheDocument();
+    expect(screen.getByText('Came (2)')).toBeInTheDocument();
+    expect(screen.getAllByText('Rahul Ingnam')).toHaveLength(2);
   });
 
   it('opens the board from the questions control', async () => {
@@ -326,14 +350,14 @@ describe('the room as the design lays it out', () => {
   });
 
   it('lets nothing else take that column', async () => {
-    // Participants and sharing open over the room; only three things sit
-    // beside it.
+    // Sharing is the one thing that still opens over the room: it is a
+    // thing you do and finish, not one you keep beside you.
     showRoom();
 
     const bar = await screen.findByRole('navigation', { name: 'Meeting controls' });
-    fireEvent.click(within(bar).getByRole('button', { name: /Participants/ }));
+    fireEvent.click(within(bar).getByRole('button', { name: /Share/ }));
 
-    expect(await screen.findByRole('dialog', { name: 'Participants' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 
   it('keeps the controls centred and leaving out at the end', async () => {
@@ -694,5 +718,96 @@ describe('the end choice', () => {
     expect(await screen.findByRole('button', { name: /End the meeting/ }))
       .toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /End the session/ })).toBeNull();
+  });
+});
+
+/**
+ * The running order as cards.
+ *
+ * Each talk carries where it comes in the order, who is giving it, when it
+ * runs and how long for - and, for the host, a way to put it on stage.
+ * Any of them, not only the next one: starting a talk puts it at the head
+ * of what is left, so the speaker who is actually in the hall goes on
+ * without the day being rearranged first.
+ */
+describe('the agenda cards', () => {
+  const hour = 3600000;
+  const running = [
+    {
+      id: 's1', title: 'Haldi', speaker_name: 'Asha', hall: '', status: 'live',
+      starts_at: new Date(Date.now() - hour).toISOString(),
+      duration_minutes: 40, meeting: 'm1', position: 0,
+    },
+    {
+      id: 's2', title: 'Mehendi', speaker_name: 'Bina', hall: '', status: 'scheduled',
+      starts_at: new Date(Date.now() + hour).toISOString(),
+      duration_minutes: 60, meeting: 'm1', position: 1,
+    },
+  ];
+
+  const asHost = () => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
+  };
+
+  afterEach(() => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: null });
+  });
+
+  beforeEach(() => {
+    api.listSessions.mockResolvedValue(running as any);
+  });
+
+  it('numbers each talk in the order it runs', async () => {
+    showRoom();
+
+    const list = await screen.findByRole('list', { name: 'Running order' });
+    const rows = within(list).getAllByRole('listitem');
+    expect(rows[0]).toHaveTextContent('1');
+    expect(rows[1]).toHaveTextContent('2');
+  });
+
+  it('keeps the time, the length and the speaker on the card', async () => {
+    showRoom();
+
+    const list = await screen.findByRole('list', { name: 'Running order' });
+    const second = within(list).getAllByRole('listitem')[1];
+    expect(second).toHaveTextContent('Mehendi');
+    expect(second).toHaveTextContent('Bina');
+    expect(second).toHaveTextContent('60 min');
+    expect(second.textContent).toMatch(/\d{1,2}:\d{2}/);
+  });
+
+  it('offers the host a start on a talk still to run', async () => {
+    asHost();
+    api.startSession.mockResolvedValue({} as any);
+    showRoom();
+
+    const list = await screen.findByRole('list', { name: 'Running order' });
+    const starts = within(list).getAllByRole('button', { name: 'Start Session' });
+    expect(starts).toHaveLength(1);
+
+    fireEvent.click(starts[0]);
+
+    // That one, not whichever the server thinks is next.
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledWith('s2'));
+  });
+
+  it('marks the one on stage rather than offering to start it', async () => {
+    asHost();
+    showRoom();
+
+    const list = await screen.findByRole('list', { name: 'Running order' });
+    const onStage = within(list).getAllByRole('listitem')[0];
+    expect(onStage).toHaveTextContent('Live');
+    expect(within(onStage).queryByRole('button', { name: 'Start Session' })).toBeNull();
+  });
+
+  it('offers nobody else a start at all', async () => {
+    showRoom();
+
+    const list = await screen.findByRole('list', { name: 'Running order' });
+    expect(within(list).queryByRole('button', { name: 'Start Session' })).toBeNull();
   });
 });

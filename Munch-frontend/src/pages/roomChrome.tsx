@@ -107,37 +107,3 @@ export const RoomBarButton: React.FC<{
     )}
   </button>
 );
-
-/** A panel the bar opens over the room. */
-export const RoomPanel: React.FC<{
-  title: string;
-  onClose: () => void;
-  wide?: boolean;
-  children: React.ReactNode;
-}> = ({ title, onClose, wide, children }) => (
-  <div
-    className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4"
-    onClick={onClose}
-  >
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-      onClick={(e) => e.stopPropagation()}
-      className={`bg-white border border-[#e3e8ef] rounded-[12px] w-full overflow-hidden
-        max-h-[85vh] flex flex-col ${wide ? 'max-w-[760px]' : 'max-w-[420px]'}`}
-    >
-      <div className="bg-[#fcfcfc] border-b border-[#e3e8ef] flex items-center gap-2 px-4 py-2.5">
-        <h2 className="flex-1 text-[18px] text-black text-center tracking-[-0.09px]">{title}</h2>
-        <button
-          onClick={onClose}
-          aria-label={`Close ${title.toLowerCase()}`}
-          className="text-[#9ea8b7] hover:text-navy-800 text-[22px] leading-none px-2 flex-none"
-        >
-          &#10005;
-        </button>
-      </div>
-      <div className="overflow-y-auto">{children}</div>
-    </div>
-  </div>
-);
