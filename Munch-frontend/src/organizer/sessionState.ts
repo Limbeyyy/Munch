@@ -190,18 +190,20 @@ export interface Desk<T> {
 /**
  * Which session a live desk should be showing, and in what state.
  *
- * A running order moves on. Session A holds the desk until its slot is
- * spent, then B takes it, then C - so a host looking at the desk sees what
- * is happening or what is next, never a slot that came and went hours ago.
- *
  * A session on stage always wins: the host started it, and that is the
- * thing that is happening. Otherwise the desk shows the one whose slot
- * contains this moment - due, and startable - or failing that the next one
- * still ahead, which is shown but cannot be started yet.
+ * thing that is happening - it holds the desk until they end it, however
+ * far past its hour that is. Otherwise the desk holds the first talk still
+ * to run, which is the one the host would start next.
  *
- * A scheduled session whose slot has passed is skipped rather than
- * promoted. It was never started, and the agenda still says so; the desk
- * is about what to do now.
+ * That one reads as *due* once its time has come and *upcoming* before
+ * then, which is all the difference amounts to: whether the start button
+ * does anything yet.
+ *
+ * A slot that slipped by while the host was running behind is still shown.
+ * It used to be skipped, on the reasoning that a session whose time had
+ * passed was never going to run - but the timetable follows the room now,
+ * so the thing to do about a slot that has slipped is to start it, and a
+ * desk holding nothing offers no way to.
  */
 export const deskSession = <
   T extends { status: string; starts_at: string; duration_minutes: number }
@@ -216,12 +218,11 @@ export const deskSession = <
     .filter((s) => s.status === 'scheduled')
     .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at));
 
-  const endOf = (s: T) =>
-    +new Date(s.starts_at) + s.duration_minutes * 60000;
+  const next = ahead[0];
+  if (!next) return { session: null, state: null };
 
-  const due = ahead.find((s) => +new Date(s.starts_at) <= now && now < endOf(s));
-  if (due) return { session: due, state: 'due' };
-
-  const next = ahead.find((s) => +new Date(s.starts_at) > now);
-  return next ? { session: next, state: 'upcoming' } : { session: null, state: null };
+  return {
+    session: next,
+    state: +new Date(next.starts_at) <= now ? 'due' : 'upcoming',
+  };
 };

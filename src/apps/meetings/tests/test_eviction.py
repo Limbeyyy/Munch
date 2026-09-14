@@ -109,13 +109,13 @@ class EvictionTests(TransactionTestCase):
         await comm.disconnect()
 
     async def test_the_room_is_emptied_when_the_time_runs_out(self):
-        # Not the host's button: the sweep that closes a session whose slot
-        # has gone. That path closed the books and left everybody sitting
-        # in a meeting that had ended.
+        # Not the host's button: the sweep that closes a session left on
+        # stage and abandoned. That path closed the books and left
+        # everybody sitting in a meeting that had ended.
         from src.apps.meetings.lifecycle import sweep_expired
 
         def wind_forward():
-            past = timezone.now() - timezone.timedelta(hours=3)
+            past = timezone.now() - timezone.timedelta(hours=20)
             self.session.starts_at = past
             self.session.duration_minutes = 30
             self.session.save()
@@ -161,9 +161,14 @@ class EvictionTests(TransactionTestCase):
             1,
         )
 
-    async def test_ending_the_last_session_by_hand_shuts_the_room_at_once(self):
-        # Not at half past when the meeting's own window closes: the host
-        # has said it is over, so everybody is told now.
+    async def test_ending_the_last_session_leaves_the_room_standing(self):
+        """The room is the meeting's, and it outlives every talk in it.
+
+        Ending a session ends the session - its transcript, its chat and
+        its resources are closed off and belong to it. The room goes on,
+        offering the host another one to start. Only the host ending the
+        meeting empties it.
+        """
         comm = await joined(self.meeting, self.attendee)
         await comm.receive_json_from()
 
@@ -178,17 +183,21 @@ class EvictionTests(TransactionTestCase):
 
         response = await database_sync_to_async(end_session)()
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.json()['meeting_ended'])
-        self.assertEqual(response.json()['meeting_status'], Meeting.Status.ENDED)
+        self.assertFalse(response.json()['meeting_ended'])
+        self.assertEqual(response.json()['meeting_status'], Meeting.Status.ACTIVE)
 
-        seen = set()
-        for _ in range(4):
-            said = await comm.receive_json_from()
-            seen.add(said['type'])
-            if said['type'] == 'meeting_ended':
-                break
-        self.assertIn('meeting_ended', seen)
+        # The room hears the session go off stage, and nothing else.
+        said = await comm.receive_json_from()
+        self.assertEqual(said['type'], 'state_update')
+        self.assertTrue(said['state'].get('session_ended'))
         await comm.disconnect()
+
+        still_in = await database_sync_to_async(
+            lambda: MeetingParticipant.objects.filter(
+                meeting=self.meeting, is_active=True
+            ).count()
+        )()
+        self.assertEqual(still_in, 1)
 
     def test_the_meeting_stays_open_while_a_session_is_still_to_come(self):
         # Ending the first of two is not ending the meeting.
@@ -211,7 +220,9 @@ class EvictionTests(TransactionTestCase):
         self.assertEqual(self.meeting.status, Meeting.Status.ACTIVE)
         self.assertTrue(later.id)
 
-    def test_the_register_survives_the_room_being_emptied_that_way(self):
+    def test_the_register_is_taken_without_emptying_the_room(self):
+        # Attendance for the talk is settled the moment it closes; the
+        # people it counted are still in the room for the next one.
         from src.apps.meetings.models import SessionAttendance
         from django.test import Client
 
@@ -226,7 +237,7 @@ class EvictionTests(TransactionTestCase):
                 session=self.session, user=self.attendee
             ).exists()
         )
-        self.assertFalse(
+        self.assertTrue(
             MeetingParticipant.objects.filter(
                 meeting=self.meeting, is_active=True
             ).exists()

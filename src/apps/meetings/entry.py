@@ -62,54 +62,38 @@ def too_early_response(meeting, now=None):
 
 
 def open_session(meeting, now=None):
-    """The session the door is open for right now, if any.
+    """The session on stage right now, if any.
 
-    A guest arriving at the door is arriving for a talk, not for a morning:
-    the room is a session. So the question is not whether the meeting has
-    begun but whether anything is on stage or about to be - one that is
-    running, or the next one whose window has opened. In the gap between
-    two sessions there is nothing to come in for, which is worth saying
-    plainly rather than seating somebody in an empty hall.
+    Kept because a caller may want to know what is running, but it no
+    longer decides who may come in: see :func:`guest_door_open`.
     """
-    from src.apps.meetings.lifecycle import scheduled_end
     from src.apps.meetings.models import Meeting, Session
 
     now = now or timezone.now()
     if meeting.status == Meeting.Status.ENDED:
         return None
-
-    for live in meeting.sessions.filter(status=Session.Status.LIVE).order_by('starts_at'):
-        # An overrun session is finished whether or not the sweep has been
-        # round to close it.
-        if now <= scheduled_end(live):
-            return live
-
-    ahead = (
-        meeting.sessions.filter(status=Session.Status.SCHEDULED)
+    return (
+        meeting.sessions.filter(status=Session.Status.LIVE)
         .order_by('starts_at')
+        .first()
     )
-    for session in ahead:
-        if now < opens_at_session(session):
-            # The next one is still to open, and everything after it is later.
-            return None
-        if now <= scheduled_end(session):
-            return session
-
-    return None
 
 
 def guest_door_open(meeting, now=None) -> bool:
     """Whether a guest may knock at all right now.
 
-    Sessions decide it where there are any. A meeting with nothing in its
-    running order yet falls back to its own window: it is still a meeting
-    that is happening, and refusing everybody from it because the schedule
-    has not been filled in would be a stranger answer than letting them in.
+    The meeting decides it. A room belongs to a meeting, not to one talk in
+    it: it opens a quarter of an hour before the meeting is due, stays open
+    across the whole running order - including the gaps between one session
+    and the next, when the host is setting up for the following speaker -
+    and shuts when the meeting does.
+
+    This used to be keyed to the sessions, which meant a guest admitted for
+    the morning was turned away again the moment a talk finished. The
+    fifteen minutes are still the rule; they are now counted from the
+    meeting rather than from each session.
     """
-    now = now or timezone.now()
-    if not meeting.sessions.exists():
-        return is_open(meeting, now)
-    return open_session(meeting, now) is not None
+    return is_open(meeting, now or timezone.now())
 
 
 def opens_at_session(session):
@@ -130,51 +114,29 @@ def next_session(meeting, now=None):
 
 
 def no_session_response(meeting, now=None):
-    """What to say when there is nothing to come in for.
+    """What to say to somebody the door is shut against.
 
-    Either the day has not reached its first talk yet, in which case say
-    when to come back, or there is nothing left of it.
+    Two ways it can be shut, and they want different answers: the meeting
+    has not opened yet, in which case say when to come back, or it is over,
+    in which case there is nothing to come back for.
     """
     from rest_framework import status
     from rest_framework.response import Response
+    from src.apps.meetings.models import Meeting
 
     now = now or timezone.now()
 
-    # Nothing in the running order: the meeting's own window is all there
-    # is to go by, and "the room opens at ten to" is the true answer.
-    if not meeting.sessions.exists():
-        from src.apps.meetings.models import Meeting
-
-        if meeting.status != Meeting.Status.ENDED:
-            return too_early_response(meeting, now)
-
-    coming = next_session(meeting, now)
-
-    if coming is None:
+    if meeting.status == Meeting.Status.ENDED:
         return Response(
             {
-                'error': 'No session is live right now.',
+                'error': 'This meeting has finished.',
                 'code': 'no_session_live',
                 'opens_at': None,
             },
             status=status.HTTP_403_FORBIDDEN,
         )
 
-    when = opens_at_session(coming)
-    return Response(
-        {
-            'error': (
-                f'No session is live right now. “{coming.title}” opens at '
-                f'{timezone.localtime(when):%H:%M}, '
-                f'{ENTRY_WINDOW_MINUTES} minutes before it starts.'
-            ),
-            'code': 'no_session_live',
-            'opens_at': when.isoformat(),
-            'session_title': coming.title,
-            'session_starts_at': coming.starts_at.isoformat(),
-        },
-        status=status.HTTP_403_FORBIDDEN,
-    )
+    return too_early_response(meeting, now)
 
 
 def can_start(meeting, now=None) -> bool:

@@ -49,8 +49,8 @@ export const GuestMeetingPage: React.FC = () => {
   const [elapsed, setElapsed] = useState(0);
   const [startedAt, setStartedAt] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState('');
-  const [sessionEndsAt, setSessionEndsAt] = useState<string | null>(null);
-  const [sessionOver, setSessionOver] = useState(false);
+  /** What the host has yet to put on stage, so the wait has a name. */
+  const [nextTitle, setNextTitle] = useState('');
   // Guests read the transcript; only account holders can speak into it.
   const [transcript, setTranscript] = useState<TranscriptionSegment[]>([]);
 
@@ -138,10 +138,9 @@ export const GuestMeetingPage: React.FC = () => {
   /*
    * Which session the room is holding, and whether its clock has started.
    *
-   * A room is a session, not a meeting: the clock counts the talk people
-   * are sitting through, not the whole morning. Kept polling rather than
-   * stopped once a clock appears, because the day moves on - the next
-   * session becomes this room's session in its turn.
+   * The room is the meeting's; the clock is the talk's. Kept polling
+   * rather than stopped once a clock appears, because the day moves on -
+   * one talk ends, the room waits, and the host puts the next on stage.
    */
   useEffect(() => {
     if (!token) return;
@@ -152,14 +151,12 @@ export const GuestMeetingPage: React.FC = () => {
         const { meeting } = await apiClient.guestStatus(token);
         if (cancelled) return;
         const running = (meeting as any)?.current_session;
-        // The title and the closing time are known as soon as the room has
-        // a session at all; the clock waits for it to go on stage.
+        // The room's session, if one is on stage. Between talks there is
+        // no title and no clock - and the room is still the guest's to sit
+        // in, because the room belongs to the meeting.
         setSessionTitle(running?.title ?? '');
-        setSessionEndsAt(running?.ends_at ?? null);
         setStartedAt(running?.started_at ?? null);
-        // A session the host closed early is over well before the slot it
-        // was given, so the room cannot wait for the clock to run out.
-        setSessionOver(!!running?.is_over);
+        setNextTitle(running?.next_title ?? '');
       } catch {
         // Try again on the next tick.
       }
@@ -324,24 +321,25 @@ export const GuestMeetingPage: React.FC = () => {
 
 
   // Same clock as everyone else: anchored to the host's start timestamp.
-  /** The room shuts when its session is over; there is nothing left to be in. */
+  /**
+   * A session ending is not the room ending.
+   *
+   * A guest is admitted to the meeting, and the meeting is the room: it
+   * holds the whole running order, gaps and all. So when a talk comes off
+   * stage the guest is told, and stays. They leave when the meeting ends,
+   * which arrives over the socket as ``meeting_ended``.
+   */
+  const lastOnStage = useRef<string>('');
   useEffect(() => {
-    if (!sessionEndsAt && !sessionOver) return;
-    const shut = () => {
-      toast(
-        sessionTitle ? `“${sessionTitle}” has finished.` : 'This session has finished.',
-        { icon: '\u2705', duration: 5000 }
-      );
-      leave();
-    };
-    if (sessionOver) { shut(); return; }
-
-    const remaining = +new Date(sessionEndsAt!) - Date.now();
-    if (remaining <= 0) { shut(); return; }
-    const id = setTimeout(shut, remaining);
-    return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionEndsAt, sessionOver, sessionTitle]);
+    const before = lastOnStage.current;
+    lastOnStage.current = sessionTitle;
+    if (before && !sessionTitle) {
+      toast(`“${before}” has finished. The room stays open.`, {
+        icon: '\u2705',
+        duration: 4000,
+      });
+    }
+  }, [sessionTitle]);
 
   useEffect(() => {
     if (!startedAt) {
@@ -382,7 +380,12 @@ export const GuestMeetingPage: React.FC = () => {
             {sessionTitle || meetingTitle}
           </h2>
           <p className="text-xs text-gray-400 truncate">
-            {sessionTitle ? `${meetingTitle} · ` : ''}Code {meetingCode}
+            {sessionTitle
+              ? `${meetingTitle} · `
+              : nextTitle
+                ? `Between sessions · up next ${nextTitle} · `
+                : 'Between sessions · '}
+            Code {meetingCode}
           </p>
         </div>
 

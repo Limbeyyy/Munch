@@ -70,7 +70,18 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
    * but whether the buttons do anything: going in early is refused by the
    * server, and a button that only produces that refusal reads as broken.
    */
-  const door = doorway(stage?.starts_at, tick);
+  /*
+   * When the room may be entered.
+   *
+   * The room is the meeting's - one room holding the whole running order -
+   * so the quarter of an hour is counted from the meeting rather than from
+   * whichever talk the desk happens to be holding. Keyed to the session,
+   * this shut the host out of their own room in every gap between two
+   * talks.
+   */
+  const door = doorway(current?.scheduled_start, tick);
+  const roomOpen =
+    current?.entry?.is_open ?? (current?.status === 'active' || door.canEnter);
   const away = stage ? howFarOff(stage.starts_at, tick) : null;
   const awayText = (): string => {
     if (!away) return '';
@@ -236,9 +247,9 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
         actions={
           <Btn
             onClick={() => navigate(`/meeting/${current.meeting_code}`)}
-            disabled={!!stage && !door.canEnter}
+            disabled={!roomOpen}
             title={
-              stage && !door.canEnter
+              !roomOpen
                 ? t({
                     ne: `कोठा ${new Date(door.opensAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} बजे खुल्छ`,
                     en: `The room opens at ${new Date(door.opensAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,

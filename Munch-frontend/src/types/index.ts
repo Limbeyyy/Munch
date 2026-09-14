@@ -17,8 +17,10 @@ export interface AuthTokens {
 // Meeting
 export interface Meeting {
   /**
-   * The session the room is holding. A room is a session, not a meeting:
-   * the clock counts this, and the door shuts when it ends.
+   * The session on stage, if one is. A room is a *meeting*, not a session:
+   * the meeting may hold ten talks and the room holds all of them, so this
+   * empties out between one and the next without the room closing. The
+   * clock counts whatever is on stage; `awaiting_next` says what is coming.
    */
   current_session?: {
     id: string | null;
@@ -26,9 +28,16 @@ export interface Meeting {
     starts_at?: string;
     started_at: string | null;
     ends_at: string | null;
-    duration_minutes?: number;
-    status?: string;
+    duration_minutes?: number | null;
+    status?: string | null;
     is_over: boolean;
+    /** A talk has already run in this room, and none is on stage now. */
+    between_sessions?: boolean;
+    /** Something is still to come, named below. */
+    awaiting_next?: boolean;
+    next_id?: string | null;
+    next_title?: string;
+    next_starts_at?: string | null;
   };
   /** When the room opens, and whether it may be started yet. Server-decided. */
   entry?: {

@@ -64,7 +64,7 @@ class AdmissionTests(TestCase):
         response = self.admit(meeting, guest)
 
         self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()['code'], 'no_session_live')
+        self.assertEqual(response.json()['code'], 'too_early')
 
     def test_and_is_not_counted_as_having_come(self):
         # The count moving was the visible half of the bug: the host's list
@@ -109,7 +109,10 @@ class AdmissionTests(TestCase):
 
         self.assertEqual(self.admit(meeting, self.knocking(meeting)).status_code, 200)
 
-    def test_in_the_gap_between_sessions_nobody_is_admitted(self):
+    def test_in_the_gap_between_sessions_the_room_is_still_open(self):
+        # The room belongs to the meeting, so the gap between one talk and
+        # the next is part of it: a guest arriving while the host sets up
+        # for the second speaker is arriving for a meeting that is running.
         meeting = self.day(-120, status=Meeting.Status.ACTIVE)
         done = meeting.sessions.first()
         done.status = Session.Status.DONE
@@ -122,7 +125,7 @@ class AdmissionTests(TestCase):
 
         response = self.admit(meeting, self.knocking(meeting))
 
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 200)
 
     def test_turning_somebody_away_is_never_refused(self):
         # Declining a request is not letting anybody in, so the door's
