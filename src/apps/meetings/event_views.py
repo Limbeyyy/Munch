@@ -567,6 +567,25 @@ class SessionViewSet(viewsets.ModelViewSet):
 
         now = timezone.now()
 
+        # Starting a talk before its hour brings it - and the rest of the
+        # day - forward. Half a day early is somebody opening next week's
+        # meeting by mistake, and that is worth stopping.
+        from src.apps.meetings.scheduling import EARLY_START_LIMIT
+
+        if session.starts_at - now > EARLY_START_LIMIT:
+            return Response(
+                {
+                    'error': (
+                        f'"{session.title}" is set for '
+                        f'{timezone.localtime(session.starts_at):%d %b %H:%M}. '
+                        'Give it a new time before starting it.'
+                    ),
+                    'code': 'not_yet',
+                    'starts_at': session.starts_at.isoformat(),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
         # Only one session at a time, so anything else on stage comes off
         # it first - and takes the time it really ran with it, the same as
         # if the host had pressed end.

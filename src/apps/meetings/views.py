@@ -409,18 +409,22 @@ class MeetingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Gathering early is one thing; declaring the meeting begun before
-        # its own hour is another. The room is already open for whoever
-        # turned up - this is only about calling it started.
-        from src.apps.meetings.entry import can_start, opens_at
+        # Starting before its hour is allowed, and means the meeting is
+        # happening earlier: ten to one, opened at nine, is nine to twelve.
+        # The running order comes forward with it. Half a day early is a
+        # misclick on another day's meeting rather than an early start, and
+        # dragging a programme about is not something to do quietly.
+        from src.apps.meetings.entry import opens_at
+        from src.apps.meetings.scheduling import EARLY_START_LIMIT, begin_meeting_now
 
-        if not can_start(meeting):
+        now = timezone.now()
+        if meeting.scheduled_start - now > EARLY_START_LIMIT:
             return Response(
                 {
                     'error': (
-                        f'This meeting starts at '
-                        f'{timezone.localtime(meeting.scheduled_start):%H:%M}. '
-                        'You can gather in the room until then.'
+                        f'This meeting is set for '
+                        f'{timezone.localtime(meeting.scheduled_start):%d %b %H:%M}. '
+                        'Give it a new time in the agenda before starting it.'
                     ),
                     'code': 'not_yet',
                     'scheduled_start': meeting.scheduled_start.isoformat(),
@@ -429,13 +433,19 @@ class MeetingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        # Only ever on the way in. A meeting already under way has a day
+        # that the sessions are moving as they run, and pressing start
+        # again - a rejoin - must not haul it about underneath them.
+        if meeting.status != Meeting.Status.ACTIVE and begin_meeting_now(meeting, now):
+            meeting.refresh_from_db()
+
         # Rejoining must not restart the clock, but opening a meeting today
         # that was last opened yesterday is a new run, not a rejoin. The
         # thing that tells them apart is whether it is running now - not
         # whether it has ever run, which stays true for ever and left the
         # counter measuring from a sitting that finished a day ago.
         if meeting.status != Meeting.Status.ACTIVE:
-            meeting.started_at = timezone.now()
+            meeting.started_at = now
             meeting.ended_at = None
             meeting.status = Meeting.Status.ACTIVE
             meeting.save(

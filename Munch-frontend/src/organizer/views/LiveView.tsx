@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { ACTIVE_POLL_MS } from '../../services/polling';
-import { deskSession, doorway, howFarOff } from '../sessionState';
+import { deskSession, doorway, howFarOff, startableNow } from '../sessionState';
 import { ChatRules } from '../ChatRules';
 import {
   AttendanceReport, ChatMessage, GuestAttendee, Meeting, MeetingParticipant,
@@ -58,8 +58,17 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
   const desk = deskSession(sessions, tick);
   const stage = desk.session;
   const isLive = desk.state === 'live';
-  /** Its slot contains this moment, so the host may put it on stage. */
+  /** Its slot contains this moment. */
   const isDue = desk.state === 'due';
+  /**
+   * Whether the host may put it on stage.
+   *
+   * Its hour need not have come. Starting early means the talk - and the
+   * rest of the day behind it - is brought forward to now, so the button
+   * works before the hour and says what it will do. Only something set for
+   * another day is refused, which the server says too.
+   */
+  const canGoOnStage = !!stage && startableNow(stage.starts_at, tick);
   const onStage = isLive ? stage : undefined;
 
   /**
@@ -331,13 +340,18 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
                 ) : stage ? (
                   <button
                     onClick={start}
-                    disabled={busy || !isDue}
+                    disabled={busy || !canGoOnStage}
                     title={
-                      isDue
+                      !canGoOnStage
+                        ? t({
+                            ne: 'अर्को दिनका लागि राखिएको सत्र यहाँबाट सुरु हुँदैन — पहिले समय मिलाउनुहोस्',
+                            en: 'This is set for another day. Give it a new time first.',
+                          })
+                        : isDue
                         ? undefined
                         : t({
-                            ne: 'सत्रको समय आएपछि मात्र सुरु गर्न मिल्छ',
-                            en: 'A session can only be started once its time has come',
+                            ne: 'तोकिएको समयभन्दा अघि सुरु गर्दा बाँकी कार्यक्रम पनि अघि सर्छ',
+                            en: 'Starting before its hour brings the rest of the day forward with it',
                           })
                     }
                     className="px-3.5 py-2 rounded-[9px] bg-amber text-[#20160A] font-semibold text-[13.5px] disabled:opacity-50"

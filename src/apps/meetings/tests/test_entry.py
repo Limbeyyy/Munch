@@ -146,8 +146,25 @@ class EntryWindowTests(TestCase):
 
     # --- starting ----------------------------------------------------------
 
-    def test_the_meeting_cannot_be_started_before_its_hour(self):
+    def test_starting_before_its_hour_brings_the_meeting_forward(self):
+        # Ten minutes early, and the host is ready: the meeting is
+        # happening now and lasts as long as it always did.
         meeting = self.meeting_in(10)
+        was = meeting.scheduled_end - meeting.scheduled_start
+
+        response = self.host_client.post(f'{API}/meetings/{meeting.id}/start/')
+
+        self.assertEqual(response.status_code, 200)
+        meeting.refresh_from_db()
+        self.assertLess(
+            abs((meeting.scheduled_start - timezone.now()).total_seconds()), 90
+        )
+        self.assertEqual(meeting.scheduled_end - meeting.scheduled_start, was)
+
+    def test_but_not_one_set_for_another_day(self):
+        # Half a day out is a misclick on next week's meeting, not an early
+        # start, and dragging a programme forward is not done quietly.
+        meeting = self.meeting_in(60 * 24)
 
         response = self.host_client.post(f'{API}/meetings/{meeting.id}/start/')
 

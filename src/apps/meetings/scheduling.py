@@ -429,6 +429,14 @@ def _restretch_meetings(sessions):
 #: session eleven seconds late should not rewrite the afternoon.
 SLIP_TOLERANCE = timezone.timedelta(seconds=30)
 
+#: How far ahead of its hour a meeting or a talk may be opened.
+#:
+#: Starting early moves the day to now, which is what the host means by it.
+#: Half a day early they do not: that is a misclick on next week's meeting,
+#: and dragging a programme forward by a week is not something to do
+#: quietly. Past this the answer is to move it in the agenda first.
+EARLY_START_LIMIT = timezone.timedelta(hours=12)
+
 
 def _later_sessions(session):
     """The sessions still to come after this one, in order.
@@ -564,27 +572,147 @@ def absorb_overrun(session, actual_end):
 
 @transaction.atomic
 def begin_now(session, now):
-    """Slide a session that is being started late so it begins now.
+    """Put a talk on stage at this moment, and re-lay what is left after it.
 
-    The counterpart of :func:`absorb_overrun` at the other end. A host who
-    comes back to the desk twenty minutes after the last talk finished is
-    starting this one now, whatever the timetable still says, and the rest
-    of the day follows it down.
+    A session begins when the host starts it. Whatever the timetable said
+    is a plan they have just overtaken - early or late - and the rest of
+    the running order follows the talk that is actually happening.
 
-    Starting *early* moves nothing: the room is the host's to open when
-    they like, and pulling everybody else's slot forward because one
-    speaker was ready would be a surprise, not a convenience.
+    Two things this has to get right, and neither is a simple shift:
+
+    *The wait between talks belongs to nobody.* The host ends one at
+    eleven and comes back at twenty-five past; the timetable does not
+    quietly eat the half hour by shortening what is left. Everything still
+    to run moves down by it, so each speaker keeps the time they were
+    given. Nothing moves while the host is away - it moves when they start
+    the next talk, because that is the moment the delay is known.
+
+    *The next one need not be the next one.* The host may start C while B
+    is still to run - the speaker who is in the hall goes on. Starting a
+    talk puts it at the head of what is left; the others queue behind it in
+    the order they were in, each keeping the breathing room it was given
+    before it.
+
+    Returns every session whose time changed, this one included.
     """
-    delta = now - session.starts_at
-    if delta < SLIP_TOLERANCE:
+    meeting = session.meeting
+    running_order = list(meeting.sessions.order_by('starts_at', 'position'))
+    gaps = _lead_gaps(running_order, gap_for(meeting))
+
+    from src.apps.meetings.models import Session as _Session
+
+    others = [
+        s for s in running_order
+        if s.id != session.id and s.status == _Session.Status.SCHEDULED
+    ]
+
+    # Does this one open the meeting? Only then does the meeting's own hour
+    # move with it - an early start is the day happening earlier, not just
+    # one talk jumping the queue.
+    opens_the_day = all(
+        s.id == session.id or s.starts_at >= session.starts_at
+        for s in running_order
+    )
+    began_at = session.starts_at
+
+    moved = []
+    if abs(now - session.starts_at) >= SLIP_TOLERANCE:
+        session.starts_at = now
+        session.save(update_fields=['starts_at', 'updated_at'])
+        moved.append(session)
+
+    previous_end = now + timezone.timedelta(minutes=session.duration_minutes)
+    for other in others:
+        target = previous_end + gaps[other.id]
+        if abs(target - other.starts_at) >= SLIP_TOLERANCE:
+            other.starts_at = target
+            other.save(update_fields=['starts_at', 'updated_at'])
+            moved.append(other)
+        previous_end = target + timezone.timedelta(minutes=other.duration_minutes)
+
+    if opens_the_day and now < began_at:
+        # The whole meeting is happening earlier, and lasts as long as it
+        # always did: ten to one, started at nine, is nine to twelve.
+        shift_meeting_window(meeting, now - meeting.scheduled_start)
+
+    stretch_meeting(meeting)
+    _push_later_meetings(meeting)
+    if moved:
+        logger.info(
+            f"Session {session.id} took the stage; "
+            f"{len(moved) - 1} other(s) moved behind it"
+        )
+    return moved
+
+
+def _lead_gaps(running_order, default_gap):
+    """The breathing room each talk was given before it.
+
+    Kept through a rearrangement, so a day with a lunch break in it still
+    has one afterwards and a day of back-to-back talks stays back to back.
+
+    The first talk has nothing in front of it, so it has no gap of its own
+    to keep. If it ends up behind something else it takes the spacing the
+    rest of the day uses - which is the gap to the second talk, and only
+    the host's configured interval when there is no second talk to ask.
+    """
+    gaps = {}
+    previous_end = None
+    for session in running_order:
+        if previous_end is None:
+            gaps[session.id] = None  # filled in below
+        else:
+            gaps[session.id] = max(
+                session.starts_at - previous_end, timezone.timedelta(0)
+            )
+        previous_end = session.starts_at + timezone.timedelta(
+            minutes=session.duration_minutes
+        )
+
+    if running_order:
+        first = running_order[0].id
+        second = running_order[1].id if len(running_order) > 1 else None
+        gaps[first] = gaps[second] if second is not None else default_gap
+    return gaps
+
+
+def shift_meeting_window(meeting, delta):
+    """Move a meeting's own hours, keeping how long it runs for."""
+    if not delta:
+        return False
+    meeting.scheduled_start = meeting.scheduled_start + delta
+    if meeting.scheduled_end:
+        meeting.scheduled_end = meeting.scheduled_end + delta
+    meeting.save(update_fields=['scheduled_start', 'scheduled_end', 'updated_at'])
+    return True
+
+
+@transaction.atomic
+def begin_meeting_now(meeting, now):
+    """Open a meeting before its hour, and bring its day forward with it.
+
+    Ten to one, started at nine, is nine to twelve: the same three hours,
+    an hour earlier. Everything still to run comes with it, keeping its
+    length and its place, because a running order that stayed where it was
+    would leave the meeting open for an hour with nothing in it.
+
+    Starting *late* moves nothing here. The meeting is simply late, and it
+    is the sessions - as each one is started - that say where the day has
+    actually got to.
+    """
+    delta = now - meeting.scheduled_start
+    if delta >= -SLIP_TOLERANCE:
         return []
 
-    following = _later_sessions(session)
+    from src.apps.meetings.models import Session as _Session
 
-    session.starts_at = now
-    session.save(update_fields=['starts_at', 'updated_at'])
-
-    moved = _slide(following, delta)
-    stretch_meeting(session.meeting)
-    _push_later_meetings(session.meeting)
+    ahead = list(
+        meeting.sessions.filter(status=_Session.Status.SCHEDULED).order_by('starts_at')
+    )
+    moved = _slide(ahead, delta)
+    shift_meeting_window(meeting, delta)
+    stretch_meeting(meeting)
+    logger.info(
+        f"Meeting {meeting.meeting_code} opened early; the day moved with it"
+    )
     return moved

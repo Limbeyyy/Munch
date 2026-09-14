@@ -140,13 +140,15 @@ def no_session_response(meeting, now=None):
 
 
 def can_start(meeting, now=None) -> bool:
-    """Whether the meeting's hour has come.
+    """Whether the host may declare the meeting begun.
 
-    Gathering early is one thing; declaring the meeting begun before its
-    own start time is another, and the schedule is what everyone else is
-    reading.
+    Once the room is open, which is a quarter of an hour before its hour.
+    Starting early is not refused any more - it means the meeting is
+    happening earlier, and the day is brought forward to match - so the
+    button that does it has to be there before the hour, or the host can
+    only start early by being late for something else.
     """
-    return (now or timezone.now()) >= meeting.scheduled_start
+    return is_open(meeting, now)
 
 
 def entry_state(meeting, now=None) -> dict:

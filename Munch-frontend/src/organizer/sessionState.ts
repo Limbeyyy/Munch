@@ -133,6 +133,27 @@ export const MEETING_STATE_TONE: Record<
  */
 export const ENTRY_WINDOW_MINUTES = 15;
 
+/**
+ * How far ahead of its hour a talk may be put on stage.
+ *
+ * Starting early is not refused any more: it brings the talk, and the rest
+ * of the day, forward to now, which is what the host means by pressing it.
+ * Half a day early they do not mean it - that is next week's meeting being
+ * opened by mistake - and the server says the same, so the button is off
+ * rather than producing a refusal.
+ */
+export const EARLY_START_LIMIT_MINUTES = 12 * 60;
+
+/** Whether this talk is close enough to its hour to be started. */
+export const startableNow = (
+  startsAt: string | number | null | undefined,
+  now: number = Date.now()
+): boolean => {
+  const starts = startsAt ? +new Date(startsAt) : NaN;
+  if (!Number.isFinite(starts)) return false;
+  return starts - now <= EARLY_START_LIMIT_MINUTES * 60000;
+};
+
 const MS = 60000;
 
 /** What a screen may offer for a session, and when. */
