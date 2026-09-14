@@ -68,7 +68,6 @@ const MeetingRoomInner: React.FC = () => {
   const [unread, setUnread] = useState(0);
   const [savingSettings, setSavingSettings] = useState(false);
   const [pending, setPending] = useState<ChatMessage[]>([]);
-  const [moderating, setModerating] = useState<string | null>(null);
   const [waitingGuests, setWaitingGuests] = useState<GuestAttendee[]>([]);
   const [decidingGuest, setDecidingGuest] = useState<string | null>(null);
   const [showShare, setShowShare] = useState(false);
@@ -297,28 +296,6 @@ const MeetingRoomInner: React.FC = () => {
       // Not the host, or chat closed - nothing to show.
     }
   }, []);
-
-  const moderate = async (
-    messageId: string,
-    decision: 'approve' | 'decline' | 'remove'
-  ) => {
-    const id = meetingIdRef.current;
-    if (!id) return;
-    try {
-      setModerating(messageId);
-      await apiClient.moderateMessage(id, messageId, decision);
-      setPending((prev) => prev.filter((m) => m.id !== messageId));
-      toast.success(
-        decision === 'approve' ? 'Message forwarded'
-          : decision === 'decline' ? 'Message declined'
-          : 'Message removed'
-      );
-    } catch (error: any) {
-      toast.error(error.response?.data?.error ?? 'Could not moderate message');
-    } finally {
-      setModerating(null);
-    }
-  };
 
   const loadGuests = useCallback(async () => {
     const id = meetingIdRef.current;
@@ -1432,47 +1409,12 @@ const MeetingRoomInner: React.FC = () => {
                   </div>
                 )}
 
-                {isHost && pending.length > 0 && (
-                  <div className="border-b border-[#e3e8ef] bg-amber/[.08] p-3 flex flex-col gap-2">
-                    <p className="text-[12px] font-semibold text-amber-700">
-                      Awaiting your approval ({pending.length})
-                    </p>
-                    {pending.map((m) => (
-                      <div key={m.id} className="bg-white border border-[#e3e8ef] rounded p-2 text-[12px]">
-                        <p className="text-[#4a5567]">
-                          <span className="font-semibold">{m.sender_name}</span>
-                          {' → '}
-                          <span className="font-semibold">{m.recipient_name}</span>
-                        </p>
-                        <p className="my-1 break-words text-[#030712]">{m.body}</p>
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => moderate(m.id, 'approve')}
-                            disabled={moderating === m.id}
-                            className="flex-1 bg-ok text-white rounded py-1 disabled:opacity-50"
-                          >
-                            Accept
-                          </button>
-                          <button
-                            onClick={() => moderate(m.id, 'decline')}
-                            disabled={moderating === m.id}
-                            className="flex-1 bg-amber-700 text-white rounded py-1 disabled:opacity-50"
-                          >
-                            Decline
-                          </button>
-                          <button
-                            onClick={() => moderate(m.id, 'remove')}
-                            disabled={moderating === m.id}
-                            className="flex-1 bg-live text-white rounded py-1 disabled:opacity-50"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
+                {/* What people write to the front of the room is decided in
+                    one place - the Questions panel's Requests tab - and not
+                    here as well. There used to be a queue in this panel
+                    whose Accept let a message through without saying what
+                    it was, which took it out of Requests and put it on no
+                    board: the question vanished into having been read. */}
                 <div className="h-[280px] overflow-y-auto p-3 flex flex-col gap-3">
                   {visibleMessages.length === 0 ? (
                     <p className="text-[13px] text-[#656565]">

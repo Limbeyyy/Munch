@@ -70,7 +70,24 @@ export const RoomQuestions: React.FC<Props> = ({
 
     if (!canSort || !meetingId) { setFetched([]); return; }
     try {
-      setFetched(await apiClient.getPendingMessages(meetingId));
+      /*
+       * Two kinds of thing are waiting to be given a place.
+       *
+       * What is held for review, and what has already reached the person
+       * it was written to but has never been filed - a message let
+       * through with no topic is on nobody's board and in nobody's queue.
+       * That is where a question put to the host used to disappear to,
+       * and it is still where anything approved from the chat panel
+       * lands. Both are unanswered questions, so both are here.
+       */
+      const [held, seen] = await Promise.all([
+        apiClient.getPendingMessages(meetingId),
+        apiClient.getReviewedMessages(meetingId),
+      ]);
+      const unfiled = [...seen.from_users, ...seen.from_guests].filter(
+        (m) => !m.topic || m.topic === 'none'
+      );
+      setFetched([...held, ...unfiled]);
     } catch {
       // The queue is the host's own view; a dropped refresh is not worth
       // interrupting a meeting for.
@@ -114,7 +131,13 @@ export const RoomQuestions: React.FC<Props> = ({
     if (!meetingId) return;
     try {
       setBusy(message.id);
-      await apiClient.moderateMessage(meetingId, message.id, decision, topic);
+      // One that has already been let through is not approved again; it
+      // is simply given the place it never got.
+      if (message.moderation_status !== 'pending' && topic) {
+        await apiClient.sortMessage(meetingId, message.id, topic);
+      } else {
+        await apiClient.moderateMessage(meetingId, message.id, decision, topic);
+      }
       setSettled((done) => [...done, message.id]);
       toast.success(
         topic === 'faq'
@@ -217,41 +240,55 @@ export const RoomQuestions: React.FC<Props> = ({
     </li>
   );
 
-  /** One thing written to the host, waiting to be sorted. */
+  /** One thing written to the front of the room, waiting for a place. */
   const requestRow = (message: ChatMessage) => (
-    <li key={message.id} className="flex flex-col gap-2 px-2 py-2 border-b border-[#e3e8ef]
-      last:border-0">
-      <p className="text-[14px] leading-5 text-[#24262b]">{message.body}</p>
-      <p className="text-[12px] text-[#656565]">
-        {message.sender_name}
-        {message.sender_is_guest && ` · ${t({ ne: 'पाहुना', en: 'guest' })}`}
-        {message.recipient_name && ` · ${t({ ne: 'लाई', en: 'to' })} ${message.recipient_name}`}
-      </p>
-      <div className="flex gap-2 flex-wrap">
+    <li
+      key={message.id}
+      className="flex flex-col gap-2 px-2 py-2.5 border-b border-[#e3e8ef] last:border-0"
+    >
+      <div className="flex gap-3 items-start">
+        <FigmaIcon name="asked" size={24} />
+        <p className="flex-1 min-w-0 text-[14px] leading-5 text-[#24262b]">
+          {message.body}
+        </p>
+      </div>
+
+      {/* The decision, under what was written: which board it belongs on. */}
+      <div className="flex gap-2 ps-9">
         <button
           onClick={() => sort(message, 'approve', 'faq')}
           disabled={busy === message.id}
-          className="bg-navy-800 hover:bg-navy-700 text-white rounded-[8px] px-3 py-1.5
-            text-[13px] font-medium disabled:opacity-50"
+          className="flex-1 bg-navy-800 hover:bg-navy-700 text-white rounded-[8px]
+            px-3 py-1.5 text-[13px] font-medium disabled:opacity-50"
         >
-          {t({ ne: 'प्रश्न', en: 'Question' })}
+          {t({ ne: 'प्रश्नमा', en: 'To questions' })}
         </button>
         <button
           onClick={() => sort(message, 'approve', 'suggestion')}
           disabled={busy === message.id}
-          className="border border-navy-800/25 hover:bg-cream rounded-[8px] px-3 py-1.5
-            text-[13px] font-medium disabled:opacity-50"
+          className="flex-1 border border-navy-800/25 hover:bg-cream rounded-[8px]
+            px-3 py-1.5 text-[13px] font-medium disabled:opacity-50"
         >
-          {t({ ne: 'सुझाव', en: 'Suggestion' })}
+          {t({ ne: 'सुझावमा', en: 'To suggestions' })}
         </button>
-        <button
-          onClick={() => sort(message, 'decline')}
-          disabled={busy === message.id}
-          className="ms-auto border border-live/40 text-live hover:bg-live/[.06]
-            rounded-[8px] px-3 py-1.5 text-[13px] font-medium disabled:opacity-50"
-        >
-          {t({ ne: 'अस्वीकार', en: 'Decline' })}
-        </button>
+      </div>
+
+      <div className="flex items-center gap-2 ps-9">
+        <p className="flex-1 min-w-0 text-[12px] text-[#656565] truncate">
+          {message.sender_name}
+          {message.sender_is_guest && ` · ${t({ ne: 'पाहुना', en: 'guest' })}`}
+          {message.recipient_name &&
+            ` · ${t({ ne: 'लाई', en: 'to' })} ${message.recipient_name}`}
+        </p>
+        {message.moderation_status === 'pending' && (
+          <button
+            onClick={() => sort(message, 'decline')}
+            disabled={busy === message.id}
+            className="flex-none text-[12px] text-live hover:underline disabled:opacity-50"
+          >
+            {t({ ne: 'अस्वीकार', en: 'Decline' })}
+          </button>
+        )}
       </div>
     </li>
   );
