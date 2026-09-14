@@ -14,6 +14,7 @@ import { ResourceControls } from '../organizer/ResourceVisibility';
 import { PhotoUploads } from '../organizer/Photos';
 import { MessageBoard } from '../organizer/MessageBoard';
 import { FigmaIcon, FigmaIconName } from '../assets/icons';
+import { RoomAgenda } from '../organizer/RoomAgenda';
 import { OrganizerProvider } from '../organizer/i18n';
 
 
@@ -64,10 +65,6 @@ const MeetingRoomInner: React.FC = () => {
   const [draft, setDraft] = useState('');
   const [dmTarget, setDmTarget] = useState<string>('');
   const [unread, setUnread] = useState(0);
-  const [chatTab, setChatTab] = useState<'public' | 'private'>('public');
-  const [unreadPublic, setUnreadPublic] = useState(0);
-  const [unreadPrivate, setUnreadPrivate] = useState(0);
-  const chatTabRef = useRef<'public' | 'private'>('public');
   const [savingSettings, setSavingSettings] = useState(false);
   const [pending, setPending] = useState<ChatMessage[]>([]);
   const [moderating, setModerating] = useState<string | null>(null);
@@ -107,6 +104,7 @@ const MeetingRoomInner: React.FC = () => {
     resources: () => {},
     attendance: () => {},
     meeting: () => {},
+    agenda: () => {},
   });
   const meetingIdRef = useRef<string | null>(null);
   const elapsedRef = useRef(0);
@@ -124,6 +122,17 @@ const MeetingRoomInner: React.FC = () => {
   useEffect(() => {
     meetingIdRef.current = meetingId;
   }, [meetingId]);
+
+  /** Re-read the running order. The host moves it; the room follows. */
+  const refreshAgenda = useCallback(async () => {
+    const id = meetingIdRef.current;
+    if (!id) return;
+    try {
+      setAgenda(await apiClient.listSessions(id));
+    } catch {
+      // A dropped refresh is not worth interrupting the meeting for.
+    }
+  }, []);
 
   useEffect(() => {
     if (!meetingId) { setAgenda([]); return; }
@@ -144,19 +153,8 @@ const MeetingRoomInner: React.FC = () => {
   useEffect(() => {
     showChatRef.current = showChat;
     showAttendanceRef.current = showAttendance;
-    if (showChat) {
-      setUnread(0);
-      if (chatTab === 'public') setUnreadPublic(0);
-      else setUnreadPrivate(0);
-    }
-  }, [showChat, chatTab, showAttendance]);
-
-  useEffect(() => {
-    chatTabRef.current = chatTab;
-    // Leaving the room tab means room messages are no longer being read.
-    if (chatTab === 'public') setUnreadPublic(0);
-    else setUnreadPrivate(0);
-  }, [chatTab]);
+    if (showChat) setUnread(0);
+  }, [showChat, showAttendance]);
 
   const isHost = !!user && currentMeeting?.host?.id === user.id;
 
@@ -166,9 +164,16 @@ const MeetingRoomInner: React.FC = () => {
     (participants as MeetingParticipant[]).some(
       (p) => p.user?.id === user?.id && ['host', 'co_host'].includes(p.role)
     );
-  const visibleMessages = messages.filter((m) =>
-    chatTab === 'private' ? m.is_direct : !m.is_direct
-  );
+  /*
+   * Every message in the room is written to somebody.
+   *
+   * There is no room-wide thread any more: what people have to say goes
+   * to the host or to the speaker, and the host decides what to do with
+   * it - which is the moderation queue that was already there. Anything
+   * left over from a meeting that had a public thread stays out of the
+   * way rather than appearing with nobody to have received it.
+   */
+  const visibleMessages = messages.filter((m) => m.is_direct);
   const myRole = (participants as MeetingParticipant[])
     .find((p) => p.user?.id === user?.id)?.role;
 
@@ -343,6 +348,11 @@ const MeetingRoomInner: React.FC = () => {
   const sendMessage = () => {
     const body = draft.trim();
     if (!body) return;
+    // Every message is written to somebody: the host, or the speaker.
+    if (!dmTarget) {
+      toast.error('Choose who this is for');
+      return;
+    }
 
     const socket = wsRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -353,7 +363,7 @@ const MeetingRoomInner: React.FC = () => {
     socket.send(JSON.stringify({
       type: 'chat_message',
       message: body,
-      recipient_id: dmTarget || undefined,
+      recipient_id: dmTarget,
     }));
     setDraft('');
   };
@@ -449,6 +459,16 @@ const MeetingRoomInner: React.FC = () => {
         if (data.state?.session_ended || data.state?.session_started) {
           refreshRef.current.meeting();
         }
+        // The host has rearranged the running order, or a talk running
+        // long has moved everything after it. Either way the times on
+        // every screen in the room are out of date until this lands.
+        if (
+          data.state?.schedule_changed
+          || data.state?.session_ended
+          || data.state?.session_started
+        ) {
+          refreshRef.current.agenda();
+        }
       } else if (data.type === 'chat_message') {
         setMessages((prev) => {
           if (data.message_id && prev.some((m) => m.id === data.message_id)) return prev;
@@ -467,15 +487,7 @@ const MeetingRoomInner: React.FC = () => {
             recipient_is_guest: !!data.recipient_is_guest,
           }];
         });
-        const arrivedPrivate = !!data.is_direct;
-        const watching =
-          showChatRef.current &&
-          chatTabRef.current === (arrivedPrivate ? 'private' : 'public');
-        if (!watching) {
-          setUnread((n) => n + 1);
-          if (arrivedPrivate) setUnreadPrivate((n) => n + 1);
-          else setUnreadPublic((n) => n + 1);
-        }
+        if (!showChatRef.current) setUnread((n) => n + 1);
       } else if (data.type === 'chat_pending') {
         setPending((prev) =>
           prev.some((m) => m.id === data.message_id) ? prev : [...prev, {
@@ -604,8 +616,9 @@ const MeetingRoomInner: React.FC = () => {
       },
       attendance: () => loadAttendance(),
       meeting: () => refreshMeeting(),
+      agenda: () => { refreshAgenda(); },
     };
-  }, [loadResources, loadAttendance, setParticipants, refreshMeeting]);
+  }, [loadResources, loadAttendance, setParticipants, refreshMeeting, refreshAgenda]);
 
   // The device streams new lines over the socket; this fills in what was
   // said before we arrived.
@@ -714,10 +727,7 @@ const MeetingRoomInner: React.FC = () => {
     try {
       await apiClient.startSession(nextId);
       await refreshRef.current.meeting();
-      const fresh = meetingIdRef.current
-        ? await apiClient.listSessions(meetingIdRef.current)
-        : [];
-      setAgenda(fresh);
+      await refreshAgenda();
     } catch (error: any) {
       toast.error(error.response?.data?.error ?? 'Could not start that session');
     } finally {
@@ -1053,46 +1063,16 @@ const MeetingRoomInner: React.FC = () => {
             : 'xl:grid-cols-[332px_minmax(0,1fr)]'
         }`}
       >
-        {/* What the day runs through */}
+        {/* What the day runs through, as it actually stands. The host
+            rearranges it from here; everybody else watches it move. */}
         <RoomCard className="xl:sticky xl:top-4">
-          <div className="bg-[#fcfcfc] h-12 grid place-items-center px-4">
-            <h2 className="text-[20px] font-medium text-black leading-[1.2]">Agenda Summary</h2>
-          </div>
-          <div className="max-h-[458px] overflow-y-auto">
-            {agenda.length === 0 ? (
-              <p className="text-[14px] text-[#656565] px-4 py-3">
-                Nothing in the running order yet.
-              </p>
-            ) : (
-              agenda.map((item) => {
-                const onStage = item.id === session?.id;
-                return (
-                  <div
-                    key={item.id}
-                    aria-current={onStage}
-                    className={`flex items-center justify-between gap-2 px-1 py-2
-                      border-b-[0.5px] border-[#b3b3b3] last:border-0
-                      ${onStage ? 'bg-[#007092] text-white' : 'bg-[#fcfcfc]'}`}
-                  >
-                    <div className="flex gap-2 items-center p-1 min-w-0">
-                      <RoomPortrait name={item.speaker_name || item.title} size={48} />
-                      <div className="min-w-0">
-                        <p className={`text-[16px] font-medium leading-[1.2] truncate
-                          ${onStage ? 'text-white' : 'text-black'}`}>
-                          {item.title}
-                        </p>
-                        <p className={`text-[14px] leading-[1.5] truncate
-                          ${onStage ? 'text-white' : 'text-[#030712]'}`}>
-                          {item.speaker_name || 'No speaker named'}
-                        </p>
-                      </div>
-                    </div>
-                    {onStage && <FigmaIcon name="chevronDown" size={24} />}
-                  </div>
-                );
-              })
-            )}
-          </div>
+          <RoomAgenda
+            meeting={currentMeeting}
+            sessions={agenda}
+            liveSessionId={session?.id ?? null}
+            canEdit={isHost}
+            onChanged={refreshAgenda}
+          />
         </RoomCard>
 
         {/* The stage */}
@@ -1435,42 +1415,10 @@ const MeetingRoomInner: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex border-b border-[#e3e8ef]" role="tablist">
-                  {([
-                    ['public', 'Room', unreadPublic],
-                    ['private', 'Private', unreadPrivate],
-                  ] as const).map(([key, label, count]) => (
-                    <button
-                      key={key}
-                      role="tab"
-                      aria-selected={chatTab === key}
-                      onClick={() => {
-                        setChatTab(key);
-                        if (key === 'public') setDmTarget('');
-                      }}
-                      className={`flex-1 py-2 text-[13px] font-medium transition ${
-                        chatTab === key
-                          ? 'text-black border-b-2 border-black'
-                          : 'text-[#49454f] hover:text-black'
-                      }`}
-                    >
-                      {label}
-                      {count > 0 && chatTab !== key && (
-                        <span className="ms-2 inline-grid place-items-center min-w-[18px] h-[18px]
-                          px-1 text-[10px] font-bold bg-live text-white rounded-full align-middle">
-                          {count > 9 ? '9+' : count}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-
                 <div className="h-[280px] overflow-y-auto p-3 flex flex-col gap-3">
                   {visibleMessages.length === 0 ? (
                     <p className="text-[13px] text-[#656565]">
-                      {chatTab === 'public'
-                        ? 'No messages in the room yet.'
-                        : 'No private messages yet.'}
+                      No messages yet. Write to the host or to the speaker.
                     </p>
                   ) : (
                     visibleMessages.map((m) => {
@@ -1516,18 +1464,17 @@ const MeetingRoomInner: React.FC = () => {
                 </div>
 
                 <div className="p-3 border-t border-[#e3e8ef] flex flex-col gap-2">
-                  {chatTab === 'private' &&
-                    chatSettings.direct_messages_enabled &&
-                    dmTargets.length > 0 && (
+                  {chatSettings.direct_messages_enabled && dmTargets.length > 0 && (
                     <select
                       value={dmTarget}
                       onChange={(e) => setDmTarget(e.target.value)}
+                      aria-label="Who to write to"
                       className="w-full border border-[#e3e8ef] rounded-lg px-2 py-1.5 text-[13px] bg-white"
                     >
-                      <option value="">Everyone in the room</option>
+                      <option value="">Who is this for?</option>
                       {dmTargets.map((target) => (
                         <option key={target.id} value={target.id}>
-                          Direct to {target.label}
+                          {target.label}
                         </option>
                       ))}
                     </select>
@@ -1545,9 +1492,7 @@ const MeetingRoomInner: React.FC = () => {
                         }
                       }}
                       placeholder={
-                        chatTab === 'private' && !dmTarget
-                          ? 'Pick someone above first'
-                          : 'Write your message here'
+                        dmTarget ? 'Write your message here' : 'Pick someone above first'
                       }
                       maxLength={2000}
                       className="flex-1 min-w-0 bg-[#f9fafb] border border-[#e5e7eb] rounded-[12px]
@@ -1556,7 +1501,7 @@ const MeetingRoomInner: React.FC = () => {
                     <button
                       onClick={sendMessage}
                       aria-label="Send"
-                      disabled={!draft.trim() || (chatTab === 'private' && !dmTarget)}
+                      disabled={!draft.trim() || !dmTarget}
                       className="text-navy-700 hover:text-navy-900 px-2 flex-none
                         disabled:opacity-40 disabled:cursor-not-allowed"
                     >
@@ -1567,13 +1512,11 @@ const MeetingRoomInner: React.FC = () => {
                   </div>
 
                   <p className="text-[11px] text-[#656565]">
-                    {chatTab === 'public'
-                      ? 'Everyone in the meeting can see these messages.'
-                      : chatSettings.direct_messages_enabled
-                      ? dmTarget && !isHost && myRole === 'attendee'
-                        ? 'The host reviews this before it reaches them.'
-                        : 'Direct messages are visible only to you and the recipient.'
-                      : 'Direct messages need to be enabled by the host.'}
+                    {!chatSettings.direct_messages_enabled
+                      ? 'Messages need to be enabled by the host.'
+                      : dmTarget && !isHost && myRole === 'attendee'
+                      ? 'The host reviews this before it reaches them.'
+                      : 'Only you and the person you write to can see this.'}
                   </p>
                 </div>
               </>

@@ -68,10 +68,6 @@ export const GuestMeetingPage: React.FC = () => {
   const [draft, setDraft] = useState('');
   const [dmTarget, setDmTarget] = useState('');
   const [unread, setUnread] = useState(0);
-  const [chatTab, setChatTab] = useState<'public' | 'private'>('public');
-  const [unreadPublic, setUnreadPublic] = useState(0);
-  const [unreadPrivate, setUnreadPrivate] = useState(0);
-  const chatTabRef = useRef<'public' | 'private'>('public');
   const [myGuestId, setMyGuestId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -93,18 +89,8 @@ export const GuestMeetingPage: React.FC = () => {
 
   useEffect(() => {
     showChatRef.current = showChat;
-    if (showChat) {
-      setUnread(0);
-      if (chatTab === 'public') setUnreadPublic(0);
-      else setUnreadPrivate(0);
-    }
-  }, [showChat, chatTab]);
-
-  useEffect(() => {
-    chatTabRef.current = chatTab;
-    if (chatTab === 'public') setUnreadPublic(0);
-    else setUnreadPrivate(0);
-  }, [chatTab]);
+    if (showChat) setUnread(0);
+  }, [showChat]);
 
   const loadChat = useCallback(async () => {
     if (!token) return;
@@ -206,15 +192,7 @@ export const GuestMeetingPage: React.FC = () => {
             recipient_is_guest: !!data.recipient_is_guest,
           }]
         );
-        const arrivedPrivate = !!data.is_direct;
-        const watching =
-          showChatRef.current &&
-          chatTabRef.current === (arrivedPrivate ? 'private' : 'public');
-        if (!watching) {
-          setUnread((n) => n + 1);
-          if (arrivedPrivate) setUnreadPrivate((n) => n + 1);
-          else setUnreadPublic((n) => n + 1);
-        }
+        if (!showChatRef.current) setUnread((n) => n + 1);
       } else if (data.type === 'meeting_started') {
         setStartedAt(data.started_at);
       } else if (data.type === 'meeting_ended') {
@@ -274,13 +252,19 @@ export const GuestMeetingPage: React.FC = () => {
     return () => clearInterval(id);
   }, [loadResources]);
 
-  const visibleMessages = messages.filter((m) =>
-    chatTab === 'private' ? m.is_direct : !m.is_direct
-  );
+  /*
+   * Everything a guest writes goes to somebody: the host, or the speaker.
+   * There is no room-wide thread on either side of the room any more.
+   */
+  const visibleMessages = messages.filter((m) => m.is_direct);
 
   const sendMessage = () => {
     const body = draft.trim();
     if (!body) return;
+    if (!dmTarget) {
+      toast.error('Choose who this is for');
+      return;
+    }
     const socket = wsRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       toast.error('Not connected to the meeting');
@@ -289,7 +273,7 @@ export const GuestMeetingPage: React.FC = () => {
     socket.send(JSON.stringify({
       type: 'chat_message',
       message: body,
-      recipient_id: dmTarget || undefined,
+      recipient_id: dmTarget,
     }));
     setDraft('');
   };
@@ -497,42 +481,10 @@ export const GuestMeetingPage: React.FC = () => {
             </div>
           ) : (
             <>
-              {/* Room / Private */}
-              <div className="flex border-b border-gray-700" role="tablist">
-                {([
-                  ['public', 'Room', unreadPublic],
-                  ['private', 'Private', unreadPrivate],
-                ] as const).map(([key, label, count]) => (
-                  <button
-                    key={key}
-                    role="tab"
-                    aria-selected={chatTab === key}
-                    onClick={() => {
-                      setChatTab(key);
-                      if (key === 'public') setDmTarget('');
-                    }}
-                    className={`flex-1 py-2 text-sm font-semibold relative transition ${
-                      chatTab === key
-                        ? 'text-white border-b-2 border-blue-500 bg-gray-700/40'
-                        : 'text-gray-400 hover:text-gray-200'
-                    }`}
-                  >
-                    {label}
-                    {count > 0 && chatTab !== key && (
-                      <span className="ml-2 inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 text-[10px] font-bold bg-red-500 text-white rounded-full align-middle">
-                        {count > 9 ? '9+' : count}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-
               <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
                 {visibleMessages.length === 0 ? (
                   <p className="text-xs text-gray-400">
-                    {chatTab === 'public'
-                      ? 'No messages in the room yet.'
-                      : 'No private messages yet.'}
+                    No messages yet. Write to the host or to the speaker.
                   </p>
                 ) : (
                   visibleMessages.map((m) => {
@@ -575,18 +527,17 @@ export const GuestMeetingPage: React.FC = () => {
               </div>
 
               <div className="p-3 border-t border-gray-700 space-y-2">
-                {chatTab === 'private' &&
-                  chatSettings.direct_messages_enabled &&
-                  people.length > 0 && (
+                {chatSettings.direct_messages_enabled && people.length > 0 && (
                   <select
                     value={dmTarget}
                     onChange={(e) => setDmTarget(e.target.value)}
+                    aria-label="Who to write to"
                     className="w-full bg-gray-700 text-sm rounded px-2 py-1.5"
                   >
-                    <option value="">Everyone in the room</option>
+                    <option value="">Who is this for?</option>
                     {people.map((p) => (
                       <option key={p.id} value={p.id}>
-                        Direct to {p.name} ({p.role.replace('_', '-')})
+                        {p.name} ({p.role.replace('_', '-')})
                       </option>
                     ))}
                   </select>
@@ -604,20 +555,14 @@ export const GuestMeetingPage: React.FC = () => {
                       }
                     }}
                     placeholder={
-                      chatTab === 'private'
-                        ? dmTarget
-                          ? 'Private message...'
-                          : 'Pick someone above first'
-                        : 'Message the room...'
+                      dmTarget ? 'Write your message here' : 'Pick someone above first'
                     }
                     maxLength={2000}
                     className="flex-1 bg-gray-700 text-sm rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   <button
                     onClick={sendMessage}
-                    disabled={
-                      !draft.trim() || (chatTab === 'private' && !dmTarget)
-                    }
+                    disabled={!draft.trim() || !dmTarget}
                     className="bg-blue-600 hover:bg-blue-700 px-4 rounded text-sm font-semibold disabled:opacity-50"
                   >
                     Send
@@ -625,13 +570,11 @@ export const GuestMeetingPage: React.FC = () => {
                 </div>
 
                 <p className="text-[11px] text-gray-400">
-                  {chatTab === 'public'
-                    ? 'Everyone in the meeting can see these messages.'
-                    : !chatSettings.direct_messages_enabled
-                    ? 'Direct messages need to be enabled by the host.'
+                  {!chatSettings.direct_messages_enabled
+                    ? 'Messages need to be enabled by the host.'
                     : dmTarget
                     ? 'The host reviews this before it reaches them.'
-                    : 'Pick someone above to message them directly.'}
+                    : 'Pick someone above to write to them.'}
                 </p>
               </div>
             </>

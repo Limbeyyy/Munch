@@ -45,8 +45,10 @@ export interface PlannedMeeting {
 
 /** A session that has run, or is running, has a real time and keeps it. */
 const isSettled = (s: PlannedSession) => s.status !== 'scheduled';
-/** Likewise a meeting already under way cannot be moved. */
+/** A meeting already under way keeps its own window where it is. */
 const isUnderway = (m: PlannedMeeting) => m.status === 'active' || m.status === 'ended';
+/** A finished meeting is a record, and records do not move. */
+const isFinished = (m: PlannedMeeting) => m.status === 'ended';
 
 const endOf = (s: PlannedSession) => s.startsAt + s.durationMinutes * MS;
 
@@ -88,8 +90,22 @@ export const toPlan = (meetings: EventMeeting[]): PlannedMeeting[] =>
     }));
 
 /** Every session in the day, earliest first, whichever meeting holds it. */
-const underwayMeetings = (plan: PlannedMeeting[]) =>
-  new Set(plan.filter(isUnderway).map((m) => m.id));
+/**
+ * Meetings whose sessions hold their times, whatever else moves.
+ *
+ * A finished one always. A meeting under way as well - its day should not
+ * shift under a room full of people - *unless the edit is coming from
+ * inside it*, which is the case the room's own running order is: the host
+ * rearranges what is left of the meeting they are standing in, between one
+ * talk and the next, and that is the point of it. What has already run, or
+ * is running, stays put either way; those are settled on their own account.
+ */
+const fixedMeetings = (plan: PlannedMeeting[], editing?: string) =>
+  new Set(
+    plan
+      .filter((m) => isFinished(m) || (isUnderway(m) && m.id !== editing))
+      .map((m) => m.id)
+  );
 
 const allSessions = (plan: PlannedMeeting[]): PlannedSession[] =>
   plan.flatMap((m) => m.sessions).sort((a, b) => a.startsAt - b.startsAt);
@@ -243,6 +259,8 @@ export const applyEdit = (
         )
       : undefined;
 
+  const held = fixedMeetings(plan, target.meetingId);
+
   if (occupant) {
     const swapped = sessions.map((s) => {
       if (s.id === target.id) return { ...s, startsAt: occupant.startsAt };
@@ -250,7 +268,7 @@ export const applyEdit = (
       return s;
     });
     return separate(
-      regroup(plan, resolve(swapped, underwayMeetings(plan), undefined, gapMinutes)),
+      regroup(plan, resolve(swapped, held, undefined, gapMinutes)),
       gapMinutes
     );
   }
@@ -259,7 +277,7 @@ export const applyEdit = (
     s.id === sessionId ? { ...s, startsAt: nextStart, durationMinutes: nextDuration } : s
   );
   return separate(
-    regroup(plan, resolve(edited, underwayMeetings(plan), sessionId, gapMinutes)),
+    regroup(plan, resolve(edited, held, sessionId, gapMinutes)),
     gapMinutes
   );
 };
@@ -283,7 +301,7 @@ export const whyNotSwap = (
   // A session that has run, or is running, has a real time and keeps it.
   if (isSettled(a) || isSettled(b)) return 'settled';
   const meeting = plan.find((m) => m.id === a.meetingId);
-  if (meeting && isUnderway(meeting)) return 'settled';
+  if (meeting && isFinished(meeting)) return 'settled';
   return null;
 };
 
@@ -350,7 +368,7 @@ export const reflowMeeting = (
     s.meetingId === meetingId && !isSettled(s) ? { ...s, startsAt: s.startsAt + shift } : s
   );
   return separate(
-    regroup(plan, resolve(sessions, underwayMeetings(plan), undefined, gapMinutes)),
+    regroup(plan, resolve(sessions, fixedMeetings(plan, meetingId), undefined, gapMinutes)),
     gapMinutes
   );
 };

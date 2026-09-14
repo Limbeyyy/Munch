@@ -252,3 +252,87 @@ class ElasticScheduleTests(TestCase):
         self.assertEqual(started.status_code, 200)
         self.refreshed()
         self.assertEqual(self.b.status, Session.Status.LIVE)
+
+
+class RearrangedFromInsideTheRoomTests(TestCase):
+    """The host reorders what is left of a meeting they are standing in.
+
+    A meeting under way used to hold every one of its times: the running
+    order was something you settled beforehand. It is now something the
+    host works with between one talk and the next - end this one, drag the
+    speaker who is actually in the hall to the top, start them - so its
+    scheduled sessions move. What has run, or is running, does not.
+    """
+
+    def setUp(self):
+        self.host = make_host()
+        self.event = make_event(self.host)
+        self.ten = timezone.now().replace(hour=10, minute=0, second=0, microsecond=0)
+        # Spaced by the quarter of an hour the host keeps between talks, so
+        # nothing here is fighting the gap: 10:00, 11:15, 12:30.
+        self.meeting = make_meeting(self.host, self.event, start=self.ten, minutes=210)
+        self.meeting.status = Meeting.Status.ACTIVE
+        self.meeting.started_at = self.ten
+        self.meeting.save()
+        self.a = make_session(self.meeting, self.ten, 60, 'A')
+        self.a.status = Session.Status.DONE
+        self.a.save(update_fields=['status'])
+        self.b = make_session(self.meeting, at(self.ten, 1, 15), 60, 'B')
+        self.c = make_session(self.meeting, at(self.ten, 2, 30), 60, 'C')
+        self.client = signed_in(self.host)
+
+    def swap(self):
+        return self.client.post(
+            f'{API}/sessions/reschedule/',
+            {'changes': [
+                {'id': str(self.c.id), 'starts_at': self.b.starts_at.isoformat()},
+                {'id': str(self.b.id), 'starts_at': self.c.starts_at.isoformat()},
+            ]},
+            format='json',
+        )
+
+    def test_two_still_to_run_change_places(self):
+        response = self.swap()
+
+        self.assertEqual(response.status_code, 200)
+        self.b.refresh_from_db()
+        self.c.refresh_from_db()
+        self.assertEqual(self.c.starts_at, at(self.ten, 1, 15))
+        self.assertEqual(self.b.starts_at, at(self.ten, 2, 30))
+
+    def test_the_talk_that_has_run_keeps_its_place(self):
+        self.swap()
+
+        self.a.refresh_from_db()
+        self.assertEqual(self.a.starts_at, self.ten)
+        self.assertEqual(self.a.status, Session.Status.DONE)
+
+    def test_the_meeting_keeps_the_hour_it_opened_at(self):
+        # Moving the window out from under a room full of people would be
+        # worse than a window that no longer matches.
+        self.swap()
+
+        self.meeting.refresh_from_db()
+        self.assertEqual(self.meeting.scheduled_start, self.ten)
+        self.assertEqual(self.meeting.status, Meeting.Status.ACTIVE)
+
+    def test_but_its_window_grows_to_hold_a_longer_running_order(self):
+        response = self.client.post(
+            f'{API}/sessions/reschedule/',
+            {'changes': [{'id': str(self.c.id), 'duration_minutes': 120}]},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.meeting.refresh_from_db()
+        self.assertEqual(self.meeting.scheduled_end, at(self.ten, 4, 30))
+
+    def test_a_session_on_stage_is_not_dragged_out_from_under_the_speaker(self):
+        self.b.status = Session.Status.LIVE
+        self.b.started_at = timezone.now()
+        self.b.save()
+
+        self.swap()
+
+        self.b.refresh_from_db()
+        self.assertEqual(self.b.starts_at, at(self.ten, 1, 15))
