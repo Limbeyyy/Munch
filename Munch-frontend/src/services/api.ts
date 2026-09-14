@@ -960,10 +960,17 @@ class ApiClient {
   }
 
   // Guest access - no account, host must admit
+  /**
+   * A guest asking to come in: a code and a name.
+   *
+   * ``token`` is what a guest already inside holds, and is how a reload
+   * gets them back to their seat without the host being asked twice. A
+   * name on its own never does that - it is not a credential.
+   */
   async guestKnock(data: {
     meeting_code: string;
     full_name: string;
-    phone: string;
+    token?: string;
   }): Promise<GuestSession> {
     // Deliberately bypasses the auth interceptor's token: guests have none.
     const response = await axios.post(`${API_BASE_URL}/meetings/guest/knock/`, data);

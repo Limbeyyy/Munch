@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
+import { GuestJoinDialog } from '../components/GuestJoinDialog';
 import { forgetPortal, markFreshSignIn } from './HomeRedirect';
 import { apiClient } from '../services/api';
 
@@ -13,8 +14,8 @@ export const LoginPage: React.FC = () => {
   // Guest join: no account, host must admit.
   const [showGuest, setShowGuest] = useState(false);
   const [guestCode, setGuestCode] = useState('');
-  const [guestName, setGuestName] = useState('');
-  const [guestPhone, setGuestPhone] = useState('');
+  /** The name is asked for in its own step, once there is a code. */
+  const [askingName, setAskingName] = useState(false);
   const [isKnocking, setIsKnocking] = useState(false);
 
   // A guest who scanned the QR at the door arrives with the code already
@@ -59,23 +60,22 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const handleGuestJoin = async () => {
+  const handleGuestJoin = async (typedName: string) => {
     const code = guestCode.trim().toUpperCase();
-    const name = guestName.trim();
-    const phone = guestPhone.trim();
+    const name = typedName.trim();
 
     if (!code) return toast.error('Enter the meeting code');
-    if (name.length < 2) return toast.error('Enter your full name');
-    if (phone.replace(/\D/g, '').length < 7) {
-      return toast.error('Enter a valid phone number');
-    }
+    if (name.length < 2) return toast.error('Enter your name');
 
     try {
       setIsKnocking(true);
       const session = await apiClient.guestKnock({
         meeting_code: code,
         full_name: name,
-        phone,
+        // What a guest already inside holds, if this is a reload rather
+        // than a new arrival: it puts them back in their seat without the
+        // host being asked twice.
+        token: sessionStorage.getItem('guest_token') ?? undefined,
       });
 
       sessionStorage.setItem('guest_token', session.guest_token);
@@ -98,6 +98,7 @@ export const LoginPage: React.FC = () => {
       // mistake to scold them for - they are expected, just not here - so
       // say where they belong and put the sign-in button back in view.
       if (refusal?.code === 'presenter_must_sign_in') {
+        setAskingName(false);
         setShowGuest(false);
         toast(refusal.error, { icon: '\uD83C\uDF99\uFE0F', duration: 9000 });
         return;
@@ -107,6 +108,7 @@ export const LoginPage: React.FC = () => {
       // guest door. Same treatment: not a scolding, just a pointer back to
       // the sign-in button, which is where that address works.
       if (refusal?.code === 'account_must_sign_in') {
+        setAskingName(false);
         setShowGuest(false);
         toast(refusal.error, { icon: '\uD83D\uDD11', duration: 9000 });
         return;
@@ -122,7 +124,6 @@ export const LoginPage: React.FC = () => {
 
       const detail =
         refusal?.error ??
-        refusal?.phone?.[0] ??
         refusal?.full_name?.[0] ??
         error.message;
       toast.error(detail);
@@ -183,43 +184,31 @@ export const LoginPage: React.FC = () => {
         ) : (
           <div className="space-y-3">
             <p className="text-sm text-[#BFD1EC]">
-              Joining as a guest. The host will review your details before
-              letting you in.
+              Joining as a guest. You give a name at the door and the host
+              decides; nothing else is asked for, and nothing is kept
+              afterwards but your name on the attendance.
             </p>
 
             <input
               type="text"
               value={guestCode}
               onChange={(e) => setGuestCode(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && guestCode.trim()) setAskingName(true);
+              }}
               placeholder="Meeting code"
               className="w-full px-4 py-3 rounded-lg uppercase tracking-wide bg-navy-900/50 border border-white/25 text-white placeholder-[#8FA6C6] focus:outline-none focus:ring-2 focus:ring-amber"
             />
-            <input
-              type="text"
-              value={guestName}
-              onChange={(e) => setGuestName(e.target.value)}
-              placeholder="Full name (required)"
-              autoComplete="name"
-              className="w-full px-4 py-3 rounded-lg bg-navy-900/50 border border-white/25 text-white placeholder-[#8FA6C6] focus:outline-none focus:ring-2 focus:ring-amber"
-            />
-            <input
-              type="tel"
-              value={guestPhone}
-              onChange={(e) => setGuestPhone(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleGuestJoin();
-              }}
-              placeholder="Phone number (required)"
-              autoComplete="tel"
-              className="w-full px-4 py-3 rounded-lg bg-navy-900/50 border border-white/25 text-white placeholder-[#8FA6C6] focus:outline-none focus:ring-2 focus:ring-amber"
-            />
 
             <button
-              onClick={handleGuestJoin}
-              disabled={isKnocking}
+              onClick={() =>
+                guestCode.trim()
+                  ? setAskingName(true)
+                  : toast.error('Enter the meeting code')
+              }
               className="w-full bg-ok hover:bg-[#166F4C] text-white font-semibold py-3 px-4 rounded-lg disabled:opacity-50"
             >
-              {isKnocking ? 'Asking the host...' : 'Ask to join'}
+              Continue
             </button>
             <button
               onClick={() => setShowGuest(false)}
@@ -238,6 +227,15 @@ export const LoginPage: React.FC = () => {
             sold on.
           </span>
         </p>
+
+        {askingName && (
+          <GuestJoinDialog
+            meetingCode={guestCode.trim().toUpperCase()}
+            busy={isKnocking}
+            onCancel={() => setAskingName(false)}
+            onJoin={handleGuestJoin}
+          />
+        )}
 
         <button
           onClick={() => navigate('/pricing')}

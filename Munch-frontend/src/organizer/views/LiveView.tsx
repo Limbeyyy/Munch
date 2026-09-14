@@ -425,7 +425,9 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
                     </span>
                     <div className="min-w-0">
                       <p className="text-[13.5px] font-medium truncate">{guest.full_name}</p>
-                      <p className="text-[12.5px] text-[#6E7C8E]">{guest.phone}</p>
+                      <p className="text-[12.5px] text-[#6E7C8E]">
+                        {t({ ne: 'पाहुनाका रूपमा', en: 'Joining as a guest' })}
+                      </p>
                     </div>
                     <span className="ml-auto flex gap-1.5 flex-none">
                       <Btn sm tone="solid" disabled={deciding === guest.id}

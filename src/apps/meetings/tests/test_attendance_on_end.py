@@ -71,12 +71,16 @@ class EndingEarlyTests(TestCase):
         )
         self.assertEqual(recorded, {'host@example.com', 'attendee@example.com'})
 
-    def test_the_guests_are_recorded(self):
+    def test_the_guests_are_recorded_by_name(self):
+        # By name, not by a row pointing at them: the guest's own row is
+        # forgotten when the meeting ends, and the register has to still
+        # say who sat through the session.
         self.end_it()
 
         recorded = set(
-            SessionAttendance.objects.filter(session=self.session, guest__isnull=False)
-            .values_list('guest__full_name', flat=True)
+            SessionAttendance.objects.exclude(guest_name='')
+            .filter(session=self.session)
+            .values_list('guest_name', flat=True)
         )
         self.assertEqual(recorded, {'Prabhat Karmacharya', 'Devraj Bhatta'})
 

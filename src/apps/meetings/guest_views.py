@@ -110,7 +110,7 @@ def guest_knock(request):
     from src.apps.meetings.roles import presenter_details
 
     presenting_as = presenter_details(
-        meeting, name=data['full_name'], phone=data['phone']
+        meeting, name=data['full_name'], phone=data.get('phone', '')
     )
     if presenting_as:
         return Response(
@@ -152,17 +152,29 @@ def guest_knock(request):
             status=status.HTTP_403_FORBIDDEN,
         )
 
-    # Someone the host already admitted is coming back - whether they dropped
-    # out or left deliberately. Approval already happened; don't ask again.
-    returning = GuestAttendee.objects.filter(
-        meeting=meeting,
-        status__in=[
-            GuestAttendee.Status.ADMITTED,
-            GuestAttendee.Status.LEFT,
-        ],
-        phone__iexact=data['phone'],
-        full_name__iexact=data['full_name'],
-    ).order_by('-updated_at').first()
+    # Someone the host already admitted is coming back - a reload, or a
+    # dropped connection. They are recognised by the token they still
+    # hold, and by nothing else: a name is not a credential, and looking
+    # one up would let anybody who knows it walk in on somebody else's
+    # approval. Without a token this is simply a new request, which the
+    # host answers as they would any other.
+    returning = None
+    held = (data.get('token') or '').strip()
+    if held:
+        candidate = resolve_guest(held)
+        if (
+            candidate is not None
+            and candidate.meeting_id == meeting.id
+            and candidate.status in (
+                GuestAttendee.Status.ADMITTED, GuestAttendee.Status.LEFT
+            )
+        ):
+            returning = candidate
+        elif candidate is not None and candidate.status == GuestAttendee.Status.DENIED:
+            return Response(
+                {'error': 'The host declined your request to join this meeting'},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
     if returning is not None:
         if returning.status != GuestAttendee.Status.ADMITTED:
@@ -185,24 +197,9 @@ def guest_knock(request):
             status=status.HTTP_200_OK
         )
 
-    # Someone the host explicitly denied should not get another prompt by
-    # simply resubmitting the form.
-    denied = GuestAttendee.objects.filter(
-        meeting=meeting,
-        status=GuestAttendee.Status.DENIED,
-        phone__iexact=data['phone'],
-        full_name__iexact=data['full_name'],
-    ).first()
-    if denied is not None:
-        return Response(
-            {'error': 'The host declined your request to join this meeting'},
-            status=status.HTTP_403_FORBIDDEN
-        )
-
     guest = GuestAttendee.objects.create(
         meeting=meeting,
         full_name=data['full_name'],
-        phone=data['phone'],
     )
     notify_host_of_guest(guest)
 

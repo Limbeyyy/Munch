@@ -134,7 +134,7 @@ export const GuestWaitingPage: React.FC = () => {
           {guestName} &middot; code {meetingCode}
         </p>
         <p className="text-gray-600 text-sm mb-6">
-          The host can see your name and phone number, and will admit you shortly.
+          The host can see your name, and will admit you shortly.
         </p>
         <button
           onClick={leave}

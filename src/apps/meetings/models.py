@@ -90,6 +90,17 @@ class Meeting(models.Model):
     
     # Metadata
     meeting_metadata = models.JSONField(default=dict, blank=True)
+
+    # The guests who were admitted, kept as the register rather than as
+    # rows about people.
+    #
+    # A guest's own row lasts as long as the meeting and is then deleted,
+    # so this is what remains: a list of {"name", "at"} belonging to this
+    # meeting and nothing else. It is attendance - who was in the hall that
+    # afternoon - and it cannot be joined to anything, which is the point.
+    # There is no guest to look up across meetings because there is no
+    # guest, only a name on one register.
+    guest_attendance = models.JSONField(default=list, blank=True)
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -350,6 +361,13 @@ class GuestAttendee(models.Model):
 
     Guests must be admitted by the host before they can enter. They are not
     MeetingParticipants, which require a real user account.
+
+    These rows last as long as the meeting does and no longer. A guest gave
+    a name at a door to sit in a hall for an afternoon; that is not a
+    relationship with this platform, and keeping a row about them
+    afterwards would make it one. When the meeting ends they are forgotten
+    - see ``lifecycle.forget_guests`` - and what survives is the register:
+    the name, against the sessions they were actually present for.
     """
     class Status(models.TextChoices):
         PENDING = 'pending', 'Waiting for host'
@@ -360,7 +378,12 @@ class GuestAttendee(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name='guests')
     full_name = models.CharField(max_length=120)
-    phone = models.CharField(max_length=32)
+    # Asked for once, and no longer. A name is what the host needs to
+    # decide whether to let somebody in, and it is all the register keeps;
+    # a telephone number was a piece of personal data collected for no
+    # purpose either of them had. Kept on the model, blank, so the rows
+    # that already carry one are not rewritten by this.
+    phone = models.CharField(max_length=32, blank=True, default='')
 
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     decided_by = models.ForeignKey(
@@ -520,13 +543,16 @@ class SessionAttendance(models.Model):
         null=True,
         blank=True,
     )
+    # The guest's row goes when the meeting ends; the register stays, so
+    # it holds the name itself rather than only pointing at one.
     guest = models.ForeignKey(
         'meetings.GuestAttendee',
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name='session_attendance',
         null=True,
         blank=True,
     )
+    guest_name = models.CharField(max_length=120, blank=True, default='')
 
     # Recorded automatically from the room, or ticked off by an organizer.
     marked_manually = models.BooleanField(default=False)
@@ -534,11 +560,11 @@ class SessionAttendance(models.Model):
 
     class Meta:
         constraints = [
+            # One or the other, never both. A guest row that has been
+            # forgotten leaves neither - the name is what identifies that
+            # seat from then on.
             models.CheckConstraint(
-                check=(
-                    models.Q(user__isnull=False, guest__isnull=True)
-                    | models.Q(user__isnull=True, guest__isnull=False)
-                ),
+                check=~models.Q(user__isnull=False, guest__isnull=False),
                 name='session_attendance_exactly_one_attendee',
             ),
             models.UniqueConstraint(
@@ -554,7 +580,10 @@ class SessionAttendance(models.Model):
         ]
 
     def __str__(self):
-        who = self.user.email if self.user else (self.guest.full_name if self.guest else '?')
+        if self.user:
+            who = self.user.email
+        else:
+            who = self.guest.full_name if self.guest else (self.guest_name or '?')
         return f"{who} @ {self.session.title}"
 
 

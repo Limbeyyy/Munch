@@ -1089,7 +1089,7 @@ const MeetingRoomInner: React.FC = () => {
               className="px-4 py-3 border-b border-[#e3e8ef] last:border-0"
             >
               <p className="text-[14px] font-medium truncate">{g.full_name}</p>
-              <p className="text-[12px] text-[#656565]">{g.phone}</p>
+              <p className="text-[12px] text-[#656565]">Joining as a guest</p>
               <div className="flex gap-2 mt-2">
                 <button
                   onClick={() => decideGuest(g.id, 'admit')}
