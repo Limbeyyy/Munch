@@ -5,6 +5,7 @@ import { Meeting, Session } from '../types';
 import { errorText } from './errors';
 import { useOrganizer } from './i18n';
 import { useSessionGap } from './sessionGap';
+import { RoomPortrait } from '../pages/roomChrome';
 import { PlannedMeeting, PlannedSession, swapSessions, toPlan, whyNotSwap } from './schedule';
 
 const MS = 60000;
@@ -23,6 +24,14 @@ interface Props {
   canEdit: boolean;
   /** Re-read the running order, once the server has a new one. */
   onChanged: () => void;
+  /**
+   * Put one on stage. The host's, and only for a talk still to run.
+   *
+   * Any of them, not only the next: starting a talk puts it at the head of
+   * what is left and the others queue behind it, so the speaker who is
+   * actually in the hall can go on without the day being rearranged first.
+   */
+  onStart?: (sessionId: string) => void | Promise<void>;
 }
 
 /**
@@ -47,7 +56,7 @@ interface Props {
  * it: for everyone else it is the same times, read-only, following along.
  */
 export const RoomAgenda: React.FC<Props> = ({
-  meeting, sessions, liveSessionId, canEdit, onChanged,
+  meeting, sessions, liveSessionId, canEdit, onChanged, onStart,
 }) => {
   const { t, num } = useOrganizer();
   const gapMinutes = useSessionGap();
@@ -170,7 +179,7 @@ export const RoomAgenda: React.FC<Props> = ({
     return 'ahead';
   };
 
-  const row = (session: PlannedSession) => {
+  const row = (session: PlannedSession, at: number) => {
     const state = stateOf(session);
     const onStage = state === 'live';
     const fixed = state !== 'ahead';
@@ -194,71 +203,103 @@ export const RoomAgenda: React.FC<Props> = ({
           setDragging(null);
           if (fromId) swap(fromId, session.id);
         }}
-        className={`flex items-center gap-2 px-2 py-2 border-b-[0.5px] border-[#b3b3b3]
-          last:border-0 ${onStage ? 'bg-[#007092] text-white' : 'bg-[#fcfcfc]'}
+        className={`bg-white border rounded-[12px] px-4 py-2.5 flex flex-col gap-2
+          shadow-[0px_1px_0.25px_rgba(29,41,61,0.02)]
+          ${onStage ? 'border-[#1a478b]' : 'border-[#e5e7eb]'}
           ${over === session.id ? 'outline outline-2 -outline-offset-2 outline-amber' : ''}
           ${dragging === session.id ? 'opacity-50' : ''}`}
       >
-        {canEdit && (
-          <button
-            type="button"
-            draggable={!fixed && !saving}
-            onDragStart={(e) => {
-              e.dataTransfer.setData('text/plain', session.id);
-              e.dataTransfer.effectAllowed = 'move';
-              setDragging(session.id);
-            }}
-            onDragEnd={() => { setDragging(null); setOver(null); }}
-            onKeyDown={(e) => {
-              if (!e.altKey) return;
-              if (e.key === 'ArrowUp') { e.preventDefault(); nudge(session, -1); }
-              if (e.key === 'ArrowDown') { e.preventDefault(); nudge(session, 1); }
-            }}
-            disabled={fixed || saving}
-            aria-label={t({
-              ne: `“${session.title}” सार्नुहोस्`,
-              en: `Move “${session.title}”`,
-            })}
-            title={t({
-              ne: 'तानेर अर्को सत्रमा छोड्नुहोस् — दुवैले ठाउँ साट्छन्',
-              en: 'Drag onto another session — the two change places',
-            })}
-            className={`w-5 h-7 flex-none rounded-md leading-none text-[15px]
-              ${onStage ? 'text-white/70' : 'text-[#6E7C8E]'}
-              ${fixed ? 'opacity-25' : 'cursor-grab hover:bg-navy-800/[.06]'}`}
-          >
-            ⠿
-          </button>
-        )}
+        <div className="flex gap-2 items-start w-full">
+          {canEdit && (
+            <button
+              type="button"
+              draggable={!fixed && !saving}
+              onDragStart={(e) => {
+                e.dataTransfer.setData('text/plain', session.id);
+                e.dataTransfer.effectAllowed = 'move';
+                setDragging(session.id);
+              }}
+              onDragEnd={() => { setDragging(null); setOver(null); }}
+              onKeyDown={(e) => {
+                if (!e.altKey) return;
+                if (e.key === 'ArrowUp') { e.preventDefault(); nudge(session, -1); }
+                if (e.key === 'ArrowDown') { e.preventDefault(); nudge(session, 1); }
+              }}
+              disabled={fixed || saving}
+              aria-label={t({
+                ne: `“${session.title}” सार्नुहोस्`,
+                en: `Move “${session.title}”`,
+              })}
+              title={t({
+                ne: 'तानेर अर्को सत्रमा छोड्नुहोस् — दुवैले ठाउँ साट्छन्',
+                en: 'Drag onto another session — the two change places',
+              })}
+              className={`w-4 h-5 flex-none mt-1 leading-none text-[14px] text-[#6E7C8E]
+                ${fixed ? 'opacity-25' : 'cursor-grab hover:text-navy-800'}`}
+            >
+              ⠿
+            </button>
+          )}
 
-        <div className="min-w-0 flex-1">
-          <p className={`text-[15px] font-medium leading-[1.2] truncate
-            ${onStage ? 'text-white' : 'text-black'}`}>
-            {session.title}
-          </p>
-          <p className={`text-[13px] leading-[1.5] truncate
-            ${onStage ? 'text-white/85' : 'text-[#4a5567]'}`}>
-            {session.speaker_name || t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' })}
-          </p>
+          {/* Where it comes in the running order. */}
+          <span className="bg-[#efefef] rounded-[17px] w-5 h-5 grid place-items-center
+            flex-none mt-1 text-[12px] leading-4 font-medium text-[#102c55] tabular-nums">
+            {num(at + 1)}
+          </span>
+
+          <div className="flex gap-2 items-center flex-1 min-w-0">
+            <RoomPortrait name={session.speaker_name || session.title} size={48} />
+            <div className="min-w-0 flex-1">
+              <p className="text-[16px] font-medium text-black leading-[1.2] truncate">
+                {session.title}
+              </p>
+              <p className="text-[14px] text-[#030712] leading-[1.5] truncate">
+                {session.speaker_name
+                  || t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' })}
+              </p>
+            </div>
+          </div>
         </div>
 
-        <div className="flex-none text-end">
-          <p className={`text-[13px] tabular-nums whitespace-nowrap
-            ${onStage ? 'text-white' : 'text-[#030712]'}`}>
-            {clock(session.startsAt)}–{clock(session.startsAt + session.durationMinutes * MS)}
-          </p>
-          <p className={`text-[12px] whitespace-nowrap
-            ${onStage ? 'text-white/85' : 'text-[#656565]'}`}>
-            {state === 'done'
-              ? t({ ne: 'सकियो', en: 'Finished' })
-              : state === 'skipped'
-              ? t({ ne: 'छाडियो', en: 'Skipped' })
-              : running
-              ? t({ ne: 'समय नाघेको', en: 'Running over' })
-              : onStage
-              ? t({ ne: 'चलिरहेको', en: 'On stage' })
-              : t({ ne: `${num(session.durationMinutes)} मिनेट`, en: `${session.durationMinutes} min` })}
-          </p>
+        <div className="flex items-center justify-between gap-2 w-full">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="border border-[#e3e8ef] rounded-[4px] h-6 px-1 flex items-center
+              text-[12px] text-[#656565] tracking-[-0.06px] tabular-nums whitespace-nowrap">
+              {clock(session.startsAt)}-
+              {clock(session.startsAt + session.durationMinutes * MS)}
+            </span>
+            <span className="text-[12px] text-[#656565] whitespace-nowrap">
+              {state === 'done'
+                ? t({ ne: 'सकियो', en: 'Finished' })
+                : state === 'skipped'
+                ? t({ ne: 'छाडियो', en: 'Skipped' })
+                : running
+                ? t({ ne: 'समय नाघेको', en: 'Running over' })
+                : onStage
+                ? t({ ne: 'चलिरहेको', en: 'On stage' })
+                : t({
+                    ne: `${num(session.durationMinutes)} मिनेट`,
+                    en: `${session.durationMinutes} min`,
+                  })}
+            </span>
+          </div>
+
+          {onStage ? (
+            <span className="bg-[#fce2ef] text-[#f83995] text-[12px] rounded-[4px]
+              h-6 px-2 grid place-items-center flex-none">
+              {t({ ne: 'लाइभ', en: 'Live' })}
+            </span>
+          ) : canEdit && onStart && state === 'ahead' ? (
+            <button
+              onClick={() => onStart(session.id)}
+              disabled={saving}
+              className="bg-[#1a478b] hover:bg-navy-900 text-white rounded-[6px]
+                px-4 py-1.5 text-[14px] font-medium leading-5 flex-none
+                disabled:opacity-50"
+            >
+              {t({ ne: 'सत्र सुरु', en: 'Start Session' })}
+            </button>
+          ) : null}
         </div>
       </li>
     );
@@ -302,7 +343,7 @@ export const RoomAgenda: React.FC<Props> = ({
       ) : (
         <ul
           aria-label={t({ ne: 'कार्यसूची', en: 'Running order' })}
-          className="max-h-[458px] overflow-y-auto"
+          className="max-h-[458px] overflow-y-auto flex flex-col gap-2 px-2 py-2 bg-[#f6f7f9]"
         >
           {rows.map(row)}
         </ul>
