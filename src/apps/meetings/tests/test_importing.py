@@ -13,7 +13,7 @@ from rest_framework_simplejwt.tokens import AccessToken
 
 from src.apps.meetings.importing import (
     COLUMNS, EVENT_COLUMNS, MEETING_COLUMNS, SESSION_COLUMNS,
-    ImportProblem, read_sheet, template_csv, template_workbook,
+    ImportProblem, read_sheet, sheet_timezone, template_csv, template_workbook,
 )
 from src.apps.meetings.models import Event, Meeting, Session
 from src.apps.meetings.tests.factories import make_host
@@ -182,7 +182,8 @@ class ReadingTests(TestCase):
         ):
             programmes = read_sheet(sheet(a_session(session_starts_at=written)))
             when = programmes[0]['meetings'][0]['sessions'][0]['starts_at']
-            self.assertEqual(timezone.localtime(when).hour, 9, written)
+            # Nine as the hall's clock has it, whatever the server's is.
+            self.assertEqual(when.astimezone(sheet_timezone()).hour, 9, written)
 
     def test_a_date_it_cannot_read_says_which_row_and_column(self):
         with self.assertRaises(ImportProblem) as problem:
@@ -626,3 +627,72 @@ class WorkbookTests(TestCase):
 
         self.assertEqual(len(programmes), 1)
         self.assertEqual(len(programmes[0]['meetings'][0]['sessions']), 2)
+
+
+class TheClockInTheHallTests(TestCase):
+    """A time typed into a sheet carries no timezone with it.
+
+    Everything is stored in UTC and rendered in each reader's own zone,
+    which is right for a time the app recorded itself. But "2026-09-14
+    15:00" in a spreadsheet means three in the afternoon in the hall, and
+    reading it as UTC put every imported programme five and three quarter
+    hours out - a three o'clock meeting arrived on the organizer's screen
+    at a quarter to nine, matching nothing in the sheet it came from.
+    """
+
+    def in_the_hall(self, moment):
+        from src.apps.meetings.importing import sheet_timezone
+
+        return moment.astimezone(sheet_timezone())
+
+    def test_three_in_the_afternoon_stays_three_in_the_afternoon(self):
+        raw = tables(
+            events=[AN_EVENT],
+            meetings=[{**A_MEETING, 'meeting_starts_at': '2026-09-14 15:00'}],
+            sessions=[a_row(session_starts_at='2026-09-14 15:00')],
+        )
+
+        [programme] = read_sheet(raw)
+        meeting = programme['meetings'][0]
+
+        self.assertEqual(self.in_the_hall(meeting['scheduled_start']).hour, 15)
+        self.assertEqual(
+            self.in_the_hall(meeting['sessions'][0]['starts_at']).hour, 15
+        )
+
+    def test_the_twelve_hour_clock_a_spreadsheet_writes_reads_the_same_way(self):
+        # Excel hands back "3:00 PM" as often as "15:00".
+        raw = tables(
+            events=[AN_EVENT],
+            meetings=[{**A_MEETING, 'meeting_starts_at': '2026-09-14 3:00 PM'}],
+            sessions=[a_row(session_starts_at='2026-09-14 3:00 PM')],
+        )
+
+        [programme] = read_sheet(raw)
+
+        self.assertEqual(
+            self.in_the_hall(programme['meetings'][0]['scheduled_start']).hour, 15
+        )
+
+    def test_the_day_is_the_day_in_the_hall_too(self):
+        # Late enough that reading it as UTC would land it on the 15th.
+        raw = tables(
+            events=[AN_EVENT],
+            meetings=[{**A_MEETING, 'meeting_starts_at': '2026-09-14 23:30'}],
+            sessions=[a_row(session_starts_at='2026-09-14 23:30')],
+        )
+
+        [programme] = read_sheet(raw)
+        starts = self.in_the_hall(programme['meetings'][0]['scheduled_start'])
+
+        self.assertEqual(starts.date().isoformat(), '2026-09-14')
+
+    def test_the_old_wide_sheet_is_read_on_the_same_clock(self):
+        [programme] = read_sheet(sheet(a_session(
+            meeting_starts_at='2026-10-02 15:00',
+            session_starts_at='2026-10-02 15:00',
+        )))
+
+        self.assertEqual(
+            self.in_the_hall(programme['meetings'][0]['scheduled_start']).hour, 15
+        )

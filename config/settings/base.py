@@ -217,6 +217,16 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
+# The clock on the wall where the meetings happen.
+#
+# Everything is stored in UTC and every client renders it in the reader's
+# own zone, which is right. But a time written down by hand carries no
+# zone with it: "2026-09-14 15:00" typed into a spreadsheet means three in
+# the afternoon in the hall, and reading it as UTC put every imported
+# programme five and three quarter hours out. This is the zone such a time
+# is taken to be in.
+LOCAL_TIME_ZONE = env('LOCAL_TIME_ZONE', default='Asia/Kathmandu')
+
 # Static files
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
