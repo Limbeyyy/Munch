@@ -44,12 +44,21 @@ export const sessionState = (
   if (session.status === 'done') return 'finished';
   if (session.status === 'skipped') return 'skipped';
 
+  // The meeting is over and this was never put on stage, so it never
+  // happened - whatever its own slot says. Its slot may well still be
+  // ahead: the running order slides forward as the day runs late, so a
+  // talk nobody reached is often left sitting in the future, and reading
+  // that as "upcoming" after the meeting has ended promises a talk that
+  // is not going to happen.
+  if (meeting && meeting.status === 'ended') return 'never-started';
+
+
   const endsAt = +new Date(session.starts_at) + session.duration_minutes * 60000;
   if (now <= endsAt) return 'upcoming';
 
   // Its slot has passed. Whether that is the end of the story depends on
   // whether the meeting holding it has finished.
-  if (meeting && meeting.status !== 'ended') return 'overdue';
+  if (meeting) return 'overdue';
   return 'never-started';
 };
 
