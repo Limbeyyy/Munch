@@ -106,11 +106,13 @@ describe('accessibility settings reach the document', () => {
   });
 
   it('sets the document language too', () => {
+    // English until somebody chooses otherwise, and the switch changes
+    // both what is read and what the document says it is.
     show();
-    expect(root().lang).toBe('ne');
+    expect(root().lang).toBe('en');
 
     act(() => { fireEvent.click(screen.getByText('lang')); });
 
-    expect(root().lang).toBe('en');
+    expect(root().lang).toBe('ne');
   });
 });

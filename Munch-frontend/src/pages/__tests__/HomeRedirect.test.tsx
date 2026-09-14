@@ -5,11 +5,11 @@ import { HomeRedirect, markFreshSignIn, rememberPortal, forgetPortal } from '../
 import { apiClient } from '../../services/api';
 import { UserRoles } from '../../types';
 
-// Nepali is the source language and the default, so that is what the
-// chooser actually renders.
-const HOST_CARD = 'आयोजकको रूपमा';
-const ATTENDEE_CARD = 'सहभागीको रूपमा';
-const FREE_TRIAL = 'निःशुल्क परीक्षण: २ कार्यक्रम, प्रत्येकमा २ बैठक, प्रत्येकमा २ सत्र।';
+// English is what a browser that has never chosen is shown; Nepali is
+// still the source language, and a stored choice still wins.
+const HOST_CARD = 'Sign in as host';
+const ATTENDEE_CARD = 'Sign in as attendee';
+const FREE_TRIAL = 'Free trial: 2 events, 2 meetings each, 2 sessions each.';
 
 jest.mock('../../services/api', () => ({
   apiClient: { getMyRoles: jest.fn(), startHosting: jest.fn() },

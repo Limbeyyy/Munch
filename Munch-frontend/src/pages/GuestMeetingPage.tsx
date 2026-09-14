@@ -392,8 +392,8 @@ export const GuestMeetingPage: React.FC = () => {
       <div
         className={`grid gap-4 p-4 items-start ${
           side.length > 0
-            ? 'xl:grid-cols-[332px_minmax(0,1fr)_358px]'
-            : 'xl:grid-cols-[332px_minmax(0,1fr)]'
+            ? 'xl:grid-cols-[398px_minmax(0,1fr)_358px]'
+            : 'xl:grid-cols-[398px_minmax(0,1fr)]'
         }`}
       >
         {/* The running order, exactly as everybody else in the room sees
