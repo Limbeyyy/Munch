@@ -50,7 +50,7 @@ describe('the guest door', () => {
     fireEvent.change(screen.getByPlaceholderText('Meeting code'), {
       target: { value: 'abc123' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Enter meeting room' }));
     return screen.findByRole('dialog', { name: 'Enter meeting info' });
   };
 
@@ -152,5 +152,66 @@ describe('remembering a name', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Join' }));
 
     expect(join).toHaveBeenCalledWith('Bishnu Prasad');
+  });
+});
+
+/**
+ * Somebody who followed the link, or scanned the square at the door.
+ *
+ * The code is in the address they arrived at, so nothing is left to type.
+ * What is left is a decision: a guest presses the button, and anybody with
+ * an account signs in instead and needs no code at all.
+ */
+describe('arriving with the code already', () => {
+  const showWithLink = () =>
+    render(
+      <MemoryRouter initialEntries={['/login?join=abc123']}>
+        <LoginPage />
+      </MemoryRouter>
+    );
+
+  it('opens the guest door and fills the code in', async () => {
+    showWithLink();
+
+    expect(await screen.findByLabelText('Meeting code')).toHaveValue('ABC123');
+    expect(screen.getByRole('button', { name: 'Enter meeting room' }))
+      .toBeInTheDocument();
+  });
+
+  it('says where the code came from, rather than asking for it', async () => {
+    showWithLink();
+
+    expect(await screen.findByText(/code came with your link/)).toBeInTheDocument();
+  });
+
+  it('waits to be pressed rather than going in by itself', async () => {
+    showWithLink();
+
+    await screen.findByLabelText('Meeting code');
+    expect(screen.queryByRole('dialog', { name: 'Enter meeting info' })).toBeNull();
+    expect(api.guestKnock).not.toHaveBeenCalled();
+  });
+
+  it('asks for the name once it is pressed', async () => {
+    showWithLink();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Enter meeting room' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Enter meeting info' }))
+      .toBeInTheDocument();
+  });
+
+  it('leaves signing in right there for anybody who has an account', async () => {
+    showWithLink();
+
+    // No code is needed for that, so the way back is one press and the
+    // Google button never left the page.
+    expect(await screen.findByRole('button', { name: /Sign in with Google/ }))
+      .toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Go back and sign in/ }));
+
+    expect(screen.queryByLabelText('Meeting code')).toBeNull();
+    expect(screen.getByRole('button', { name: /Sign in with Google/ }))
+      .toBeInTheDocument();
   });
 });

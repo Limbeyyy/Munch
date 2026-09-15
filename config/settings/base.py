@@ -221,6 +221,13 @@ USE_TZ = True
 # is taken to be in.
 LOCAL_TIME_ZONE = env('LOCAL_TIME_ZONE', default='Asia/Kathmandu')
 
+# Where the people are, as opposed to where the API is.
+#
+# A joining link belongs to the app somebody opens, not to this server.
+# Built from the request host, a QR square printed from anywhere but the
+# share sheet pointed a phone at Django, which serves no such page.
+FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:3000')
+
 # Static files
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')

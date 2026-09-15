@@ -397,3 +397,75 @@ class GuestsAreNotKeptTests(TestCase):
         forget_guests_of_ended_meetings()
 
         self.assertEqual(GuestAttendee.objects.count(), 1)
+
+
+class OneSeatPerGuestTests(TestCase):
+    """A guest coming back does not sit in the room twice.
+
+    Without the token they still hold, a knock is a fresh request - which
+    is right, because a name is not a credential. But the host letting
+    them in is the host saying this is the same person, so the seat they
+    already had is given up rather than kept beside the new one, where it
+    showed the same face in the room over and over.
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.host = make_host('host@example.com')
+        start = timezone.now() - timezone.timedelta(minutes=5)
+        self.meeting = make_meeting(self.host, start=start, minutes=120)
+        self.meeting.status = Meeting.Status.ACTIVE
+        self.meeting.started_at = start
+        self.meeting.save()
+        make_session(self.meeting, start, 60, 'Haldi')
+
+    def as_host(self):
+        from django.test import Client
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        return Client(HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(self.host)}')
+
+    def admit(self, guest):
+        return self.as_host().post(
+            f'{API}/meetings/{self.meeting.id}/admit_guest/',
+            {'guest_id': str(guest.id), 'decision': 'admit'},
+            content_type='application/json',
+        )
+
+    def knocking(self, name='Rahul Ingnam'):
+        return GuestAttendee.objects.create(meeting=self.meeting, full_name=name)
+
+    def test_the_seat_they_had_is_given_up(self):
+        first = self.knocking()
+        self.admit(first)
+
+        self.admit(self.knocking())
+
+        first.refresh_from_db()
+        self.assertEqual(first.status, GuestAttendee.Status.LEFT)
+
+    def test_so_the_room_holds_them_once(self):
+        self.admit(self.knocking())
+        self.admit(self.knocking())
+
+        seated = self.meeting.guests.filter(status=GuestAttendee.Status.ADMITTED)
+        self.assertEqual(seated.count(), 1)
+
+    def test_and_the_register_names_them_once(self):
+        self.admit(self.knocking())
+        self.admit(self.knocking())
+
+        self.meeting.refresh_from_db()
+        self.assertEqual(
+            [e['name'] for e in self.meeting.guest_attendance], ['Rahul Ingnam']
+        )
+
+    def test_somebody_else_keeps_their_own_seat(self):
+        other = self.knocking('Sumin Maharjan')
+        self.admit(other)
+
+        self.admit(self.knocking('Rahul Ingnam'))
+
+        other.refresh_from_db()
+        self.assertEqual(other.status, GuestAttendee.Status.ADMITTED)
