@@ -105,6 +105,25 @@ export const GuestMeetingPage: React.FC = () => {
   const [agenda, setAgenda] = useState<any[]>([]);
   const [meeting, setMeeting] = useState<any>(null);
 
+  /**
+   * A pass that no longer names anybody.
+   *
+   * A guest's pass belongs to one meeting and lasts as long as it does:
+   * when the meeting ends everybody in it is forgotten, and the pass stops
+   * resolving. A browser still holding one sat here retrying a socket that
+   * would never open, saying nothing at all. Say it, and send them back to
+   * the door.
+   */
+  const passIsDead = useCallback((error: any) => {
+    if (error?.response?.status !== 401) return false;
+    sessionStorage.clear();
+    toast('That meeting pass is no longer valid. Ask to join again.', {
+      icon: '\uD83D\uDD11', duration: 8000,
+    });
+    navigate('/login');
+    return true;
+  }, [navigate]);
+
   const leave = useCallback(async () => {
     if (token) {
       try {
@@ -175,8 +194,10 @@ export const GuestMeetingPage: React.FC = () => {
         setSessionTitle(running?.title ?? '');
         setStartedAt(running?.started_at ?? null);
         setNextTitle(running?.next_title ?? '');
-      } catch {
-        // Try again on the next tick.
+      } catch (error) {
+        // Try again on the next tick - unless there is nothing left to
+        // try, which a dead pass is.
+        passIsDead(error);
       }
     };
 
@@ -186,7 +207,7 @@ export const GuestMeetingPage: React.FC = () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [token]);
+  }, [token, passIsDead]);
 
   // Live chat over the same socket that delivered the admission decision.
   useEffect(() => {
@@ -324,12 +345,14 @@ export const GuestMeetingPage: React.FC = () => {
           toast('You are no longer in this meeting');
           leave();
         }
-      } catch {
-        // Ignore a single failed check.
+      } catch (error) {
+        // Ignore a single failed check; a pass that names nobody is not a
+        // single failed check.
+        passIsDead(error);
       }
     }, 15000);
     return () => clearInterval(id);
-  }, [token, leave, loadChat]);
+  }, [token, leave, loadChat, passIsDead]);
 
 
   // Same clock as everyone else: anchored to the host's start timestamp.

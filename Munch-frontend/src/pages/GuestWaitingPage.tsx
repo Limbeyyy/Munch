@@ -56,6 +56,25 @@ export const GuestWaitingPage: React.FC = () => {
     return () => ws.close();
   }, [token, meetingCode, handleStatus]);
 
+  /**
+   * A pass that is no longer good for anything.
+   *
+   * A guest's pass belongs to one meeting and lasts as long as it does.
+   * When that meeting ends everybody in it is forgotten, so the pass stops
+   * naming anybody - and a browser still holding one used to sit here
+   * retrying a socket that would never open, saying nothing. Better to say
+   * it plainly and send them back to the door.
+   */
+  const passIsDead = useCallback((error: any) => {
+    if (error?.response?.status !== 401) return false;
+    sessionStorage.clear();
+    toast('That meeting pass is no longer valid. Ask to join again.', {
+      icon: '\uD83D\uDD11', duration: 8000,
+    });
+    navigate('/login');
+    return true;
+  }, [navigate]);
+
   // Check once immediately: a decision may already have been made before
   // this screen mounted, and waiting a full poll interval to notice is wrong.
   useEffect(() => {
@@ -65,8 +84,8 @@ export const GuestWaitingPage: React.FC = () => {
       .then(({ guest }) => {
         if (guest.status !== 'pending') handleStatus(guest.status);
       })
-      .catch(() => undefined);
-  }, [token, handleStatus]);
+      .catch(passIsDead);
+  }, [token, handleStatus, passIsDead]);
 
   // Fallback path.
   useEffect(() => {
@@ -76,13 +95,15 @@ export const GuestWaitingPage: React.FC = () => {
       try {
         const { guest } = await apiClient.guestStatus(token);
         if (guest.status !== 'pending') handleStatus(guest.status);
-      } catch {
-        // Keep waiting; a failed poll is not a decision.
+      } catch (error) {
+        // A failed poll is not a decision - but a pass that names nobody
+        // is not going to start naming somebody.
+        passIsDead(error);
       }
     }, POLL_MS);
 
     return () => clearInterval(id);
-  }, [token, status, handleStatus]);
+  }, [token, status, handleStatus, passIsDead]);
 
   const leave = async () => {
     if (token) {

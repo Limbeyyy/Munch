@@ -255,3 +255,102 @@ class SortingFromTheQueueTests(TransactionTestCase):
         ).json()
         self.assertEqual(board['faq'], [])
         self.assertEqual(board['suggestions'], [])
+
+
+@override_settings(
+    CHANNEL_LAYERS={'default': {'BACKEND': 'channels.layers.InMemoryChannelLayer'}}
+)
+class WritingToSomebodyWhoSteppedOutTests(TransactionTestCase):
+    """You write to a person, not to a socket.
+
+    The recipient had to be connected at that instant or the message was
+    refused - "Could not send message", with nothing to say why. A host who
+    shut their tab for five minutes is still the host, the chat still
+    offers them, and what is written to them should wait rather than
+    bounce.
+    """
+
+    def setUp(self):
+        self.host = make_host('host@example.com')
+        self.attendee = make_host('attendee@example.com')
+        start = timezone.now() - timezone.timedelta(minutes=10)
+        self.meeting = make_meeting(self.host, start=start, minutes=120)
+        self.meeting.status = Meeting.Status.ACTIVE
+        self.meeting.started_at = start
+        self.meeting.chat_enabled = True
+        self.meeting.direct_messages_enabled = True
+        self.meeting.save()
+        make_session(self.meeting, start, 60, 'Haldi', status=Session.Status.LIVE)
+
+        # The host's own row, left behind when they closed the tab.
+        MeetingParticipant.objects.create(
+            meeting=self.meeting, user=self.host,
+            role=MeetingParticipant.Role.HOST, is_active=False,
+        )
+        MeetingParticipant.objects.create(
+            meeting=self.meeting, user=self.attendee,
+            role=MeetingParticipant.Role.ATTENDEE, is_active=True,
+        )
+
+    async def write(self, comm, body, to_id):
+        await comm.send_json_to({
+            'type': 'chat_message', 'message': body, 'recipient_id': str(to_id),
+        })
+        for _ in range(4):
+            said = await comm.receive_json_from()
+            if said.get('type') in ('chat_message', 'chat_pending', 'chat_error'):
+                return said
+        raise AssertionError('the room said nothing about that message')
+
+    async def speaking_as(self, user):
+        token = str(AccessToken.for_user(user))
+        comm = WebsocketCommunicator(
+            app(), f'/ws/meeting/{self.meeting.meeting_code}/?token={token}'
+        )
+        connected, _ = await comm.connect()
+        assert connected
+        return comm
+
+    async def test_a_message_to_a_host_who_is_away_is_taken(self):
+        comm = await self.speaking_as(self.attendee)
+
+        said = await self.write(comm, 'Why this budget?', self.host.id)
+        await comm.disconnect()
+
+        self.assertNotEqual(said.get('type'), 'chat_error')
+        held = await database_sync_to_async(
+            lambda: ChatMessage.objects.get(body='Why this budget?')
+        )()
+        self.assertEqual(held.recipient_id, self.host.id)
+
+    async def test_and_waits_for_them_rather_than_bouncing(self):
+        comm = await self.speaking_as(self.attendee)
+
+        await self.write(comm, 'Waiting here', self.host.id)
+        await comm.disconnect()
+
+        status = await database_sync_to_async(
+            lambda: ChatMessage.objects.get(body='Waiting here').moderation_status
+        )()
+        self.assertEqual(status, ChatMessage.Moderation.PENDING)
+
+    async def test_a_guest_who_stepped_out_can_still_be_answered(self):
+        guest = await database_sync_to_async(GuestAttendee.objects.create)(
+            meeting=self.meeting, full_name='Bishnu Prasad',
+            status=GuestAttendee.Status.LEFT,
+        )
+        comm = await self.speaking_as(self.host)
+
+        said = await self.write(comm, 'You asked about the hall', guest.id)
+        await comm.disconnect()
+
+        self.assertNotEqual(said.get('type'), 'chat_error')
+
+    async def test_somebody_who_was_never_in_this_meeting_still_is_not(self):
+        stranger = await database_sync_to_async(make_host)('stranger@example.com')
+        comm = await self.speaking_as(self.attendee)
+
+        said = await self.write(comm, 'Hello?', stranger.id)
+        await comm.disconnect()
+
+        self.assertEqual(said.get('type'), 'chat_error')
