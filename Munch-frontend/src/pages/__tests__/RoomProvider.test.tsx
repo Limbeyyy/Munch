@@ -912,21 +912,28 @@ describe('the end choice', () => {
     fireEvent.click(within(bar).getByRole('button', { name: /Leave/ }));
   };
 
-  it('offers the session and the meeting, and neither by accident', async () => {
+  it('offers ending the meeting, or simply leaving', async () => {
     await openIt();
 
-    expect(await screen.findByRole('button', { name: /End the session/ }))
+    expect(await screen.findByRole('button', { name: /End the meeting/ }))
       .toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /End the meeting/ })).toBeInTheDocument();
     // Stepping out is still there: the host has to be able to leave.
     expect(screen.getByRole('button', { name: /Just leave/ })).toBeInTheDocument();
   });
 
-  it('ends only the session, and stays in the room', async () => {
-    api.endSession.mockResolvedValue({} as any);
+  it('and says nothing about the session, which is ended on its own card', async () => {
     await openIt();
 
-    fireEvent.click(await screen.findByRole('button', { name: /End the session/ }));
+    await screen.findByRole('button', { name: /End the meeting/ });
+    expect(screen.queryByRole('button', { name: /End the session/ })).toBeNull();
+  });
+
+  it('ends the talk from the card that shows it, and stays in the room', async () => {
+    api.endSession.mockResolvedValue({} as any);
+    asHost();
+    showRoom();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'End Session' }));
 
     await waitFor(() => expect(api.endSession).toHaveBeenCalledWith('s1'));
     expect(api.endMeeting).not.toHaveBeenCalled();
@@ -936,7 +943,30 @@ describe('the end choice', () => {
     ).toBeInTheDocument();
   });
 
-  it('offers nothing to end when nothing is on stage', async () => {
+  it('offers it to nobody else', async () => {
+    showRoom();
+
+    await screen.findByRole('navigation', { name: 'Meeting controls' });
+    expect(screen.queryByRole('button', { name: 'End Session' })).toBeNull();
+  });
+
+  it('nor when nothing is on stage', async () => {
+    asHost();
+    api.getMeeting.mockResolvedValue({
+      ...meeting,
+      current_session: {
+        id: null, title: '', started_at: null, ends_at: null, is_over: false,
+        between_sessions: true, awaiting_next: false,
+      },
+    } as any);
+
+    showRoom();
+
+    await screen.findByRole('navigation', { name: 'Meeting controls' });
+    expect(screen.queryByRole('button', { name: 'End Session' })).toBeNull();
+  });
+
+  it('and the meeting can still be ended between two talks', async () => {
     api.getMeeting.mockResolvedValue({
       ...meeting,
       current_session: {
@@ -948,7 +978,6 @@ describe('the end choice', () => {
 
     expect(await screen.findByRole('button', { name: /End the meeting/ }))
       .toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /End the session/ })).toBeNull();
   });
 });
 
