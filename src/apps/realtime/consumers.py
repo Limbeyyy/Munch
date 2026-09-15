@@ -476,8 +476,14 @@ class MeetingConsumer(AsyncWebsocketConsumer):
         recipient_name = None
 
         if recipient_id:
+            # Anybody in this meeting's roster, whether or not they are
+            # connected at this instant. You write to a person, not to a
+            # socket: a host who has stepped out for five minutes is still
+            # the host, and the message waits for them. Requiring them to
+            # be online refused every message to anybody whose tab was
+            # shut - with "Could not send message" and no way to tell why.
             participant = MeetingParticipant.objects.select_related('user').filter(
-                meeting=meeting, user_id=recipient_id, is_active=True
+                meeting=meeting, user_id=recipient_id
             ).first()
             if participant:
                 recipient_user = participant.user
@@ -487,7 +493,10 @@ class MeetingConsumer(AsyncWebsocketConsumer):
                 guest = GuestAttendee.objects.filter(
                     meeting=meeting,
                     id=recipient_id,
-                    status=GuestAttendee.Status.ADMITTED,
+                    status__in=[
+                        GuestAttendee.Status.ADMITTED,
+                        GuestAttendee.Status.LEFT,
+                    ],
                 ).first()
                 if guest is None:
                     logger.warning(
