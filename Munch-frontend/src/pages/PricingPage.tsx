@@ -156,7 +156,7 @@ export const PricingPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 py-10 px-4">
+    <div className="min-h-screen bg-page py-10 px-4">
       <div className="max-w-6xl mx-auto">
         <h1 className="text-center text-3xl font-bold text-slate-900">
           {t({ en: 'Meeting Management System', np: 'बैठक व्यवस्थापन प्रणाली' })}

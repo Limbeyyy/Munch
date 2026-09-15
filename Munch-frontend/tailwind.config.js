@@ -20,6 +20,10 @@ module.exports = {
           DEFAULT: '#F6F1E5',
           200: '#EFE8D8',
         },
+        // What every page is laid on. The room was already this colour and
+        // the rest of the app was not, so a host moving between them
+        // watched the paper change under their feet.
+        page: '#F1F4F8',
         ink: {
           DEFAULT: '#152232',
           2: '#3C4A5C',

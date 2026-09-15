@@ -83,7 +83,7 @@ const rememberedPortal = (): Portal | null => {
 };
 
 const Loading: React.FC = () => (
-  <div className="min-h-screen bg-cream grid place-items-center">
+  <div className="min-h-screen bg-page grid place-items-center">
     <p className="text-[#6E7C8E] font-sans">Loading…</p>
   </div>
 );
@@ -121,7 +121,7 @@ const Chooser: React.FC<{
   const trial = roles.plan && !roles.plan.paid;
 
   return (
-    <div className="min-h-screen bg-cream grid place-items-center p-6 font-sans">
+    <div className="min-h-screen bg-page grid place-items-center p-6 font-sans">
       <div className="w-full max-w-xl">
         <h1 className="text-2xl font-semibold text-navy-900">
           {t({ ne: 'तपाईं कसरी प्रवेश गर्नुहुन्छ?', en: 'How are you signing in?' })}

@@ -212,7 +212,10 @@ export const RoomQuestions: React.FC<Props> = ({
         </p>
       </div>
 
-      <div className="flex gap-[19px] items-center justify-center px-9">
+      {/* Indented to the question, not centred under it: the arrows
+          belong to the words above them, and a row of its own in the
+          middle of the card reads as something else entirely. */}
+      <div className="flex gap-[19px] items-center ps-9">
         <button
           onClick={() => vote(entry, 1)}
           disabled={busy === entry.id}

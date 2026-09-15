@@ -78,7 +78,7 @@ export const OrganizerShell: React.FC<Props> = ({
     <div
       // Accessibility is applied at the document root now, so the shell
       // only has to state its own base size.
-      className="min-h-screen bg-cream text-ink font-sans text-[14.5px]"
+      className="min-h-screen bg-page text-ink font-sans text-[14.5px]"
     >
       {/* Top bar */}
       <header className="sticky top-0 z-40 bg-navy-900 text-white flex items-center gap-3 px-4 py-2">
