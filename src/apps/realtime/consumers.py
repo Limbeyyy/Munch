@@ -121,8 +121,18 @@ class MeetingConsumer(AsyncWebsocketConsumer):
             except json.JSONDecodeError:
                 logger.error("Invalid JSON received from guest")
             except Exception as e:
-                logger.error(f"Error handling guest message: {str(e)}")
+                # Whatever went wrong, the person who wrote the message is
+                # owed an answer. This was logged and nothing else, so a
+                # message that could not be saved simply vanished: the
+                # guest watched it leave and the host never saw it, with
+                # nothing anywhere to say why.
+                logger.exception(f"Error handling guest message: {e}")
+                await self._send_chat_error(
+                    'Something went wrong sending that. Please try again.'
+                )
             return
+
+        data = {}
         try:
             data = json.loads(text_data)
             message_type = data.get('type')
@@ -139,7 +149,11 @@ class MeetingConsumer(AsyncWebsocketConsumer):
         except json.JSONDecodeError:
             logger.error("Invalid JSON received")
         except Exception as e:
-            logger.error(f"Error handling message: {str(e)}")
+            logger.exception(f"Error handling message: {e}")
+            if data.get('type') == 'chat_message':
+                await self._send_chat_error(
+                    'Something went wrong sending that. Please try again.'
+                )
 
     async def handle_participant_state_update(self, data):
         """Handle participant media state changes (mute, video, etc)"""

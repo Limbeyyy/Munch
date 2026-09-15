@@ -354,3 +354,100 @@ class WritingToSomebodyWhoSteppedOutTests(TransactionTestCase):
         await comm.disconnect()
 
         self.assertEqual(said.get('type'), 'chat_error')
+
+
+@override_settings(
+    CHANNEL_LAYERS={'default': {'BACKEND': 'channels.layers.InMemoryChannelLayer'}}
+)
+class AMessageThatCannotBeSavedSaysSoTests(TransactionTestCase):
+    """Silence is the worst answer to a message that did not get through.
+
+    Whatever goes wrong - and the thing that did go wrong was a database a
+    migration behind the code - the person who wrote the message is owed an
+    answer. It was logged and nothing else: the guest watched their message
+    leave, the host never saw it, and nothing anywhere said why.
+    """
+
+    def setUp(self):
+        self.host = make_host('host@example.com')
+        start = timezone.now() - timezone.timedelta(minutes=10)
+        self.meeting = make_meeting(self.host, start=start, minutes=120)
+        self.meeting.status = Meeting.Status.ACTIVE
+        self.meeting.started_at = start
+        self.meeting.chat_enabled = True
+        self.meeting.direct_messages_enabled = True
+        self.meeting.save()
+        MeetingParticipant.objects.create(
+            meeting=self.meeting, user=self.host,
+            role=MeetingParticipant.Role.HOST, is_active=True,
+        )
+
+    async def a_guest_socket(self):
+        from src.apps.meetings.guest_tokens import make_guest_token
+
+        guest = await database_sync_to_async(GuestAttendee.objects.create)(
+            meeting=self.meeting, full_name='Bishnu Prasad',
+            status=GuestAttendee.Status.ADMITTED,
+        )
+        token = await database_sync_to_async(make_guest_token)(guest)
+        comm = WebsocketCommunicator(
+            app(), f'/ws/meeting/{self.meeting.meeting_code}/?guest_token={token}'
+        )
+        connected, _ = await comm.connect()
+        assert connected
+        return comm
+
+    async def test_the_guest_is_told_when_saving_it_fails(self):
+        from unittest.mock import patch
+
+        comm = await self.a_guest_socket()
+
+        with patch(
+            'src.apps.realtime.consumers.MeetingConsumer.save_chat_message',
+            side_effect=Exception('the database is a migration behind'),
+        ):
+            await comm.send_json_to({
+                'type': 'chat_message', 'message': 'Why this budget?',
+                'recipient_id': str(self.host.id),
+            })
+            said = await comm.receive_json_from()
+
+        self.assertEqual(said['type'], 'chat_error')
+        self.assertIn('went wrong', said['error'])
+        await comm.disconnect()
+
+    async def test_and_so_is_anybody_else(self):
+        from unittest.mock import patch
+
+        token = str(AccessToken.for_user(self.host))
+        comm = WebsocketCommunicator(
+            app(), f'/ws/meeting/{self.meeting.meeting_code}/?token={token}'
+        )
+        connected, _ = await comm.connect()
+        self.assertTrue(connected)
+        await comm.receive_json_from()  # their own arrival
+
+        with patch(
+            'src.apps.realtime.consumers.MeetingConsumer.save_chat_message',
+            side_effect=Exception('anything at all'),
+        ):
+            await comm.send_json_to({
+                'type': 'chat_message', 'message': 'Five minutes left',
+                'recipient_id': str(self.host.id),
+            })
+            said = await comm.receive_json_from()
+
+        self.assertEqual(said['type'], 'chat_error')
+        await comm.disconnect()
+
+    async def test_a_message_that_saves_is_not_complained_about(self):
+        comm = await self.a_guest_socket()
+
+        await comm.send_json_to({
+            'type': 'chat_message', 'message': 'Why this budget?',
+            'recipient_id': str(self.host.id),
+        })
+        said = await comm.receive_json_from()
+
+        self.assertNotEqual(said['type'], 'chat_error')
+        await comm.disconnect()
