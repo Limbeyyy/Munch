@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { MeetingRoomPage } from '../MeetingRoomPage';
 import { apiClient } from '../../services/api';
@@ -1191,5 +1191,109 @@ describe('who there is to write to', () => {
 
     await screen.findByText('Chats');
     expect(screen.queryByRole('button', { name: /host@example.com/ })).toBeNull();
+  });
+});
+
+/**
+ * What arrived while you were reading something else.
+ *
+ * A meeting carries on behind whichever panel is open: a question is asked
+ * while the files are up, a file is shared while you are in the chat. Each
+ * control carries the count of what has piled up behind it, and opening
+ * that panel is what clears it - not a timer, and not the next thing to
+ * arrive.
+ */
+describe('the count on a closed panel', () => {
+  const asHost = () => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
+  };
+
+  afterEach(() => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: null });
+  });
+
+  const barButton = async (name: RegExp) => {
+    const bar = await screen.findByRole('navigation', { name: 'Meeting controls' });
+    return within(bar).getByRole('button', { name });
+  };
+
+  const arrive = (payload: any) => {
+    const socket = (window as any).__roomSocket;
+    act(() => { socket.onmessage({ data: JSON.stringify(payload) }); });
+  };
+
+  const badgeOn = async (name: RegExp, count: string) =>
+    waitFor(async () => expect(await barButton(name)).toHaveTextContent(count));
+
+  it('counts a question waiting to be sorted', async () => {
+    asHost();
+    showRoom();
+    await screen.findByRole('navigation', { name: 'Meeting controls' });
+
+    arrive({
+      type: 'chat_pending', message_id: 'm1', message: 'Why this budget?',
+      user_id: 'g1', user_name: 'Rahul', timestamp: new Date().toISOString(),
+    });
+
+    await badgeOn(/Questions/, '1');
+  });
+
+  it('adds them up while nobody looks', async () => {
+    asHost();
+    showRoom();
+    await screen.findByRole('navigation', { name: 'Meeting controls' });
+
+    arrive({ type: 'chat_pending', message_id: 'm1', message: 'One',
+             user_id: 'g1', user_name: 'Rahul', timestamp: new Date().toISOString() });
+    arrive({ type: 'chat_pending', message_id: 'm2', message: 'Two',
+             user_id: 'g1', user_name: 'Rahul', timestamp: new Date().toISOString() });
+
+    await badgeOn(/Questions/, '2');
+  });
+
+  it('counts a file somebody shared', async () => {
+    showRoom();
+    await screen.findByRole('navigation', { name: 'Meeting controls' });
+
+    arrive({ type: 'resources_update' });
+
+    await badgeOn(/Resources/, '1');
+  });
+
+  it('clears the moment that panel is opened', async () => {
+    asHost();
+    showRoom();
+    await screen.findByRole('navigation', { name: 'Meeting controls' });
+    arrive({ type: 'chat_pending', message_id: 'm1', message: 'One',
+             user_id: 'g1', user_name: 'Rahul', timestamp: new Date().toISOString() });
+    await badgeOn(/Questions/, '1');
+
+    await openSide('Questions');
+
+    expect(await barButton(/Questions/)).not.toHaveTextContent('1');
+  });
+
+  it('and does not count what arrives while it is open', async () => {
+    asHost();
+    showRoom();
+    await openSide('Questions');
+
+    arrive({ type: 'chat_pending', message_id: 'm3', message: 'Three',
+             user_id: 'g1', user_name: 'Rahul', timestamp: new Date().toISOString() });
+
+    expect(await barButton(/Questions/)).not.toHaveTextContent('1');
+  });
+
+  it('keeps each count to its own panel', async () => {
+    asHost();
+    showRoom();
+    await screen.findByRole('navigation', { name: 'Meeting controls' });
+
+    arrive({ type: 'resources_update' });
+
+    await badgeOn(/Resources/, '1');
+    expect(await barButton(/Questions/)).not.toHaveTextContent('1');
   });
 });

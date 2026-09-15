@@ -75,6 +75,16 @@ const MeetingRoomInner: React.FC = () => {
   /** Which half of the participants panel is being read. */
   const [peopleTab, setPeopleTab] = useState<'here' | 'attendance'>('here');
   /**
+   * What has arrived while nobody was looking at it.
+   *
+   * A meeting runs while you are reading something else in it: a question
+   * is asked while the resources are open, a file is shared while you are
+   * in the chat. The count on each control is how many of those have piled
+   * up, and opening that panel is what clears it - not a timer, and not
+   * the next thing that happens to arrive.
+   */
+  const [unseen, setUnseen] = useState({ questions: 0, resources: 0 });
+  /**
    * What the bar has been asked to put beside the room, in the order it
    * was asked for. First clicked sits at the top; clicking it again takes
    * it away. Nothing but these three may occupy that column, so the
@@ -106,9 +116,17 @@ const MeetingRoomInner: React.FC = () => {
   const [attendance, setAttendance] = useState<AttendanceReport | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const showChatRef = useRef(false);
+  /** What is beside the room, read inside the socket handler. */
+  const sideRef = useRef<SidePanelId[]>([]);
   // Read inside the socket handler, which is created once.
   const showAttendanceRef = useRef(false);
   /** The reloads the socket asks for, kept current without rebuilding it. */
+  /** Something arrived for a panel nobody has open. */
+  const noteUnseen = (which: 'questions' | 'resources', by = 1) => {
+    if (sideRef.current.includes(which)) return;
+    setUnseen((was) => ({ ...was, [which]: was[which] + by }));
+  };
+
   const refreshRef = useRef({
     roster: () => {},
     resources: () => {},
@@ -185,11 +203,17 @@ const MeetingRoomInner: React.FC = () => {
   }, [setParticipants]);
 
   useEffect(() => {
+    sideRef.current = side;
     showChatRef.current = showChat;
     // The register is only re-read for somebody actually looking at it.
     showAttendanceRef.current =
       side.includes('participants') && peopleTab === 'attendance';
     if (showChat) setUnread(0);
+    // Opening a panel is reading it.
+    setUnseen((was) => ({
+      questions: side.includes('questions') ? 0 : was.questions,
+      resources: side.includes('resources') ? 0 : was.resources,
+    }));
   }, [showChat, side, peopleTab]);
 
   const isHost = !!user && currentMeeting?.host?.id === user.id;
@@ -524,6 +548,9 @@ const MeetingRoomInner: React.FC = () => {
           }]
         );
         if (!showChatRef.current) setUnread((n) => n + 1);
+        // Something written to the host is a request to sort, and that
+        // lives in the questions panel.
+        noteUnseen('questions');
       } else if (data.type === 'chat_moderated') {
         setMessages((prev) =>
           prev.map((m) =>
@@ -556,6 +583,7 @@ const MeetingRoomInner: React.FC = () => {
         // not rebuilt every time one of them changes.
         refreshRef.current.roster();
       } else if (data.type === 'resources_update') {
+        noteUnseen('resources');
         refreshRef.current.resources();
       } else if (data.type === 'attendance_update') {
         if (showAttendanceRef.current) refreshRef.current.attendance();
@@ -1449,6 +1477,7 @@ const MeetingRoomInner: React.FC = () => {
                 refreshMs={20000}
                 canSort={canOrganize}
                 waiting={pending}
+                onNews={(many) => noteUnseen('questions', many)}
               />
             )}
           </RoomCard>
@@ -1483,12 +1512,14 @@ const MeetingRoomInner: React.FC = () => {
           <RoomBarButton
             icon="questions"
             label="Questions"
+            badge={unseen.questions}
             open={side.includes('questions')}
             onClick={() => toggleSide('questions')}
           />
           <RoomBarButton
             icon="resources"
             label="Resources"
+            badge={unseen.resources}
             open={side.includes('resources')}
             onClick={() => toggleSide('resources')}
           />
