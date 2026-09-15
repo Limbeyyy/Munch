@@ -226,10 +226,15 @@ class ChatMessage(models.Model):
         User, on_delete=models.CASCADE, related_name='sent_chat_messages',
         null=True, blank=True,
     )
+    # The guest's row goes when the meeting ends; what they wrote does
+    # not. A question asked from the floor belongs to the meeting - it may
+    # be on the board already - so the message keeps the name itself
+    # rather than only pointing at somebody who will not be there.
     guest_sender = models.ForeignKey(
-        'GuestAttendee', on_delete=models.CASCADE,
+        'GuestAttendee', on_delete=models.SET_NULL,
         related_name='sent_chat_messages', null=True, blank=True,
     )
+    guest_sender_name = models.CharField(max_length=120, blank=True, default='')
 
     recipient = models.ForeignKey(
         User,
@@ -240,9 +245,10 @@ class ChatMessage(models.Model):
         help_text="Null for a public room message",
     )
     guest_recipient = models.ForeignKey(
-        'GuestAttendee', on_delete=models.CASCADE,
+        'GuestAttendee', on_delete=models.SET_NULL,
         related_name='received_chat_messages', null=True, blank=True,
     )
+    guest_recipient_name = models.CharField(max_length=120, blank=True, default='')
     body = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -311,11 +317,11 @@ class ChatMessage(models.Model):
             models.Index(fields=['meeting', 'topic']),
         ]
         constraints = [
+            # One or the other, never both. A message from a guest who has
+            # since been forgotten has neither - what it has is their name,
+            # which is what it needed the row for in the first place.
             models.CheckConstraint(
-                check=(
-                    models.Q(sender__isnull=False, guest_sender__isnull=True)
-                    | models.Q(sender__isnull=True, guest_sender__isnull=False)
-                ),
+                check=~models.Q(sender__isnull=False, guest_sender__isnull=False),
                 name='chat_message_exactly_one_sender',
             ),
             models.CheckConstraint(
@@ -334,12 +340,20 @@ class ChatMessage(models.Model):
     def sender_label(self) -> str:
         if self.guest_sender_id:
             return self.guest_sender.full_name
-        return self.sender.display_name or self.sender.email
+        if self.guest_sender_name:
+            # A guest who has been forgotten. What they asked is still
+            # here, and still theirs.
+            return self.guest_sender_name
+        if self.sender_id:
+            return self.sender.display_name or self.sender.email
+        return 'Someone'
 
     @property
     def recipient_label(self):
         if self.guest_recipient_id:
             return self.guest_recipient.full_name
+        if self.guest_recipient_name:
+            return self.guest_recipient_name
         if self.recipient_id:
             return self.recipient.display_name or self.recipient.email
         return None

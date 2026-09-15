@@ -198,6 +198,20 @@ def forget_guests(meeting):
     ).order_by('created_at'):
         record_guest_attendance(meeting, guest.full_name, guest.decided_at)
 
+    # What they wrote outlives them, so it keeps their name rather than a
+    # pointer to a row that is about to go. A question asked from the floor
+    # belongs to the meeting - it may be on the board already - and the
+    # host should still be able to put it up, or read who asked it.
+    from src.apps.meetings.models import ChatMessage
+
+    for guest in meeting.guests.all():
+        ChatMessage.objects.filter(guest_sender=guest).update(
+            guest_sender_name=guest.full_name
+        )
+        ChatMessage.objects.filter(guest_recipient=guest).update(
+            guest_recipient_name=guest.full_name
+        )
+
     gone, _ = GuestAttendee.objects.filter(meeting=meeting).delete()
     if gone:
         logger.info(
@@ -236,45 +250,13 @@ def broadcast_meeting_ended(meeting, reason='host_ended'):
         )
 
 
-def close_meeting_if_spent(meeting, now=None, wait_for_window=True):
-    """Close a meeting once nothing in it is still running.
-
-    A meeting is only ever ended if it was started: one nobody opened keeps
-    whatever state it had, so it can still read as never started.
-
-    ``wait_for_window`` is what separates the clock running out from the
-    host saying so. Left to itself, a meeting whose last session has
-    finished early stays open until its own window closes, because the host
-    may yet add something. When the host ends the last session by hand
-    there is nothing to wait for: they have said the meeting is over, and
-    everybody should be told at once rather than at half past.
-    """
-    now = now or timezone.now()
-    if meeting.status != Meeting.Status.ACTIVE:
-        return False
-    # A meeting is over when its running order is, not when its own window
-    # happens to run out. A session still to come is still to come.
-    if has_more_to_run(meeting, now):
-        return False
-    if wait_for_window and meeting.scheduled_end and now < meeting.scheduled_end:
-        return False
-
-    meeting.status = Meeting.Status.ENDED
-    meeting.ended_at = now
-    meeting.save(update_fields=['status', 'ended_at', 'updated_at'])
-
-    # The books were closed here but the room was not, so whoever was still
-    # in it stayed there - counted as present in a meeting that had ended.
-    clear_room(meeting, now)
-    broadcast_meeting_ended(
-        meeting, reason='time_elapsed' if wait_for_window else 'host_ended'
-    )
-
-    logger.info(
-        f"Meeting {meeting.meeting_code} closed: "
-        + ('its time ran out' if wait_for_window else 'the host ended its last session')
-    )
-    return True
+# Nor does anything here end a meeting by the clock.
+#
+# There was a rule for that too: a meeting whose window had passed with
+# nothing left to run closed itself, and every read of the meeting checked
+# it. It went the same way as the session rule and for the same reason - a
+# closing time is a plan, and a room with people in it is not a plan. The
+# host ends the meeting. Until they do, it is happening.
 
 
 # Nothing here ends a session by the clock, and nothing anywhere else

@@ -244,35 +244,14 @@ class MeetingViewSet(viewsets.ModelViewSet):
             # Fall back to default pk lookup
             obj = super().get_object()
 
-        return self._auto_end_if_expired(obj)
+        # Reading a meeting does not end it. Its closing time is a plan -
+        # printed on a programme, and the timetable corrects itself against
+        # what actually happens - and it was being enforced: touch the
+        # meeting after its hour and the room closed, emptying itself of
+        # people who were still in it. A meeting ends when the host ends
+        # it, and that is the whole of the rule now.
+        return obj
 
-    @staticmethod
-    def _auto_end_if_expired(meeting):
-        """Close a meeting once its running order is done.
-
-        Checked whenever the meeting is touched, so it does not depend on a
-        background worker being alive.
-
-        The window running out is not enough on its own. A meeting is its
-        sessions, and while one of them could still be put on stage the
-        meeting has not finished - saying otherwise shut the door on a
-        session the host was about to start.
-        """
-        from src.apps.meetings.lifecycle import has_more_to_run
-
-        if (
-            meeting.status != Meeting.Status.ENDED
-            and meeting.scheduled_end
-            and timezone.now() >= meeting.scheduled_end
-            and not has_more_to_run(meeting)
-        ):
-            logger.info(
-                f"Meeting {meeting.meeting_code} reached its scheduled end"
-            )
-            meeting = MeetingService.end_meeting(meeting.id)
-            broadcast_meeting_ended(meeting, reason='time_elapsed')
-        return meeting
-    
     @swagger_auto_schema(
         request_body=MeetingCreateSerializer,
         responses={201: MeetingSerializer()}
