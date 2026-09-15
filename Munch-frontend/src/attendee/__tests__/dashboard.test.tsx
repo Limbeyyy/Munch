@@ -199,3 +199,51 @@ describe('the live dashboard', () => {
     );
   });
 });
+
+/**
+ * The same screen, put to the host's use.
+ *
+ * Live control is this dashboard - what is on stage, what is being said,
+ * what the day has come to - with the things only a host does added to
+ * it. Passing them in beats a second copy of the layout that would drift
+ * from this one, so what matters is that the slots are there and that
+ * nobody else is given them.
+ */
+describe('the host slots on the dashboard', () => {
+  it("puts their heading at the top instead of the reader's", async () => {
+    show({
+      heading: {
+        title: { ne: 'लाइभ नियन्त्रण', en: 'Live control' },
+        lede: { ne: '', en: 'Start and end sessions.' },
+      },
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Live control' }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Live Dashboard' })).toBeNull();
+  });
+
+  it('puts their controls on the card with the talk they act on', async () => {
+    const ended = jest.fn();
+    show({ stageActions: <button onClick={ended}>End session</button> });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'End session' }));
+
+    expect(ended).toHaveBeenCalled();
+  });
+
+  it('puts their panels beside the transcript', async () => {
+    show({ extras: <p>Asking to come in</p> });
+
+    expect(await screen.findByText('Asking to come in')).toBeInTheDocument();
+  });
+
+  it('and gives an attendee none of it', async () => {
+    show();
+
+    expect(await screen.findByRole('heading', { name: 'Live Dashboard' }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'End session' })).toBeNull();
+    expect(screen.queryByText('Asking to come in')).toBeNull();
+  });
+});
