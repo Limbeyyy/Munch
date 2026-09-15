@@ -5,7 +5,7 @@ import {
 } from '../../types';
 import { Pair, useOrganizer } from '../../organizer/i18n';
 import { Empty } from '../../organizer/ui';
-import { MessageBoard } from '../../organizer/MessageBoard';
+import { RoomQuestions } from '../../organizer/RoomQuestions';
 import { PhotoAlbums } from '../../organizer/Photos';
 import { FigmaIcon } from '../../assets/icons';
 import { deskSession, doorway } from '../../organizer/sessionState';
@@ -320,7 +320,7 @@ export const DashboardView: React.FC<Props> = ({
               ) : tab === 'photos' ? (
                 <PhotoAlbums meetingRef={meetingCode} canManage={false} />
               ) : tab === 'questions' ? (
-                <MessageBoard meetingId={meetingId} refreshMs={30000} />
+                <RoomQuestions meetingId={meetingId} refreshMs={30000} />
               ) : slides.length === 0 ? (
                 <Empty>
                   {t({

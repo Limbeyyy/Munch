@@ -5,6 +5,7 @@ import { apiClient } from '../../services/api';
 import { ACTIVE_POLL_MS } from '../../services/polling';
 import { deskSession, startableNow } from '../sessionState';
 import { ChatRules } from '../ChatRules';
+import { RequestButton, RequestCard, RequestRow } from '../RequestCard';
 import { DashboardView } from '../../attendee/views/DashboardView';
 import { SpineItem } from '../../attendee/Spine';
 import {
@@ -12,7 +13,7 @@ import {
   Session,
 } from '../../types';
 import { useOrganizer } from '../i18n';
-import { Btn, Chip, Card, Empty, Head, Panel } from '../ui';
+import { Btn, Card, Head, Panel } from '../ui';
 
 
 interface Props {
@@ -26,7 +27,7 @@ interface Props {
  * and the queue waiting on a decision.
  */
 export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) => {
-  const { t, num } = useOrganizer();
+  const { t } = useOrganizer();
   const navigate = useNavigate();
 
   // Which part of the day we are in. The desk itself is about the session
@@ -174,14 +175,31 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
     } finally { setBusy(false); }
   };
 
-  const moderate = async (message: ChatMessage, action: 'approve' | 'decline') => {
-    if (!live) return;
+  /**
+   * Let a message through, and say where it belongs while doing it.
+   *
+   * The two are one decision - a question the room should see, or a
+   * suggestion - so they are one press rather than approving here and
+   * filing it on another screen.
+   */
+  const moderate = async (
+    message: ChatMessage,
+    action: 'approve' | 'decline',
+    topic?: 'faq' | 'suggestion'
+  ) => {
+    if (!current) return;
     try {
-      await apiClient.moderateMessage(live.id, message.id, action);
+      await apiClient.moderateMessage(current.id, message.id, action, topic);
       setPending((prev) => prev.filter((m) => m.id !== message.id));
-      toast.success(action === 'approve'
-        ? t({ ne: 'सन्देश पठाइयो', en: 'Message delivered' })
-        : t({ ne: 'सन्देश अस्वीकृत', en: 'Message declined' }));
+      toast.success(
+        topic === 'faq'
+          ? t({ ne: 'प्रश्नमा राखियो', en: 'Up as a question' })
+          : topic === 'suggestion'
+          ? t({ ne: 'सुझावमा राखियो', en: 'Up as a suggestion' })
+          : action === 'approve'
+          ? t({ ne: 'सन्देश पठाइयो', en: 'Message delivered' })
+          : t({ ne: 'सन्देश अस्वीकृत', en: 'Message declined' })
+      );
     } catch {
       toast.error(t({ ne: 'गर्न सकिएन', en: 'That did not work' }));
     }
@@ -282,85 +300,72 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
               screen already shows, in numbers nobody was acting on. The
               queue below says how many are waiting; the attendance page
               says who came. */}
-        <Panel
-          title={t({ ne: 'भित्र आउन अनुरोध', en: 'Asking to come in' })}
-          aside={
-            knocking.length > 0
-              ? <Chip tone="warn">{num(knocking.length)} {t({ ne: 'पर्खिरहेका', en: 'waiting' })}</Chip>
-              : <span className="text-[12.5px] text-[#6E7C8E]">
-                  {t({ ne: 'कोही पर्खिरहेको छैन', en: 'Nobody waiting' })}
-                </span>
-          }
+        <RequestCard
+          title={{ ne: 'भित्र आउन अनुरोध', en: 'Join Request' }}
+          count={knocking.length}
+          empty={{
+            ne: 'पाहुनाले बैठक कोडबाट अनुरोध पठाएपछि यहाँ देखिन्छ।',
+            en: 'A guest who used the meeting code appears here.',
+          }}
         >
-          <div className="px-4">
-            {knocking.length === 0 ? (
-              <Empty>
-                {t({
-                  ne: 'पाहुनाले बैठक कोडबाट अनुरोध पठाएपछि यहाँ देखिन्छ — ढिलो आए पनि सूची यहीँ रहन्छ।',
-                  en: 'A guest who used the meeting code appears here. The list keeps them, however late you arrive.',
-                })}
-              </Empty>
-            ) : (
-              knocking.map((guest) => (
-                <div
-                  key={guest.id}
-                  className="flex items-center gap-3 py-3 border-b border-navy-800/[.08] last:border-0"
-                >
-                  <span className="w-8 h-8 rounded-full bg-navy-700 text-white grid place-items-center text-xs font-semibold flex-none">
-                    {guest.full_name.charAt(0).toUpperCase()}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-[13.5px] font-medium truncate">{guest.full_name}</p>
-                    <p className="text-[12.5px] text-[#6E7C8E]">
-                      {t({ ne: 'पाहुनाका रूपमा', en: 'Joining as a guest' })}
-                    </p>
-                  </div>
-                  <span className="ml-auto flex gap-1.5 flex-none">
-                    <Btn sm tone="solid" disabled={deciding === guest.id}
-                         onClick={() => decideGuest(guest, true)}>
-                      {t({ ne: 'भित्र', en: 'Let in' })}
-                    </Btn>
-                    <Btn sm tone="danger" disabled={deciding === guest.id}
-                         onClick={() => decideGuest(guest, false)}>
-                      {t({ ne: 'अस्वीकार', en: 'Decline' })}
-                    </Btn>
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </Panel>
+          {knocking.map((guest) => (
+            <RequestRow
+              key={guest.id}
+              name={guest.full_name}
+              under={t({ ne: 'पाहुनाका रूपमा', en: 'Joining as Guest' })}
+              actions={
+                <>
+                  <RequestButton
+                    tone="accept"
+                    disabled={deciding === guest.id}
+                    onClick={() => decideGuest(guest, true)}
+                  >
+                    {t({ ne: 'स्वीकार', en: 'Accept' })}
+                  </RequestButton>
+                  <RequestButton
+                    tone="decline"
+                    disabled={deciding === guest.id}
+                    onClick={() => decideGuest(guest, false)}
+                  >
+                    {t({ ne: 'अस्वीकार', en: 'Decline' })}
+                  </RequestButton>
+                </>
+              }
+            />
+          ))}
+        </RequestCard>
 
-        <Panel
-          title={t({ ne: 'सन्देशको लाइन', en: 'Message queue' })}
-          aside={<Chip tone="warn">{num(pending.length)} {t({ ne: 'पर्खिरहेका', en: 'waiting' })}</Chip>}
-          actions={<Btn sm onClick={() => onNavigate('moderation')}>{t({ ne: 'सबै हेर्नुहोस्', en: 'See all' })}</Btn>}
+        {/* What has been written to the front of the room, and the only
+            question worth asking about it: which board it belongs on. */}
+        <RequestCard
+          title={{ ne: 'सन्देश अनुरोध', en: 'Message Request' }}
+          count={pending.length}
+          empty={{ ne: 'लाइन सफा छ।', en: 'The queue is clear.' }}
         >
-          <div className="px-4">
-            {pending.length === 0 ? (
-              <Empty>{t({ ne: 'लाइन सफा छ।', en: 'The queue is clear.' })}</Empty>
-            ) : (
-              pending.slice(0, 3).map((m) => (
-                <div key={m.id} className="flex gap-3 py-3 border-b border-navy-800/[.08] last:border-0 items-start">
-                  <div className="min-w-0">
-                    <p className="text-[13.5px]">{m.body}</p>
-                    <p className="text-[12.5px] text-[#6E7C8E]">
-                      {m.sender_name} &rarr; {m.recipient_name}
-                    </p>
-                  </div>
-                  <span className="ml-auto flex gap-1.5 flex-none">
-                    <Btn sm tone="solid" onClick={() => moderate(m, 'approve')}>
-                      {t({ ne: 'पठाउने', en: 'Deliver' })}
-                    </Btn>
-                    <Btn sm tone="danger" onClick={() => moderate(m, 'decline')}>
-                      {t({ ne: 'अस्वीकृत', en: 'Decline' })}
-                    </Btn>
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </Panel>
+          {pending.map((m) => (
+            <RequestRow
+              key={m.id}
+              name={m.body}
+              under={m.sender_name}
+              actions={
+                <>
+                  <RequestButton
+                    tone="accept"
+                    onClick={() => moderate(m, 'approve', 'faq')}
+                  >
+                    {t({ ne: 'प्रश्न', en: 'Question' })}
+                  </RequestButton>
+                  <RequestButton
+                    tone="quiet"
+                    onClick={() => moderate(m, 'approve', 'suggestion')}
+                  >
+                    {t({ ne: 'सुझाव', en: 'Suggestions' })}
+                  </RequestButton>
+                </>
+              }
+            />
+          ))}
+        </RequestCard>
 
           {/* The chat is something the host does to a session that is
               running - closing the floor for a speaker, opening direct

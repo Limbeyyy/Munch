@@ -74,7 +74,7 @@ export const AttendeeShell: React.FC<Props> = ({
     <div
       // Accessibility is applied at the document root now, so the shell
       // only has to state its own base size.
-      className="min-h-screen bg-cream text-ink font-sans text-[15px]"
+      className="min-h-screen bg-page text-ink font-sans text-[15px]"
     >
       <div className="lg:grid min-h-screen" style={{ gridTemplateColumns: '246px minmax(0,1fr)' }}>
         {/* Rail */}
