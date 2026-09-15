@@ -205,7 +205,11 @@ const AttendeeInner: React.FC = () => {
           </Card>
         ) : (
           <>
-            {events.length > 1 && (
+            {/* Live control is about what is happening now, so there is
+                nothing to choose between: a programme picker there offers
+                to show a day that is not the one running. Everywhere else
+                it is how somebody reaches another day. */}
+            {events.length > 1 && view !== 'dash' && (
               <select
                 value={event?.id ?? ''}
                 onChange={(e) => setEventId(e.target.value)}
@@ -229,6 +233,13 @@ const AttendeeInner: React.FC = () => {
                 onNavigate={setView}
                 onJoinRoom={enterRoom}
                 elapsed={elapsed}
+                heading={{
+                  title: { ne: 'लाइभ नियन्त्रण', en: 'Live control' },
+                  lede: {
+                    ne: 'अहिले के भइरहेको छ, र दिनले कहाँसम्म पुग्यो।',
+                    en: 'What is happening now, and how far the day has come.',
+                  },
+                }}
               />
             )}
 

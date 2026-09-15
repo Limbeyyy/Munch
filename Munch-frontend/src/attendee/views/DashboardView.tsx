@@ -392,14 +392,17 @@ export const DashboardView: React.FC<Props> = ({
           </div>
         </Card>
 
-        {/* Whatever the person reading this screen has to act on. Nobody
-            but the host has any of it. */}
-        {extras}
         </div>
       </div>
 
-      {/* The day, and what each part of it came to */}
-      <Card className="mt-3">
+      {/* The day, and what each part of it came to - and beside it,
+          whatever the person reading this has to act on. Nobody but the
+          host has any of that, so for everybody else the day has the
+          width to itself. */}
+      <div className={`grid gap-3 mt-3 items-start ${
+        extras ? 'xl:grid-cols-2' : ''
+      }`}>
+      <Card>
         <div className="bg-[#fcfcfc] h-12 grid place-items-center">
           <h2 className="text-[20px] font-medium text-black leading-[1.2]">
             {t({ ne: 'एजेन्डा सारांश', en: 'Agenda Summary' })}
@@ -407,8 +410,8 @@ export const DashboardView: React.FC<Props> = ({
         </div>
 
         <div className="grid md:grid-cols-[339px_minmax(0,1fr)] items-stretch">
-          <div className="max-h-[363px] overflow-y-auto border-b md:border-b-0 md:border-e
-            border-[#b3b3b3]/40">
+          <div className={`max-h-[363px] overflow-y-auto border-b md:border-b-0 md:border-e
+            ${selected ? 'border-navy-800' : 'border-[#b3b3b3]/40'}`}>
             {agenda.length === 0 ? (
               <Empty>{t({ ne: 'कुनै सत्र छैन।', en: 'Nothing scheduled.' })}</Empty>
             ) : (
@@ -423,7 +426,7 @@ export const DashboardView: React.FC<Props> = ({
                     onDoubleClick={() => onOpen(item)}
                     className={`w-full text-start flex items-center justify-between gap-2
                       px-1 py-2 border-b-[0.5px] border-[#b3b3b3] last:border-0
-                      ${chosen ? 'bg-[#007092] text-white' : 'bg-[#fcfcfc] hover:bg-cream'}`}
+                      ${chosen ? 'bg-navy-800 text-white' : 'bg-[#fcfcfc] hover:bg-cream'}`}
                   >
                     <span className="flex gap-2 items-center p-1 min-w-0">
                       <Portrait name={item.session.speaker_name} size={48} />
@@ -446,7 +449,7 @@ export const DashboardView: React.FC<Props> = ({
             )}
           </div>
 
-          <div className="bg-[#007092] text-white p-4 min-h-[363px]">
+          <div className="bg-navy-800 text-white p-4 min-h-[363px]">
             {!selected ? (
               <p className="text-[16px] opacity-90">
                 {t({ ne: 'कुनै सत्र छानिएको छैन।', en: 'No session chosen.' })}
@@ -506,6 +509,9 @@ export const DashboardView: React.FC<Props> = ({
           </div>
         </div>
       </Card>
+
+      {extras && <div className="flex flex-col gap-3 min-w-0">{extras}</div>}
+      </div>
     </>
   );
 };

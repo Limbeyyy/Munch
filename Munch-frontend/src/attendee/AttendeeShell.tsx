@@ -13,7 +13,9 @@ export interface AttendeeNav {
 }
 
 export const ATTENDEE_NAV: AttendeeNav[] = [
-  { id: 'dash', label: { ne: 'ड्यासबोर्ड', en: 'Dashboard' }, short: { ne: 'ड्यास', en: 'Home' },
+  // The same name the host's screen has, because it is the same screen.
+  { id: 'dash', label: { ne: 'लाइभ नियन्त्रण', en: 'Live control' },
+    short: { ne: 'लाइभ', en: 'Live' },
     icon: 'M3 11l9-8 9 8v9a2 2 0 01-2 2h-4v-6H9v6H5a2 2 0 01-2-2z' },
   { id: 'agenda', label: { ne: 'एजेन्डा', en: 'Agenda' }, short: { ne: 'एजेन्डा', en: 'Agenda' },
     icon: 'M8 2v4M16 2v4M3 9h18M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z' },
