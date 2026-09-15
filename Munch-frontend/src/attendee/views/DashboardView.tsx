@@ -3,7 +3,7 @@ import { apiClient } from '../../services/api';
 import {
   Artifact, Conclusion, EventMeeting, EventProgramme, TranscriptionSegment,
 } from '../../types';
-import { useOrganizer } from '../../organizer/i18n';
+import { Pair, useOrganizer } from '../../organizer/i18n';
 import { Empty } from '../../organizer/ui';
 import { MessageBoard } from '../../organizer/MessageBoard';
 import { PhotoAlbums } from '../../organizer/Photos';
@@ -21,6 +21,20 @@ interface Props {
   onJoinRoom: (meeting: EventMeeting) => void;
   /** Seconds the live session has been running, from the server's clock. */
   elapsed: number;
+  /**
+   * The same dashboard, put to a different use.
+   *
+   * The host's live control is this screen - what is on stage, what is
+   * being said, what the day has come to - with the things only a host
+   * does added to it. Rather than a second copy of the layout that would
+   * drift from this one, they are passed in: a heading of their own, the
+   * controls that belong on the stage card, and their own panels beside
+   * the transcript. Left out, this is the attendee's dashboard exactly as
+   * it was.
+   */
+  heading?: { title: Pair; lede: Pair };
+  stageActions?: React.ReactNode;
+  extras?: React.ReactNode;
 }
 
 /** The white card every panel on this screen is drawn on. */
@@ -94,7 +108,7 @@ type PanelTab = 'slides' | 'questions' | 'photos';
  * to match a picture.
  */
 export const DashboardView: React.FC<Props> = ({
-  items, live, onOpen, onJoinRoom,
+  items, live, onOpen, onJoinRoom, heading, stageActions, extras,
 }) => {
   const { t, num } = useOrganizer();
 
@@ -183,10 +197,10 @@ export const DashboardView: React.FC<Props> = ({
       <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
         <div className="min-w-0">
           <h1 className="text-[24px] font-medium text-[#030712] leading-[1.2]">
-            {t({ ne: 'लाइभ ड्यासबोर्ड', en: 'Live Dashboard' })}
+            {t(heading?.title ?? { ne: 'लाइभ ड्यासबोर्ड', en: 'Live Dashboard' })}
           </h1>
           <p className="text-[14px] text-[#4a5567] leading-[1.5]">
-            {t({
+            {t(heading?.lede ?? {
               ne: 'अहिले के भइरहेको छ, र दिनले कहाँसम्म पुग्यो।',
               en: 'What is happening now, and how far the day has come.',
             })}
@@ -258,6 +272,9 @@ export const DashboardView: React.FC<Props> = ({
                   <span className="text-[14px] text-[#030712] tracking-[-0.07px]">
                     {timeRange(current.session.starts_at, current.session.duration_minutes)}
                   </span>
+                  {stageActions && (
+                    <span className="ms-auto flex items-center gap-2">{stageActions}</span>
+                  )}
                 </div>
               </div>
             ) : (
@@ -341,8 +358,9 @@ export const DashboardView: React.FC<Props> = ({
           </Card>
         </div>
 
+        <div className="flex flex-col gap-3 min-w-0 xl:sticky xl:top-4">
         {/* What is being said */}
-        <Card className="xl:sticky xl:top-4">
+        <Card>
           <CardTitle>{t({ ne: 'लाइभ ट्रान्सक्रिप्ट', en: 'Live Transcript' })}</CardTitle>
           <div className="flex flex-col gap-3 px-3 py-2.5 max-h-[420px] overflow-y-auto">
             {segments.length === 0 ? (
@@ -373,6 +391,11 @@ export const DashboardView: React.FC<Props> = ({
             )}
           </div>
         </Card>
+
+        {/* Whatever the person reading this screen has to act on. Nobody
+            but the host has any of it. */}
+        {extras}
+        </div>
       </div>
 
       {/* The day, and what each part of it came to */}
