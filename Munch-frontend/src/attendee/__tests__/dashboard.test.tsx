@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { OrganizerProvider } from '../../organizer/i18n';
 import { DashboardView } from '../views/DashboardView';
 import { apiClient } from '../../services/api';
@@ -232,7 +232,7 @@ describe('the host slots on the dashboard', () => {
     expect(ended).toHaveBeenCalled();
   });
 
-  it('puts their panels beside the transcript', async () => {
+  it('puts their panels on the screen at all', async () => {
     show({ extras: <p>Asking to come in</p> });
 
     expect(await screen.findByText('Asking to come in')).toBeInTheDocument();
@@ -245,5 +245,41 @@ describe('the host slots on the dashboard', () => {
       .toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'End session' })).toBeNull();
     expect(screen.queryByText('Asking to come in')).toBeNull();
+  });
+});
+
+/**
+ * Where each thing sits, and what colour it is.
+ *
+ * The day and whatever the host has to act on share the bottom half and
+ * half, rather than the host's panels being stacked down beside the
+ * transcript where the eye has already moved on. And the summary wears
+ * the room's navy rather than a teal of its own.
+ */
+describe('the foot of the screen', () => {
+  it('gives the day the full width when there is nothing to act on', async () => {
+    show();
+
+    const heading = await screen.findByRole('heading', { name: 'Agenda Summary' });
+    const row = heading.closest('div')!.parentElement!.parentElement!;
+    expect(row.className).not.toContain('xl:grid-cols-2');
+  });
+
+  it('and shares it when there is', async () => {
+    show({ extras: <p>Asking to come in</p> });
+
+    const heading = await screen.findByRole('heading', { name: 'Agenda Summary' });
+    const row = heading.closest('div')!.parentElement!.parentElement!;
+    expect(row.className).toContain('xl:grid-cols-2');
+    expect(within(row).getByText('Asking to come in')).toBeInTheDocument();
+  });
+
+  it("draws the summary in the room's navy", async () => {
+    show();
+
+    const summary = (await screen.findByText('Summary')).closest('div')!.parentElement!
+      .parentElement!;
+    expect(summary.className).toContain('bg-navy-800');
+    expect(summary.className).not.toContain('007092');
   });
 });
