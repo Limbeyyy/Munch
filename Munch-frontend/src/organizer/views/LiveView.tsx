@@ -8,11 +8,11 @@ import { ChatRules } from '../ChatRules';
 import { DashboardView } from '../../attendee/views/DashboardView';
 import { SpineItem } from '../../attendee/Spine';
 import {
-  AttendanceReport, ChatMessage, GuestAttendee, Meeting, MeetingParticipant,
+  ChatMessage, GuestAttendee, Meeting,
   Session,
 } from '../../types';
 import { useOrganizer } from '../i18n';
-import { Btn, Chip, Card, Empty, Head, Kpi, Panel } from '../ui';
+import { Btn, Chip, Card, Empty, Head, Panel } from '../ui';
 
 
 interface Props {
@@ -80,8 +80,6 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
   // Going back into the room is the dashboard's own button now, and it
   // knows when the door is open.
 
-  const [participants, setParticipants] = useState<MeetingParticipant[]>([]);
-  const [attendance, setAttendance] = useState<AttendanceReport | null>(null);
   const [pending, setPending] = useState<ChatMessage[]>([]);
   const [elapsed, setElapsed] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -115,15 +113,11 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
   // Everything on this screen belongs to the meeting that is running.
   const load = React.useCallback(async () => {
     if (!current) return;
-      const [p, a, q, g, x] = await Promise.allSettled([
-        apiClient.getParticipants(current.id),
-        apiClient.getAttendance(current.id),
+      const [q, g, x] = await Promise.allSettled([
         apiClient.getPendingMessages(current.id),
         apiClient.getGuests(current.id),
         apiClient.listSessions(current.id),
       ]);
-      if (p.status === 'fulfilled') setParticipants(p.value);
-      if (a.status === 'fulfilled') setAttendance(a.value);
       if (q.status === 'fulfilled') setPending(q.value);
       if (g.status === 'fulfilled') {
         setKnocking(g.value.filter((guest) => guest.status === 'pending'));
@@ -218,8 +212,6 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
     );
   }
 
-  const activeCount = participants.filter((p) => p.is_active).length;
-
   /**
    * The day as the dashboard draws it, from what this desk already has.
    *
@@ -286,23 +278,10 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
       }
       extras={
         <>
-          <Kpi
-            items={[
-              { value: num(activeCount), label: { ne: 'अहिले हलमा', en: 'In the room' } },
-              {
-                value: attendance
-                  ? `${num(attendance.attended_count)}/${num(attendance.expected_total || attendance.attended_count)}`
-                  : '—',
-                label: { ne: 'आज चेक-इन', en: 'Checked in today' },
-              },
-              { value: num(pending.length), label: { ne: 'सन्देश लाइनमा', en: 'Messages queued' } },
-              {
-                value: num(attendance?.guests_admitted ?? 0),
-                label: { ne: 'पाहुना भित्रिएका', en: 'Guests admitted' },
-              },
-            ]}
-          />
-
+          {/* The counters that were here said what the rest of the
+              screen already shows, in numbers nobody was acting on. The
+              queue below says how many are waiting; the attendance page
+              says who came. */}
         <Panel
           title={t({ ne: 'भित्र आउन अनुरोध', en: 'Asking to come in' })}
           aside={

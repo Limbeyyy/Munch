@@ -283,3 +283,39 @@ describe('the foot of the screen', () => {
     expect(summary.className).not.toContain('007092');
   });
 });
+
+/**
+ * Which tab is being read, and how the screen says so.
+ *
+ * The amber rule under the chosen tab is the mark the rest of the app
+ * uses; the panel tabs here were underlining in black, which reads as a
+ * heavier thing than choosing a tab.
+ */
+describe('the chosen tab', () => {
+  it('carries the amber rule under it', async () => {
+    show();
+
+    const chosen = await screen.findByRole('tab', { name: 'Questions' });
+    expect(chosen).toHaveAttribute('aria-selected', 'true');
+    expect(chosen.className).toContain('border-amber');
+  });
+
+  it('and the others carry none', async () => {
+    show();
+
+    const other = await screen.findByRole('tab', { name: 'Photos' });
+    expect(other).toHaveAttribute('aria-selected', 'false');
+    expect(other.className).toContain('border-transparent');
+  });
+
+  it('moves with the reader', async () => {
+    show();
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Slides' }));
+
+    expect(screen.getByRole('tab', { name: 'Slides' }).className)
+      .toContain('border-amber');
+    expect(screen.getByRole('tab', { name: 'Questions' }).className)
+      .toContain('border-transparent');
+  });
+});

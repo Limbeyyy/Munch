@@ -303,10 +303,10 @@ export const DashboardView: React.FC<Props> = ({
                   role="tab"
                   aria-selected={tab === id}
                   onClick={() => setTab(id)}
-                  className={`flex-1 h-12 text-[14px] transition-colors ${
+                  className={`flex-1 h-12 text-[14px] transition-colors border-b-2 ${
                     tab === id
-                      ? 'text-black font-medium border-b-2 border-black'
-                      : 'text-[#49454f] hover:text-black'
+                      ? 'text-black font-medium border-amber'
+                      : 'text-[#49454f] hover:text-black border-transparent'
                   }`}
                 >
                   {t(label)}
