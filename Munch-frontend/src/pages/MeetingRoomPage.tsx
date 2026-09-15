@@ -918,33 +918,15 @@ const MeetingRoomInner: React.FC = () => {
       {showEndChoice && currentMeeting && (
         <div className="fixed inset-0 z-50 bg-black/60 grid place-items-center p-4">
           <div className="bg-white text-gray-900 rounded-2xl max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold">What would you like to end?</h3>
+            <h3 className="text-lg font-semibold">Leaving, or ending it?</h3>
             <p className="mt-1 text-sm text-gray-600">
-              A session and the meeting are different things, and so is
-              simply leaving, so this asks rather than guesses.
+              Those are different things, so this asks rather than guesses.
+              The talk on stage is ended from the card that shows it.
             </p>
-
-            {session?.id && (
-              <button
-                onClick={endSession}
-                disabled={endingSession}
-                className="mt-5 w-full text-left rounded-xl border border-navy-800/15
-                  hover:border-navy-800/40 p-4 disabled:opacity-60"
-              >
-                <span className="block font-semibold">
-                  End the session{session.title ? ` — “${session.title}”` : ''}
-                </span>
-                <span className="block text-sm text-gray-600 mt-0.5">
-                  Its transcript, its chat and its files are closed off and
-                  kept with it. The room stays open, and you can start the
-                  next speaker.
-                </span>
-              </button>
-            )}
 
             <button
               onClick={endMeeting}
-              className="mt-3 w-full text-left rounded-xl border border-red-200 hover:border-red-400 p-4"
+              className="mt-5 w-full text-left rounded-xl border border-red-200 hover:border-red-400 p-4"
             >
               <span className="block font-semibold text-red-700">End the meeting</span>
               <span className="block text-sm text-gray-600 mt-0.5">
@@ -1066,14 +1048,6 @@ const MeetingRoomInner: React.FC = () => {
                   >
                     Start meeting
                   </button>
-                ) : isHost && startedAt ? (
-                  <button
-                    onClick={() => setShowEndChoice(true)}
-                    className="bg-live hover:brightness-110 text-white rounded-[8px] px-3 py-1.5
-                      text-[13px] font-medium"
-                  >
-                    End meeting
-                  </button>
                 ) : null}
 
                 {startedAt && (
@@ -1109,6 +1083,20 @@ const MeetingRoomInner: React.FC = () => {
                 <span className="text-[14px] text-[#030712] tracking-[-0.07px] tabular-nums">
                   {startedAt ? formatElapsed(elapsed) : 'Not started'}
                 </span>
+
+                {/* Ending the talk belongs beside the talk. Ending the
+                    meeting is a different thing and lives behind Leave,
+                    where it is asked about rather than sat next to. */}
+                {isHost && session?.id && (
+                  <button
+                    onClick={endSession}
+                    disabled={endingSession}
+                    className="ms-auto bg-live hover:brightness-110 text-white rounded-[8px]
+                      px-4 py-1.5 text-[14px] font-medium disabled:opacity-60"
+                  >
+                    {endingSession ? 'Ending…' : 'End Session'}
+                  </button>
+                )}
               </div>
 
               {/* The room outlives every talk in it. Between two of them it
