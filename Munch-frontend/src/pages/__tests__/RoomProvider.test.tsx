@@ -1326,3 +1326,63 @@ describe('the count on a closed panel', () => {
     expect(await barButton(/Questions/)).not.toHaveTextContent('1');
   });
 });
+
+/**
+ * Nothing in the room starts the meeting.
+ *
+ * Putting a talk on stage does that, and it is the same decision. Asking
+ * for it twice only made it possible to be half-started: a meeting under
+ * way with nobody speaking, and a button that did nothing anybody could
+ * see.
+ */
+describe('starting the meeting', () => {
+  const asHost = () => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
+  };
+
+  afterEach(() => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: null });
+  });
+
+  it('is not something the room offers separately', async () => {
+    asHost();
+    api.getMeeting.mockResolvedValue({
+      ...meeting,
+      started_at: null,
+      current_session: {
+        id: null, title: '', started_at: null, ends_at: null, is_over: false,
+        between_sessions: false, awaiting_next: true,
+        next_id: 's2', next_title: 'Mehendi',
+      },
+    } as any);
+
+    showRoom();
+
+    await screen.findByRole('navigation', { name: 'Meeting controls' });
+    expect(screen.queryByRole('button', { name: 'Start meeting' })).toBeNull();
+    // What is offered instead is the thing that actually opens it.
+    expect(screen.getByRole('button', { name: 'Start Mehendi' })).toBeInTheDocument();
+  });
+
+  it('happens by putting somebody on stage', async () => {
+    asHost();
+    api.startSession.mockResolvedValue({} as any);
+    api.getMeeting.mockResolvedValue({
+      ...meeting,
+      started_at: null,
+      current_session: {
+        id: null, title: '', started_at: null, ends_at: null, is_over: false,
+        between_sessions: false, awaiting_next: true,
+        next_id: 's2', next_title: 'Mehendi',
+      },
+    } as any);
+
+    showRoom();
+    fireEvent.click(await screen.findByRole('button', { name: 'Start Mehendi' }));
+
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledWith('s2'));
+    expect(api.startMeeting).not.toHaveBeenCalled();
+  });
+});

@@ -802,21 +802,6 @@ const MeetingRoomInner: React.FC = () => {
     return () => clearInterval(id);
   }, [meetingId, startedAt]);
 
-  /** Host only: closes the meeting for everyone. */
-  /** Host only: call the meeting begun. The room was already open. */
-  const startMeeting = async () => {
-    if (!currentMeeting) return;
-    try {
-      const started = await apiClient.startMeeting(currentMeeting.id);
-      setMeeting({ ...currentMeeting, ...started });
-      toast.success('The meeting is under way');
-    } catch (error: any) {
-      toast.error(
-        error.response?.data?.error ?? 'Could not start the meeting'
-      );
-    }
-  };
-
   /**
    * Host only: end it for everyone.
    *
@@ -1040,16 +1025,10 @@ const MeetingRoomInner: React.FC = () => {
 
               <div className="flex items-center gap-2 flex-none">
 
-                {isHost && !startedAt && currentMeeting.entry?.can_start ? (
-                  <button
-                    onClick={startMeeting}
-                    className="bg-ok hover:brightness-110 text-white rounded-[8px] px-3 py-1.5
-                      text-[13px] font-medium"
-                  >
-                    Start meeting
-                  </button>
-                ) : null}
-
+                {/* Nothing here starts the meeting. Putting a talk on
+                    stage does that - it is the same decision, and asking
+                    for it twice only made it possible to be half-started:
+                    a meeting under way with nobody speaking. */}
                 {startedAt && (
                   <span className="bg-[#fce2ef] text-[#f83995] text-[12px] tracking-[-0.06px]
                     rounded-[4px] h-6 px-2 grid place-items-center">
