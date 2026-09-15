@@ -232,10 +232,13 @@ describe('the host slots on the dashboard', () => {
     expect(ended).toHaveBeenCalled();
   });
 
-  it('puts their panels on the screen at all', async () => {
+  it('puts their panels under the transcript, where their column is', async () => {
     show({ extras: <p>Asking to come in</p> });
 
-    expect(await screen.findByText('Asking to come in')).toBeInTheDocument();
+    const theirs = await screen.findByText('Asking to come in');
+    const column = theirs.parentElement!;
+    expect(within(column).getByRole('heading', { name: 'Live Transcript' }))
+      .toBeInTheDocument();
   });
 
   it('and gives an attendee none of it', async () => {
@@ -257,21 +260,27 @@ describe('the host slots on the dashboard', () => {
  * the room's navy rather than a teal of its own.
  */
 describe('the foot of the screen', () => {
-  it('gives the day the full width when there is nothing to act on', async () => {
+  it('runs the day the full width for a reader', async () => {
     show();
 
+    // Underneath both columns, with nothing beside it.
     const heading = await screen.findByRole('heading', { name: 'Agenda Summary' });
-    const row = heading.closest('div')!.parentElement!.parentElement!;
-    expect(row.className).not.toContain('xl:grid-cols-2');
+    const holder = heading.closest('div')!.parentElement!.parentElement!;
+    expect(holder.className).toContain('mt-3');
+    expect(within(holder).queryByRole('heading', { name: 'Live Transcript' }))
+      .toBeNull();
   });
 
-  it('and shares it when there is', async () => {
+  it("and keeps it in the host's column, beside their queues", async () => {
     show({ extras: <p>Asking to come in</p> });
 
     const heading = await screen.findByRole('heading', { name: 'Agenda Summary' });
-    const row = heading.closest('div')!.parentElement!.parentElement!;
-    expect(row.className).toContain('xl:grid-cols-2');
-    expect(within(row).getByText('Asking to come in')).toBeInTheDocument();
+    const column = heading.closest('div')!.parentElement!.parentElement!;
+    // The same column the tabs are in, not a row of its own, and not the
+    // column their queues are in.
+    expect(within(column).getByRole('tab', { name: 'Questions' }))
+      .toBeInTheDocument();
+    expect(within(column).queryByText('Asking to come in')).toBeNull();
   });
 
   it("draws the summary in the room's navy", async () => {
