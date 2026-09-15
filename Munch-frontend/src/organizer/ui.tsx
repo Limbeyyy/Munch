@@ -106,7 +106,10 @@ export const Tabs: React.FC<{
 }> = ({ tabs, active, onChange }) => {
   const { t } = useOrganizer();
   return (
-    <div className="flex gap-1 border-b border-navy-800/15 mb-4 overflow-x-auto" role="tablist">
+    // Wrapping rather than scrolling. A scrollable row is a scrollbar,
+    // and a scrollbar on a strip two tabs wide is a pair of stepper
+    // arrows sitting in the corner of the card doing nothing.
+    <div className="flex gap-1 border-b border-navy-800/15 mb-4 flex-wrap" role="tablist">
       {tabs.map((tab) => (
         <button
           key={tab.id}
