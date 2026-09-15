@@ -918,6 +918,21 @@ class MeetingViewSet(viewsets.ModelViewSet):
         guest.save(update_fields=['status', 'decided_by', 'decided_at', 'updated_at'])
 
         if guest.status == GuestAttendee.Status.ADMITTED:
+            # One seat per person. A guest whose browser reloads without
+            # their token knocks again, and the host letting them in is
+            # the host saying this is the same person coming back - so the
+            # seat they already had is given up rather than kept beside
+            # the new one, where it showed the same face in the room twice.
+            superseded = meeting.guests.filter(
+                status=GuestAttendee.Status.ADMITTED,
+                full_name__iexact=guest.full_name,
+            ).exclude(id=guest.id).update(status=GuestAttendee.Status.LEFT)
+            if superseded:
+                logger.info(
+                    f"{guest.full_name} came back to {meeting.meeting_code}; "
+                    f"{superseded} earlier seat(s) given up"
+                )
+
             # Written now, because this is the moment they were in the
             # hall - and because their row will not be here to ask later.
             from src.apps.meetings.lifecycle import record_guest_attendance
@@ -1255,8 +1270,13 @@ class MeetingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
 
+        # The caller may name the link itself - the share sheet does, and
+        # it knows the address the person is actually looking at. Failing
+        # that, the app's own front door rather than this server's.
+        from django.conf import settings as site
+
         target = request.query_params.get('url') or (
-            f"{request.scheme}://{request.get_host()}/login?join={meeting.meeting_code}"
+            f"{site.FRONTEND_URL.rstrip('/')}/login?join={meeting.meeting_code}"
         )
 
         image = qrcode.make(target, image_factory=qrcode.image.svg.SvgPathImage, box_size=12)

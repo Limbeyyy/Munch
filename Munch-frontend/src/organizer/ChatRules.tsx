@@ -56,16 +56,9 @@ export const ChatRules: React.FC<{
 
   return (
     <div className={`flex flex-col gap-3.5 ${dark ? 'text-white' : ''}`}>
-      <Switch
-        on={settings.chat_enabled}
-        disabled={saving}
-        onToggle={() => toggle({ chat_enabled: !settings.chat_enabled })}
-        label={{ ne: 'च्याट कोठा खुला राख्ने', en: 'Keep the chat room open' }}
-        hint={{
-          ne: 'बन्द राखे कसैले पनि सन्देश पठाउन पाउँदैनन्।',
-          en: 'With this off, nobody can send messages at all.',
-        }}
-      />
+      {/* The room itself is not a thing to be opened any more: there is no
+          room-wide thread, so everything written in it goes to one person
+          and the only rule worth a switch is the one below. */}
       <Switch
         on={settings.direct_messages_enabled}
         disabled={saving}
@@ -74,8 +67,8 @@ export const ChatRules: React.FC<{
         }
         label={{ ne: 'सिधा सन्देश लिने', en: 'Accept direct messages' }}
         hint={{
-          ne: 'सहभागीले प्रस्तोतालाई पठाएको सन्देश तपाईंको स्वीकृतिपछि मात्र पुग्छ।',
-          en: 'A message to a presenter reaches them only after you approve it.',
+          ne: 'बन्द राखे कोठा देखिन्छ तर कसैले पठाउन पाउँदैन। सहभागीले पठाएको सन्देश तपाईंको स्वीकृतिपछि मात्र पुग्छ।',
+          en: 'With this off the room is still there to read, but nobody can send. What an attendee writes reaches its reader only after you approve it.',
         }}
       />
     </div>

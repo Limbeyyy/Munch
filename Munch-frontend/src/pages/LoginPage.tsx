@@ -18,13 +18,22 @@ export const LoginPage: React.FC = () => {
   const [askingName, setAskingName] = useState(false);
   const [isKnocking, setIsKnocking] = useState(false);
 
-  // A guest who scanned the QR at the door arrives with the code already
-  // in the address, so they only have to say who they are.
+  /**
+   * Somebody who followed the link, or scanned the square at the door.
+   *
+   * The code is in the address they arrived at, so it is filled in and
+   * the guest door is already open: there is nothing left to type. What
+   * is left is a decision, and that is theirs - a guest presses the
+   * button, and anybody with an account signs in above instead and needs
+   * no code at all.
+   */
+  const [arrivedByLink, setArrivedByLink] = useState(false);
   useEffect(() => {
     const scanned = searchParams.get('join');
     if (scanned) {
       setGuestCode(scanned.toUpperCase());
       setShowGuest(true);
+      setArrivedByLink(true);
     }
   }, [searchParams]);
 
@@ -184,9 +193,9 @@ export const LoginPage: React.FC = () => {
         ) : (
           <div className="space-y-3">
             <p className="text-sm text-[#BFD1EC]">
-              Joining as a guest. You give a name at the door and the host
-              decides; nothing else is asked for, and nothing is kept
-              afterwards but your name on the attendance.
+              {arrivedByLink
+                ? 'The meeting code came with your link. Press below to go in as a guest — you give a name at the door and the host decides.'
+                : 'Joining as a guest. You give a name at the door and the host decides; nothing else is asked for, and nothing is kept afterwards but your name on the attendance.'}
             </p>
 
             <input
@@ -197,6 +206,7 @@ export const LoginPage: React.FC = () => {
                 if (e.key === 'Enter' && guestCode.trim()) setAskingName(true);
               }}
               placeholder="Meeting code"
+              aria-label="Meeting code"
               className="w-full px-4 py-3 rounded-lg uppercase tracking-wide bg-navy-900/50 border border-white/25 text-white placeholder-[#8FA6C6] focus:outline-none focus:ring-2 focus:ring-amber"
             />
 
@@ -208,13 +218,13 @@ export const LoginPage: React.FC = () => {
               }
               className="w-full bg-ok hover:bg-[#166F4C] text-white font-semibold py-3 px-4 rounded-lg disabled:opacity-50"
             >
-              Continue
+              Enter meeting room
             </button>
             <button
               onClick={() => setShowGuest(false)}
               className="w-full text-[#9FB8DC] text-sm py-1 hover:text-white"
             >
-              Back
+              Have an account? Go back and sign in
             </button>
           </div>
         )}

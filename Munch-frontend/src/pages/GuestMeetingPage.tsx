@@ -310,6 +310,10 @@ export const GuestMeetingPage: React.FC = () => {
   useEffect(() => {
     if (!token) return;
     const id = setInterval(async () => {
+      // Who there is to write to is read again with it: a guest admitted
+      // a moment after the page opened used to be left with an empty list
+      // for the rest of the meeting, because it was only ever read once.
+      loadChat();
       try {
         const { guest, meeting } = await apiClient.guestStatus(token);
         if (meeting?.started_at) setStartedAt(meeting.started_at);
@@ -325,7 +329,7 @@ export const GuestMeetingPage: React.FC = () => {
       }
     }, 15000);
     return () => clearInterval(id);
-  }, [token, leave]);
+  }, [token, leave, loadChat]);
 
 
   // Same clock as everyone else: anchored to the host's start timestamp.

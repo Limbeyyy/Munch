@@ -230,18 +230,29 @@ const MeetingRoomInner: React.FC = () => {
   );
 
   const canReplyToAnyone = isHost;
-  const dmTargets: { id: string; label: string }[] = [
-    ...organizers.map((p) => ({
-      id: p.user.id,
-      label: `${p.user.email} (${p.role.replace('_', '-')})`,
-    })),
-    ...(canReplyToAnyone
-      ? [
-          ...others.map((p) => ({ id: p.user.id, label: p.user.email })),
-          ...roomGuests.map((g) => ({ id: g.id, label: `${g.full_name} (guest)` })),
-        ]
-      : []),
-  ];
+  /*
+   * One entry per person, however many lists they turn up in.
+   *
+   * A guest arrives twice: the roster projects them as a participant with
+   * the guest's own id, and the guest list carries them again under the
+   * same id. Both are the same seat, and showing it twice put the same
+   * face in the chat list over and over.
+   */
+  const dmTargets: { id: string; label: string }[] = [];
+  const alreadyListed = new Set<string>();
+  const offer = (id: string, label: string) => {
+    if (!id || id === user?.id || alreadyListed.has(id)) return;
+    alreadyListed.add(id);
+    dmTargets.push({ id, label });
+  };
+
+  organizers.forEach((p) =>
+    offer(p.user.id, `${p.user.email} (${p.role.replace('_', '-')})`)
+  );
+  if (canReplyToAnyone) {
+    others.forEach((p) => offer(p.user.id, p.user.email));
+    roomGuests.forEach((g) => offer(g.id, `${g.full_name} (guest)`));
+  }
 
   const [changingRole, setChangingRole] = useState<string | null>(null);
 

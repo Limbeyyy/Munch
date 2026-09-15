@@ -1139,3 +1139,57 @@ describe('a summary on the agenda', () => {
     expect(screen.queryByText('Summary ready')).toBeNull();
   });
 });
+
+/**
+ * One face per person in the chat.
+ *
+ * A guest arrives in two lists at once - the roster projects them as a
+ * participant under the guest's own id, and the guest list carries them
+ * again under the same id. Both are the same seat, and showing it twice
+ * put the same face in the chat over and over.
+ */
+describe('who there is to write to', () => {
+  const asHost = () => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
+  };
+
+  afterEach(() => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: null });
+  });
+
+  it('lists a guest once, not once per list they turn up in', async () => {
+    asHost();
+    api.getParticipants.mockResolvedValue([
+      { id: 'p1', role: 'host', is_active: true,
+        user: { id: 'u1', email: 'host@example.com' } },
+      { id: 'g1', role: 'guest', is_active: true, is_guest: true,
+        user: { id: 'g1', email: 'Rahul Ingnam' } },
+    ] as any);
+    api.getGuests.mockResolvedValue([
+      { id: 'g1', full_name: 'Rahul Ingnam', status: 'admitted' },
+    ] as any);
+
+    showRoom();
+    await openSide('Chat');
+
+    const faces = await screen.findAllByRole('button', { name: /Rahul Ingnam/ });
+    expect(faces).toHaveLength(1);
+  });
+
+  it('and never offers the reader themselves', async () => {
+    asHost();
+    api.getParticipants.mockResolvedValue([
+      { id: 'p1', role: 'host', is_active: true,
+        user: { id: 'u1', email: 'host@example.com' } },
+    ] as any);
+    api.getGuests.mockResolvedValue([] as any);
+
+    showRoom();
+    await openSide('Chat');
+
+    await screen.findByText('Chats');
+    expect(screen.queryByRole('button', { name: /host@example.com/ })).toBeNull();
+  });
+});
