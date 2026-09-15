@@ -9,7 +9,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from src.apps.accounts.models import User
-from src.apps.meetings.models import GuestAttendee, Meeting
+from src.apps.meetings.models import GuestAttendee, Meeting, Session
 from src.apps.meetings.tests.factories import make_host, make_meeting, make_session
 
 API = '/api/v1'
@@ -469,3 +469,181 @@ class OneSeatPerGuestTests(TestCase):
 
         other.refresh_from_db()
         self.assertEqual(other.status, GuestAttendee.Status.ADMITTED)
+
+
+class WhatAGuestLeavesBehindTests(TestCase):
+    """What was written survives the person being forgotten.
+
+    A guest's row goes when the meeting ends - that is the whole point of
+    them being guests - but a question asked from the floor belongs to the
+    meeting. It used to go with them: the link cascaded, so the host who
+    went to put a question on the board was told there was no such
+    message, and anything already on the board vanished from it.
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.host = make_host('host@example.com')
+        start = timezone.now() - timezone.timedelta(minutes=30)
+        self.meeting = make_meeting(self.host, start=start, minutes=120)
+        self.meeting.status = Meeting.Status.ACTIVE
+        self.meeting.started_at = start
+        self.meeting.save()
+        make_session(self.meeting, start, 60, 'Haldi')
+
+        self.guest = GuestAttendee.objects.create(
+            meeting=self.meeting, full_name='Rahul Ingnam',
+            status=GuestAttendee.Status.ADMITTED,
+        )
+        from src.apps.meetings.models import ChatMessage
+
+        self.asked = ChatMessage.objects.create(
+            meeting=self.meeting, guest_sender=self.guest, recipient=self.host,
+            body='What is this meeting about?',
+            moderation_status=ChatMessage.Moderation.PENDING,
+        )
+
+    def end_it(self):
+        from src.apps.meetings.services.meeting_service import MeetingService
+
+        MeetingService.end_meeting(self.meeting.id)
+
+    def reloaded(self):
+        from src.apps.meetings.models import ChatMessage
+
+        return ChatMessage.objects.filter(id=self.asked.id).first()
+
+    def test_the_question_is_still_there(self):
+        self.end_it()
+
+        self.assertIsNotNone(self.reloaded())
+
+    def test_and_still_says_who_asked_it(self):
+        self.end_it()
+
+        message = self.reloaded()
+        self.assertIsNone(message.guest_sender_id)
+        self.assertEqual(message.sender_label, 'Rahul Ingnam')
+
+    def test_the_host_can_still_put_it_on_the_board(self):
+        from django.test import Client
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        self.end_it()
+        client = Client(HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(self.host)}')
+
+        approved = client.post(
+            f'{API}/meetings/{self.meeting.id}/moderate_message/',
+            {'message_id': str(self.asked.id), 'decision': 'approve', 'topic': 'faq'},
+            content_type='application/json',
+        )
+
+        self.assertEqual(approved.status_code, 200)
+        board = client.get(f'{API}/meetings/{self.meeting.id}/board/').json()
+        self.assertEqual(
+            [q['body'] for q in board['faq']], ['What is this meeting about?']
+        )
+
+    def test_and_the_board_still_names_the_asker(self):
+        from django.test import Client
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        client = Client(HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(self.host)}')
+        client.post(
+            f'{API}/meetings/{self.meeting.id}/moderate_message/',
+            {'message_id': str(self.asked.id), 'decision': 'approve', 'topic': 'faq'},
+            content_type='application/json',
+        )
+
+        self.end_it()
+
+        board = client.get(f'{API}/meetings/{self.meeting.id}/board/').json()
+        self.assertEqual([q['asked_by'] for q in board['faq']], ['Rahul Ingnam'])
+
+    def test_a_reply_to_them_survives_as_well(self):
+        from src.apps.meetings.models import ChatMessage
+
+        answered = ChatMessage.objects.create(
+            meeting=self.meeting, sender=self.host, guest_recipient=self.guest,
+            body='It is about the budget.',
+        )
+
+        self.end_it()
+
+        kept = ChatMessage.objects.filter(id=answered.id).first()
+        self.assertIsNotNone(kept)
+        self.assertEqual(kept.recipient_label, 'Rahul Ingnam')
+
+
+class TheGuestIsNotShownOutByTheClockTests(TestCase):
+    """A guest stays until they leave or the host ends the meeting.
+
+    Two ways they were thrown out, both by a clock. The talk finished and
+    the host had not started the next, so the room read as spent. Or the
+    meeting's closing time came round while a talk was still running. In
+    both cases it was the guest's own page, asking how things were, that
+    closed the meeting underneath them.
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.host = make_host('host@example.com')
+        # A meeting whose hour is well past.
+        start = timezone.now() - timezone.timedelta(hours=3)
+        self.meeting = make_meeting(self.host, start=start, minutes=60)
+        self.meeting.status = Meeting.Status.ACTIVE
+        self.meeting.started_at = start
+        self.meeting.save()
+        self.session = make_session(self.meeting, start, 30, 'Haldi')
+        self.guest = GuestAttendee.objects.create(
+            meeting=self.meeting, full_name='Rahul Ingnam',
+            status=GuestAttendee.Status.ADMITTED,
+        )
+
+    def ask(self):
+        from src.apps.meetings.guest_tokens import make_guest_token
+
+        return self.client.get(
+            f'{API}/meetings/guest/status/?token={make_guest_token(self.guest)}'
+        ).json()
+
+    def reloaded(self):
+        return Meeting.objects.get(id=self.meeting.id)
+
+    def test_between_talks_the_room_is_still_theirs(self):
+        self.session.status = Session.Status.DONE
+        self.session.ended_at = timezone.now() - timezone.timedelta(hours=2)
+        self.session.save()
+
+        answer = self.ask()
+
+        self.assertEqual(answer['meeting']['status'], Meeting.Status.ACTIVE)
+        self.assertEqual(answer['guest']['status'], 'admitted')
+        self.assertEqual(self.reloaded().status, Meeting.Status.ACTIVE)
+
+    def test_and_so_it_is_while_a_talk_runs_past_its_hour(self):
+        self.session.status = Session.Status.LIVE
+        self.session.started_at = self.session.starts_at
+        self.session.save()
+
+        answer = self.ask()
+
+        self.assertEqual(answer['meeting']['status'], Meeting.Status.ACTIVE)
+        self.assertEqual(self.reloaded().status, Meeting.Status.ACTIVE)
+
+    def test_asking_a_hundred_times_does_not_close_it_either(self):
+        for _ in range(5):
+            self.ask()
+
+        self.assertEqual(self.reloaded().status, Meeting.Status.ACTIVE)
+        self.guest.refresh_from_db()
+        self.assertEqual(self.guest.status, GuestAttendee.Status.ADMITTED)
+
+    def test_the_host_ending_it_is_what_shows_them_out(self):
+        from src.apps.meetings.services.meeting_service import MeetingService
+
+        MeetingService.end_meeting(self.meeting.id)
+
+        self.assertEqual(self.reloaded().status, Meeting.Status.ENDED)

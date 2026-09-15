@@ -108,14 +108,14 @@ class EvictionTests(TransactionTestCase):
         self.assertEqual(said['type'], 'meeting_ended')
         await comm.disconnect()
 
-    async def test_the_room_is_emptied_when_the_meetings_own_time_runs_out(self):
-        """Not a session's clock - the meeting's.
+    async def test_the_room_is_not_emptied_when_its_hour_passes(self):
+        """The reported case, from the guest's side.
 
-        Nothing ends a session by the clock any more; a talk runs until the
-        host ends it. A meeting is different: its window is the room's
-        booking, and once that has passed with nothing left to run, the
-        room closes. That path used to close the books and leave everybody
-        sitting in a meeting that had ended.
+        A guest sat in a room where nothing was on stage - the talk had
+        finished and the host had not started the next - and was thrown
+        out, by their own page asking how things were. A meeting's closing
+        time is a plan like everything else on the timetable. The host ends
+        the meeting; until then everybody in it stays in it.
         """
         def wind_forward():
             past = timezone.now() - timezone.timedelta(hours=2)
@@ -128,33 +128,29 @@ class EvictionTests(TransactionTestCase):
             self.meeting.scheduled_end = past + timezone.timedelta(minutes=30)
             self.meeting.save()
 
-        def read_the_meeting():
+        def read_everything():
             from django.test import Client
 
             client = Client(
                 HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(self.host)}',
                 HTTP_HOST='localhost',
             )
-            return client.get(f'{API}/meetings/{self.meeting.id}/')
+            return client.get(f'{API}/meetings/{self.meeting.id}/').status_code
 
         await database_sync_to_async(wind_forward)()
-        comm = await joined(self.meeting, self.attendee)
-        await comm.receive_json_from()
+        self.assertEqual(await database_sync_to_async(read_everything)(), 200)
 
-        response = await database_sync_to_async(read_the_meeting)()
-        self.assertEqual(response.status_code, 200)
+        state = await database_sync_to_async(
+            lambda: Meeting.objects.get(id=self.meeting.id).status
+        )()
+        self.assertEqual(state, Meeting.Status.ACTIVE)
 
-        said = await comm.receive_json_from()
-        self.assertEqual(said['type'], 'meeting_ended')
-        self.assertEqual(said['reason'], 'time_elapsed')
-        await comm.disconnect()
-
-        left = await database_sync_to_async(
+        still_in = await database_sync_to_async(
             lambda: MeetingParticipant.objects.filter(
                 meeting=self.meeting, is_active=True
             ).count()
         )()
-        self.assertEqual(left, 0)
+        self.assertEqual(still_in, 1)
 
     async def test_but_a_talk_still_on_stage_keeps_the_room_open(self):
         # The window has passed and somebody is still speaking. The room is

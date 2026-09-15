@@ -249,12 +249,8 @@ export const GuestMeetingPage: React.FC = () => {
       } else if (data.type === 'meeting_started') {
         setStartedAt(data.started_at);
       } else if (data.type === 'meeting_ended') {
-        toast(
-          data.reason === 'time_elapsed'
-            ? 'The meeting time is over'
-            : 'The host ended the meeting',
-          { icon: '👋' }
-        );
+        // The only way a meeting ends now: somebody decided it had.
+        toast('The host ended the meeting', { icon: '👋' });
         leave();
       } else if (data.type === 'chat_settings_update') {
         // The room is always open; what the host turns on and off is

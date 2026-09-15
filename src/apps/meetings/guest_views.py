@@ -229,16 +229,12 @@ def guest_status(request):
             status=status.HTTP_401_UNAUTHORIZED
         )
 
-    meeting = guest.meeting
-    if (
-        meeting.status != Meeting.Status.ENDED
-        and meeting.scheduled_end
-        and timezone.now() >= meeting.scheduled_end
-    ):
-        from src.apps.meetings.services.meeting_service import MeetingService
-        meeting = MeetingService.end_meeting(meeting.id)
-        guest.meeting = meeting
-
+    # Reading the room does not end it. A meeting's closing time is a plan
+    # like everything else on the timetable: the host ends the meeting, and
+    # until they do it is still going on. This used to close it the moment
+    # its hour struck - so a guest sitting quietly in a room where the talk
+    # was still running was thrown out by their own page asking how things
+    # were.
     from src.apps.meetings.lifecycle import session_room_state
 
     return Response({

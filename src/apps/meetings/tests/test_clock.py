@@ -82,9 +82,11 @@ class MeetingClockTests(TestCase):
 
         self.assertEqual(self.reloaded().started_at, first)
 
-    def test_a_meeting_whose_time_has_passed_is_not_opened(self):
-        # Existing behaviour, pinned here because it is why the reported
-        # case came in through a session rather than this endpoint.
+    def test_a_meeting_whose_hour_has_passed_still_opens(self):
+        # It used to be refused, because reading it closed it first and a
+        # closed meeting cannot be started. Nothing closes a meeting by the
+        # clock now, so yesterday's meeting opens if the host says so -
+        # being late is not a reason to be told no.
         stale = make_meeting(
             self.host, self.event,
             start=timezone.now() - timezone.timedelta(hours=23), minutes=60,
@@ -92,8 +94,8 @@ class MeetingClockTests(TestCase):
 
         response = self.client.post(f'{API}/meetings/{stale.id}/start/')
 
-        self.assertEqual(response.status_code, 400)
-        self.assertIsNone(Meeting.objects.get(id=stale.id).started_at)
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNotNone(Meeting.objects.get(id=stale.id).started_at)
 
 
 class SessionClockTests(TestCase):
