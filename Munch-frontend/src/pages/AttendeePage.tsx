@@ -11,7 +11,6 @@ import { AttendeeShell } from '../attendee/AttendeeShell';
 import { Spine, SpineItem } from '../attendee/Spine';
 import { SessionDrawer } from '../attendee/SessionDrawer';
 import { DashboardView } from '../attendee/views/DashboardView';
-import { SessionsView } from '../attendee/views/SessionsView';
 import { SpeakersView } from '../attendee/views/SpeakersView';
 import { HubView } from '../attendee/views/HubView';
 import { ConclusionsView } from '../attendee/views/ConclusionsView';
@@ -272,10 +271,6 @@ const AttendeeInner: React.FC = () => {
                   onOpen={setOpen}
                 />
               </>
-            )}
-
-            {view === 'sessions' && (
-              <SessionsView items={items} attendedIds={attended} onOpen={setOpen} />
             )}
 
             {view === 'hub' && (
