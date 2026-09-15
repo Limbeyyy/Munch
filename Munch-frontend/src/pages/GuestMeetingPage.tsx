@@ -86,6 +86,8 @@ export const GuestMeetingPage: React.FC = () => {
    * room: two at a time, and a third lets the oldest go.
    */
   const [side, setSide] = useState<GuestPanel[]>([]);
+  /** What is beside the room, read inside callbacks made once. */
+  const sideRef = useRef<GuestPanel[]>([]);
   const toggleSide = (panel: GuestPanel) =>
     setSide((open) => {
       if (open.includes(panel)) return open.filter((x) => x !== panel);
@@ -100,6 +102,25 @@ export const GuestMeetingPage: React.FC = () => {
   // second switch that could disagree with it.
   const chatBeside = side.includes('chat');
   useEffect(() => { setShowChat(chatBeside); }, [chatBeside]);
+
+  useEffect(() => { sideRef.current = side; }, [side]);
+
+  // Opening a panel is reading it.
+  useEffect(() => {
+    setUnseen((was) => ({
+      questions: side.includes('questions') ? 0 : was.questions,
+      resources: side.includes('resources') ? 0 : was.resources,
+    }));
+  }, [side]);
+
+  /**
+   * What has arrived while nobody was looking at it.
+   *
+   * The meeting carries on while a guest reads something else in it. The
+   * count on each control is how much has piled up behind it, and opening
+   * that panel is what clears it.
+   */
+  const [unseen, setUnseen] = useState({ questions: 0, resources: 0 });
 
   /** The running order, and the meeting's own hours, to read only. */
   const [agenda, setAgenda] = useState<any[]>([]);
@@ -282,10 +303,25 @@ export const GuestMeetingPage: React.FC = () => {
     if (showChat) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, showChat]);
 
+  /** How many files there were when the list was last read. */
+  const wereShared = useRef<number | null>(null);
+
   const loadResources = useCallback(async () => {
     if (!token) return;
     try {
-      setResources(await apiClient.guestResources(token));
+      const shared = await apiClient.guestResources(token);
+      setResources(shared);
+
+      const before = wereShared.current;
+      wereShared.current = shared.length;
+      // The first read is what is already there, not news.
+      if (before !== null && shared.length > before) {
+        setUnseen((was) =>
+          sideRef.current.includes('resources')
+            ? was
+            : { ...was, resources: was.resources + (shared.length - before) }
+        );
+      }
     } catch {
       // Files are supplementary; a failed refresh is not worth a toast.
     }
@@ -583,7 +619,17 @@ export const GuestMeetingPage: React.FC = () => {
                       onClose={() => closeSide('questions')}
                     />
                     {token && (
-                      <RoomQuestions guestToken={token} refreshMs={20000} />
+                      <RoomQuestions
+                        guestToken={token}
+                        refreshMs={20000}
+                        onNews={(many) =>
+                          setUnseen((was) =>
+                            sideRef.current.includes('questions')
+                              ? was
+                              : { ...was, questions: was.questions + many }
+                          )
+                        }
+                      />
                     )}
                   </RoomCard>
                 )}
@@ -630,12 +676,14 @@ export const GuestMeetingPage: React.FC = () => {
           <RoomBarButton
             icon="questions"
             label="Questions"
+            badge={unseen.questions}
             open={side.includes('questions')}
             onClick={() => toggleSide('questions')}
           />
           <RoomBarButton
             icon="resources"
             label="Resources"
+            badge={unseen.resources}
             open={side.includes('resources')}
             onClick={() => { toggleSide('resources'); loadResources(); }}
           />

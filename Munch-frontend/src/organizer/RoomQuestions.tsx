@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
 import { BoardEntry, ChatMessage, MeetingBoard } from '../types';
@@ -30,6 +30,15 @@ interface Props {
    * is the room passing it on.
    */
   waiting?: ChatMessage[];
+  /**
+   * Something new has appeared on the board.
+   *
+   * The board grows when the host puts a question up, and nothing on the
+   * socket says so - this panel finds out by reading it. Whoever is
+   * showing the panel wants to know too, so that a control nobody has
+   * open can say how much has arrived behind it.
+   */
+  onNews?: (many: number) => void;
 }
 
 /**
@@ -49,7 +58,7 @@ interface Props {
  * decision, taken where it happens.
  */
 export const RoomQuestions: React.FC<Props> = ({
-  meetingId, guestToken, refreshMs, canSort, waiting: alsoWaiting,
+  meetingId, guestToken, refreshMs, canSort, waiting: alsoWaiting, onNews,
 }) => {
   const { t, num } = useOrganizer();
   const [board, setBoard] = useState<MeetingBoard | null>(null);
@@ -59,11 +68,21 @@ export const RoomQuestions: React.FC<Props> = ({
   const [tab, setTab] = useState<Tab>('faq');
   const [busy, setBusy] = useState<string | null>(null);
 
+  /** How much was on the board when it was last read. */
+  const wasOnBoard = useRef<number | null>(null);
+
   const load = useCallback(async () => {
     try {
-      if (guestToken) setBoard(await apiClient.getGuestBoard(guestToken));
-      else if (meetingId) setBoard(await apiClient.getMeetingBoard(meetingId));
-      else setBoard(null);
+      let read: MeetingBoard | null = null;
+      if (guestToken) read = await apiClient.getGuestBoard(guestToken);
+      else if (meetingId) read = await apiClient.getMeetingBoard(meetingId);
+      setBoard(read);
+
+      const now = read ? read.faq.length + read.suggestions.length : 0;
+      const before = wasOnBoard.current;
+      wasOnBoard.current = now;
+      // The first read is what is already there, not news.
+      if (before !== null && now > before) onNews?.(now - before);
     } catch {
       setBoard({ faq: [], suggestions: [] });
     }
@@ -92,7 +111,7 @@ export const RoomQuestions: React.FC<Props> = ({
       // The queue is the host's own view; a dropped refresh is not worth
       // interrupting a meeting for.
     }
-  }, [meetingId, guestToken, canSort]);
+  }, [meetingId, guestToken, canSort, onNews]);
 
   useEffect(() => {
     load();
