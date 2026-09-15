@@ -19,8 +19,6 @@ export const ATTENDEE_NAV: AttendeeNav[] = [
     icon: 'M3 11l9-8 9 8v9a2 2 0 01-2 2h-4v-6H9v6H5a2 2 0 01-2-2z' },
   { id: 'agenda', label: { ne: 'एजेन्डा', en: 'Agenda' }, short: { ne: 'एजेन्डा', en: 'Agenda' },
     icon: 'M8 2v4M16 2v4M3 9h18M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z' },
-  { id: 'sessions', label: { ne: 'सत्रहरू', en: 'Sessions' }, short: { ne: 'सत्र', en: 'Sessions' },
-    icon: 'M4 5h16v11H4zM2 20h20M9 9l5 2.5L9 14z' },
   { id: 'hub', label: { ne: 'सहभागी हब', en: 'Attendee hub' }, short: { ne: 'हब', en: 'Hub' },
     icon: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z' },
   { id: 'connect', label: { ne: 'वक्ता', en: 'Speakers' }, short: { ne: 'वक्ता', en: 'Speakers' },
