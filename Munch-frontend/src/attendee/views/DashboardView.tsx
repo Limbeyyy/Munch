@@ -191,6 +191,116 @@ export const DashboardView: React.FC<Props> = ({
 
   const summary = summaryOf(selected?.session.id);
 
+  const theDay = (
+      <Card>
+        <div className="bg-[#fcfcfc] h-12 grid place-items-center">
+          <h2 className="text-[20px] font-medium text-black leading-[1.2]">
+            {t({ ne: 'एजेन्डा सारांश', en: 'Agenda Summary' })}
+          </h2>
+        </div>
+
+        <div className="grid md:grid-cols-[339px_minmax(0,1fr)] items-stretch">
+          <div className={`max-h-[363px] overflow-y-auto border-b md:border-b-0 md:border-e
+            ${selected ? 'border-navy-800' : 'border-[#b3b3b3]/40'}`}>
+            {agenda.length === 0 ? (
+              <Empty>{t({ ne: 'कुनै सत्र छैन।', en: 'Nothing scheduled.' })}</Empty>
+            ) : (
+              agenda.map((item) => {
+                const chosen = item.session.id === selected?.session.id;
+                return (
+                  <button
+                    key={item.session.id}
+                    type="button"
+                    aria-current={chosen}
+                    onClick={() => setOpened(item.session.id)}
+                    onDoubleClick={() => onOpen(item)}
+                    className={`w-full text-start flex items-center justify-between gap-2
+                      px-1 py-2 border-b-[0.5px] border-[#b3b3b3] last:border-0
+                      ${chosen ? 'bg-navy-800 text-white' : 'bg-[#fcfcfc] hover:bg-cream'}`}
+                  >
+                    <span className="flex gap-2 items-center p-1 min-w-0">
+                      <Portrait name={item.session.speaker_name} size={48} />
+                      <span className="min-w-0">
+                        <span className={`block text-[16px] font-medium leading-[1.2] truncate
+                          ${chosen ? 'text-white' : 'text-black'}`}>
+                          {item.session.title}
+                        </span>
+                        <span className={`block text-[14px] leading-[1.5] truncate
+                          ${chosen ? 'text-white' : 'text-[#030712]'}`}>
+                          {item.session.speaker_name ||
+                            t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' })}
+                        </span>
+                      </span>
+                    </span>
+                    {chosen && <FigmaIcon name="arrowRight" size={24} />}
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <div className="bg-navy-800 text-white p-4 min-h-[363px]">
+            {!selected ? (
+              <p className="text-[16px] opacity-90">
+                {t({ ne: 'कुनै सत्र छानिएको छैन।', en: 'No session chosen.' })}
+              </p>
+            ) : (
+              <>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0 text-center">
+                    <p className="text-[20px] font-medium leading-[1.2]">
+                      {t({ ne: 'सारांश', en: 'Summary' })}
+                    </p>
+                    <p className="text-[16px] leading-[1.5]">
+                      {selected.session.speaker_name ||
+                        t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' })}
+                    </p>
+                  </div>
+                  <span className="bg-white border border-[#e3e8ef] rounded-[4px] h-6 px-1
+                    grid place-items-center flex-none text-[12px] text-[#030712]
+                    tracking-[-0.06px] tabular-nums">
+                    {timeRange(
+                      selected.session.starts_at, selected.session.duration_minutes
+                    )}
+                  </span>
+                </div>
+
+                <div className="mt-6 flex flex-col gap-3 text-[14px] leading-[1.4]
+                  tracking-[-0.07px] text-[#fcfcfc] max-h-[240px] overflow-y-auto">
+                  {summary && summary.findings.length > 0 ? (
+                    summary.findings.map((point, i) => <p key={i}>{point}</p>)
+                  ) : (
+                    <p className="opacity-80">
+                      {t({
+                        ne: 'यो सत्रको निष्कर्ष अझै प्रकाशित भएको छैन।',
+                        en: 'Nothing has been published for this session yet.',
+                      })}
+                    </p>
+                  )}
+
+                  {summary && summary.actions.length > 0 && (
+                    <div className="pt-3 border-t border-white/25">
+                      <p className="text-[12px] uppercase tracking-wide opacity-80 mb-1.5">
+                        {t({ ne: 'कार्यसूची', en: 'Actions' })}
+                      </p>
+                      {summary.actions.map((action, i) => (
+                        <p key={i} className="flex gap-2 justify-between">
+                          <span>{action.task}</span>
+                          <span className="opacity-85 flex-none">
+                            {[action.owner, action.due].filter(Boolean).join(' · ')}
+                          </span>
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </Card>
+  );
+
   return (
     <>
       {/* Title, and the way back into the room */}
@@ -356,9 +466,11 @@ export const DashboardView: React.FC<Props> = ({
               )}
             </div>
           </Card>
+
+          {extras && theDay}
         </div>
 
-        <div className="flex flex-col gap-3 min-w-0 xl:sticky xl:top-4">
+        <div className="flex flex-col gap-3 min-w-0">
         {/* What is being said */}
         <Card>
           <CardTitle>{t({ ne: 'लाइभ ट्रान्सक्रिप्ट', en: 'Live Transcript' })}</CardTitle>
@@ -392,126 +504,17 @@ export const DashboardView: React.FC<Props> = ({
           </div>
         </Card>
 
+        {/* Whatever the person reading this has to act on. Nobody but the
+            host has any of it. */}
+        {extras}
         </div>
       </div>
 
-      {/* The day, and what each part of it came to - and beside it,
-          whatever the person reading this has to act on. Nobody but the
-          host has any of that, so for everybody else the day has the
-          width to itself. */}
-      <div className={`grid gap-3 mt-3 items-start ${
-        extras ? 'xl:grid-cols-2' : ''
-      }`}>
-      <Card>
-        <div className="bg-[#fcfcfc] h-12 grid place-items-center">
-          <h2 className="text-[20px] font-medium text-black leading-[1.2]">
-            {t({ ne: 'एजेन्डा सारांश', en: 'Agenda Summary' })}
-          </h2>
-        </div>
-
-        <div className="grid md:grid-cols-[339px_minmax(0,1fr)] items-stretch">
-          <div className={`max-h-[363px] overflow-y-auto border-b md:border-b-0 md:border-e
-            ${selected ? 'border-navy-800' : 'border-[#b3b3b3]/40'}`}>
-            {agenda.length === 0 ? (
-              <Empty>{t({ ne: 'कुनै सत्र छैन।', en: 'Nothing scheduled.' })}</Empty>
-            ) : (
-              agenda.map((item) => {
-                const chosen = item.session.id === selected?.session.id;
-                return (
-                  <button
-                    key={item.session.id}
-                    type="button"
-                    aria-current={chosen}
-                    onClick={() => setOpened(item.session.id)}
-                    onDoubleClick={() => onOpen(item)}
-                    className={`w-full text-start flex items-center justify-between gap-2
-                      px-1 py-2 border-b-[0.5px] border-[#b3b3b3] last:border-0
-                      ${chosen ? 'bg-navy-800 text-white' : 'bg-[#fcfcfc] hover:bg-cream'}`}
-                  >
-                    <span className="flex gap-2 items-center p-1 min-w-0">
-                      <Portrait name={item.session.speaker_name} size={48} />
-                      <span className="min-w-0">
-                        <span className={`block text-[16px] font-medium leading-[1.2] truncate
-                          ${chosen ? 'text-white' : 'text-black'}`}>
-                          {item.session.title}
-                        </span>
-                        <span className={`block text-[14px] leading-[1.5] truncate
-                          ${chosen ? 'text-white' : 'text-[#030712]'}`}>
-                          {item.session.speaker_name ||
-                            t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' })}
-                        </span>
-                      </span>
-                    </span>
-                    {chosen && <FigmaIcon name="arrowRight" size={24} />}
-                  </button>
-                );
-              })
-            )}
-          </div>
-
-          <div className="bg-navy-800 text-white p-4 min-h-[363px]">
-            {!selected ? (
-              <p className="text-[16px] opacity-90">
-                {t({ ne: 'कुनै सत्र छानिएको छैन।', en: 'No session chosen.' })}
-              </p>
-            ) : (
-              <>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0 text-center">
-                    <p className="text-[20px] font-medium leading-[1.2]">
-                      {t({ ne: 'सारांश', en: 'Summary' })}
-                    </p>
-                    <p className="text-[16px] leading-[1.5]">
-                      {selected.session.speaker_name ||
-                        t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' })}
-                    </p>
-                  </div>
-                  <span className="bg-white border border-[#e3e8ef] rounded-[4px] h-6 px-1
-                    grid place-items-center flex-none text-[12px] text-[#030712]
-                    tracking-[-0.06px] tabular-nums">
-                    {timeRange(
-                      selected.session.starts_at, selected.session.duration_minutes
-                    )}
-                  </span>
-                </div>
-
-                <div className="mt-6 flex flex-col gap-3 text-[14px] leading-[1.4]
-                  tracking-[-0.07px] text-[#fcfcfc] max-h-[240px] overflow-y-auto">
-                  {summary && summary.findings.length > 0 ? (
-                    summary.findings.map((point, i) => <p key={i}>{point}</p>)
-                  ) : (
-                    <p className="opacity-80">
-                      {t({
-                        ne: 'यो सत्रको निष्कर्ष अझै प्रकाशित भएको छैन।',
-                        en: 'Nothing has been published for this session yet.',
-                      })}
-                    </p>
-                  )}
-
-                  {summary && summary.actions.length > 0 && (
-                    <div className="pt-3 border-t border-white/25">
-                      <p className="text-[12px] uppercase tracking-wide opacity-80 mb-1.5">
-                        {t({ ne: 'कार्यसूची', en: 'Actions' })}
-                      </p>
-                      {summary.actions.map((action, i) => (
-                        <p key={i} className="flex gap-2 justify-between">
-                          <span>{action.task}</span>
-                          <span className="opacity-85 flex-none">
-                            {[action.owner, action.due].filter(Boolean).join(' · ')}
-                          </span>
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </Card>
-
-      {extras && <div className="flex flex-col gap-3 min-w-0">{extras}</div>}
-      </div>
+      {/* A reader has nothing in the right-hand column but the
+          transcript, so the day runs the full width underneath them. A
+          host has their queues there, and the day keeps to the left
+          where it lines up with everything else they are reading. */}
+      {!extras && <div className="mt-3">{theDay}</div>}
     </>
   );
 };
