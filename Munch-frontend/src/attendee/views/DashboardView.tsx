@@ -166,7 +166,9 @@ export const DashboardView: React.FC<Props> = ({
   const loadConclusions = useCallback(() => {
     apiClient
       .getConclusions()
-      .then((page) => setConclusions(page.conclusions))
+      // A page that came back without a list is a page with nothing on
+      // it, not a reason to take the whole dashboard down.
+      .then((page) => setConclusions(page?.conclusions ?? []))
       .catch(() => undefined);
   }, []);
 
