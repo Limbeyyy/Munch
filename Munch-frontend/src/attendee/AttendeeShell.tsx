@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pair, useOrganizer } from '../organizer/i18n';
 import { Ic } from '../organizer/ui';
+import manchMark from '../assets/icons/manch-mark.svg';
 
 export interface AttendeeNav {
   id: string;
@@ -56,8 +57,11 @@ interface Props {
 }
 
 /**
- * The attendee's frame: a navy rail on the left of a cream page, and the
+ * The attendee's frame: a white rail on the left of a pale page, and the
  * same destinations along the bottom on a phone.
+ *
+ * It is the chrome the host's side wears, so somebody who is both does
+ * not have the furniture move under them when they switch.
  */
 export const AttendeeShell: React.FC<Props> = ({
   view, onNavigate, counts = {}, who, eventTitle, eventDetail,
@@ -76,17 +80,17 @@ export const AttendeeShell: React.FC<Props> = ({
     >
       <div className="lg:grid min-h-screen" style={{ gridTemplateColumns: '246px minmax(0,1fr)' }}>
         {/* Rail */}
-        <aside className="hidden lg:flex sticky top-0 h-screen overflow-y-auto bg-navy-800 text-[#E4ECF9] flex-col px-3.5 pt-4 pb-4">
-          <div className="flex items-center gap-2.5 px-1.5 pb-5">
-            <svg width="34" height="34" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-              <g stroke="#8FB0DC" strokeWidth="2"><path d="M32 8v8M32 48v8M8 32h8M48 32h8" /></g>
-              <rect x="18" y="18" width="28" height="28" rx="4" stroke="#fff" strokeWidth="2.4" />
-              <rect x="26" y="26" width="12" height="12" rx="2" fill="#F0A22B" />
-            </svg>
-            <div>
-              <div className="text-[21px] font-bold text-white leading-none">मञ्च</div>
-              <div className="text-[10.5px] text-[#9FB8DC] tracking-[.06em]">MANCH</div>
-            </div>
+        <aside className="hidden lg:flex sticky top-0 h-screen overflow-y-auto bg-white
+          border-r-[0.5px] border-black/10 text-black flex-col p-4">
+          <div className="flex items-center gap-2 p-2 pb-5">
+            <span
+              className="w-6 h-6 rounded-full bg-black/[.04] text-head grid place-items-center
+                text-[11px] font-semibold flex-none"
+              aria-hidden
+            >
+              {initials}
+            </span>
+            <span className="text-[14px] text-black truncate">{who.name}</span>
           </div>
 
           <nav className="flex flex-col gap-0.5" aria-label={t({ ne: 'मुख्य मेनु', en: 'Main menu' })}>
@@ -96,24 +100,23 @@ export const AttendeeShell: React.FC<Props> = ({
               return (
                 <React.Fragment key={item.id}>
                 {opensAccount && (
-                  <hr className="my-2.5 border-white/[.14]" aria-hidden />
+                  <hr className="my-2.5 border-black/[.08]" aria-hidden />
                 )}
                 <button
                   aria-current={current}
                   onClick={() => onNavigate(item.id)}
-                  className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-[10px] text-left text-[14.5px] ${
-                    current
-                      ? 'bg-white text-navy-800 font-semibold'
-                      : 'text-[#CBDAF0] hover:bg-white/[.07] hover:text-white'
+                  className={`flex items-center gap-2 w-full p-2 rounded-[12px] text-left text-[14px] ${
+                    current ? 'bg-black/[.04] text-black font-medium' : 'text-black hover:bg-black/[.02]'
                   }`}
                 >
-                  <span className={current ? 'text-amber-700' : ''}><Ic d={item.icon} size={19} /></span>
+                  <span className={current ? 'text-navy-800' : 'text-black/45'}>
+                    <Ic d={item.icon} size={20} />
+                  </span>
                   <span className="truncate">{t(item.label)}</span>
                   {counts[item.id] && (
                     <span
-                      className={`ml-auto text-[11.5px] px-2 rounded-full ${
-                        current ? 'bg-cream-200 text-navy-800' : 'bg-white/[.14]'
-                      }`}
+                      className="ml-auto text-[12px] font-medium px-2 leading-[18px] rounded-full
+                        bg-[#F3F4F6] text-[#364153]"
                     >
                       {counts[item.id]}
                     </span>
@@ -124,25 +127,25 @@ export const AttendeeShell: React.FC<Props> = ({
             })}
           </nav>
 
-          <div className="mt-auto border-t border-white/[.14] pt-3.5 flex gap-2.5 items-center">
-            <span className="w-9 h-9 rounded-full bg-amber text-[#20160A] grid place-items-center font-bold text-sm flex-none">
-              {initials}
-            </span>
-            <div className="min-w-0">
-              <div className="text-[13px] text-white font-medium leading-tight truncate">{who.name}</div>
-              <small className="block text-[11.5px] text-[#9FB8DC] truncate">{who.detail}</small>
+          <div className="mt-auto pt-4">
+            <p className="text-[12px] text-subtle truncate px-2 pb-3">{who.detail}</p>
+            <div className="flex items-center justify-center gap-5">
+              <span className="border border-navy-800/15 rounded-[10px] p-0.5 flex items-center">
+                <img src={manchMark} alt="" width={30} height={30} />
+              </span>
+              <span className="text-navy-800 text-[16px] tracking-[7px] font-semibold">MANCH</span>
             </div>
           </div>
         </aside>
 
         <div className="min-w-0 flex flex-col">
           {/* Top bar */}
-          <header className="sticky top-0 z-30 bg-cream/[.92] backdrop-blur border-b border-navy-800/15 px-4 sm:px-6 py-3 flex gap-4 items-center">
+          <header className="sticky top-0 z-30 bg-white border-b-[0.5px] border-black/10 px-4 sm:px-6 py-3.5 flex gap-4 items-center">
             <div className="min-w-0">
-              <h2 className="text-[16.5px] font-semibold truncate">
+              <h2 className="text-[16.5px] font-medium text-head truncate">
                 {eventTitle ?? t({ ne: 'मञ्च', en: 'Manch' })}
               </h2>
-              {eventDetail && <p className="text-[12.5px] text-[#6E7C8E] truncate">{eventDetail}</p>}
+              {eventDetail && <p className="text-[12.5px] text-subtle truncate">{eventDetail}</p>}
             </div>
 
             <div className="ml-auto flex gap-2 items-center">
@@ -157,14 +160,14 @@ export const AttendeeShell: React.FC<Props> = ({
                 {online ? t({ ne: 'अनलाइन', en: 'Online' }) : t({ ne: 'अफलाइन', en: 'Offline' })}
               </span>
 
-              <div className="inline-flex bg-cream-200 rounded-lg p-0.5 gap-0.5">
+              <div className="inline-flex bg-[#F9FAFB] border border-line rounded-[10px] p-0.5 gap-0.5">
                 {(['ne', 'en'] as const).map((l) => (
                   <button
                     key={l}
                     aria-pressed={lang === l}
                     onClick={() => setLang(l)}
-                    className={`px-2 py-1 rounded-md text-[12px] ${
-                      lang === l ? 'bg-white text-navy-800 font-semibold' : 'text-ink-2'
+                    className={`px-2 py-1 rounded-[8px] text-[12px] ${
+                      lang === l ? 'bg-navy-800 text-white font-medium' : 'text-subtle'
                     }`}
                   >
                     {l === 'ne' ? 'नेपाली' : 'EN'}
@@ -174,7 +177,7 @@ export const AttendeeShell: React.FC<Props> = ({
 
               <button
                 onClick={onLeave}
-                className="px-3 py-1.5 rounded-lg border border-navy-800/20 text-ink-2 text-[13px] hover:bg-white"
+                className="px-3 py-1.5 rounded-[10px] border border-line bg-[#F9FAFB] text-body text-[13px] hover:bg-white hover:border-navy-800"
               >
                 {who.isGuest
                   ? t({ ne: 'बाहिरिने', en: 'Leave' })
@@ -194,7 +197,7 @@ export const AttendeeShell: React.FC<Props> = ({
           the rail this replaces is hidden at that width. Everything the
           rail offers is here, and the thumb reaches the rest. */}
       <nav
-        className="lg:hidden fixed inset-x-0 bottom-0 z-40 bg-white border-t border-navy-800/15
+        className="lg:hidden fixed inset-x-0 bottom-0 z-40 bg-white border-t border-line
           flex overflow-x-auto"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         aria-label={t({ ne: 'मुख्य मेनु', en: 'Main menu' })}
@@ -208,10 +211,10 @@ export const AttendeeShell: React.FC<Props> = ({
               onClick={() => onNavigate(item.id)}
               className={`flex flex-col items-center gap-1 py-2 px-1 text-[10.5px]
                 flex-1 min-w-[64px] ${
-                current ? 'text-navy-800 font-semibold' : 'text-[#6E7C8E]'
+                current ? 'text-navy-800 font-medium' : 'text-subtle'
               }`}
             >
-              <span className={current ? 'text-amber-700' : ''}><Ic d={item.icon} size={19} /></span>
+              <span className={current ? 'text-navy-800' : 'text-black/45'}><Ic d={item.icon} size={19} /></span>
               <span className="truncate max-w-full">{t(item.short)}</span>
             </button>
           );

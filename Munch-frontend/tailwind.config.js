@@ -24,6 +24,19 @@ module.exports = {
         // the rest of the app was not, so a host moving between them
         // watched the paper change under their feet.
         page: '#F1F4F8',
+
+        // The design's own greys. Cards are white on the page, the ones
+        // nested inside them are a shade off it, and the three weights of
+        // text below are the only ones the design uses.
+        line: { DEFAULT: '#E5E7EB', soft: '#E7E9EF' },
+        sheet: '#FCFCFC',
+        head: '#101828',
+        body: '#4A5565',
+        subtle: '#6A7282',
+        faint: '#99A1AF',
+        // The tag a status wears, and the blue it is written in.
+        tagbg: '#EFF6FF',
+        tagink: '#1447E6',
         ink: {
           DEFAULT: '#152232',
           2: '#3C4A5C',
