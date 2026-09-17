@@ -1,20 +1,20 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
-import { ConclusionAction, Meeting, Session, SessionSummary } from '../types';
+import { ConclusionAction, Event, Session, SessionSummary } from '../types';
 import { errorText } from './errors';
 import { useOrganizer } from './i18n';
 import { Modal } from './OrganizerShell';
 import { Btn, Chip, Empty } from './ui';
 
 /**
- * The summaries a meeting produced, and whether they may go out.
+ * The summaries a event produced, and whether they may go out.
  *
  * A summary is what people quote afterwards, so none of it reaches an
  * attendee until the host has read it and said so. Unwritten ones open on
  * a draft of the transcript, which is where the writing usually starts.
  */
-export const SummaryApprovals: React.FC<{ meeting: Meeting }> = ({ meeting }) => {
+export const SummaryApprovals: React.FC<{ event: Event }> = ({ event }) => {
   const { t } = useOrganizer();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [summaries, setSummaries] = useState<Record<string, SessionSummary>>({});
@@ -29,7 +29,7 @@ export const SummaryApprovals: React.FC<{ meeting: Meeting }> = ({ meeting }) =>
     setLoading(true);
     let own: Session[] = [];
     try {
-      own = await apiClient.listSessions(meeting.id);
+      own = await apiClient.listSessions(event.id);
     } catch {
       own = [];
     }
@@ -42,7 +42,7 @@ export const SummaryApprovals: React.FC<{ meeting: Meeting }> = ({ meeting }) =>
     results.forEach((r) => { if (r.status === 'fulfilled') next[r.value[0]] = r.value[1]; });
     setSummaries(next);
     setLoading(false);
-  }, [meeting.id]);
+  }, [event.id]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -88,7 +88,7 @@ export const SummaryApprovals: React.FC<{ meeting: Meeting }> = ({ meeting }) =>
 
   if (loading) return <Empty>{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</Empty>;
   if (sessions.length === 0) {
-    return <Empty>{t({ ne: 'यो बैठकमा सत्र छैन।', en: 'This meeting has no sessions.' })}</Empty>;
+    return <Empty>{t({ ne: 'यो बैठकमा सत्र छैन।', en: 'This event has no sessions.' })}</Empty>;
   }
 
   return (

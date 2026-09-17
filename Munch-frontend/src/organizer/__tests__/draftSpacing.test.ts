@@ -1,8 +1,8 @@
 import {
-  earliestStart, openingAt, opensTheMeeting, spaceOut, tooCloseTogether, toLocalInput,
-} from '../MeetingDraftFields';
+  earliestStart, openingAt, opensTheEvent, spaceOut, tooCloseTogether, toLocalInput,
+} from '../EventDraftFields';
 import { confirmSpacing } from '../confirmSpacing';
-import { MeetingDraft, SessionDraft } from '../../types';
+import { EventDraft, SessionDraft } from '../../types';
 
 const NINE = new Date('2026-09-06T09:00:00');
 
@@ -19,7 +19,7 @@ const session = (start: Date, minutes: number, title = 'S'): SessionDraft => ({
 
 const after = (minutes: number) => new Date(NINE.getTime() + minutes * 60000);
 
-const draft = (sessions: SessionDraft[]): MeetingDraft => ({
+const draft = (sessions: SessionDraft[]): EventDraft => ({
   title: 'Morning',
   scheduled_start: toLocalInput(NINE),
   duration_minutes: 240,
@@ -90,8 +90,8 @@ describe('spaceOut', () => {
     expect(plan.sessions[1].starts_at).toEqual(toLocalInput(after(180)));
   });
 
-  it('moves nothing earlier but the session that opens the meeting', () => {
-    // The opener is pulled back to the meeting's own start; everything
+  it('moves nothing earlier but the session that opens the event', () => {
+    // The opener is pulled back to the event's own start; everything
     // after it only ever moves later.
     const plan = spaceOut(draft([session(after(120), 60, 'A'), session(after(300), 60, 'B')]));
     expect(plan.sessions[0].starts_at).toEqual(toLocalInput(NINE));
@@ -130,8 +130,8 @@ describe('confirmSpacing', () => {
   });
 });
 
-describe('the session that opens the meeting', () => {
-  const meetingAt = (hour: number, sessions: SessionDraft[]): MeetingDraft => ({
+describe('the session that opens the event', () => {
+  const eventAt = (hour: number, sessions: SessionDraft[]): EventDraft => ({
     title: 'Wedding Preparation',
     scheduled_start: toLocalInput(new Date(`2026-09-08T${String(hour).padStart(2, '0')}:00:00`)),
     duration_minutes: 120,
@@ -141,24 +141,24 @@ describe('the session that opens the meeting', () => {
   const nine = new Date('2026-09-08T09:00:00');
   const after9 = (mins: number) => new Date(nine.getTime() + mins * 60000);
 
-  it('is flagged when it starts after the meeting', () => {
-    // The reported case: meeting at 09:00, first session at 09:30.
-    const plan = meetingAt(9, [session(after9(30), 30, 'Haldi')]);
+  it('is flagged when it starts after the event', () => {
+    // The reported case: event at 09:00, first session at 09:30.
+    const plan = eventAt(9, [session(after9(30), 30, 'Haldi')]);
     expect(tooCloseTogether(plan)).toEqual(['Haldi']);
   });
 
   it('is content when the two agree', () => {
-    expect(tooCloseTogether(meetingAt(9, [session(nine, 30, 'Haldi')]))).toEqual([]);
+    expect(tooCloseTogether(eventAt(9, [session(nine, 30, 'Haldi')]))).toEqual([]);
   });
 
-  it('is pulled back to the meeting start when put right', () => {
-    const plan = spaceOut(meetingAt(9, [session(after9(30), 30, 'Haldi')]));
+  it('is pulled back to the event start when put right', () => {
+    const plan = spaceOut(eventAt(9, [session(after9(30), 30, 'Haldi')]));
     expect(plan.sessions[0].starts_at).toEqual(toLocalInput(nine));
   });
 
   it('takes the rest of the running order with it', () => {
     const plan = spaceOut(
-      meetingAt(9, [session(after9(30), 30, 'Haldi'), session(after9(75), 40, 'Mehendi')])
+      eventAt(9, [session(after9(30), 30, 'Haldi'), session(after9(75), 40, 'Mehendi')])
     );
     expect(plan.sessions.map((s) => s.starts_at)).toEqual([
       toLocalInput(nine),
@@ -169,7 +169,7 @@ describe('the session that opens the meeting', () => {
 
   it('closes the running order up when the opener would collide', () => {
     const plan = spaceOut(
-      meetingAt(9, [session(after9(30), 60, 'Haldi'), session(after9(45), 40, 'Mehendi')])
+      eventAt(9, [session(after9(30), 60, 'Haldi'), session(after9(45), 40, 'Mehendi')])
     );
     // Haldi opens at 09:00 and runs an hour, so Mehendi steps to 10:15.
     expect(plan.sessions.map((s) => s.starts_at)).toEqual([
@@ -178,8 +178,8 @@ describe('the session that opens the meeting', () => {
     ]);
   });
 
-  it('moves with the meeting when the meeting moves', () => {
-    const plan = meetingAt(9, [session(nine, 30, 'Haldi'), session(after9(45), 40, 'Mehendi')]);
+  it('moves with the event when the event moves', () => {
+    const plan = eventAt(9, [session(nine, 30, 'Haldi'), session(after9(45), 40, 'Mehendi')]);
     const later = toLocalInput(after9(60));
 
     const moved = openingAt(plan, later);
@@ -190,9 +190,9 @@ describe('the session that opens the meeting', () => {
     expect(moved.sessions[1].starts_at).toEqual(toLocalInput(after9(45)));
   });
 
-  it('knows which session opens the meeting whatever order they were typed in', () => {
-    const plan = meetingAt(9, [session(after9(45), 40, 'Mehendi'), session(nine, 30, 'Haldi')]);
-    expect(opensTheMeeting(plan, 1)).toBe(true);
-    expect(opensTheMeeting(plan, 0)).toBe(false);
+  it('knows which session opens the event whatever order they were typed in', () => {
+    const plan = eventAt(9, [session(after9(45), 40, 'Mehendi'), session(nine, 30, 'Haldi')]);
+    expect(opensTheEvent(plan, 1)).toBe(true);
+    expect(opensTheEvent(plan, 0)).toBe(false);
   });
 });

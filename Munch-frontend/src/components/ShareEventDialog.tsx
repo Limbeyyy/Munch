@@ -6,8 +6,8 @@ import { FigmaIcon } from '../assets/icons';
 const API_ROOT = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
 
 interface Props {
-  meetingId: string;
-  meetingCode: string;
+  eventId: string;
+  eventCode: string;
   onClose: () => void;
   onInvited?: (totalInvited: number) => void;
 }
@@ -21,14 +21,14 @@ const splitEmails = (raw: string): string[] =>
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
- * Shares the meeting link and records who it went to.
+ * Shares the event link and records who it went to.
  *
  * The recorded addresses are what the attendance report treats as the
  * expected headcount, so sharing and counting are the same action.
  */
-export const ShareMeetingDialog: React.FC<Props> = ({
-  meetingId,
-  meetingCode,
+export const ShareEventDialog: React.FC<Props> = ({
+  eventId,
+  eventCode,
   onClose,
   onInvited,
 }) => {
@@ -37,10 +37,10 @@ export const ShareMeetingDialog: React.FC<Props> = ({
 
   // Anyone with an account opens the room directly; a guest scanning the
   // QR is sent to the join form instead, since they have no account.
-  const link = `${window.location.origin}/meeting/${meetingCode}`;
-  const guestLink = `${window.location.origin}/login?join=${meetingCode}`;
+  const link = `${window.location.origin}/event/${eventCode}`;
+  const guestLink = `${window.location.origin}/login?join=${eventCode}`;
   const qrSrc =
-    `${API_ROOT}/meetings/${meetingCode}/qr/?url=${encodeURIComponent(guestLink)}`;
+    `${API_ROOT}/events/${eventCode}/qr/?url=${encodeURIComponent(guestLink)}`;
   const parsed = splitEmails(raw);
   const invalid = parsed.filter((e) => !EMAIL_RE.test(e));
   const valid = parsed.filter((e) => EMAIL_RE.test(e));
@@ -66,7 +66,7 @@ export const ShareMeetingDialog: React.FC<Props> = ({
 
     try {
       setIsSending(true);
-      const result = await apiClient.addMeetingInvites(meetingId, valid);
+      const result = await apiClient.addEventInvites(eventId, valid);
       const added = result.added.length;
       const dupes = result.already_invited.length;
 
@@ -79,9 +79,9 @@ export const ShareMeetingDialog: React.FC<Props> = ({
       setRaw('');
 
       // Hand off to the user's mail client with the link prefilled.
-      const subject = encodeURIComponent('Meeting invitation');
+      const subject = encodeURIComponent('Event invitation');
       const body = encodeURIComponent(
-        `Join the meeting:\n\n${link}\n\nMeeting code: ${meetingCode}`
+        `Join the event:\n\n${link}\n\nEvent code: ${eventCode}`
       );
       window.open(
         `mailto:${valid.join(',')}?subject=${subject}&body=${body}`,
@@ -104,7 +104,7 @@ export const ShareMeetingDialog: React.FC<Props> = ({
     const url = qrSrc;
     if (navigator.share) {
       try {
-        await navigator.share({ title: 'Join the meeting', text: guestLink, url: guestLink });
+        await navigator.share({ title: 'Join the event', text: guestLink, url: guestLink });
         return;
       } catch {
         // Cancelled, or unsupported for this payload: fall through.
@@ -133,7 +133,7 @@ export const ShareMeetingDialog: React.FC<Props> = ({
               id="manch-share-title"
               className="text-[24px] font-bold tracking-[-0.12px] text-black leading-[1.4]"
             >
-              Share this meeting
+              Share this event
             </h2>
             <p className="text-[16px] tracking-[-0.08px] text-black leading-[1.4]">
               Everyone you share with is counted as expected to attend
@@ -149,13 +149,13 @@ export const ShareMeetingDialog: React.FC<Props> = ({
         </div>
 
         <div className="px-[23px] py-[13px] flex flex-col gap-3">
-          {/* Meeting link */}
+          {/* Event link */}
           <div className="flex flex-col gap-2">
             <label
               htmlFor="manch-share-link"
               className="text-[20px] font-medium tracking-[-0.1px] text-black leading-[1.4]"
             >
-              Meeting Link
+              Event Link
             </label>
             <div className="flex gap-[14px] items-center flex-wrap">
               <input
@@ -185,7 +185,7 @@ export const ShareMeetingDialog: React.FC<Props> = ({
             <div className="flex gap-2 items-center flex-wrap">
               <img
                 src={qrSrc}
-                alt={`QR code to join meeting ${meetingCode}`}
+                alt={`QR code to join event ${eventCode}`}
                 width={167}
                 height={148}
                 style={{ width: 167, height: 148 }}

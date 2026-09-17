@@ -11,7 +11,7 @@ jest.mock('../../services/api', () => ({
     setSchedulingPrefs: jest.fn(),
     setSessionGap: jest.fn(),
     getPhotos: jest.fn(),
-    getMeetingBoard: jest.fn(),
+    getEventBoard: jest.fn(),
     getGuestBoard: jest.fn(),
     hasSession: jest.fn(() => false),
   },
@@ -26,14 +26,14 @@ const api = apiClient as jest.Mocked<typeof apiClient>;
 
 const prefs = (over: any = {}) => ({
   session_gap_minutes: 15,
-  meeting_reminder_minutes: 60,
+  event_reminder_minutes: 60,
   session_reminder_minutes: 15,
   reminders_enabled: true,
   defaults: {
-    session_gap_minutes: 15, meeting_reminder_minutes: 60, session_reminder_minutes: 15,
+    session_gap_minutes: 15, event_reminder_minutes: 60, session_reminder_minutes: 15,
   },
   maximums: {
-    session_gap_minutes: 240, meeting_reminder_minutes: 1440, session_reminder_minutes: 1440,
+    session_gap_minutes: 240, event_reminder_minutes: 1440, session_reminder_minutes: 1440,
   },
   default_session_gap_minutes: 15,
   max_session_gap_minutes: 240,
@@ -82,17 +82,17 @@ describe('how much warning a programme gives', () => {
   it('shows the two lead times it works to', async () => {
     await openNotifications();
 
-    expect(await screen.findByLabelText('Before a meeting')).toHaveValue(60);
+    expect(await screen.findByLabelText('Before a event')).toHaveValue(60);
     expect(screen.getByLabelText('Before a session')).toHaveValue(15);
   });
 
   it('saves both together', async () => {
     api.setSchedulingPrefs.mockResolvedValue(
-      prefs({ meeting_reminder_minutes: 120, session_reminder_minutes: 30 }) as any
+      prefs({ event_reminder_minutes: 120, session_reminder_minutes: 30 }) as any
     );
     await openNotifications();
 
-    fireEvent.change(await screen.findByLabelText('Before a meeting'), {
+    fireEvent.change(await screen.findByLabelText('Before a event'), {
       target: { value: '120' },
     });
     fireEvent.change(screen.getByLabelText('Before a session'), {
@@ -102,7 +102,7 @@ describe('how much warning a programme gives', () => {
 
     await waitFor(() =>
       expect(api.setSchedulingPrefs).toHaveBeenCalledWith({
-        meeting_reminder_minutes: 120,
+        event_reminder_minutes: 120,
         session_reminder_minutes: 30,
       })
     );
@@ -111,7 +111,7 @@ describe('how much warning a programme gives', () => {
   it('will not save something that is not a number of minutes', async () => {
     await openNotifications();
 
-    fireEvent.change(await screen.findByLabelText('Before a meeting'), {
+    fireEvent.change(await screen.findByLabelText('Before a event'), {
       target: { value: '9999' },
     });
 
@@ -134,7 +134,7 @@ describe('how much warning a programme gives', () => {
     api.getSchedulingPrefs.mockResolvedValue(prefs({ reminders_enabled: false }) as any);
     await openNotifications();
 
-    expect(await screen.findByLabelText('Before a meeting')).toBeDisabled();
+    expect(await screen.findByLabelText('Before a event')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 });

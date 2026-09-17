@@ -1,6 +1,6 @@
-import { MeetingDraft } from '../types';
+import { EventDraft } from '../types';
 import { GAP_MINUTES } from './schedule';
-import { spaceOut, tooCloseTogether } from './MeetingDraftFields';
+import { spaceOut, tooCloseTogether } from './EventDraftFields';
 
 /**
  * Put a running order right before it is saved, with the organizer's say-so.
@@ -11,10 +11,10 @@ import { spaceOut, tooCloseTogether } from './MeetingDraftFields';
  * would rather go back and edit.
  */
 export const confirmSpacing = (
-  drafts: MeetingDraft[],
+  drafts: EventDraft[],
   ask: (message: string) => boolean,
   gapMinutes: number = GAP_MINUTES
-): MeetingDraft[] | null => {
+): EventDraft[] | null => {
   const tight = drafts.flatMap((draft) => tooCloseTogether(draft, gapMinutes));
   if (tight.length === 0) return drafts;
 

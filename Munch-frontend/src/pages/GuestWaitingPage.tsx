@@ -17,8 +17,8 @@ export const GuestWaitingPage: React.FC = () => {
   const wsRef = useRef<WebSocket | null>(null);
 
   const token = sessionStorage.getItem('guest_token');
-  const meetingCode = sessionStorage.getItem('guest_meeting_code');
-  const meetingTitle = sessionStorage.getItem('guest_meeting_title') ?? '';
+  const eventCode = sessionStorage.getItem('guest_event_code');
+  const eventTitle = sessionStorage.getItem('guest_event_title') ?? '';
   const guestName = sessionStorage.getItem('guest_name') ?? '';
 
   const [status, setStatus] = useState<GuestStatus>('pending');
@@ -27,40 +27,40 @@ export const GuestWaitingPage: React.FC = () => {
     setStatus(next);
     if (next === 'admitted') {
       toast.success('The host let you in');
-      navigate('/guest/meeting');
+      navigate('/guest/event');
     }
   }, [navigate]);
 
   useEffect(() => {
-    if (!token || !meetingCode) {
+    if (!token || !eventCode) {
       navigate('/login');
     }
-  }, [token, meetingCode, navigate]);
+  }, [token, eventCode, navigate]);
 
   // Instant path: the host's decision arrives over the socket.
   useEffect(() => {
-    if (!token || !meetingCode) return;
+    if (!token || !eventCode) return;
 
     const apiUrl = new URL(process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1');
     const protocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(
-      `${protocol}//${apiUrl.host}/ws/meeting/${meetingCode}/?guest_token=${encodeURIComponent(token)}`
+      `${protocol}//${apiUrl.host}/ws/event/${eventCode}/?guest_token=${encodeURIComponent(token)}`
     );
     wsRef.current = ws;
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+    ws.onmessage = (message) => {
+      const data = JSON.parse(message.data);
       if (data.type === 'guest_decision') handleStatus(data.status);
     };
 
     return () => ws.close();
-  }, [token, meetingCode, handleStatus]);
+  }, [token, eventCode, handleStatus]);
 
   /**
    * A pass that is no longer good for anything.
    *
-   * A guest's pass belongs to one meeting and lasts as long as it does.
-   * When that meeting ends everybody in it is forgotten, so the pass stops
+   * A guest's pass belongs to one event and lasts as long as it does.
+   * When that event ends everybody in it is forgotten, so the pass stops
    * naming anybody - and a browser still holding one used to sit here
    * retrying a socket that would never open, saying nothing. Better to say
    * it plainly and send them back to the door.
@@ -68,7 +68,7 @@ export const GuestWaitingPage: React.FC = () => {
   const passIsDead = useCallback((error: any) => {
     if (error?.response?.status !== 401) return false;
     sessionStorage.clear();
-    toast('That meeting pass is no longer valid. Ask to join again.', {
+    toast('That event pass is no longer valid. Ask to join again.', {
       icon: '\uD83D\uDD11', duration: 8000,
     });
     navigate('/login');
@@ -126,7 +126,7 @@ export const GuestWaitingPage: React.FC = () => {
             The host did not admit you
           </h1>
           <p className="text-gray-600 text-sm mb-6">
-            You can ask the host directly, then try the meeting code again.
+            You can ask the host directly, then try the event code again.
           </p>
           <button
             onClick={leave}
@@ -148,11 +148,11 @@ export const GuestWaitingPage: React.FC = () => {
         <h1 className="text-xl font-semibold text-gray-800 mb-2">
           Waiting for the host to let you in
         </h1>
-        {meetingTitle && (
-          <p className="text-gray-700 font-medium mb-1">{meetingTitle}</p>
+        {eventTitle && (
+          <p className="text-gray-700 font-medium mb-1">{eventTitle}</p>
         )}
         <p className="text-gray-500 text-sm mb-6">
-          {guestName} &middot; code {meetingCode}
+          {guestName} &middot; code {eventCode}
         </p>
         <p className="text-gray-600 text-sm mb-6">
           The host can see your name, and will admit you shortly.

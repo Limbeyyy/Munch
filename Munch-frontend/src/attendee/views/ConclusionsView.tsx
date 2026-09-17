@@ -21,7 +21,7 @@ const Finding: React.FC<{ entry: Conclusion }> = ({ entry }) => {
       aside={
         <span className="text-[12.5px] text-[#6E7C8E]">
           {[
-            entry.meeting_title,
+            entry.event_title,
             entry.speaker_name,
             `${day(entry.session_starts_at)} ${clock(entry.session_starts_at)}`,
           ].filter(Boolean).join(' · ')}

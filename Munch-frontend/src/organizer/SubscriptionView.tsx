@@ -127,8 +127,7 @@ export const SubscriptionView: React.FC = () => {
                 {(
                   [
                     [{ ne: 'कार्यक्रम', en: 'Events' }, plan.limits.events],
-                    [{ ne: 'प्रति कार्यक्रम बैठक', en: 'Meetings per event' }, plan.limits.meetings],
-                    [{ ne: 'प्रति बैठक सत्र', en: 'Sessions per meeting' }, plan.limits.sessions_per_meeting],
+                    [{ ne: 'प्रति बैठक सत्र', en: 'Sessions per event' }, plan.limits.sessions_per_event],
                     [{ ne: 'सहभागी', en: 'Attendees' }, plan.limits.attendees],
                   ] as [Pair, number | null][]
                 ).map(([label, cap]) => (

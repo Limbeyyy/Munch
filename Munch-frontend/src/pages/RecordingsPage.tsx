@@ -56,7 +56,7 @@ export const RecordingsPage: React.FC = () => {
               <thead className="bg-gray-100 border-b">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    Meeting
+                    Event
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                     Duration
@@ -85,7 +85,7 @@ export const RecordingsPage: React.FC = () => {
                         rel="noopener noreferrer"
                         className="text-blue-600 hover:underline font-medium"
                       >
-                        {recording.meeting_title}
+                        {recording.event_title}
                       </a>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">

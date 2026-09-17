@@ -146,14 +146,14 @@ const Chooser: React.FC<{
             <p className="mt-1 text-sm text-[#6E7C8E]">
               {t({
                 ne: 'कार्यक्रम, बैठक र सत्रहरू सञ्चालन गर्नुहोस्।',
-                en: 'Run events, meetings and the sessions inside them.',
+                en: 'Run events, events and the sessions inside them.',
               })}
             </p>
             {!roles.is_host && (
               <p className="mt-3 text-xs text-navy-700">
                 {t({
                   ne: 'निःशुल्क परीक्षण: २ कार्यक्रम, प्रत्येकमा २ बैठक, प्रत्येकमा २ सत्र।',
-                  en: 'Free trial: 2 events, 2 meetings each, 2 sessions each.',
+                  en: 'Free trial: 2 events, 2 events each, 2 sessions each.',
                 })}
               </p>
             )}
@@ -179,7 +179,7 @@ const Chooser: React.FC<{
             <p className="mt-1 text-sm text-[#6E7C8E]">
               {t({
                 ne: 'तपाईंलाई निम्त्याइएका बैठक र सत्रहरू हेर्नुहोस्।',
-                en: 'See the meetings and sessions you have been asked to.',
+                en: 'See the events and sessions you have been asked to.',
               })}
             </p>
             {!roles.is_attendee && (
@@ -196,7 +196,7 @@ const Chooser: React.FC<{
         <p className="mt-6 text-xs text-[#6E7C8E]">
           {t({
             ne: 'खाता नभएका पाहुनाहरू बैठक कोड वा QR मार्फत सामेल हुन्छन्।',
-            en: 'Guests without an account join by meeting code or QR instead.',
+            en: 'Guests without an account join by event code or QR instead.',
           })}
         </p>
       </div>

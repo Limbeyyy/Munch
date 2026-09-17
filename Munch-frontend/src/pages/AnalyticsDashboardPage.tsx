@@ -127,7 +127,7 @@ export const AnalyticsDashboardPage: React.FC = () => {
         ) : orgAnalytics ? (
           <div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-              <StatCard label="Total Meetings" value={orgAnalytics.total_meetings} />
+              <StatCard label="Total Events" value={orgAnalytics.total_events} />
               <StatCard label="Total Hours" value={orgAnalytics.total_hours.toFixed(1)} />
               <StatCard label="Total Participants" value={orgAnalytics.total_participants} />
               <StatCard label="Active Users" value={orgAnalytics.active_users} />
@@ -139,8 +139,8 @@ export const AnalyticsDashboardPage: React.FC = () => {
                 value={orgAnalytics.storage_used_gb.toFixed(2)}
               />
               <StatCard
-                label="Avg Meeting Duration"
-                value={`${orgAnalytics.avg_meeting_duration}m`}
+                label="Avg Event Duration"
+                value={`${orgAnalytics.avg_event_duration}m`}
               />
             </div>
 
@@ -150,9 +150,9 @@ export const AnalyticsDashboardPage: React.FC = () => {
               </h2>
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <p className="text-gray-600 text-sm">Meetings This Month</p>
+                  <p className="text-gray-600 text-sm">Events This Month</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {orgAnalytics.meetings_this_month}
+                    {orgAnalytics.events_this_month}
                   </p>
                 </div>
                 <div>

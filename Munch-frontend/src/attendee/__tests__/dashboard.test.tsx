@@ -6,10 +6,10 @@ import { apiClient } from '../../services/api';
 
 jest.mock('../../services/api', () => ({
   apiClient: {
-    getMeetingSegments: jest.fn(),
+    getEventSegments: jest.fn(),
     getResources: jest.fn(),
     getConclusions: jest.fn(),
-    getMeetingBoard: jest.fn(),
+    getEventBoard: jest.fn(),
     getPhotos: jest.fn(),
     getPhotoObjectUrl: jest.fn(),
     hasSession: jest.fn(() => false),
@@ -23,8 +23,8 @@ jest.mock('react-hot-toast', () => ({
 
 const api = apiClient as jest.Mocked<typeof apiClient>;
 
-const meeting = {
-  id: 'm1', title: 'Opening day', meeting_code: 'ABC123', status: 'active',
+const event = {
+  id: 'm1', title: 'Opening day', code: 'ABC123', status: 'active',
   scheduled_start: new Date(Date.now() - 600000).toISOString(),
   scheduled_end: new Date(Date.now() + 3600000).toISOString(),
 } as any;
@@ -41,7 +41,7 @@ const session = (over: any = {}) => ({
   ...over,
 });
 
-const item = (over: any = {}) => ({ meeting, session: session(over) });
+const item = (over: any = {}) => ({ event, session: session(over) });
 
 const show = (props: any = {}) =>
   render(
@@ -66,10 +66,10 @@ beforeEach(() => {
   window.localStorage.setItem(
     'manch.organizer.prefs', JSON.stringify({ lang: 'en', a11y: {} })
   );
-  api.getMeetingSegments.mockResolvedValue([]);
+  api.getEventSegments.mockResolvedValue([]);
   api.getResources.mockResolvedValue([]);
   api.getConclusions.mockResolvedValue({ conclusions: [], mine: [] } as any);
-  api.getMeetingBoard.mockResolvedValue({ faq: [], suggestions: [] } as any);
+  api.getEventBoard.mockResolvedValue({ faq: [], suggestions: [] } as any);
 });
 
 describe('the live dashboard', () => {
@@ -91,14 +91,14 @@ describe('the live dashboard', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Back to Live Room/ }));
 
-    expect(onJoinRoom).toHaveBeenCalledWith(meeting);
+    expect(onJoinRoom).toHaveBeenCalledWith(event);
   });
 
   it('will not send somebody in before the door opens', async () => {
     // The same quarter of an hour every other screen keeps - counted from
-    // the meeting, because the room is the meeting's.
+    // the event, because the room is the event's.
     const later = {
-      ...meeting,
+      ...event,
       status: 'scheduled',
       scheduled_start: new Date(Date.now() + 3 * 3600000).toISOString(),
       scheduled_end: new Date(Date.now() + 5 * 3600000).toISOString(),
@@ -106,7 +106,7 @@ describe('the live dashboard', () => {
     show({
       live: null,
       items: [{
-        meeting: later,
+        event: later,
         session: session({
           id: 's9', status: 'scheduled',
           starts_at: new Date(Date.now() + 3 * 3600000).toISOString(),
@@ -120,7 +120,7 @@ describe('the live dashboard', () => {
   });
 
   it('still lets somebody in between two talks', async () => {
-    // Nothing on stage and the next talk three hours off, but the meeting
+    // Nothing on stage and the next talk three hours off, but the event
     // is running: the room holds the whole running order, gaps and all.
     show({
       live: null,
@@ -136,7 +136,7 @@ describe('the live dashboard', () => {
   });
 
   it('reads the transcript as it arrives', async () => {
-    api.getMeetingSegments.mockResolvedValue([
+    api.getEventSegments.mockResolvedValue([
       { speaker_name: 'Sarita', text: 'The grant is released.', start_time: 12,
         end_time: 18, is_final: true, confidence: 1 },
     ] as any);
@@ -144,7 +144,7 @@ describe('the live dashboard', () => {
     show();
 
     expect(await screen.findByText(/The grant is released/)).toBeInTheDocument();
-    expect(api.getMeetingSegments).toHaveBeenCalledWith('ABC123');
+    expect(api.getEventSegments).toHaveBeenCalledWith('ABC123');
   });
 
   it('has the three panels the design gives it', async () => {
@@ -160,8 +160,7 @@ describe('the live dashboard', () => {
       conclusions: [{
         session_id: 's1', session_title: 'Health service delivery',
         session_starts_at: session().starts_at, speaker_name: 'Dr Sarita Poudel',
-        hall: 'Hall A', meeting_id: 'm1', meeting_title: 'Opening day',
-        event_id: 'e1', event_title: 'Conference',
+        hall: 'Hall A', event_id: 'e1', event_title: 'Conference',
         findings: ['Conditional grant released'], actions: [],
         published_at: new Date().toISOString(),
       }],

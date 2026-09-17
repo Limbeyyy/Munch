@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
-import { Conclusion, Meeting, Session } from '../types';
+import { Conclusion, Event, Session } from '../types';
 import { errorText } from './errors';
 import { useOrganizer } from './i18n';
 import { useSessionGap } from './sessionGap';
 import { RoomPortrait } from '../pages/roomChrome';
-import { PlannedMeeting, PlannedSession, swapSessions, toPlan, whyNotSwap } from './schedule';
+import { PlannedEvent, PlannedSession, swapSessions, toPlan, whyNotSwap } from './schedule';
 
 const MS = 60000;
 
@@ -14,8 +14,8 @@ const clock = (ms: number) =>
   new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 interface Props {
-  /** The meeting the room is holding. */
-  meeting: Meeting;
+  /** The event the room is holding. */
+  event: Event;
   /** Its running order, as the server last gave it. */
   sessions: Session[];
   /** What is on stage, if anything. */
@@ -51,7 +51,7 @@ interface Props {
  * to change their places. That was for beforehand, though - a day being
  * planned - and the room had a read-only list of titles with no times on
  * it at all. It is the wrong way round: the running order matters most
- * while the meeting is happening, when a speaker has not arrived and the
+ * while the event is happening, when a speaker has not arrived and the
  * one after them is standing in the hall.
  *
  * So this is the same operation in the place it is needed, with the times
@@ -66,21 +66,21 @@ interface Props {
  * it: for everyone else it is the same times, read-only, following along.
  */
 export const RoomAgenda: React.FC<Props> = ({
-  meeting, sessions, liveSessionId, canEdit, onChanged, onStart, summaries,
+  event, sessions, liveSessionId, canEdit, onChanged, onStart, summaries,
 }) => {
   const { t, num } = useOrganizer();
   const gapMinutes = useSessionGap();
 
   /** The running order as it stands, in the shape the schedule engine uses. */
-  const fromServer = useMemo<PlannedMeeting[]>(
+  const fromServer = useMemo<PlannedEvent[]>(
     () => toPlan([{
-      ...(meeting as any),
+      ...(event as any),
       sessions: sessions as any,
     }]),
-    [meeting, sessions]
+    [event, sessions]
   );
 
-  const [plan, setPlan] = useState<PlannedMeeting[]>(fromServer);
+  const [plan, setPlan] = useState<PlannedEvent[]>(fromServer);
   useEffect(() => { setPlan(fromServer); }, [fromServer]);
 
   /** The finished talk whose summary is open, if any. */
@@ -154,21 +154,21 @@ export const RoomAgenda: React.FC<Props> = ({
   };
 
   /*
-   * What the meeting comes to as it stands.
+   * What the event comes to as it stands.
    *
    * Not what was advertised: the running order is what the day is, and it
    * moves. The host watching a talk overrun should see the hour the
-   * meeting now finishes at, and see it come back down again when the next
+   * event now finishes at, and see it come back down again when the next
    * one is short.
    */
   const lastEnd = rows.length
     ? Math.max(...rows.map((s) => s.startsAt + s.durationMinutes * MS))
     : null;
-  const advertised = +new Date(meeting.scheduled_end);
+  const advertised = +new Date(event.scheduled_end);
   const drift = lastEnd === null ? 0 : Math.round((lastEnd - advertised) / MS);
   const firstStart = rows.length
     ? Math.min(...rows.map((s) => s.startsAt))
-    : +new Date(meeting.scheduled_start);
+    : +new Date(event.scheduled_start);
 
   const driftLine = () => {
     if (lastEnd === null || Math.abs(drift) < 1) return null;

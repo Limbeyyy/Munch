@@ -2,9 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { QUEUE_POLL_MS } from '../../services/polling';
-import {
-  AttendanceReport, EventMeeting, EventProgramme, MeetingParticipant, Session,
-} from '../../types';
+import { AttendanceReport, Event, EventParticipant, Session } from '../../types';
 import { Pair, useOrganizer } from '../i18n';
 import { ContactRequests } from '../ContactRequests';
 import { groupBySpeaker } from '../speakers';
@@ -52,7 +50,7 @@ const nameOf = (
     || '—';
 };
 
-interface Slot { session: Session; meeting: EventMeeting; }
+interface Slot { session: Session; event: Event; }
 
 /** One person, and every session of theirs in this programme. */
 interface Speaker {
@@ -64,22 +62,22 @@ interface Speaker {
   visibility: 'public' | 'private' | 'mixed';
 }
 
-interface Props { meetings: any[]; currentUserId?: string; }
+interface Props { events: any[]; currentUserId?: string; }
 
 /**
  * Who is speaking, and who is running the room.
  *
  * These are two different lists. A speaker is named on a session and often
- * has no account at all; a team member holds a role in a meeting and may
+ * has no account at all; a team member holds a role in a event and may
  * never speak. Treating them as one list was why neither read properly.
  */
 export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
   const { t, num } = useOrganizer();
 
-  const [events, setEvents] = useState<EventProgramme[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [eventId, setEventId] = useState('');
   const [tab, setTab] = useState('speakers');
-  const [participants, setParticipants] = useState<Record<string, MeetingParticipant[]>>({});
+  const [participants, setParticipants] = useState<Record<string, EventParticipant[]>>({});
   const [turnout, setTurnout] = useState<Record<string, AttendanceReport | null>>({});
   const [changing, setChanging] = useState<string | null>(null);
   const [settingVisibility, setSettingVisibility] = useState<string | null>(null);
@@ -101,22 +99,22 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
   const event = events.find((e) => e.id === eventId) ?? null;
 
   /**
-   * The team of each meeting, and how many seats its sessions filled.
+   * The team of each event, and how many seats its sessions filled.
    *
-   * Everyone who was there, not everyone who is there: ending a meeting
+   * Everyone who was there, not everyone who is there: ending a event
    * empties the room, so asking the room's question here showed a finished
-   * meeting as having had no team at all.
+   * event as having had no team at all.
    */
   const loadParticipants = useCallback(async () => {
     if (!event) { setParticipants({}); setTurnout({}); return; }
     const results = await Promise.allSettled(
-      event.meetings.map(async (m) => [
+      [event].map(async (m) => [
         m.id,
         await apiClient.getParticipants(m.id, true),
         await apiClient.getAttendance(m.id).catch(() => null),
       ] as const)
     );
-    const next: Record<string, MeetingParticipant[]> = {};
+    const next: Record<string, EventParticipant[]> = {};
     const seats: Record<string, AttendanceReport | null> = {};
     results.forEach((r) => {
       if (r.status !== 'fulfilled') return;
@@ -160,10 +158,10 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
     if (!event) return [];
 
     // In the order they first appear in the day.
-    const slots: Slot[] = event.meetings.flatMap((meeting) =>
-      [...meeting.sessions]
+    const slots: Slot[] = [event].flatMap((event) =>
+      [...(event.sessions ?? [])]
         .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at))
-        .map((session) => ({ session, meeting }))
+        .map((session) => ({ session, event }))
     );
 
     return groupBySpeaker(slots, (slot) => slot.session).map(({ key, name, rows }) => {
@@ -184,27 +182,27 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
 
   const unnamed = useMemo(() => {
     if (!event) return [];
-    return event.meetings.flatMap((meeting) =>
-      meeting.sessions
+    return [event].flatMap((event) =>
+      (event.sessions ?? [])
         .filter((s) => !s.speaker_name?.trim())
-        .map((session) => ({ session, meeting }))
+        .map((session) => ({ session, event }))
     );
   }, [event]);
 
-  const changeRole = async (meeting: EventMeeting, p: MeetingParticipant, role: Role) => {
+  const changeRole = async (event: Event, p: EventParticipant, role: Role) => {
     if (role === p.role || !p.user) return;
     if (role === 'host') {
       const ok = window.confirm(
         t({
-          ne: `${nameOf(p.user)} लाई “${meeting.title}” को आयोजक बनाउने?\n\nतपाईं सह-आयोजक हुनुहुनेछ।`,
-          en: `Make ${nameOf(p.user)} the host of “${meeting.title}”?\n\nYou become a co-host.`,
+          ne: `${nameOf(p.user)} लाई “${event.title}” को आयोजक बनाउने?\n\nतपाईं सह-आयोजक हुनुहुनेछ।`,
+          en: `Make ${nameOf(p.user)} the host of “${event.title}”?\n\nYou become a co-host.`,
         })
       );
       if (!ok) return;
     }
     try {
       setChanging(p.id);
-      await apiClient.updateParticipantRole(meeting.id, p.user.id, role);
+      await apiClient.updateParticipantRole(event.id, p.user.id, role);
       await loadParticipants();
       const label = t(standingOf(role));
       toast.success(
@@ -288,7 +286,7 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
               >
                 {events.map((e) => (
                   <option key={e.id} value={e.id}>
-                    {e.title} · {new Date(e.event_date).toLocaleDateString()}
+                    {e.title} · {new Date(e.event_date ?? e.scheduled_start).toLocaleDateString()}
                   </option>
                 ))}
               </select>
@@ -361,21 +359,21 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
             </>
           ) : (
             <div className="flex flex-col gap-3.5">
-              {(event?.meetings.length ?? 0) === 0 && (
-                <Panel><Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No meetings.' })}</Empty></Panel>
+              {(event?.sessions?.length ?? 0) === 0 && (
+                <Panel><Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No events.' })}</Empty></Panel>
               )}
 
-              {event?.meetings.map((meeting) => {
-                const rows = participants[meeting.id] ?? [];
-                const seats = turnout[meeting.id] ?? null;
-                const isHost = meeting.id && rows.some(
+              {(event ? [event] : []).map((event) => {
+                const rows = participants[event.id] ?? [];
+                const seats = turnout[event.id] ?? null;
+                const isHost = event.id && rows.some(
                   (p) => p.role === 'host' && p.user?.id === currentUserId
                 );
 
                 return (
                   <Panel
-                    key={meeting.id}
-                    title={meeting.title}
+                    key={event.id}
+                    title={event.title}
                     aside={
                       <span className="text-[12.5px] text-[#6E7C8E]">
                         {t({
@@ -412,7 +410,7 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
                       <Empty>
                         {t({
                           ne: 'यो बैठकमा अझै कोही भित्रिएको छैन।',
-                          en: 'Nobody has joined this meeting yet.',
+                          en: 'Nobody has joined this event yet.',
                         })}
                       </Empty>
                     ) : (
@@ -473,10 +471,10 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
                                   <select
                                     value={p.role}
                                     disabled={!isHost || changing === p.id || p.user?.id === currentUserId}
-                                    onChange={(e) => changeRole(meeting, p, e.target.value as Role)}
+                                    onChange={(e) => changeRole(event, p, e.target.value as Role)}
                                     title={
                                       !isHost
-                                        ? t({ ne: 'यो बैठकका आयोजकले मात्र बदल्न सक्छन्', en: "Only this meeting's host can change roles" })
+                                        ? t({ ne: 'यो बैठकका आयोजकले मात्र बदल्न सक्छन्', en: "Only this event's host can change roles" })
                                         : p.user?.id === currentUserId
                                         ? t({ ne: 'आफ्नो भूमिका आफैँ बदल्न मिल्दैन', en: 'You cannot change your own role' })
                                         : undefined
@@ -502,7 +500,7 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
               <p className="text-[12.5px] text-[#6E7C8E]">
                 {t({
                   ne: 'भूमिका बैठकपिच्छे हुन्छ — कोही एउटा बैठकमा प्रस्तोता र अर्कोमा सहभागी हुन सक्छन्।',
-                  en: 'Roles belong to a meeting: somebody can present at one and simply attend another.',
+                  en: 'Roles belong to a event: somebody can present at one and simply attend another.',
                 })}
               </p>
             </div>
@@ -605,14 +603,14 @@ const SpeakerCard: React.FC<{
         </p>
       </div>
 
-      {slots.map(({ session, meeting }) => (
+      {slots.map(({ session, event }) => (
         <div key={session.id} className="bg-cream rounded-lg px-3 py-2 text-[12.5px] text-ink-2">
           <span className="tabular-nums">{clock(session.starts_at)}</span>
           {' · '}
           {session.title}
           {session.hall && <span className="text-[#6E7C8E]"> · {session.hall}</span>}
           <span className="block text-[11.5px] text-[#6E7C8E] mt-0.5">
-            {meeting.title}
+            {event.title}
             <span className="ms-1.5">
               <Chip tone={SESSION_STATE_TONE[sessionState(session)]}>
                 {t(SESSION_STATE_LABEL[sessionState(session)])}

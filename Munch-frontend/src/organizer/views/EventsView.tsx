@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { LIST_POLL_MS } from '../../services/polling';
-import { EventProgramme } from '../../types';
+import { Event } from '../../types';
 import { ImportProgramme } from '../ImportProgramme';
 import { useOrganizer } from '../i18n';
 import { EventHeadcount, EventsDashboard } from '../events/EventsDashboard';
@@ -10,7 +10,7 @@ import { EventDetail } from '../events/EventDetail';
 import { EventWizard } from '../events/EventWizard';
 
 interface Props {
-  onOpenRoom: (meetingCode: string) => void;
+  onOpenRoom: (eventCode: string) => void;
   onChanged: () => void;
 }
 
@@ -25,7 +25,7 @@ interface Props {
 export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
   const { t } = useOrganizer();
 
-  const [events, setEvents] = useState<EventProgramme[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [counts, setCounts] = useState<Record<string, EventHeadcount>>({});
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);

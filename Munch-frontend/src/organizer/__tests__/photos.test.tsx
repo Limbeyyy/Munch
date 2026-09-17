@@ -31,12 +31,12 @@ const folder = (over: any = {}) => ({
 const photo = (over: any = {}) => ({
   id: 'p1', folder_id: 'f-default', caption: 'group.jpg', mime_type: 'image/jpeg',
   file_size: 1024, taken_by: 'Sunita Budha', taken_by_id: 'u2', is_mine: false,
-  created_at: '2026-09-08T05:00:00Z', url: '/api/v1/meetings/photos/p1/file/', ...over,
+  created_at: '2026-09-08T05:00:00Z', url: '/api/v1/events/photos/p1/file/', ...over,
 });
 
 const page = (over: any = {}) => ({
-  meeting_id: 'm1', meeting_code: 'ABC123', meeting_title: 'Opening day',
-  meeting_is_finished: true, can_upload: true, is_a_photographer: true,
+  event_id: 'm1', code: 'ABC123', event_title: 'Opening day',
+  event_is_finished: true, can_upload: true, is_a_photographer: true,
   can_arrange: true, folders: [folder()], photos: [], ...over,
 });
 
@@ -53,7 +53,7 @@ beforeEach(() => {
   (URL as any).revokeObjectURL = jest.fn();
 });
 
-describe('the photo section in the meeting room', () => {
+describe('the photo section in the event room', () => {
   it('lists every folder with an upload beside it', async () => {
     api.getPhotos.mockResolvedValue(page({
       folders: [
@@ -63,7 +63,7 @@ describe('the photo section in the meeting room', () => {
       ],
     }) as any);
 
-    show(<PhotoUploads meetingRef="ABC123" tone="dark" />);
+    show(<PhotoUploads eventRef="ABC123" tone="dark" />);
 
     expect(await screen.findByText('Default')).toBeInTheDocument();
     expect(screen.getByText('Prize distribution')).toBeInTheDocument();
@@ -77,7 +77,7 @@ describe('the photo section in the meeting room', () => {
     }) as any);
     api.uploadPhoto.mockResolvedValue(photo() as any);
 
-    show(<PhotoUploads meetingRef="ABC123" tone="dark" />);
+    show(<PhotoUploads eventRef="ABC123" tone="dark" />);
 
     await screen.findByText('Halls');
     fireEvent.click(screen.getAllByRole('button', { name: 'Upload' })[1]);
@@ -97,7 +97,7 @@ describe('the photo section in the meeting room', () => {
       page({ is_a_photographer: false, can_upload: false, can_arrange: false }) as any
     );
 
-    show(<PhotoUploads meetingRef="ABC123" tone="dark" />);
+    show(<PhotoUploads eventRef="ABC123" tone="dark" />);
 
     await waitFor(() => expect(api.getPhotos).toHaveBeenCalled());
     expect(screen.queryByText('Default')).not.toBeInTheDocument();
@@ -107,21 +107,21 @@ describe('the photo section in the meeting room', () => {
   it('offers a new folder only to somebody who may arrange them', async () => {
     api.getPhotos.mockResolvedValue(page({ can_arrange: false }) as any);
 
-    show(<PhotoUploads meetingRef="ABC123" tone="dark" />);
+    show(<PhotoUploads eventRef="ABC123" tone="dark" />);
 
     await screen.findByText('Default');
     expect(screen.queryByRole('button', { name: '+ Folder' })).not.toBeInTheDocument();
   });
 
-  it('will not upload before the meeting has finished, and says why', async () => {
+  it('will not upload before the event has finished, and says why', async () => {
     api.getPhotos.mockResolvedValue(
-      page({ meeting_is_finished: false, can_upload: false }) as any
+      page({ event_is_finished: false, can_upload: false }) as any
     );
 
-    show(<PhotoUploads meetingRef="ABC123" tone="dark" />);
+    show(<PhotoUploads eventRef="ABC123" tone="dark" />);
 
     expect(
-      await screen.findByText(/once the meeting has finished/i)
+      await screen.findByText(/once the event has finished/i)
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Upload' })).toBeDisabled();
   });
@@ -137,7 +137,7 @@ describe('the photo section in a portal', () => {
       photos: [photo(), photo({ id: 'p2' })],
     }) as any);
 
-    show(<PhotoAlbums meetingRef="ABC123" />);
+    show(<PhotoAlbums eventRef="ABC123" />);
 
     expect(await screen.findByText('Default')).toBeInTheDocument();
     expect(screen.getByText('Prize distribution')).toBeInTheDocument();
@@ -151,7 +151,7 @@ describe('the photo section in a portal', () => {
       photos: [photo({ caption: 'group.jpg' }), photo({ id: 'p2', caption: 'stage.jpg' })],
     }) as any);
 
-    show(<PhotoAlbums meetingRef="ABC123" />);
+    show(<PhotoAlbums eventRef="ABC123" />);
 
     fireEvent.click(await screen.findByText('Default'));
 
@@ -164,7 +164,7 @@ describe('the photo section in a portal', () => {
   it('fetches the file rather than linking to it, since it needs the sign-in', async () => {
     api.getPhotos.mockResolvedValue(page({ photos: [photo()] }) as any);
 
-    show(<PhotoAlbums meetingRef="ABC123" />);
+    show(<PhotoAlbums eventRef="ABC123" />);
     fireEvent.click(await screen.findByText('Default'));
 
     const link = await screen.findByRole('link', { name: 'Download' });
@@ -179,7 +179,7 @@ describe('the photo section in a portal', () => {
       photos: [photo()],
     }) as any);
 
-    show(<PhotoAlbums meetingRef="ABC123" />);
+    show(<PhotoAlbums eventRef="ABC123" />);
     fireEvent.click(await screen.findByText('Default'));
 
     expect(await screen.findByRole('link', { name: 'Download' })).toBeInTheDocument();
@@ -190,7 +190,7 @@ describe('the photo section in a portal', () => {
   it('keeps a guest out of the managing side of it', async () => {
     api.getPhotos.mockResolvedValue(page() as any);
 
-    show(<PhotoAlbums meetingRef="ABC123" canManage={false} />);
+    show(<PhotoAlbums eventRef="ABC123" canManage={false} />);
 
     await screen.findByText('Default');
     expect(screen.queryByRole('button', { name: 'Create folder' })).not.toBeInTheDocument();
@@ -202,7 +202,7 @@ describe('the photo section in a portal', () => {
       photos: [photo(), photo({ id: 'p2', caption: 'mine.jpg', is_mine: true })],
     }) as any);
 
-    show(<PhotoAlbums meetingRef="ABC123" />);
+    show(<PhotoAlbums eventRef="ABC123" />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Mine' }));
     fireEvent.click(screen.getByText('Default'));
@@ -214,7 +214,7 @@ describe('the photo section in a portal', () => {
   it('can get back out of a folder', async () => {
     api.getPhotos.mockResolvedValue(page({ photos: [photo()] }) as any);
 
-    show(<PhotoAlbums meetingRef="ABC123" />);
+    show(<PhotoAlbums eventRef="ABC123" />);
     fireEvent.click(await screen.findByText('Default'));
     fireEvent.click(await screen.findByRole('button', { name: 'All folders' }));
 

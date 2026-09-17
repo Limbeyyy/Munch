@@ -6,7 +6,7 @@ import { apiClient } from '../../services/api';
 
 jest.mock('../../services/api', () => ({
   apiClient: {
-    getMeetingBoard: jest.fn(),
+    getEventBoard: jest.fn(),
     voteOnBoard: jest.fn(),
     hasSession: jest.fn(() => false),
   },
@@ -41,7 +41,7 @@ const board = (over: any = {}) => ({ faq: [entry()], suggestions: [], ...over })
 const show = () =>
   render(
     <OrganizerProvider>
-      <MessageBoard meetingId="m1" />
+      <MessageBoard eventId="m1" />
     </OrganizerProvider>
   );
 
@@ -51,7 +51,7 @@ beforeEach(() => {
   window.localStorage.setItem(
     'manch.organizer.prefs', JSON.stringify({ lang: 'en', a11y: {} })
   );
-  api.getMeetingBoard.mockResolvedValue(board() as any);
+  api.getEventBoard.mockResolvedValue(board() as any);
 });
 
 describe('voting on a question', () => {
@@ -64,7 +64,7 @@ describe('voting on a question', () => {
   });
 
   it('says which way this reader voted', async () => {
-    api.getMeetingBoard.mockResolvedValue(board({ faq: [entry({ my_vote: 1 })] }) as any);
+    api.getEventBoard.mockResolvedValue(board({ faq: [entry({ my_vote: 1 })] }) as any);
 
     show();
 
@@ -79,7 +79,7 @@ describe('voting on a question', () => {
   it('marks the chosen arrow rather than only tinting its outline', async () => {
     // At this size a change of text colour is easy to miss, so the arrow
     // is filled.
-    api.getMeetingBoard.mockResolvedValue(board({ faq: [entry({ my_vote: 1 })] }) as any);
+    api.getEventBoard.mockResolvedValue(board({ faq: [entry({ my_vote: 1 })] }) as any);
 
     show();
 
@@ -90,7 +90,7 @@ describe('voting on a question', () => {
   });
 
   it('keeps a downvote off the colour that means live or lost', async () => {
-    api.getMeetingBoard.mockResolvedValue(board({ faq: [entry({ my_vote: -1 })] }) as any);
+    api.getEventBoard.mockResolvedValue(board({ faq: [entry({ my_vote: -1 })] }) as any);
 
     show();
 
@@ -102,7 +102,7 @@ describe('voting on a question', () => {
   it('hugs its contents rather than stretching down the entry', async () => {
     // The row is a flex row, so without this the pill grows to the height
     // of the question and its answer and trails a column of empty tint.
-    api.getMeetingBoard.mockResolvedValue(board({
+    api.getEventBoard.mockResolvedValue(board({
       faq: [entry({ answer: 'Reception is at 5 PM sharp.', answered_by: 'Rahul' })],
     }) as any);
 

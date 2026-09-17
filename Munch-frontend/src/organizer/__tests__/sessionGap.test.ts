@@ -1,7 +1,7 @@
 import { applyEdit, swapSessions, toPlan, GAP_MINUTES } from '../schedule';
-import { spaceOut, tooCloseTogether } from '../MeetingDraftFields';
+import { spaceOut, tooCloseTogether } from '../EventDraftFields';
 import { confirmSpacing } from '../confirmSpacing';
-import { EventMeeting, MeetingDraft } from '../../types';
+import { Event, EventDraft } from '../../types';
 
 const at = (hhmm: string) => `2026-09-08T${hhmm}:00Z`;
 
@@ -13,10 +13,10 @@ const session = (id: string, title: string, start: string, minutes = 60) => ({
 const day = () =>
   toPlan([
     {
-      id: 'm1', title: 'Morning', meeting_code: 'M1', status: 'scheduled',
+      id: 'm1', title: 'Morning', code: 'M1', status: 'scheduled',
       scheduled_start: at('09:00'), scheduled_end: at('15:00'),
       sessions: [session('a', 'A', '09:00'), session('b', 'B', '11:00')],
-    } as unknown as EventMeeting,
+    } as unknown as Event,
   ]);
 
 const startsOf = (plan: any[]) =>
@@ -49,10 +49,10 @@ describe('the interval the host chose is the one the day is spaced by', () => {
   it('keeps a swap legal by the chosen interval', () => {
     const plan = toPlan([
       {
-        id: 'm1', title: 'Morning', meeting_code: 'M1', status: 'scheduled',
+        id: 'm1', title: 'Morning', code: 'M1', status: 'scheduled',
         scheduled_start: at('09:00'), scheduled_end: at('15:00'),
         sessions: [session('a', 'A', '09:00', 30), session('b', 'B', '10:00', 120)],
-      } as unknown as EventMeeting,
+      } as unknown as Event,
     ]);
 
     const after = swapSessions(plan, 'a', 'b', 40);
@@ -64,7 +64,7 @@ describe('the interval the host chose is the one the day is spaced by', () => {
 });
 
 describe('what a draft is warned about', () => {
-  const draft = (): MeetingDraft => ({
+  const draft = (): EventDraft => ({
     title: 'Morning',
     scheduled_start: '2026-09-08T09:00',
     duration_minutes: 300,
@@ -72,7 +72,7 @@ describe('what a draft is warned about', () => {
       { title: 'A', starts_at: '2026-09-08T09:00', duration_minutes: 60 } as any,
       { title: 'B', starts_at: '2026-09-08T10:20', duration_minutes: 60 } as any,
     ],
-  } as MeetingDraft);
+  } as EventDraft);
 
   it('is happy with twenty minutes when fifteen is the rule', () => {
     expect(tooCloseTogether(draft(), 15)).toEqual([]);

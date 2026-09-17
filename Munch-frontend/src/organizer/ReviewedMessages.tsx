@@ -3,8 +3,8 @@ import { ChatMessage, MessageTopic } from '../types';
 import { Pair, useOrganizer } from './i18n';
 import { Btn, Chip, Empty, Panel } from './ui';
 
-/** A passed-on message, remembering which meeting it came from. */
-export type ReviewedRow = ChatMessage & { meetingId: string };
+/** A passed-on message, remembering which event it came from. */
+export type ReviewedRow = ChatMessage & { eventId: string };
 
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

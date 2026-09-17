@@ -28,7 +28,7 @@ const Row: React.FC<{ reminder: Reminder; onRead: (id: string) => void }> = ({
 }) => {
   const { t } = useOrganizer();
   const isSession = reminder.kind === 'session';
-  const title = isSession ? reminder.session_title || reminder.meeting_title : reminder.meeting_title;
+  const title = isSession ? reminder.session_title || reminder.event_title : reminder.event_title;
 
   return (
     <li
@@ -44,7 +44,7 @@ const Row: React.FC<{ reminder: Reminder; onRead: (id: string) => void }> = ({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
           <Chip tone={isSession ? 'default' : 'ok'}>
-            {isSession ? t({ ne: 'सत्र', en: 'Session' }) : t({ ne: 'बैठक', en: 'Meeting' })}
+            {isSession ? t({ ne: 'सत्र', en: 'Session' }) : t({ ne: 'बैठक', en: 'Event' })}
           </Chip>
           <h4 className="text-[14px] font-semibold truncate">{title}</h4>
           {!reminder.read && (
@@ -54,7 +54,7 @@ const Row: React.FC<{ reminder: Reminder; onRead: (id: string) => void }> = ({
 
         <p className="text-[12.5px] text-[#6E7C8E] mt-1">
           {day(reminder.starts_at)} · {clock(reminder.starts_at)}–{clock(reminder.ends_at)}
-          {isSession && reminder.session_title ? ` · ${reminder.meeting_title}` : ''}
+          {isSession && reminder.session_title ? ` · ${reminder.event_title}` : ''}
           {reminder.hall ? ` · ${reminder.hall}` : ''}
           {reminder.speaker_name ? ` · ${reminder.speaker_name}` : ''}
         </p>
@@ -91,9 +91,9 @@ type Tab = 'upcoming' | 'all';
 /**
  * Everything this person is owed a nudge about, in one list.
  *
- * A meeting is called an hour ahead and each of its sessions a quarter of
- * an hour ahead, so a meeting with four sessions shows five rows here -
- * one for the meeting and one apiece for the sessions, not an hour's
+ * A event is called an hour ahead and each of its sessions a quarter of
+ * an hour ahead, so a event with four sessions shows five rows here -
+ * one for the event and one apiece for the sessions, not an hour's
  * warning repeated five times.
  */
 export const RemindersView: React.FC<{
@@ -116,7 +116,7 @@ export const RemindersView: React.FC<{
     return <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>;
   }
 
-  const meetingLead = page?.meeting_lead_minutes ?? 60;
+  const eventLead = page?.event_lead_minutes ?? 60;
   const sessionLead = page?.session_lead_minutes ?? 15;
 
   return (
@@ -124,8 +124,8 @@ export const RemindersView: React.FC<{
       <Head
         title={{ ne: 'सूचना र सम्झना', en: 'Notifications & reminders' }}
         lede={{
-          ne: `बैठक सुरु हुनु ${num(meetingLead)} मिनेट अघि, र प्रत्येक सत्र सुरु हुनु ${num(sessionLead)} मिनेट अघि।`,
-          en: `A meeting is called ${meetingLead} minutes ahead, and each session ${sessionLead} minutes ahead.`,
+          ne: `बैठक सुरु हुनु ${num(eventLead)} मिनेट अघि, र प्रत्येक सत्र सुरु हुनु ${num(sessionLead)} मिनेट अघि।`,
+          en: `A event is called ${eventLead} minutes ahead, and each session ${sessionLead} minutes ahead.`,
         }}
       />
 

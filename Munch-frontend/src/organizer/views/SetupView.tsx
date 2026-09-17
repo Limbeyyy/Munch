@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { EventProgramme, Meeting } from '../../types';
+import { Event } from '../../types';
 import { Pair, useOrganizer } from '../i18n';
 import { Btn, Card, Chip, Empty, Head, Panel } from '../ui';
 
 interface Props {
-  meetings: Meeting[];
+  events: Event[];
   onNavigate: (view: string) => void;
   onCreate: () => void;
 }
@@ -21,9 +21,6 @@ interface Check {
   action: string;
 }
 
-/** The group that holds meetings belonging to no programme. */
-const LOOSE = '__loose__';
-
 /** What an event's checklist is judged on, fetched when it is opened. */
 interface Facts {
   sessions: number;
@@ -33,18 +30,14 @@ interface Facts {
   started: boolean;
 }
 
-export const SetupView: React.FC<Props> = ({ meetings, onNavigate, onCreate }) => {
+export const SetupView: React.FC<Props> = ({ onNavigate, onCreate }) => {
   const { t, num } = useOrganizer();
 
-  const [events, setEvents] = useState<EventProgramme[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [facts, setFacts] = useState<Record<string, Facts>>({});
   const [checking, setChecking] = useState<Record<string, boolean>>({});
-
-  // Meetings made before events existed still deserve a checklist, so they
-  // are gathered under one heading of their own.
-  const loose = meetings.filter((m) => !events.some((e) => e.meetings.some((em) => em.id === m.id)));
 
   useEffect(() => {
     apiClient
@@ -57,7 +50,7 @@ export const SetupView: React.FC<Props> = ({ meetings, onNavigate, onCreate }) =
   /** Gather an event's figures only when somebody opens it. */
   const gather = useCallback(async (
     key: string,
-    meetingIds: string[],
+    eventIds: string[],
     sessions: number | null,
     started: boolean
   ) => {
@@ -65,19 +58,18 @@ export const SetupView: React.FC<Props> = ({ meetings, onNavigate, onCreate }) =
     setChecking((v) => ({ ...v, [key]: true }));
 
     const [invites, participants, files, sessionLists, granted] = await Promise.all([
-      Promise.allSettled(meetingIds.map((id) => apiClient.getMeetingInvites(id))),
-      Promise.allSettled(meetingIds.map((id) => apiClient.getParticipants(id))),
-      Promise.allSettled(meetingIds.map((id) => apiClient.getResources(id))),
-      // An event already knows its session count; a loose meeting does not.
+      Promise.allSettled(
+        eventIds.map((id) => apiClient.getEventInvites(id).then((r) => r.invited))
+      ),
+      Promise.allSettled(eventIds.map((id) => apiClient.getParticipants(id))),
+      Promise.allSettled(eventIds.map((id) => apiClient.getResources(id))),
+      // An event already knows its session count; a loose event does not.
       sessions === null
-        ? Promise.allSettled(meetingIds.map((id) => apiClient.listSessions(id)))
+        ? Promise.allSettled(eventIds.map((id) => apiClient.listSessions(id)))
         : Promise.resolve([]),
-      // Roles are given per programme, and to addresses that need not have
-      // signed in - so they are not visible in the participant lists. The
-      // loose-meetings group is not a programme and has none to fetch.
-      key === LOOSE
-        ? Promise.resolve(null)
-        : apiClient.getProgrammeRoles(key).catch(() => null),
+      // Roles are given per event, and to addresses that need not have
+      // signed in - so they are not visible in the participant lists.
+      apiClient.getProgrammeRoles(key).catch(() => null),
     ]);
 
     const total = (rs: PromiseSettledResult<any[]>[]) =>
@@ -110,14 +102,14 @@ export const SetupView: React.FC<Props> = ({ meetings, onNavigate, onCreate }) =
     setChecking((v) => ({ ...v, [key]: false }));
   }, [facts, checking]);
 
-  const buildChecks = (f: Facts, meetingCount: number): Check[] => {
+  const buildChecks = (f: Facts): Check[] => {
     const list: Check[] = [
       {
         ok: f.sessions > 0,
         title: { ne: 'सत्र बनाउनुहोस्', en: 'Create the sessions' },
         lede: f.sessions
           ? { ne: `${num(f.sessions)} सत्र तालिकामा`, en: `${f.sessions} session${f.sessions === 1 ? '' : 's'} scheduled` }
-          : { ne: `${num(meetingCount)} बैठक छन्, तर सत्र छैन`, en: `${meetingCount} meeting(s), but no sessions yet` },
+          : { ne: 'अझै सत्र थपिएको छैन', en: 'No sessions added yet' },
         action: 'events',
       },
       {
@@ -216,18 +208,17 @@ export const SetupView: React.FC<Props> = ({ meetings, onNavigate, onCreate }) =
     );
   };
 
-  /** One expandable row: an event, or the meetings that sit outside one. */
+  /** One expandable row: one event, and what it still needs. */
   const Group: React.FC<{
     id: string;
     title: string;
     subtitle: string;
-    meetingIds: string[];
     sessions: number | null;
     started: boolean;
-  }> = ({ id, title, subtitle, meetingIds, sessions, started }) => {
+  }> = ({ id, title, subtitle, sessions, started }) => {
     const shown = !!open[id];
     const f = facts[id];
-    const checks = f ? buildChecks(f, meetingIds.length) : null;
+    const checks = f ? buildChecks(f) : null;
     const done = checks ? checks.filter((c) => c.ok).length : 0;
 
     return (
@@ -236,7 +227,7 @@ export const SetupView: React.FC<Props> = ({ meetings, onNavigate, onCreate }) =
           <button
             onClick={() => {
               setOpen((v) => ({ ...v, [id]: !shown }));
-              if (!shown) gather(id, meetingIds, sessions, started);
+              if (!shown) gather(id, [id], sessions, started);
             }}
             className="flex items-center gap-2 text-left min-w-0"
           >
@@ -283,7 +274,7 @@ export const SetupView: React.FC<Props> = ({ meetings, onNavigate, onCreate }) =
 
       {loading ? (
         <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>
-      ) : events.length === 0 && loose.length === 0 ? (
+      ) : events.length === 0 ? (
         <Card className="text-center py-10">
           <p className="text-[#6E7C8E] max-w-md mx-auto">
             {t({
@@ -303,34 +294,21 @@ export const SetupView: React.FC<Props> = ({ meetings, onNavigate, onCreate }) =
               id={event.id}
               title={event.title}
               subtitle={[
-                new Date(event.event_date).toLocaleDateString(undefined, {
-                  weekday: 'short', day: 'numeric', month: 'short',
-                }),
+                event.event_date
+                  ? new Date(event.event_date ?? event.scheduled_start).toLocaleDateString(undefined, {
+                      weekday: 'short', day: 'numeric', month: 'short',
+                    })
+                  : '',
                 event.venue,
                 t({
-                  ne: `${num(event.meeting_count)} बैठक · ${num(event.session_count)} सत्र`,
-                  en: `${event.meeting_count} meetings · ${event.session_count} sessions`,
+                  ne: `${num(event.session_count ?? 0)} सत्र`,
+                  en: `${event.session_count ?? 0} session${event.session_count === 1 ? '' : 's'}`,
                 }),
               ].filter(Boolean).join(' · ')}
-              meetingIds={event.meetings.map((m) => m.id)}
-              sessions={event.session_count}
-              started={event.meetings.some((m) => !!m.started_at)}
+              sessions={event.session_count ?? null}
+              started={!!event.started_at}
             />
           ))}
-
-          {loose.length > 0 && (
-            <Group
-              id={LOOSE}
-              title={t({ ne: 'कार्यक्रम बाहिरका बैठक', en: 'Meetings outside any event' })}
-              subtitle={t({
-                ne: `${num(loose.length)} बैठक`,
-                en: `${loose.length} meeting${loose.length === 1 ? '' : 's'}`,
-              })}
-              meetingIds={loose.map((m) => m.id)}
-              sessions={null}
-              started={loose.some((m) => !!m.started_at)}
-            />
-          )}
         </div>
       )}
     </>

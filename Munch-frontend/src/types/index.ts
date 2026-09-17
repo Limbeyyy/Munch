@@ -14,11 +14,11 @@ export interface AuthTokens {
   refresh: string;
 }
 
-// Meeting
-export interface Meeting {
+// Event
+export interface Event {
   /**
-   * The session on stage, if one is. A room is a *meeting*, not a session:
-   * the meeting may hold ten talks and the room holds all of them, so this
+   * The session on stage, if one is. A room is an *event*, not a session:
+   * the event may hold ten talks and the room holds all of them, so this
    * empties out between one and the next without the room closing. The
    * clock counts whatever is on stage; `awaiting_next` says what is coming.
    */
@@ -49,27 +49,34 @@ export interface Meeting {
   };
 
   id: string;
-  meeting_code: string;
+  /** What is on the invitation, and what somebody types to get in. */
+  code: string;
   title: string;
   description: string;
-  host: User;
-  status: 'scheduled' | 'active' | 'ended' | 'cancelled';
+  host?: User;
+  host_email?: string;
+  status: EventStatus;
+  venue?: string;
+  event_date?: string;
   scheduled_start: string;
   scheduled_end: string;
-  started_at?: string;
-  ended_at?: string;
-  max_participants: number;
-  allow_recording: boolean;
-  require_authentication: boolean;
+  started_at?: string | null;
+  ended_at?: string | null;
+  max_participants?: number;
+  allow_recording?: boolean;
+  require_authentication?: boolean;
   participant_count: number;
-  is_active: boolean;
+  is_active?: boolean;
+  /** The running order. There is nothing between an event and its sessions. */
+  sessions?: Session[];
+  session_count?: number;
   created_at: string;
   updated_at: string;
   chat_enabled?: boolean;
   direct_messages_enabled?: boolean;
 }
 
-export interface MeetingParticipant {
+export interface EventParticipant {
   id: string;
   user: User;
   /**
@@ -106,7 +113,7 @@ export interface TranscriptionSegment {
 
 export interface Transcript {
   id: string;
-  meeting_id: string;
+  event_id: string;
   full_text: string;
   word_count: number;
   is_complete: boolean;
@@ -114,7 +121,7 @@ export interface Transcript {
 
 export interface TranscriptSummary {
   id: string;
-  meeting_id: string;
+  event_id: string;
   summary_text: string;
   key_points: string[];
   action_items: string[];
@@ -128,7 +135,7 @@ export type ResourceVisibility = 'now' | 'after_session' | 'public' | 'organizer
 
 export interface Artifact {
   id: string;
-  meeting_id: string;
+  event_id: string;
   artifact_type: string;
   display_name: string;
   drive_file_id?: string;
@@ -150,7 +157,7 @@ export interface Artifact {
 }
 
 // Analytics
-export interface MeetingAnalytics {
+export interface EventAnalytics {
   total_participants: number;
   duration_minutes: number;
   engagement_score: number;
@@ -179,8 +186,8 @@ export interface Subscription {
 // Recording
 export interface Recording {
   id: string;
-  meeting_id: string;
-  meeting_title: string;
+  event_id: string;
+  event_title: string;
   drive_file_id?: string;
   duration_seconds: number;
   file_size_bytes: number;
@@ -213,7 +220,7 @@ export interface DriveFile {
 }
 
 export interface DriveSyncStatus {
-  meeting_id: string;
+  event_id: string;
   sync_enabled: boolean;
   folder_id?: string;
   folder_name?: string;
@@ -300,13 +307,13 @@ export interface PaymentMethod {
 
 // Analytics
 export interface OrganizationAnalytics {
-  total_meetings: number;
+  total_events: number;
   total_participants: number;
   total_hours: number;
   active_users: number;
   storage_used_gb: number;
-  meetings_this_month: number;
-  avg_meeting_duration: number;
+  events_this_month: number;
+  avg_event_duration: number;
   growth_rate: number;
 }
 
@@ -355,7 +362,7 @@ export interface TranscriptionUpdate {
 }
 
 
-// Meeting chat
+// Event chat
 export interface ChatSettings {
   chat_enabled: boolean;
   direct_messages_enabled: boolean;
@@ -408,12 +415,12 @@ export interface GuestAttendee {
 export interface GuestSession {
   guest_token: string;
   guest: GuestAttendee;
-  meeting: { meeting_code: string; title: string };
+  event: { code: string; title: string };
 }
 
 
 // Invitations & attendance
-export interface MeetingInvite {
+export interface EventInvite {
   id: string;
   email: string;
   created_at: string;
@@ -430,7 +437,7 @@ export interface AttendanceEntry {
   role: string;
   joined_at: string;
   left_at: string | null;
-  /** Still in the meeting, as opposed to having attended and left. */
+  /** Still in the event, as opposed to having attended and left. */
   is_active: boolean;
   was_invited: boolean;
 }
@@ -476,16 +483,16 @@ export interface GuestResource {
 }
 
 
-// --- Events, meetings and sessions -----------------------------------------
-// An event is a day's programme. It holds meetings, which are the rooms
-// people join, and each meeting holds the sessions that make up its
+// --- Events, events and sessions -----------------------------------------
+// An event is a day's programme. It holds events, which are the rooms
+// people join, and each event holds the sessions that make up its
 // running order.
 
 export type SessionStatus = 'scheduled' | 'live' | 'done' | 'skipped';
 
 export interface Session {
   id: string;
-  meeting: string;
+  event: string;
   title: string;
   description: string;
   speaker_name: string;
@@ -494,7 +501,7 @@ export interface Session {
   /** Whether attendees may simply read the speaker's details, or must ask. */
   speaker_visibility: 'public' | 'private';
   /**
-   * The speaker's details, sent only to the host of the meeting.
+   * The speaker's details, sent only to the host of the event.
    * Null for everybody else, who read them through the contact endpoint.
    */
   speaker_contact?: { email: string; phone: string } | null;
@@ -510,37 +517,7 @@ export interface Session {
   updated_at: string;
 }
 
-export interface EventMeeting {
-  id: string;
-  meeting_code: string;
-  title: string;
-  description: string;
-  status: Meeting['status'];
-  scheduled_start: string;
-  scheduled_end: string;
-  started_at?: string | null;
-  ended_at?: string | null;
-  participant_count: number;
-  sessions: Session[];
-  session_count: number;
-}
-
 export type EventStatus = 'draft' | 'scheduled' | 'active' | 'ended' | 'cancelled';
-
-export interface EventProgramme {
-  id: string;
-  title: string;
-  description: string;
-  venue: string;
-  event_date: string;
-  status: EventStatus;
-  organizer_email: string;
-  meetings: EventMeeting[];
-  meeting_count: number;
-  session_count: number;
-  created_at: string;
-  updated_at: string;
-}
 
 /** A session as typed into the create form, before it exists. */
 export interface SessionDraft {
@@ -556,8 +533,8 @@ export interface SessionDraft {
   description?: string;
 }
 
-/** A meeting as typed into the create form, with its running order. */
-export interface MeetingDraft {
+/** A event as typed into the create form, with its running order. */
+export interface EventDraft {
   title: string;
   description?: string;
   scheduled_start: string;
@@ -594,8 +571,8 @@ export interface ContactRequestRow {
   session: string;
   session_title: string;
   speaker_name: string;
-  meeting_id: string;
-  meeting_title: string;
+  event_id: string;
+  event_title: string;
   asker_name: string;
   asker_is_guest: boolean;
   reason: string;
@@ -608,9 +585,7 @@ export interface ContactRequestRow {
 /** The ceiling a plan puts on what a host may run. `null` means no ceiling. */
 export interface PlanLimits {
   events: number | null;
-  meetings: number | null;
-  meetings_per_event: number | null;
-  sessions_per_meeting: number | null;
+  sessions_per_event: number | null;
   attendees: number | null;
 }
 
@@ -624,7 +599,7 @@ export interface HostPlan {
 /**
  * Which portal a signed-in person belongs in.
  *
- * Guests never appear here: they reach a meeting by code or QR without an
+ * Guests never appear here: they reach a event by code or QR without an
  * account, so there is nothing to describe.
  */
 export interface UserRoles {
@@ -633,17 +608,17 @@ export interface UserRoles {
   can_start_hosting: boolean;
   portals: Array<'host' | 'attendee'>;
   plan: HostPlan | null;
-  usage: { events: number; meetings: number; sessions: number } | null;
+  usage: { events: number; sessions: number } | null;
   subscription: { status: string; current_period_end: string | null } | null;
 }
 
 /** How far a role reaches, and how long it lasts. */
-export type RoleScope = 'event' | 'meeting' | 'session';
+export type RoleScope = 'event' | 'session';
 
 /**
  * A role the host has given somebody over one part of the programme.
  *
- * The scope is the whole point: a co-host of one meeting is nobody in the
+ * The scope is the whole point: a co-host of one event is nobody in the
  * next one until the host says otherwise.
  */
 export interface RoleGrantRow {
@@ -662,7 +637,7 @@ export interface RoleGrantRow {
 export interface ProgrammeSpeaker {
   name: string;
   email: string;
-  sessions: { id: string; title: string; meeting: string }[];
+  sessions: { id: string; title: string; event: string }[];
 }
 
 export interface ProgrammeRoles {
@@ -693,7 +668,7 @@ export interface BoardEntry {
   created_at: string;
 }
 
-export interface MeetingBoard {
+export interface EventBoard {
   faq: BoardEntry[];
   suggestions: BoardEntry[];
 }
@@ -750,17 +725,17 @@ export interface HubBoard {
 /** A nudge somebody is owed before something they are part of happens. */
 export interface Reminder {
   id: string;
-  kind: 'meeting' | 'session';
-  meeting_id: string;
-  meeting_code: string;
-  meeting_title: string;
+  kind: 'event' | 'session';
+  event_id: string;
+  code: string;
+  event_title: string;
   session_id: string | null;
   session_title: string | null;
   speaker_name: string;
   hall: string;
   starts_at: string;
   ends_at: string;
-  /** When the nudge is owed: an hour before a meeting, a quarter before a session. */
+  /** When the nudge is owed: an hour before a event, a quarter before a session. */
   due_at: string;
   is_due: boolean;
   read: boolean;
@@ -785,8 +760,6 @@ export interface Conclusion {
   session_starts_at: string;
   speaker_name: string;
   hall: string;
-  meeting_id: string;
-  meeting_title: string;
   event_id: string;
   event_title: string;
   findings: string[];
@@ -803,17 +776,17 @@ export interface ConclusionPage {
 /** How this host spaces their day, and how much warning it gives. */
 export interface SchedulingPrefs {
   session_gap_minutes: number;
-  meeting_reminder_minutes: number;
+  event_reminder_minutes: number;
   session_reminder_minutes: number;
   reminders_enabled: boolean;
   defaults: {
     session_gap_minutes: number;
-    meeting_reminder_minutes: number;
+    event_reminder_minutes: number;
     session_reminder_minutes: number;
   };
   maximums: {
     session_gap_minutes: number;
-    meeting_reminder_minutes: number;
+    event_reminder_minutes: number;
     session_reminder_minutes: number;
   };
   default_session_gap_minutes: number;
@@ -821,7 +794,7 @@ export interface SchedulingPrefs {
 }
 
 /**
- * A named place for the photographs of a meeting.
+ * A named place for the photographs of a event.
  *
  * Deliberately not an Artifact: files and summaries are working documents
  * with a release rule tied to their session, photographs are the record of
@@ -837,7 +810,7 @@ export interface PhotoFolder {
   created_at: string;
 }
 
-export interface MeetingPhoto {
+export interface EventPhoto {
   id: string;
   folder_id: string;
   caption: string;
@@ -852,17 +825,17 @@ export interface MeetingPhoto {
 }
 
 export interface PhotoPage {
-  meeting_id: string;
-  meeting_code: string;
-  meeting_title: string;
-  meeting_is_finished: boolean;
+  event_id: string;
+  code: string;
+  event_title: string;
+  event_is_finished: boolean;
   /** Whether this person may add one now: the permission and the timing. */
   can_upload: boolean;
   /** Whether they are one of the people who may, once it has finished. */
   is_a_photographer: boolean;
   can_arrange: boolean;
   folders: PhotoFolder[];
-  photos: MeetingPhoto[];
+  photos: EventPhoto[];
 }
 
 /** A report that has been written into somebody's own Google Drive. */
@@ -875,7 +848,7 @@ export interface SheetExport {
 export interface ReminderPage {
   reminders: Reminder[];
   unread: number;
-  meeting_lead_minutes: number;
+  event_lead_minutes: number;
   session_lead_minutes: number;
 }
 
@@ -894,8 +867,7 @@ export interface ProfileSummary extends UserRoles {
   };
   remaining: {
     events: number | null;
-    meetings: number | null;
-    sessions_per_meeting: number | null;
+    sessions_per_event: number | null;
     attendees: number | null;
   };
   plans: HostPlan[];

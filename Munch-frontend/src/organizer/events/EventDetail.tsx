@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { EventMeeting, EventProgramme, RoleGrantRow, Session } from '../../types';
-import { ShareMeetingDialog } from '../../components/ShareMeetingDialog';
+import { Event, RoleGrantRow, Session } from '../../types';
+import { ShareEventDialog } from '../../components/ShareEventDialog';
 import { errorText } from '../errors';
 import { useOrganizer } from '../i18n';
 import { Btn, Chip, Ic } from '../ui';
-import { MEETING_STATE_LABEL, MEETING_STATE_TONE, meetingState } from '../sessionState';
+import { EVENT_STATE_LABEL, EVENT_STATE_TONE, eventState } from '../sessionState';
 import { BackLink, Block, Caution, DeckTabs, EventHeading, PlusGlyph, ReadyRow, Sheet } from './chrome';
 import { CoHostDialog } from './CoHostDialog';
 import { whenLine } from './EventsDashboard';
@@ -15,11 +15,11 @@ const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 interface Props {
-  event: EventProgramme;
+  event: Event;
   onBack: () => void;
   onEdit: () => void;
   /** Take the host into the room the session is running in. */
-  onOpenRoom: (meetingCode: string) => void;
+  onOpenRoom: (eventCode: string) => void;
   onChanged: () => Promise<void> | void;
 }
 
@@ -38,10 +38,10 @@ export const EventDetail: React.FC<Props> = ({
   const [roles, setRoles] = useState<RoleGrantRow[]>([]);
   const [invited, setInvited] = useState<{ email: string; joined: boolean }[]>([]);
   const [addCoHost, setAddCoHost] = useState(false);
-  const [sharing, setSharing] = useState<EventMeeting | null>(null);
+  const [sharing, setSharing] = useState<Event | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const sessions = event.meetings.flatMap((m) => m.sessions);
+  const sessions = event.sessions ?? [];
   const withoutSpeaker = sessions.filter((s) => !s.speaker_name).length;
   const coHosts = roles.filter((r) => r.role === 'co_host');
 
@@ -60,20 +60,20 @@ export const EventDetail: React.FC<Props> = ({
 
   useEffect(() => { loadPeople(); }, [loadPeople]);
 
-  /** The meeting that opens the day, which "Start meeting" starts. */
-  const opener = [...event.meetings].sort(
+  /** The event that opens the day, which "Start event" starts. */
+  const opener = [event].sort(
     (a, b) => +new Date(a.scheduled_start) - +new Date(b.scheduled_start)
   )[0];
 
-  const startMeeting = async () => {
+  const startEvent = async () => {
     if (!opener) {
       toast.error(t({
         ne: 'यो कार्यक्रममा बैठक छैन।',
-        en: 'This event has no meeting to start.',
+        en: 'This event has no event to start.',
       }));
       return;
     }
-    onOpenRoom(opener.meeting_code);
+    onOpenRoom(opener.code);
   };
 
   const runSession = async (session: Session, action: 'start' | 'end', code: string) => {
@@ -110,8 +110,8 @@ export const EventDetail: React.FC<Props> = ({
   };
 
   const startButton = (
-    <Btn tone="solid" className="px-8 py-3 text-[15px]" onClick={startMeeting}>
-      {t({ ne: 'बैठक सुरु गर्नुहोस्', en: 'Start meeting' })}
+    <Btn tone="solid" className="px-8 py-3 text-[15px]" onClick={startEvent}>
+      {t({ ne: 'बैठक सुरु गर्नुहोस्', en: 'Start event' })}
     </Btn>
   );
 
@@ -222,7 +222,7 @@ export const EventDetail: React.FC<Props> = ({
             >
               <p className="text-[13px] text-subtle">{t({ ne: 'आयोजक', en: 'Host' })}</p>
               <p className="text-[14px] font-medium text-head mt-1">
-                {event.organizer_email} <span className="text-subtle font-normal">
+                {event.host_email} <span className="text-subtle font-normal">
                   ({t({ ne: 'तपाईं', en: 'you' })})
                 </span>
               </p>
@@ -262,8 +262,8 @@ export const EventDetail: React.FC<Props> = ({
               </ReadyRow>
             </ul>
             <div className="mt-5">
-              <Btn tone="solid" className="w-full py-3 text-[15px]" onClick={startMeeting}>
-                {t({ ne: 'बैठक सुरु गर्नुहोस्', en: 'Start meeting' })}
+              <Btn tone="solid" className="w-full py-3 text-[15px]" onClick={startEvent}>
+                {t({ ne: 'बैठक सुरु गर्नुहोस्', en: 'Start event' })}
               </Btn>
             </div>
           </aside>
@@ -272,40 +272,40 @@ export const EventDetail: React.FC<Props> = ({
 
       {tab === 'agenda' && (
         <div className="flex flex-col gap-5">
-          {event.meetings.length === 0 ? (
+          {sessions.length === 0 ? (
             <p className="text-[14px] text-subtle">
-              {t({ ne: 'यो कार्यक्रममा अझै बैठक छैन।', en: 'This event has no meetings yet.' })}
+              {t({ ne: 'यो कार्यक्रममा अझै बैठक छैन।', en: 'This event has no events yet.' })}
             </p>
           ) : (
-            [...event.meetings]
+            [event]
               .sort((a, b) => +new Date(a.scheduled_start) - +new Date(b.scheduled_start))
-              .map((meeting) => (
-                <div key={meeting.id} className="border border-line rounded-[12px] overflow-hidden">
+              .map((event) => (
+                <div key={event.id} className="border border-line rounded-[12px] overflow-hidden">
                   <div className="bg-sheet px-5 py-3 flex items-center gap-3 flex-wrap">
-                    <b className="text-[14px] font-medium text-head">{meeting.title}</b>
+                    <b className="text-[14px] font-medium text-head">{event.title}</b>
                     <span className="text-[13px] text-subtle tabular-nums">
-                      {clock(meeting.scheduled_start)}–{clock(meeting.scheduled_end)}
+                      {clock(event.scheduled_start)}–{clock(event.scheduled_end)}
                     </span>
                     <span className="text-[12.5px] font-mono text-navy-800">
-                      {meeting.meeting_code}
+                      {event.code}
                     </span>
-                    <Chip tone={MEETING_STATE_TONE[meetingState(meeting)]}>
-                      {t(MEETING_STATE_LABEL[meetingState(meeting)])}
+                    <Chip tone={EVENT_STATE_TONE[eventState(event)]}>
+                      {t(EVENT_STATE_LABEL[eventState(event)])}
                     </Chip>
                     <span className="ml-auto flex-none">
-                      <Btn sm onClick={() => setSharing(meeting)}>
+                      <Btn sm onClick={() => setSharing(event)}>
                         {t({ ne: 'लिंक र QR', en: 'Link & QR' })}
                       </Btn>
                     </span>
                   </div>
 
                   <div className="px-5 py-2">
-                    {meeting.sessions.length === 0 ? (
+                    {sessions.length === 0 ? (
                       <p className="text-[13px] text-subtle py-2">
                         {t({ ne: 'सत्र थपिएको छैन।', en: 'No sessions added.' })}
                       </p>
                     ) : (
-                      meeting.sessions.map((s) => (
+                      sessions.map((s) => (
                         <div
                           key={s.id}
                           className="flex items-center gap-3 py-3 border-b border-line last:border-0"
@@ -324,12 +324,12 @@ export const EventDetail: React.FC<Props> = ({
                           <span className="flex-none">
                             {s.status === 'live' ? (
                               <Btn sm tone="danger" disabled={busy === s.id}
-                                   onClick={() => runSession(s, 'end', meeting.meeting_code)}>
+                                   onClick={() => runSession(s, 'end', event.code)}>
                                 {t({ ne: 'सकाउने', en: 'End' })}
                               </Btn>
                             ) : s.status === 'scheduled' || s.status === 'skipped' ? (
                               <Btn sm tone="solid" disabled={busy === s.id}
-                                   onClick={() => runSession(s, 'start', meeting.meeting_code)}>
+                                   onClick={() => runSession(s, 'start', event.code)}>
                                 {t({ ne: 'मञ्चमा', en: 'On stage' })}
                               </Btn>
                             ) : null}
@@ -423,9 +423,9 @@ export const EventDetail: React.FC<Props> = ({
       )}
 
       {sharing && (
-        <ShareMeetingDialog
-          meetingId={sharing.id}
-          meetingCode={sharing.meeting_code}
+        <ShareEventDialog
+          eventId={sharing.id}
+          eventCode={sharing.code}
           onClose={() => setSharing(null)}
           onInvited={() => { loadPeople(); }}
         />

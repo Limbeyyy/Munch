@@ -79,7 +79,7 @@ class AnalyticsService:
         try:
             events = Event.objects.filter(host_id=user_id)
 
-            total_meetings = meetings.count()
+            total_events = meetings.count()
             total_participants = EventParticipant.objects.filter(
                 event__host_id=user_id
             ).count()
@@ -94,7 +94,7 @@ class AnalyticsService:
             ] or 0
 
             return {
-                'total_meetings': total_meetings,
+                'total_events': total_events,
                 'total_participants': total_participants,
                 'total_hours': round(total_duration, 2),
                 'avg_engagement_score': round(avg_engagement, 1),
@@ -114,8 +114,8 @@ class AnalyticsService:
     def get_platform_analytics():
         """Get platform-wide analytics"""
         try:
-            total_meetings = Event.objects.count()
-            active_meetings = Event.objects.filter(status=Event.Status.ACTIVE).count()
+            total_events = Event.objects.count()
+            active_events = Event.objects.filter(status=Event.Status.ACTIVE).count()
             total_participants = EventParticipant.objects.count()
 
             events_last_30_days = Event.objects.filter(
@@ -127,8 +127,8 @@ class AnalyticsService:
             )['participant_engagement_score__avg'] or 0
 
             return {
-                'total_meetings': total_meetings,
-                'active_meetings': active_meetings,
+                'total_events': total_events,
+                'active_events': active_events,
                 'total_participants': total_participants,
                 'events_last_30_days': events_last_30_days,
                 'avg_engagement_score': round(avg_engagement, 1),

@@ -6,8 +6,8 @@ import { Pair, useOrganizer } from '../i18n';
 import { forgetSessionGap } from '../sessionGap';
 import { Btn, Card, Head, Switch, Tabs } from '../ui';
 
-// Nothing here belongs to one meeting any more: the settings that did
-// have gone to the live desk, where a meeting is in front of the host.
+// Nothing here belongs to one event any more: the settings that did
+// have gone to the live desk, where a event is in front of the host.
 
 /**
  * How the programme runs: its spacing, its reminders, and the hall device.
@@ -64,7 +64,7 @@ export const SettingsView: React.FC = () => {
               {t({ ne: 'यन्त्रले यसरी पठाउँछ:', en: 'The device posts like this:' })}
             </p>
             <pre className="bg-navy-900 text-[#CFE0F7] rounded-lg p-3 text-[11.5px] leading-[1.7] overflow-x-auto">
-{`POST /api/v1/meetings/<code>/transcription/
+{`POST /api/v1/events/<code>/transcription/
 Authorization: Bearer <ingest token>
 
 {"text": "…", "language": "ne-NP",
@@ -94,7 +94,7 @@ Authorization: Bearer <ingest token>
 /**
  * How much warning this host's programme gives, and whether it gives any.
  *
- * A meeting is called further ahead than a talk inside it, because people
+ * A event is called further ahead than a talk inside it, because people
  * travel to the first and walk down a corridor to the second. How much
  * further depends on the event, which is why these are fields rather than
  * the hour and quarter-hour that used to be written into the code.
@@ -102,7 +102,7 @@ Authorization: Bearer <ingest token>
 const NotificationPanel: React.FC = () => {
   const { t, num } = useOrganizer();
   const [prefs, setPrefs] = useState<SchedulingPrefs | null>(null);
-  const [meetingLead, setMeetingLead] = useState('');
+  const [eventLead, setEventLead] = useState('');
   const [sessionLead, setSessionLead] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -111,7 +111,7 @@ const NotificationPanel: React.FC = () => {
       .getSchedulingPrefs()
       .then((found) => {
         setPrefs(found);
-        setMeetingLead(String(found.meeting_reminder_minutes));
+        setEventLead(String(found.event_reminder_minutes));
         setSessionLead(String(found.session_reminder_minutes));
       })
       .catch(() => undefined);
@@ -125,24 +125,24 @@ const NotificationPanel: React.FC = () => {
     );
   }
 
-  const most = prefs.maximums.meeting_reminder_minutes;
+  const most = prefs.maximums.event_reminder_minutes;
   const reads = (raw: string) => {
     const n = Number(raw);
     return raw.trim() !== '' && Number.isInteger(n) && n >= 0 && n <= most ? n : null;
   };
-  const wantedMeeting = reads(meetingLead);
+  const wantedEvent = reads(eventLead);
   const wantedSession = reads(sessionLead);
   const changed =
-    (wantedMeeting !== null && wantedMeeting !== prefs.meeting_reminder_minutes) ||
+    (wantedEvent !== null && wantedEvent !== prefs.event_reminder_minutes) ||
     (wantedSession !== null && wantedSession !== prefs.session_reminder_minutes);
-  const valid = wantedMeeting !== null && wantedSession !== null;
+  const valid = wantedEvent !== null && wantedSession !== null;
 
   const send = async (patch: Record<string, number | boolean>) => {
     try {
       setSaving(true);
       const saved = await apiClient.setSchedulingPrefs(patch);
       setPrefs(saved);
-      setMeetingLead(String(saved.meeting_reminder_minutes));
+      setEventLead(String(saved.event_reminder_minutes));
       setSessionLead(String(saved.session_reminder_minutes));
       toast.success(t({ ne: 'सेभ भयो', en: 'Saved' }));
     } catch (e: any) {
@@ -200,14 +200,14 @@ const NotificationPanel: React.FC = () => {
 
       <div className="mt-5 pt-4 border-t border-navy-800/[.08] flex flex-col gap-4">
         {field(
-          'manch-meeting-lead',
-          { ne: 'बैठकभन्दा अघि', en: 'Before a meeting' },
+          'manch-event-lead',
+          { ne: 'बैठकभन्दा अघि', en: 'Before a event' },
           {
             ne: 'बैठक सुरु हुनुभन्दा कति अघि सम्झाउने।',
-            en: 'How long before a meeting starts everybody is called.',
+            en: 'How long before a event starts everybody is called.',
           },
-          meetingLead,
-          setMeetingLead
+          eventLead,
+          setEventLead
         )}
         {field(
           'manch-session-lead',
@@ -226,7 +226,7 @@ const NotificationPanel: React.FC = () => {
             disabled={!changed || !valid || saving || !prefs.reminders_enabled}
             onClick={() =>
               send({
-                meeting_reminder_minutes: wantedMeeting as number,
+                event_reminder_minutes: wantedEvent as number,
                 session_reminder_minutes: wantedSession as number,
               })
             }
@@ -247,7 +247,7 @@ const NotificationPanel: React.FC = () => {
       <p className="text-[12.5px] text-[#6E7C8E] mt-4 pt-3.5 border-t border-navy-800/[.08]">
         {t({
           ne: 'एउटा बैठक र त्यसका चार सत्र भए पाँच सम्झना जान्छन् — बैठकको एउटा, हरेक सत्रको आ-आफ्नै।',
-          en: 'A meeting with four sessions sends five reminders: one for the meeting, and one apiece for the sessions.',
+          en: 'A event with four sessions sends five reminders: one for the event, and one apiece for the sessions.',
         })}
       </p>
     </Card>

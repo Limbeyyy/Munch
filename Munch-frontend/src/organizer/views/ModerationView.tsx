@@ -2,9 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { ACTIVE_POLL_MS, QUEUE_POLL_MS } from '../../services/polling';
-import {
-  ChatMessage, EventProgramme, GuestAttendee, Meeting, MessageTopic, Session,
-} from '../../types';
+import { ChatMessage, Event, GuestAttendee, MessageTopic, Session } from '../../types';
 import { Modal } from '../OrganizerShell';
 import { MessageBoard } from '../MessageBoard';
 import { ReviewedMessages, ReviewedRow } from '../ReviewedMessages';
@@ -26,7 +24,7 @@ interface Placement {
   eventId: string;
   eventTitle: string;
   eventDate: string | null;
-  meeting: Meeting;
+  event: Event;
   session: Session | null;
 }
 
@@ -40,46 +38,46 @@ interface Row extends Placement {
   haystack: string;
 }
 
-interface Props { meetings: Meeting[]; }
+interface Props { events: Event[]; }
 
 /**
- * The photographs of a meeting, filed by whoever was there to take them.
+ * The photographs of a event, filed by whoever was there to take them.
  *
  * Here rather than beside the reports because it belongs with the other
- * things people put into a meeting - the messages, the questions, the
+ * things people put into a event - the messages, the questions, the
  * suggestions - and not with the settings, which are about how the
  * platform behaves rather than what happened on the day.
  */
-const PhotoModeration: React.FC<{ meetings: Meeting[] }> = ({ meetings }) => {
+const PhotoModeration: React.FC<{ events: Event[] }> = ({ events }) => {
   const { t } = useOrganizer();
   const [chosen, setChosen] = useState('');
 
   const ordered = useMemo(
     () => [
-      ...meetings.filter((m) => m.status === 'ended'),
-      ...meetings.filter((m) => m.status !== 'ended'),
+      ...events.filter((m) => m.status === 'ended'),
+      ...events.filter((m) => m.status !== 'ended'),
     ],
-    [meetings]
+    [events]
   );
-  const meeting = meetings.find((m) => m.id === chosen) ?? ordered[0] ?? null;
+  const event = events.find((m) => m.id === chosen) ?? ordered[0] ?? null;
 
-  if (!meeting) {
-    return <Panel><Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No meetings.' })}</Empty></Panel>;
+  if (!event) {
+    return <Panel><Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No events.' })}</Empty></Panel>;
   }
 
   return (
     <div className="flex flex-col gap-3.5">
-      {meetings.length > 1 && (
+      {events.length > 1 && (
         <div>
           <label
-            htmlFor="manch-photo-meeting"
+            htmlFor="manch-photo-event"
             className="block text-[12.5px] text-[#6E7C8E] mb-1.5"
           >
-            {t({ ne: 'कुन बैठक', en: 'Which meeting' })}
+            {t({ ne: 'कुन बैठक', en: 'Which event' })}
           </label>
           <select
-            id="manch-photo-meeting"
-            value={meeting.id}
+            id="manch-photo-event"
+            value={event.id}
             onChange={(e) => setChosen(e.target.value)}
             className="w-full max-w-md border border-navy-800/15 rounded-[9px] px-3 py-2 bg-white text-[14px]"
           >
@@ -94,32 +92,32 @@ const PhotoModeration: React.FC<{ meetings: Meeting[] }> = ({ meetings }) => {
           </select>
         </div>
       )}
-      <PhotoAlbums meetingRef={meeting.meeting_code} />
+      <PhotoAlbums eventRef={event.code} />
     </div>
   );
 };
 
 /**
  * Everything waiting on the organizer's word, kept in the shape of the
- * programme: an item belongs to a meeting, and to whichever session was
+ * programme: an item belongs to a event, and to whichever session was
  * running when it arrived.
  */
-export const ModerationView: React.FC<Props> = ({ meetings }) => {
+export const ModerationView: React.FC<Props> = ({ events }) => {
   const { t, num } = useOrganizer();
 
   const [tab, setTab] = useState<'messages' | 'guests' | 'board' | 'photos'>(
     'messages'
   );
-  const [boardMeeting, setBoardMeeting] = useState('');
+  const [boardEvent, setBoardEvent] = useState('');
   /**
-   * Which meeting the messages and guests come from.
+   * Which event the messages and guests come from.
    *
    * Empty means the ones still running, which is the queue a moderator
-   * works. Naming one opens its history instead - including meetings that
+   * works. Naming one opens its history instead - including events that
    * have ended, whose messages used to vanish from this screen the moment
-   * they did, because only live meetings were ever fetched.
+   * they did, because only live events were ever fetched.
    */
-  const [historyMeeting, setHistoryMeeting] = useState('');
+  const [historyEvent, setHistoryEvent] = useState('');
   /**
    * Which half of a queue is open: deciding, or what was decided.
    *
@@ -129,7 +127,6 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
    */
   const [half, setHalf] = useState<Half>('permissions');
   const [accepting, setAccepting] = useState<Row | null>(null);
-  const [events, setEvents] = useState<EventProgramme[]>([]);
   const [pending, setPending] = useState<Record<string, ChatMessage[]>>({});
   const [waiting, setWaiting] = useState<Record<string, GuestAttendee[]>>({});
   const [reviewedUsers, setReviewedUsers] = useState<ReviewedRow[]>([]);
@@ -141,20 +138,16 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   // A moderator watches the whole programme, so both queues are gathered
-  // from every meeting that has not ended.
+  // from every event that has not ended.
   const live = useMemo(() => {
-    const chosen = meetings.find((m) => m.id === historyMeeting);
+    const chosen = events.find((m) => m.id === historyEvent);
     if (chosen) return [chosen];
-    return meetings.filter((m) => m.status === 'active' || m.status === 'scheduled');
-  }, [meetings, historyMeeting]);
+    return events.filter((m) => m.status === 'active' || m.status === 'scheduled');
+  }, [events, historyEvent]);
   const liveKey = live.map((m) => m.id).join(',');
 
-  /** Looking at one meeting is looking at its record, not at its queue. */
-  const showingHistory = !!meetings.find((m) => m.id === historyMeeting);
-
-  useEffect(() => {
-    apiClient.listEvents().then(setEvents).catch(() => undefined);
-  }, []);
+  /** Looking at one event is looking at its record, not at its queue. */
+  const showingHistory = !!events.find((m) => m.id === historyEvent);
 
   const load = useCallback(async () => {
     const results = await Promise.allSettled(
@@ -178,7 +171,7 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
         ? r.value.waiting
         : r.value.waiting.filter((g) => g.status === 'pending');
       const tag = (rows: ChatMessage[]) =>
-        rows.map((row) => ({ ...row, meetingId: r.value.id }));
+        rows.map((row) => ({ ...row, eventId: r.value.id }));
       fromUsers.push(...tag(r.value.reviewed.from_users));
       fromGuests.push(...tag(r.value.reviewed.from_guests));
     });
@@ -194,11 +187,11 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
     return () => clearInterval(id);
   }, [load]);
 
-  /** Which programme each meeting belongs to, and its running order. */
+  /** The running order of the event something arrived in. */
   const placementOf = useCallback(
-    (meeting: Meeting, at: string): Placement => {
-      const event = events.find((e) => e.meetings.some((m) => m.id === meeting.id));
-      const sessions = event?.meetings.find((m) => m.id === meeting.id)?.sessions ?? [];
+    (where: Event, at: string): Placement => {
+      const event = events.find((e) => e.id === where.id) ?? where;
+      const sessions = event.sessions ?? [];
 
       // Neither a message nor a guest records a session, so the session is
       // the one that was on stage at the time.
@@ -213,7 +206,7 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
         eventId: event?.id ?? '__none__',
         eventTitle: event?.title ?? t({ ne: 'कार्यक्रम बाहिर', en: 'Outside any event' }),
         eventDate: event?.event_date ?? null,
-        meeting,
+        event,
         session,
       };
     },
@@ -222,7 +215,7 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
 
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
-    live.forEach((meeting) => {
+    live.forEach((event) => {
       // A message from a guest is a guest's business, wherever it is in
       // its life. Sorting them by who sent them rather than by what kind
       // of thing they are keeps the two queues answering the questions
@@ -231,13 +224,13 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
 
       if (tab === 'messages') {
         const settled = showingHistory
-          ? reviewedUsers.filter((r) => r.meetingId === meeting.id)
+          ? reviewedUsers.filter((r) => r.eventId === event.id)
           : [];
         [
-          ...(pending[meeting.id] ?? []).filter((m) => !fromGuest(m)),
+          ...(pending[event.id] ?? []).filter((m) => !fromGuest(m)),
           ...settled,
         ].forEach((m) => {
-          const place = placementOf(meeting, m.created_at);
+          const place = placementOf(event, m.created_at);
           out.push({
             ...place,
             kind: 'message',
@@ -246,14 +239,14 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
             message: m,
             haystack: [
               m.body, m.sender_name, m.sender_email, m.recipient_name,
-              meeting.title, meeting.meeting_code,
+              event.title, event.code,
               place.eventTitle, place.session?.title, place.session?.speaker_name,
             ].filter(Boolean).join(' ').toLowerCase(),
           });
         });
       } else {
-        (waiting[meeting.id] ?? []).forEach((g) => {
-          const place = placementOf(meeting, g.created_at);
+        (waiting[event.id] ?? []).forEach((g) => {
+          const place = placementOf(event, g.created_at);
           out.push({
             ...place,
             kind: 'guest',
@@ -262,7 +255,7 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
             guest: g,
             haystack: [
               g.full_name, g.phone,
-              meeting.title, meeting.meeting_code,
+              event.title, event.code,
               place.eventTitle, place.session?.title, place.session?.speaker_name,
             ].filter(Boolean).join(' ').toLowerCase(),
           });
@@ -271,13 +264,13 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
         // What the guests themselves have written, beside the people
         // waiting at the door.
         const settled = showingHistory
-          ? reviewedGuests.filter((r) => r.meetingId === meeting.id)
+          ? reviewedGuests.filter((r) => r.eventId === event.id)
           : [];
         [
-          ...(pending[meeting.id] ?? []).filter(fromGuest),
+          ...(pending[event.id] ?? []).filter(fromGuest),
           ...settled,
         ].forEach((m) => {
-          const place = placementOf(meeting, m.created_at);
+          const place = placementOf(event, m.created_at);
           out.push({
             ...place,
             kind: 'message',
@@ -286,7 +279,7 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
             message: m,
             haystack: [
               m.body, m.sender_name, m.sender_email, m.recipient_name,
-              meeting.title, meeting.meeting_code,
+              event.title, event.code,
               place.eventTitle, place.session?.title, place.session?.speaker_name,
             ].filter(Boolean).join(' ').toLowerCase(),
           });
@@ -313,12 +306,12 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
 
   useEffect(() => { setPage(1); }, [tab, query]);
 
-  /** Group this page into event → meeting → session sections. */
+  /** Group this page into event → event → session sections. */
   const sections = useMemo(() => {
     const order: string[] = [];
     const byKey: Record<string, { row: Row; items: Row[] }> = {};
     visible.forEach((row) => {
-      const key = `${row.eventId}|${row.meeting.id}|${row.session?.id ?? 'none'}`;
+      const key = `${row.eventId}|${row.event.id}|${row.session?.id ?? 'none'}`;
       if (!byKey[key]) {
         byKey[key] = { row, items: [] };
         order.push(key);
@@ -333,7 +326,7 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
    *
    * A topic delivers it and puts it on the board in one step, which is when
    * the host has just read it and knows what it is. The board is read by
-   * everyone in the meeting, so sorting a direct message onto it is asked
+   * everyone in the event, so sorting a direct message onto it is asked
    * about first.
    */
   const decideMessage = async (
@@ -346,17 +339,17 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
       const ok = window.confirm(
         t({
           ne: 'यो सिधा सन्देश हो। बोर्डमा राख्दा बैठकका सबैले पढ्न सक्छन्।\n\nराख्ने?',
-          en: 'This was sent privately. Putting it on the board lets everybody in the meeting read it.\n\nPut it up?',
+          en: 'This was sent privately. Putting it on the board lets everybody in the event read it.\n\nPut it up?',
         })
       );
       if (!ok) return;
     }
     try {
       setBusy(row.id);
-      await apiClient.moderateMessage(row.meeting.id, row.message.id, action, topic);
+      await apiClient.moderateMessage(row.event.id, row.message.id, action, topic);
       setPending((prev) => ({
         ...prev,
-        [row.meeting.id]: (prev[row.meeting.id] ?? []).filter((m) => m.id !== row.id),
+        [row.event.id]: (prev[row.event.id] ?? []).filter((m) => m.id !== row.id),
       }));
       toast.success({
         approve: t({ ne: 'सन्देश पठाइयो', en: 'Delivered' }),
@@ -371,7 +364,7 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
   /**
    * File a message the host already passed on, or take it back off.
    *
-   * The board is read by everyone in the meeting, so putting a private
+   * The board is read by everyone in the event, so putting a private
    * message on it is asked about first - the same question the accept
    * prompt asks, in the place where the decision is now being made.
    */
@@ -380,14 +373,14 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
       const ok = window.confirm(
         t({
           ne: `यो सिधा सन्देश हो। बोर्डमा राख्दा बैठकका सबैले पढ्न सक्छन्।\n\n“${message.body}”\n\nराख्ने?`,
-          en: `This was sent privately. Putting it on the board lets everybody in the meeting read it.\n\n“${message.body}”\n\nPut it up?`,
+          en: `This was sent privately. Putting it on the board lets everybody in the event read it.\n\n“${message.body}”\n\nPut it up?`,
         })
       );
       if (!ok) return;
     }
     try {
       setBusy(message.id);
-      const updated = await apiClient.sortMessage(message.meetingId, message.id, topic);
+      const updated = await apiClient.sortMessage(message.eventId, message.id, topic);
       const swap = (rows: ReviewedRow[]) =>
         rows.map((r) => (r.id === message.id ? { ...r, ...updated } : r));
       setReviewedUsers(swap);
@@ -408,10 +401,10 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
     if (!row.guest) return;
     try {
       setBusy(row.id);
-      await apiClient.admitGuest(row.meeting.id, row.guest.id, admit ? 'admit' : 'deny');
+      await apiClient.admitGuest(row.event.id, row.guest.id, admit ? 'admit' : 'deny');
       setWaiting((prev) => ({
         ...prev,
-        [row.meeting.id]: (prev[row.meeting.id] ?? []).filter((g) => g.id !== row.id),
+        [row.event.id]: (prev[row.event.id] ?? []).filter((g) => g.id !== row.id),
       }));
       toast.success(admit
         ? t({ ne: `${row.guest.full_name} भित्रिए`, en: `${row.guest.full_name} let in` })
@@ -445,7 +438,7 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
         title={{ ne: 'मडेरेसन', en: 'Moderation' }}
         lede={{
           ne: 'हरेक कुरा आफ्नै बैठक र सत्रमुनि — एकै थुप्रोमा मिसिँदैन।',
-          en: 'Each item sits under its own meeting and session, never in one mixed pile.',
+          en: 'Each item sits under its own event and session, never in one mixed pile.',
         }}
       />
 
@@ -461,34 +454,34 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
       />
 
       {tab === 'photos' ? (
-        <PhotoModeration meetings={meetings} />
+        <PhotoModeration events={events} />
       ) : tab === 'board' ? (
         <div className="flex flex-col gap-3.5">
-          {meetings.length === 0 ? (
-            <Panel><Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No meetings.' })}</Empty></Panel>
+          {events.length === 0 ? (
+            <Panel><Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No events.' })}</Empty></Panel>
           ) : (
             <>
-              {/* One board at a time. Drawing every meeting's board at
+              {/* One board at a time. Drawing every event's board at
                   once meant polling all of them at once, which is a lot of
                   traffic for boards nobody is looking at. */}
-              {meetings.length > 1 && (
+              {events.length > 1 && (
                 <div>
                   <label className="block text-[12.5px] text-[#6E7C8E] mb-1.5">
-                    {t({ ne: 'कुन बैठक', en: 'Which meeting' })}
+                    {t({ ne: 'कुन बैठक', en: 'Which event' })}
                   </label>
                   <select
-                    value={boardMeeting}
-                    onChange={(e) => setBoardMeeting(e.target.value)}
+                    value={boardEvent}
+                    onChange={(e) => setBoardEvent(e.target.value)}
                     className="w-full max-w-md border border-navy-800/15 rounded-[9px] px-3 py-2 bg-white text-[14px]"
                   >
-                    {meetings.map((m) => (
+                    {events.map((m) => (
                       <option key={m.id} value={m.id}>{m.title}</option>
                     ))}
                   </select>
                 </div>
               )}
               <MessageBoard
-                meetingId={boardMeeting || meetings[0].id}
+                eventId={boardEvent || events[0].id}
                 refreshMs={QUEUE_POLL_MS}
                 canAnswer
               />
@@ -497,24 +490,24 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
         </div>
       ) : (
       <>
-      {meetings.length > 0 && (
+      {events.length > 0 && (
         <div className="mb-3.5">
           <label
-            htmlFor="manch-moderation-meeting"
+            htmlFor="manch-moderation-event"
             className="block text-[12.5px] text-[#6E7C8E] mb-1.5"
           >
-            {t({ ne: 'कुन बैठक', en: 'Which meeting' })}
+            {t({ ne: 'कुन बैठक', en: 'Which event' })}
           </label>
           <select
-            id="manch-moderation-meeting"
-            value={historyMeeting}
-            onChange={(e) => { setHistoryMeeting(e.target.value); setPage(1); }}
+            id="manch-moderation-event"
+            value={historyEvent}
+            onChange={(e) => { setHistoryEvent(e.target.value); setPage(1); }}
             className="w-full max-w-md border border-navy-800/15 rounded-[9px] px-3 py-2 bg-white text-[14px]"
           >
             <option value="">
-              {t({ ne: 'चलिरहेका बैठक (लाइन)', en: 'Meetings still running (the queue)' })}
+              {t({ ne: 'चलिरहेका बैठक (लाइन)', en: 'Events still running (the queue)' })}
             </option>
-            {meetings.map((m) => (
+            {events.map((m) => (
               <option key={m.id} value={m.id}>{m.title}</option>
             ))}
           </select>
@@ -522,7 +515,7 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
             <p className="text-[12px] text-[#6E7C8E] mt-1.5">
               {t({
                 ne: 'यो बैठकको सबै — निर्णय भइसकेका पनि।',
-                en: 'Everything from this meeting, decided items included.',
+                en: 'Everything from this event, decided items included.',
               })}
             </p>
           )}
@@ -537,7 +530,7 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t({
               ne: 'बैठकको नाम, कोड, सत्र, वक्ता, नाम वा सन्देश खोज्नुहोस्',
-              en: 'Search meeting, code, session, speaker, name or message',
+              en: 'Search event, code, session, speaker, name or message',
             })}
             className="w-full border border-navy-800/15 rounded-[9px] pl-3 pr-8 py-2 text-[13.5px] bg-white"
           />
@@ -563,7 +556,7 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
 
       {/* One card, not a scattering: the queue's name, its two halves, and
           whichever half is open. What decides *which* items are in play -
-          the meeting, and the search - sits above it, because it governs
+          the event, and the search - sits above it, because it governs
           both halves rather than belonging to either. */}
       <div className="bg-white border border-navy-800/15 rounded-xl overflow-hidden">
       <div className="px-4 pt-3">
@@ -647,8 +640,8 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
                     className="flex items-center gap-2 text-left min-w-0"
                   >
                     <span className={`text-[#6E7C8E] transition-transform ${shut ? '' : 'rotate-90'}`}>›</span>
-                    <span className="text-[14.5px] font-semibold truncate">{row.meeting.title}</span>
-                    <span className="text-[12px] font-mono text-navy-700">{row.meeting.meeting_code}</span>
+                    <span className="text-[14.5px] font-semibold truncate">{row.event.title}</span>
+                    <span className="text-[12px] font-mono text-navy-700">{row.event.code}</span>
                   </button>
                   <span className="flex items-center gap-2 flex-wrap text-[12.5px] text-[#6E7C8E]">
                     <span className="truncate max-w-[220px]">
@@ -794,7 +787,7 @@ export const ModerationView: React.FC<Props> = ({ meetings }) => {
             {accepting.message.is_direct
               ? t({
                   ne: 'प्रश्न वा सुझाव छान्दा सन्देश पठाइन्छ र बोर्डमा पनि राखिन्छ — बोर्ड बैठकका सबैले पढ्न सक्छन्।',
-                  en: 'Question or suggestion delivers it and also puts it on the board, which everybody in the meeting can read.',
+                  en: 'Question or suggestion delivers it and also puts it on the board, which everybody in the event can read.',
                 })
               : t({
                   ne: 'यो सन्देश सबैलाई पठाइएको हो — कोठाले पहिल्यै पढिसक्यो, त्यसैले बोर्डमा जाँदैन।',

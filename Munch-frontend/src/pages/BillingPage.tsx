@@ -94,7 +94,7 @@ export const BillingPage: React.FC = () => {
                       {tier !== 'free' && <span className="text-lg">/mo</span>}
                     </p>
                     <ul className="space-y-2 text-gray-600 mb-6">
-                      <li>✓ Up to {tier === 'free' ? '10' : tier === 'pro' ? '100' : 'Unlimited'} meetings/month</li>
+                      <li>✓ Up to {tier === 'free' ? '10' : tier === 'pro' ? '100' : 'Unlimited'} events/month</li>
                       <li>✓ {tier === 'free' ? '1GB' : tier === 'pro' ? '100GB' : 'Unlimited'} storage</li>
                       <li>✓ {tier === 'enterprise' ? 'Priority' : 'Standard'} support</li>
                       {tier !== 'free' && <li>✓ Advanced analytics</li>}

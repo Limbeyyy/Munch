@@ -10,7 +10,7 @@ jest.mock('../../services/api', () => ({
     getPendingMessages: jest.fn(),
     getGuests: jest.fn(),
     getReviewedMessages: jest.fn(),
-    getMeetingBoard: jest.fn(),
+    getEventBoard: jest.fn(),
     getPhotos: jest.fn(),
     hasSession: jest.fn(() => false),
   },
@@ -23,8 +23,8 @@ jest.mock('react-hot-toast', () => ({
 
 const api = apiClient as jest.Mocked<typeof apiClient>;
 
-const meeting = {
-  id: 'm1', title: 'Wedding Preparation', meeting_code: 'IRL-NH7',
+const event = {
+  id: 'm1', title: 'Wedding Preparation', code: 'IRL-NH7',
   status: 'active',
   scheduled_start: '2026-09-08T03:30:00Z',
   scheduled_end: '2026-09-08T09:00:00Z',
@@ -51,7 +51,7 @@ const message = (over: any = {}) => ({
 const show = () =>
   render(
     <OrganizerProvider>
-      <ModerationView meetings={[meeting]} />
+      <ModerationView events={[event]} />
     </OrganizerProvider>
   );
 
@@ -66,8 +66,8 @@ beforeEach(() => {
   api.getReviewedMessages.mockResolvedValue({ from_users: [], from_guests: [] } as any);
   api.getPendingMessages.mockResolvedValue([]);
   api.getPhotos.mockResolvedValue({
-    meeting_id: 'm1', meeting_code: 'IRL-NH7', meeting_title: 'Wedding Preparation',
-    meeting_is_finished: false, can_upload: false, is_a_photographer: true,
+    event_id: 'm1', code: 'IRL-NH7', event_title: 'Wedding Preparation',
+    event_is_finished: false, can_upload: false, is_a_photographer: true,
     can_arrange: true, folders: [], photos: [],
   } as any);
 });
@@ -184,13 +184,13 @@ describe('where the pieces of the page sit', () => {
     expect(card).toContainElement(screen.getByRole('tab', { name: /Permissions/ }));
   });
 
-  it('puts the meeting and the search above that card', async () => {
+  it('puts the event and the search above that card', async () => {
     show();
 
     const heading = await screen.findByRole('heading', { name: 'Messages' });
     const card = heading.closest('div.rounded-xl') as HTMLElement;
-    const picker = screen.getByLabelText('Which meeting');
-    const search = screen.getByPlaceholderText(/Search meeting, code/);
+    const picker = screen.getByLabelText('Which event');
+    const search = screen.getByPlaceholderText(/Search event, code/);
 
     // They govern both halves, so they belong above rather than inside.
     expect(card).not.toContainElement(picker);
@@ -206,7 +206,7 @@ describe('where the pieces of the page sit', () => {
 describe('the two halves of a queue', () => {
   const passedOn = (over: any = {}) => ({
     ...message({ id: 'p1', moderation_status: 'approved', topic: 'faq' }),
-    meetingId: 'm1',
+    eventId: 'm1',
     ...over,
   });
 

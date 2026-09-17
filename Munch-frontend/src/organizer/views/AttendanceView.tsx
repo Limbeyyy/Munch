@@ -1,9 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import {
-  AttendanceReport, EventMeeting, EventProgramme, Session, SessionAttendanceRow,
-} from '../../types';
+import { AttendanceReport, Event, Session, SessionAttendanceRow } from '../../types';
 import { useOrganizer } from '../i18n';
 import { openAsSheet } from '../sheets';
 import { BarRow, Btn, Card, Chip, Empty, Head, Kpi, Panel, Tabs } from '../ui';
@@ -20,9 +18,9 @@ interface Person {
   sessions: Set<string>;
 }
 
-/** One meeting, with who came and which parts of it they sat through. */
-interface MeetingRoll {
-  meeting: EventMeeting;
+/** One event, with who came and which parts of it they sat through. */
+interface EventRoll {
+  event: Event;
   sessions: Session[];
   /** Present at each session, by session id. */
   bySession: Record<string, SessionAttendanceRow[]>;
@@ -31,12 +29,12 @@ interface MeetingRoll {
   report?: AttendanceReport;
 }
 
-export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
+export const AttendanceView: React.FC<{ events: any[] }> = () => {
   const { t, num } = useOrganizer();
 
-  const [events, setEvents] = useState<EventProgramme[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [eventId, setEventId] = useState('');
-  const [rolls, setRolls] = useState<MeetingRoll[]>([]);
+  const [rolls, setRolls] = useState<EventRoll[]>([]);
   const [tab, setTab] = useState('sessions');
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -55,14 +53,14 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
 
   const event = events.find((e) => e.id === eventId) ?? null;
 
-  /** Read every session's attendance, then roll it up per meeting. */
+  /** Read every session's attendance, then roll it up per event. */
   const load = useCallback(async () => {
     if (!event) { setRolls([]); return; }
     setLoading(true);
 
     const built = await Promise.all(
-      event.meetings.map(async (meeting) => {
-        const sessions = [...meeting.sessions].sort(
+      [event].map(async (event) => {
+        const sessions = [...(event.sessions ?? [])].sort(
           (a, b) => +new Date(a.starts_at) - +new Date(b.starts_at)
         );
 
@@ -78,7 +76,7 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
         });
 
         // Somebody who sat through one session of four still attended the
-        // meeting, so the roll is the union rather than the intersection.
+        // event, so the roll is the union rather than the intersection.
         const byPerson: Record<string, Person> = {};
         Object.entries(bySession).forEach(([sessionId, rows]) => {
           rows.forEach((row) => {
@@ -92,20 +90,20 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
           });
         });
 
-        const report = await apiClient.getAttendance(meeting.id).catch(() => undefined);
+        const report = await apiClient.getAttendance(event.id).catch(() => undefined);
 
         return {
-          meeting,
+          event,
           sessions,
           bySession,
           people: Object.values(byPerson).sort((a, b) => b.sessions.size - a.sessions.size),
           report,
-        } as MeetingRoll;
+        } as EventRoll;
       })
     );
 
     setRolls(built.sort(
-      (a, b) => +new Date(a.meeting.scheduled_start) - +new Date(b.meeting.scheduled_start)
+      (a, b) => +new Date(a.event.scheduled_start) - +new Date(b.event.scheduled_start)
     ));
     setLoading(false);
   }, [event]);
@@ -113,7 +111,7 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
   useEffect(() => { load(); }, [load]);
 
   const totals = useMemo(() => {
-    // The roll, not the invitations: a guest was part of the meeting even
+    // The roll, not the invitations: a guest was part of the event even
     // though nobody sent them anything.
     const invited = rolls.reduce((n, r) => n + (r.report?.expected_total ?? 0), 0);
     const inRoom = rolls.reduce((n, r) => n + (r.report?.active_count ?? 0), 0);
@@ -128,14 +126,14 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
 
   /** Everyone across the event, with what they sat through. */
   const across = useMemo(() => {
-    const byPerson: Record<string, Person & { meetings: Set<string> }> = {};
+    const byPerson: Record<string, Person & { events: Set<string> }> = {};
     rolls.forEach((roll) =>
       roll.people.forEach((p) => {
         if (!byPerson[p.id]) {
-          byPerson[p.id] = { ...p, sessions: new Set(), meetings: new Set() };
+          byPerson[p.id] = { ...p, sessions: new Set(), events: new Set() };
         }
         p.sessions.forEach((s) => byPerson[p.id].sessions.add(s));
-        byPerson[p.id].meetings.add(roll.meeting.id);
+        byPerson[p.id].events.add(roll.event.id);
       })
     );
     const q = query.trim().toLowerCase();
@@ -154,9 +152,9 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
    * host's own Drive rather than ours.
    */
   const exportSheet = () => {
-    const head = ['person', 'guest', 'meetings_attended', 'sessions_attended', 'of_sessions'];
+    const head = ['person', 'guest', 'events_attended', 'sessions_attended', 'of_sessions'];
     const rows = across.map((p) => [
-      p.name, p.isGuest ? 'yes' : 'no', p.meetings.size, p.sessions.size, totalSessions,
+      p.name, p.isGuest ? 'yes' : 'no', p.events.size, p.sessions.size, totalSessions,
     ]);
     openAsSheet('attendance', [head, ...rows], { subject: event?.title ?? '', t });
   };
@@ -180,7 +178,7 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
         title={{ ne: 'उपस्थिति', en: 'Attendance' }}
         lede={{
           ne: 'कुन सत्रमा को थियो, र बैठकभरि कति जना आए।',
-          en: 'Who was at each session, and who came to the meeting at all.',
+          en: 'Who was at each session, and who came to the event at all.',
         }}
         actions={
           <Btn onClick={exportSheet} disabled={across.length === 0}>
@@ -209,7 +207,7 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
               >
                 {events.map((e) => (
                   <option key={e.id} value={e.id}>
-                    {e.title} · {new Date(e.event_date).toLocaleDateString()}
+                    {e.title} · {new Date(e.event_date ?? e.scheduled_start).toLocaleDateString()}
                   </option>
                 ))}
               </select>
@@ -233,7 +231,7 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
             onChange={setTab}
             tabs={[
               { id: 'sessions', label: { ne: 'सत्र अनुसार', en: 'By session' } },
-              { id: 'meetings', label: { ne: 'बैठक अनुसार', en: 'By meeting' } },
+              { id: 'events', label: { ne: 'बैठक अनुसार', en: 'By event' } },
               { id: 'people', label: { ne: 'व्यक्ति अनुसार', en: 'By person' } },
             ]}
           />
@@ -243,12 +241,12 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
           ) : tab === 'sessions' ? (
             <div className="flex flex-col gap-3.5">
               {rolls.length === 0 && (
-                <Panel><Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No meetings.' })}</Empty></Panel>
+                <Panel><Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No events.' })}</Empty></Panel>
               )}
               {rolls.map((roll) => (
                 <Panel
-                  key={roll.meeting.id}
-                  title={roll.meeting.title}
+                  key={roll.event.id}
+                  title={roll.event.title}
                   aside={
                     <span className="text-[12.5px] text-[#6E7C8E]">
                       {t({
@@ -260,12 +258,12 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
                 >
                   <div className="px-4 py-3">
                     {roll.sessions.length === 0 ? (
-                      <Empty>{t({ ne: 'यो बैठकमा सत्र छैन।', en: 'No sessions in this meeting.' })}</Empty>
+                      <Empty>{t({ ne: 'यो बैठकमा सत्र छैन।', en: 'No sessions in this event.' })}</Empty>
                     ) : (
                       roll.sessions.map((session) => {
                         const rows = roll.bySession[session.id] ?? [];
                         // Measured against the people who came to this
-                        // meeting at all: it says who stayed for what.
+                        // event at all: it says who stayed for what.
                         const roll_ = Math.max(1, roll.people.length);
                         const pct = Math.round((rows.length / roll_) * 100);
                         const shown = !!openSessions[session.id];
@@ -335,15 +333,15 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
                 </Panel>
               ))}
             </div>
-          ) : tab === 'meetings' ? (
+          ) : tab === 'events' ? (
             <div className="flex flex-col gap-3.5">
               {rolls.map((roll) => (
                 <Panel
-                  key={roll.meeting.id}
-                  title={roll.meeting.title}
+                  key={roll.event.id}
+                  title={roll.event.title}
                   aside={
                     <span className="flex items-center gap-2 text-[12.5px] text-[#6E7C8E]">
-                      {clock(roll.meeting.scheduled_start)}–{clock(roll.meeting.scheduled_end)}
+                      {clock(roll.event.scheduled_start)}–{clock(roll.event.scheduled_end)}
                       <Chip tone={roll.people.length > 0 ? 'ok' : 'draft'}>
                         {t({
                           ne: `${num(roll.people.length)} जना आए`,
@@ -362,7 +360,7 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
                     </p>
 
                     {roll.people.length === 0 ? (
-                      <Empty>{t({ ne: 'यो बैठकमा कोही आएन।', en: 'Nobody attended this meeting.' })}</Empty>
+                      <Empty>{t({ ne: 'यो बैठकमा कोही आएन।', en: 'Nobody attended this event.' })}</Empty>
                     ) : (
                       <div className="overflow-x-auto">
                         <table className="w-full border-collapse min-w-[460px]">
@@ -430,7 +428,7 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
                     <tr className="bg-[#FBFAF6]">
                       {[
                         { ne: 'नाम', en: 'Name' },
-                        { ne: 'बैठक', en: 'Meetings' },
+                        { ne: 'बैठक', en: 'Events' },
                         { ne: 'सत्र', en: 'Sessions' },
                         { ne: 'अवस्था', en: 'Status' },
                       ].map((h, i) => (
@@ -452,7 +450,7 @@ export const AttendanceView: React.FC<{ meetings: any[] }> = () => {
                           {p.name}
                         </td>
                         <td className="px-3 py-2.5 border-b border-navy-800/[.08] text-[13px] tabular-nums">
-                          {num(p.meetings.size)}/{num(rolls.length)}
+                          {num(p.events.size)}/{num(rolls.length)}
                         </td>
                         <td className="px-3 py-2.5 border-b border-navy-800/[.08] text-[13px] tabular-nums">
                           {num(p.sessions.size)}/{num(totalSessions)}

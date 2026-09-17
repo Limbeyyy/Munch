@@ -4,10 +4,10 @@ import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
 import { LIST_POLL_MS, QUEUE_POLL_MS } from '../services/polling';
 import {
-  MEETING_STATE_LABEL, MEETING_STATE_TONE, meetingState,
+  EVENT_STATE_LABEL, EVENT_STATE_TONE, eventState,
 } from '../organizer/sessionState';
 import { useAuthStore } from '../store/authStore';
-import { Meeting } from '../types';
+import { Event } from '../types';
 import { OrganizerProvider, useOrganizer } from '../organizer/i18n';
 import { Modal, OrganizerShell } from '../organizer/OrganizerShell';
 import { Btn, Chip } from '../organizer/ui';
@@ -25,9 +25,9 @@ import { ProfileView } from '../organizer/ProfileView';
 import { SubscriptionView } from '../organizer/SubscriptionView';
 import { RemindersView } from '../organizer/RemindersView';
 import { useNudges } from '../organizer/nudges';
-import { useMeetingPulse } from '../organizer/meetingPulse';
+import { useEventPulse } from '../organizer/eventPulse';
 import { unseenSince, useSeen } from '../organizer/seen';
-import { ShareMeetingDialog } from '../components/ShareMeetingDialog';
+import { ShareEventDialog } from '../components/ShareEventDialog';
 
 const OrganizerInner: React.FC = () => {
   const { t, num, a11y, setA11y } = useOrganizer();
@@ -44,22 +44,22 @@ const OrganizerInner: React.FC = () => {
    * when there is nothing to run.
    */
   const [view, setView] = useState('live');
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [events, setEventRooms] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   /** Everything still awaiting a decision, with when each arrived. */
   const [queue, setQueue] = useState<{ id: string; created_at: string }[]>([]);
 
   const [a11yOpen, setA11yOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [drawer, setDrawer] = useState<Meeting | null>(null);
-  const [sharing, setSharing] = useState<Meeting | null>(null);
+  const [drawer, setDrawer] = useState<Event | null>(null);
+  const [sharing, setSharing] = useState<Event | null>(null);
 
   // One poll for both the rail's badge and the reminders page itself.
   const nudges = useNudges();
 
   const load = useCallback(async () => {
     try {
-      setMeetings(await apiClient.listMeetings());
+      setEventRooms(await apiClient.listEventRooms());
     } catch {
       toast.error(t({ ne: 'सत्रहरू ल्याउन सकिएन', en: 'Could not load the sessions' }));
     } finally {
@@ -69,7 +69,7 @@ const OrganizerInner: React.FC = () => {
 
   useEffect(() => { load(); }, [load]);
 
-  // Meeting state changes when a session goes on stage, which may happen
+  // Event state changes when a session goes on stage, which may happen
   // on another screen, so the rail's counts and badges keep up.
   useEffect(() => {
     const id = setInterval(load, LIST_POLL_MS);
@@ -78,7 +78,7 @@ const OrganizerInner: React.FC = () => {
 
   // The rail carries counts, so the queue is visible from any screen.
   useEffect(() => {
-    const running = meetings.filter((m) => m.status === 'active' || m.status === 'scheduled');
+    const running = events.filter((m) => m.status === 'active' || m.status === 'scheduled');
     if (running.length === 0) { setQueue([]); return; }
 
     let cancelled = false;
@@ -94,7 +94,7 @@ const OrganizerInner: React.FC = () => {
     count();
     const id = setInterval(count, QUEUE_POLL_MS);
     return () => { cancelled = true; clearInterval(id); };
-  }, [meetings]);
+  }, [events]);
 
   // A badge says something has arrived that has not been looked at. Being
   // in the section is looking at it, so the count goes while the queue
@@ -110,22 +110,22 @@ const OrganizerInner: React.FC = () => {
 
   const badges = useMemo(() => {
     const out: Record<string, { text: string; hot?: boolean }> = {};
-    if (meetings.some((m) => m.status === 'active')) {
+    if (events.some((m) => m.status === 'active')) {
       out.live = { text: t({ ne: 'लाइभ', en: 'Live' }), hot: true };
     }
     const news = unseenSince(queue, seen.moderation ?? 0, (m) => m.created_at);
     if (news > 0) out.moderation = { text: num(news), hot: true };
-    if (meetings.length > 0) out.agenda = { text: num(meetings.length) };
+    if (events.length > 0) out.agenda = { text: num(events.length) };
     if (nudges.unread > 0) out.reminders = { text: num(nudges.unread) };
     return out;
-  }, [meetings, queue, nudges.unread, seen, t, num]);
+  }, [events, queue, nudges.unread, seen, t, num]);
 
-  const running = meetings.find((m) => m.status === 'active') ?? null;
+  const running = events.find((m) => m.status === 'active') ?? null;
   const activeTitle = running?.title;
 
-  // A meeting ending should reach every screen at once rather than on the
+  // A event ending should reach every screen at once rather than on the
   // next poll, so the dashboard listens to the room while one is running.
-  useMeetingPulse(running?.meeting_code, load);
+  useEventPulse(running?.code, load);
 
   return (
     <>
@@ -141,23 +141,23 @@ const OrganizerInner: React.FC = () => {
         ) : (
           <>
             {view === 'setup' && (
-              <SetupView meetings={meetings} onNavigate={setView} onCreate={() => setCreateOpen(true)} />
+              <SetupView events={events} onNavigate={setView} onCreate={() => setCreateOpen(true)} />
             )}
             {view === 'live' && (
-              <LiveView meetings={meetings} onChanged={load} onNavigate={setView} />
+              <LiveView events={events} onChanged={load} onNavigate={setView} />
             )}
             {view === 'events' && (
               <EventsView
-                onOpenRoom={(code) => navigate(`/meeting/${code}`)}
+                onOpenRoom={(code) => navigate(`/event/${code}`)}
                 onChanged={load}
               />
             )}
             {view === 'agenda' && <AgendaView onChanged={load} />}
-            {view === 'content' && <ContentView meetings={meetings} />}
-            {view === 'attendance' && <AttendanceView meetings={meetings} />}
-            {view === 'people' && <PeopleView meetings={meetings} currentUserId={user?.id} />}
-            {view === 'moderation' && <ModerationView meetings={meetings} />}
-            {view === 'reports' && <ReportsView meetings={meetings} />}
+            {view === 'content' && <ContentView events={events} />}
+            {view === 'attendance' && <AttendanceView events={events} />}
+            {view === 'people' && <PeopleView events={events} currentUserId={user?.id} />}
+            {view === 'moderation' && <ModerationView events={events} />}
+            {view === 'reports' && <ReportsView events={events} />}
             {view === 'settings' && <SettingsView />}
             {view === 'reminders' && <RemindersView page={nudges.page} loading={nudges.loading} onRead={nudges.markRead} />}
             {view === 'profile' && <ProfileView onNavigate={setView} />}
@@ -203,17 +203,17 @@ const OrganizerInner: React.FC = () => {
       {/* Session drawer */}
       {drawer && (
         <SessionDrawer
-          meeting={drawer}
+          event={drawer}
           onClose={() => setDrawer(null)}
           onShare={() => setSharing(drawer)}
-          onEnter={() => navigate(`/meeting/${drawer.meeting_code}`)}
+          onEnter={() => navigate(`/event/${drawer.code}`)}
         />
       )}
 
       {sharing && (
-        <ShareMeetingDialog
-          meetingId={sharing.id}
-          meetingCode={sharing.meeting_code}
+        <ShareEventDialog
+          eventId={sharing.id}
+          eventCode={sharing.code}
           onClose={() => setSharing(null)}
         />
       )}
@@ -223,14 +223,14 @@ const OrganizerInner: React.FC = () => {
 
 /** Right-hand drawer with one session's details. */
 const SessionDrawer: React.FC<{
-  meeting: Meeting;
+  event: Event;
   onClose: () => void;
   onShare: () => void;
   onEnter: () => void;
-}> = ({ meeting, onClose, onShare, onEnter }) => {
+}> = ({ event, onClose, onShare, onEnter }) => {
   const { t, num } = useOrganizer();
   const minutes = Math.round(
-    (+new Date(meeting.scheduled_end) - +new Date(meeting.scheduled_start)) / 60000
+    (+new Date(event.scheduled_end) - +new Date(event.scheduled_start)) / 60000
   );
 
   return (
@@ -250,20 +250,20 @@ const SessionDrawer: React.FC<{
             ×
           </button>
           <p className="text-[12.5px] text-[#AFC6E6]">
-            {new Date(meeting.scheduled_start).toLocaleString()} &middot; {num(minutes)}′
+            {new Date(event.scheduled_start).toLocaleString()} &middot; {num(minutes)}′
           </p>
-          <h2 className="text-[18px] font-semibold pr-9">{meeting.title}</h2>
+          <h2 className="text-[18px] font-semibold pr-9">{event.title}</h2>
         </div>
 
         <div className="flex-1 overflow-auto px-5 py-4">
           <dl className="grid grid-cols-2 gap-3">
             {[
-              { label: { ne: 'कोड', en: 'Code' }, value: meeting.meeting_code },
-              { label: { ne: 'आयोजक', en: 'Host' }, value: meeting.host?.email ?? '—' },
-              { label: { ne: 'सहभागी', en: 'Participants' }, value: num(meeting.participant_count) },
+              { label: { ne: 'कोड', en: 'Code' }, value: event.code },
+              { label: { ne: 'आयोजक', en: 'Host' }, value: event.host?.email ?? '—' },
+              { label: { ne: 'सहभागी', en: 'Participants' }, value: num(event.participant_count) },
               {
                 label: { ne: 'अवस्था', en: 'Status' },
-                value: meeting.status,
+                value: event.status,
               },
             ].map((row) => (
               <div key={row.label.en} className="bg-white border border-navy-800/15 rounded-[10px] p-3">
@@ -273,8 +273,8 @@ const SessionDrawer: React.FC<{
             ))}
           </dl>
 
-          {meeting.description && (
-            <p className="mt-4 font-read text-[14px] leading-[1.8] text-ink-2">{meeting.description}</p>
+          {event.description && (
+            <p className="mt-4 font-read text-[14px] leading-[1.8] text-ink-2">{event.description}</p>
           )}
 
           <div className="mt-4 bg-[#EEF3FA] border border-navy-500/20 rounded-[10px] p-3.5 text-[13px] text-ink-2">
@@ -286,8 +286,8 @@ const SessionDrawer: React.FC<{
         </div>
 
         <div className="border-t border-navy-800/15 bg-white px-5 py-3 flex gap-2 items-center">
-          <Chip tone={MEETING_STATE_TONE[meetingState(meeting)]}>
-            {t(MEETING_STATE_LABEL[meetingState(meeting)])}
+          <Chip tone={EVENT_STATE_TONE[eventState(event)]}>
+            {t(EVENT_STATE_LABEL[eventState(event)])}
           </Chip>
           <span className="ml-auto flex gap-2">
             <Btn sm onClick={onShare}>{t({ ne: 'लिङ्क बाँड्नुहोस्', en: 'Share link' })}</Btn>
@@ -328,10 +328,15 @@ const CreateSessionModal: React.FC<{ onClose: () => void; onCreated: () => void 
     }
     try {
       setBusy(true);
-      await apiClient.createMeeting({
+      const from = new Date(start);
+      await apiClient.createEvent({
         title: title.trim(),
-        scheduled_start: new Date(start).toISOString(),
-        scheduled_end: new Date(end).toISOString(),
+        event_date: new Date(from.getTime() - from.getTimezoneOffset() * 60000)
+          .toISOString().slice(0, 10),
+        scheduled_start: from.toISOString(),
+        duration_minutes: Math.max(
+          5, Math.round((+new Date(end) - +from) / 60000)
+        ),
       });
       toast.success(t({ ne: 'सत्र बन्यो', en: 'Session created' }));
       onCreated();

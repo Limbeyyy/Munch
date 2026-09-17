@@ -1,61 +1,5 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
-import {
-  User,
-  Meeting,
-  AuthTokens,
-  Transcript,
-  TranscriptSummary,
-  Artifact,
-  Recording,
-  Organization,
-  Team,
-  OrganizationMember,
-  OrganizationInvite,
-  SubscriptionData,
-  Invoice,
-  PaymentMethod,
-  DriveFile,
-  DriveSyncStatus,
-  OrganizationAnalytics,
-  ChatSettings,
-  ChatMessage,
-  MeetingParticipant,
-  GuestAttendee,
-  GuestSession,
-  MeetingInvite,
-  AttendanceReport,
-  ChatPerson,
-  GuestResource,
-  TranscriptionSegment,
-  EventProgramme,
-  EventMeeting,
-  MeetingDraft,
-  Session,
-  SessionAttendanceRow,
-  SpeakerContact,
-  ContactRequestRow,
-  UserRoles,
-  ProfileSummary,
-  ReminderPage,
-  MeetingPhoto,
-  PhotoFolder,
-  PhotoPage,
-  ConclusionAction,
-  ConclusionPage,
-  SchedulingPrefs,
-  SheetExport,
-  UpgradeRequestRow,
-  ResourceVisibility,
-  HubBoard,
-  HubKind,
-  HubPost,
-  SessionSummary,
-  MeetingBoard,
-  MessageTopic,
-  ProgrammeRoles,
-  RoleGrantRow,
-  RoleScope,
-} from '../types';
+import { User, Event, AuthTokens, Transcript, TranscriptSummary, Artifact, Recording, Organization, Team, OrganizationMember, OrganizationInvite, SubscriptionData, Invoice, PaymentMethod, DriveFile, DriveSyncStatus, OrganizationAnalytics, ChatSettings, ChatMessage, EventParticipant, GuestAttendee, GuestSession, EventInvite, AttendanceReport, ChatPerson, GuestResource, TranscriptionSegment, EventDraft, Session, SessionDraft, SessionAttendanceRow, SpeakerContact, ContactRequestRow, UserRoles, ProfileSummary, ReminderPage, EventPhoto, PhotoFolder, PhotoPage, ConclusionAction, ConclusionPage, SchedulingPrefs, SheetExport, UpgradeRequestRow, ResourceVisibility, HubBoard, HubKind, HubPost, SessionSummary, EventBoard, MessageTopic, ProgrammeRoles, RoleGrantRow, RoleScope } from '../types';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
 
@@ -224,7 +168,7 @@ class ApiClient {
   /**
    * Give somebody a role over one part of the programme.
    *
-   * The scope decides how far it reaches: the whole event, one meeting, or
+   * The scope decides how far it reaches: the whole event, one event, or
    * a single session. Nothing spreads to a sibling.
    */
   async grantRole(
@@ -240,14 +184,14 @@ class ApiClient {
   }
 
   /** The questions and suggestions the host has put up. */
-  async getMeetingBoard(meetingId: string): Promise<MeetingBoard> {
-    const response = await this.client.get(`/meetings/${meetingId}/board/`);
+  async getEventBoard(eventId: string): Promise<EventBoard> {
+    const response = await this.client.get(`/events/${eventId}/board/`);
     return response.data;
   }
 
-  /** The same board, for a guest holding a meeting token. */
-  async getGuestBoard(token: string): Promise<MeetingBoard> {
-    const response = await this.client.get('/meetings/guest/board/', {
+  /** The same board, for a guest holding a event token. */
+  async getGuestBoard(token: string): Promise<EventBoard> {
+    const response = await this.client.get('/events/guest/board/', {
       params: { token },
     });
     return response.data;
@@ -256,15 +200,15 @@ class ApiClient {
   /**
    * Put a message on the board, or take it off.
    *
-   * This publishes: everyone in the meeting reads the board, so a direct
+   * This publishes: everyone in the event reads the board, so a direct
    * message sorted onto it stops being private.
    */
   async sortMessage(
-    meetingId: string,
+    eventId: string,
     messageId: string,
     topic: MessageTopic
   ): Promise<ChatMessage> {
-    const response = await this.client.post(`/meetings/${meetingId}/sort_message/`, {
+    const response = await this.client.post(`/events/${eventId}/sort_message/`, {
       message_id: messageId,
       topic,
     });
@@ -303,24 +247,24 @@ class ApiClient {
    * place and guests in another.
    */
   async getReviewedMessages(
-    meetingId: string
+    eventId: string
   ): Promise<{ from_users: ChatMessage[]; from_guests: ChatMessage[] }> {
-    const response = await this.client.get(`/meetings/${meetingId}/reviewed_messages/`);
+    const response = await this.client.get(`/events/${eventId}/reviewed_messages/`);
     return response.data;
   }
 
   /**
    * The attendee hub. Guests pass their token; account holders their JWT.
    */
-  async getHub(meetingCode: string, guestToken?: string): Promise<HubBoard> {
-    const response = await this.client.get(`/meetings/${meetingCode}/hub/`, {
+  async getHub(eventCode: string, guestToken?: string): Promise<HubBoard> {
+    const response = await this.client.get(`/events/${eventCode}/hub/`, {
       params: guestToken ? { guest_token: guestToken } : undefined,
     });
     return response.data;
   }
 
   async addHubPost(
-    meetingCode: string,
+    eventCode: string,
     post: {
       kind: HubKind;
       body: string;
@@ -330,7 +274,7 @@ class ApiClient {
     },
     guestToken?: string
   ): Promise<HubPost> {
-    const response = await this.client.post(`/meetings/${meetingCode}/hub/`, {
+    const response = await this.client.post(`/events/${eventCode}/hub/`, {
       ...post,
       ...(guestToken ? { guest_token: guestToken } : {}),
     });
@@ -339,13 +283,13 @@ class ApiClient {
 
   /** Vote a post up or down. Pressing the same way again takes it back. */
   async voteHubPost(
-    meetingCode: string,
+    eventCode: string,
     postId: string,
     value: 1 | -1,
     guestToken?: string
   ): Promise<HubPost> {
     const response = await this.client.post(
-      `/meetings/${meetingCode}/hub/${postId}/vote/`,
+      `/events/${eventCode}/hub/${postId}/vote/`,
       { value, ...(guestToken ? { guest_token: guestToken } : {}) }
     );
     return response.data;
@@ -358,11 +302,11 @@ class ApiClient {
    * append.
    */
   async answerBoardMessage(
-    meetingId: string,
+    eventId: string,
     messageId: string,
     answer: string
   ): Promise<ChatMessage> {
-    const response = await this.client.post(`/meetings/${meetingId}/answer_message/`, {
+    const response = await this.client.post(`/events/${eventId}/answer_message/`, {
       message_id: messageId,
       answer,
     });
@@ -375,11 +319,11 @@ class ApiClient {
    * Guests pass their token; account holders their JWT. Both get one vote.
    */
   async voteOnBoard(
-    meetingId: string,
+    eventId: string,
     messageId: string,
     value: 1 | -1
-  ): Promise<MeetingBoard> {
-    const response = await this.client.post(`/meetings/${meetingId}/vote_board/`, {
+  ): Promise<EventBoard> {
+    const response = await this.client.post(`/events/${eventId}/vote_board/`, {
       message_id: messageId,
       value,
     });
@@ -390,8 +334,8 @@ class ApiClient {
     token: string,
     messageId: string,
     value: 1 | -1
-  ): Promise<MeetingBoard> {
-    const response = await this.client.post('/meetings/guest/board/vote/', {
+  ): Promise<EventBoard> {
+    const response = await this.client.post('/events/guest/board/vote/', {
       token,
       message_id: messageId,
       value,
@@ -406,12 +350,12 @@ class ApiClient {
    * afterwards, which is the point of having the choice.
    */
   async setResourceSettings(
-    meetingId: string,
+    eventId: string,
     resourceId: string,
     change: { visibility?: ResourceVisibility; position?: number }
   ): Promise<Artifact> {
     const response = await this.client.post(
-      `/meetings/${meetingId}/resource_settings/`,
+      `/events/${eventId}/resource_settings/`,
       { resource_id: resourceId, ...change }
     );
     return response.data;
@@ -473,18 +417,15 @@ class ApiClient {
     file: File, dryRun = false
   ): Promise<{
     dry_run?: boolean;
-    created?: EventProgramme[];
+    created?: Event[];
     programmes: {
       title: string;
       event_date: string;
       venue: string;
-      meetings: {
-        title: string;
-        scheduled_start: string;
-        sessions: {
-          title: string; starts_at: string; duration_minutes: number;
-          speaker_name: string; hall: string;
-        }[];
+      scheduled_start: string;
+      sessions: {
+        title: string; starts_at: string; duration_minutes: number;
+        speaker_name: string; hall: string;
       }[];
     }[];
   }> {
@@ -507,7 +448,7 @@ class ApiClient {
    * The blank programme template.
    *
    * The same three tables either way. The workbook adds the one thing a
-   * CSV cannot carry: the sessions table picks its event and meeting from
+   * CSV cannot carry: the sessions table picks its event and event from
    * the ids typed above rather than having them typed again.
    */
   async downloadProgrammeTemplate(shape: 'csv' | 'xlsx' = 'csv'): Promise<Blob> {
@@ -518,40 +459,40 @@ class ApiClient {
     return response.data;
   }
 
-  /** The photographs of a meeting, by folder. */
-  async getPhotos(meetingRef: string): Promise<PhotoPage> {
-    const response = await this.client.get(`/meetings/${meetingRef}/photos/`);
+  /** The photographs of a event, by folder. */
+  async getPhotos(eventRef: string): Promise<PhotoPage> {
+    const response = await this.client.get(`/events/${eventRef}/photos/`);
     return response.data;
   }
 
-  async createPhotoFolder(meetingRef: string, name: string): Promise<PhotoFolder> {
+  async createPhotoFolder(eventRef: string, name: string): Promise<PhotoFolder> {
     const response = await this.client.post(
-      `/meetings/${meetingRef}/photos/folders/`, { name }
+      `/events/${eventRef}/photos/folders/`, { name }
     );
     return response.data;
   }
 
   async renamePhotoFolder(
-    meetingRef: string, folderId: string, name: string
+    eventRef: string, folderId: string, name: string
   ): Promise<PhotoFolder> {
     const response = await this.client.post(
-      `/meetings/${meetingRef}/photos/folders/${folderId}/`, { name }
+      `/events/${eventRef}/photos/folders/${folderId}/`, { name }
     );
     return response.data;
   }
 
-  async deletePhotoFolder(meetingRef: string, folderId: string): Promise<void> {
-    await this.client.delete(`/meetings/${meetingRef}/photos/folders/${folderId}/`);
+  async deletePhotoFolder(eventRef: string, folderId: string): Promise<void> {
+    await this.client.delete(`/events/${eventRef}/photos/folders/${folderId}/`);
   }
 
   async uploadPhoto(
-    meetingRef: string, folderId: string, file: File, caption = ''
-  ): Promise<MeetingPhoto> {
+    eventRef: string, folderId: string, file: File, caption = ''
+  ): Promise<EventPhoto> {
     const body = new FormData();
     body.append('file', file);
     if (caption) body.append('caption', caption);
     const response = await this.client.post(
-      `/meetings/${meetingRef}/photos/folders/${folderId}/upload/`,
+      `/events/${eventRef}/photos/folders/${folderId}/upload/`,
       body,
       { headers: { 'Content-Type': 'multipart/form-data' } }
     );
@@ -559,7 +500,7 @@ class ApiClient {
   }
 
   async deletePhoto(photoId: string): Promise<void> {
-    await this.client.delete(`/meetings/photos/${photoId}/file/`);
+    await this.client.delete(`/events/photos/${photoId}/file/`);
   }
 
   /**
@@ -571,7 +512,7 @@ class ApiClient {
    */
   async getPhotoObjectUrl(photoId: string): Promise<string> {
     const response = await this.client.get(
-      `/meetings/photos/${photoId}/file/`, { responseType: 'blob' }
+      `/events/photos/${photoId}/file/`, { responseType: 'blob' }
     );
     return URL.createObjectURL(response.data);
   }
@@ -612,83 +553,71 @@ class ApiClient {
     }
   }
 
-  // Meeting endpoints
-  async createMeeting(data: {
-    title: string;
-    description?: string;
-    scheduled_start: string;
-    scheduled_end: string;
-  }): Promise<Meeting> {
-    const response = await this.client.post('/meetings/', data);
-    return response.data;
-  }
-
-  async getMeeting(meetingCodeOrId: string): Promise<Meeting> {
-    const response = await this.client.get(`/meetings/${meetingCodeOrId}/`);
-    return response.data;
-  }
-
-  async listMeetings(): Promise<Meeting[]> {
-    const response = await this.client.get('/meetings/');
-    return response.data.results || response.data;
-  }
-
-  /** Edit a meeting in place - used by the organizer's agenda. */
-  async updateMeeting(meetingId: string, patch: Partial<Meeting>): Promise<Meeting> {
-    const response = await this.client.patch(`/meetings/${meetingId}/`, patch);
-    return response.data;
-  }
-
-  async getActiveMeetings(): Promise<Meeting[]> {
-    const response = await this.client.get('/meetings/active/');
-    return response.data;
-  }
-
-  async startMeeting(meetingId: string): Promise<Meeting> {
-    const response = await this.client.post(`/meetings/${meetingId}/start/`);
-    return response.data;
-  }
-
-  async endMeeting(meetingId: string): Promise<Meeting> {
-    const response = await this.client.post(`/meetings/${meetingId}/end/`);
-    return response.data;
-  }
-
-  /** Leave without ending the meeting for anyone else. */
-  async leaveMeeting(meetingId: string): Promise<void> {
-    await this.client.post(`/meetings/${meetingId}/leave/`);
-  }
-
-  async joinMeeting(meetingCode: string, role: string = 'attendee'): Promise<any> {
-    const response = await this.client.post(`/meetings/${meetingCode}/join/`, { role });
-    return response.data;
-  }
-
-  // Events: a day's programme of meetings, each with its own sessions
-
-  async listEvents(): Promise<EventProgramme[]> {
+  // Event endpoints
+  async listEventRooms(): Promise<Event[]> {
     const response = await this.client.get('/events/');
     return response.data.results || response.data;
   }
 
-  async getEvent(eventId: string): Promise<EventProgramme> {
-    const response = await this.client.get(`/events/${eventId}/`);
+  /** Edit a event in place - used by the organizer's agenda. */
+  async updateEventRoom(eventId: string, patch: Partial<Event>): Promise<Event> {
+    const response = await this.client.patch(`/events/${eventId}/`, patch);
     return response.data;
   }
 
-  /** Create the whole programme at once - event, meetings and sessions. */
+  async getActiveEvents(): Promise<Event[]> {
+    const response = await this.client.get('/events/active/');
+    return response.data;
+  }
+
+  async startEvent(eventId: string): Promise<Event> {
+    const response = await this.client.post(`/events/${eventId}/start/`);
+    return response.data;
+  }
+
+  async endEvent(eventId: string): Promise<Event> {
+    const response = await this.client.post(`/events/${eventId}/end/`);
+    return response.data;
+  }
+
+  /** Leave without ending the event for anyone else. */
+  async leaveEvent(eventId: string): Promise<void> {
+    await this.client.post(`/events/${eventId}/leave/`);
+  }
+
+  async joinEvent(eventCode: string, role: string = 'attendee'): Promise<any> {
+    const response = await this.client.post(`/events/${eventCode}/join/`, { role });
+    return response.data;
+  }
+
+  // Events: a day's programme of events, each with its own sessions
+
+  async listEvents(): Promise<Event[]> {
+    const response = await this.client.get('/events/');
+    return response.data.results || response.data;
+  }
+
+  /** An event by its code or its id; the server accepts either. */
+  async getEvent(eventCodeOrId: string): Promise<Event> {
+    const response = await this.client.get(`/events/${eventCodeOrId}/`);
+    return response.data;
+  }
+
+  /** Create the whole event at once, with the sessions inside it. */
   async createEvent(data: {
     title: string;
     description?: string;
     venue?: string;
     event_date: string;
-    meetings?: MeetingDraft[];
-  }): Promise<EventProgramme> {
+    scheduled_start?: string;
+    duration_minutes?: number;
+    sessions?: SessionDraft[];
+  }): Promise<Event> {
     const response = await this.client.post('/events/', data);
     return response.data;
   }
 
-  async updateEvent(eventId: string, patch: Partial<EventProgramme>): Promise<EventProgramme> {
+  async updateEvent(eventId: string, patch: Partial<Event>): Promise<Event> {
     const response = await this.client.patch(`/events/${eventId}/`, patch);
     return response.data;
   }
@@ -698,15 +627,15 @@ class ApiClient {
   }
 
   /**
-   * Create a meeting with the sessions that make it up.
+   * Create a event with the sessions that make it up.
    *
    * Pass an event to file it under a programme, or leave it out and the
-   * meeting stands on its own. Either way it must bring at least one
+   * event stands on its own. Either way it must bring at least one
    * session, which the server enforces.
    */
   /** Who has been asked to a programme, and how many have turned up. */
   async getEventInvites(eventId: string): Promise<{
-    invited: { email: string; meetings: number; joined: boolean; invited_at: string }[];
+    invited: { email: string; events: number; joined: boolean; invited_at: string }[];
     total_invited: number;
     total_joined: number;
   }> {
@@ -717,11 +646,11 @@ class ApiClient {
   /**
    * Invite people to a programme by email.
    *
-   * The invitation covers every meeting in the event, and is what lets
+   * The invitation covers every event in the event, and is what lets
    * them see it at all once they sign in with that address.
    */
   async inviteToEvent(eventId: string, emails: string[]): Promise<{
-    invited: { email: string; meetings: number; joined: boolean }[];
+    invited: { email: string; events: number; joined: boolean }[];
     total_invited: number;
     total_joined: number;
   }> {
@@ -729,33 +658,33 @@ class ApiClient {
     return response.data;
   }
 
-  async createMeetingWithSessions(
-    meeting: MeetingDraft,
+  async createEventWithSessions(
+    event: EventDraft,
     eventId?: string | null
-  ): Promise<EventMeeting> {
-    const response = await this.client.post('/meetings/with_sessions/', {
-      ...meeting,
+  ): Promise<Event> {
+    const response = await this.client.post('/events/with_sessions/', {
+      ...event,
       ...(eventId ? { event: eventId } : {}),
     });
     return response.data;
   }
 
-  /** Add a meeting, with its running order, to an event that already exists. */
-  async addMeetingToEvent(eventId: string, meeting: MeetingDraft): Promise<EventMeeting> {
-    const response = await this.client.post(`/events/${eventId}/meetings/`, meeting);
+  /** Add a event, with its running order, to an event that already exists. */
+  async addSessionsToEvent(eventId: string, event: EventDraft): Promise<Event> {
+    const response = await this.client.post(`/events/${eventId}/events/`, event);
     return response.data;
   }
 
-  // Sessions: the running order inside one meeting
+  // Sessions: the running order inside one event
 
-  /** `meetingRef` takes either the meeting's id or its room code. */
-  async listSessions(meetingRef: string): Promise<Session[]> {
-    const response = await this.client.get('/sessions/', { params: { meeting: meetingRef } });
+  /** `eventRef` takes either the event's id or its room code. */
+  async listSessions(eventRef: string): Promise<Session[]> {
+    const response = await this.client.get('/sessions/', { params: { event: eventRef } });
     return response.data.results || response.data;
   }
 
   async createSession(data: {
-    meeting: string;
+    event: string;
     title: string;
     speaker_name?: string;
     speaker_email?: string;
@@ -778,7 +707,7 @@ class ApiClient {
     await this.client.delete(`/sessions/${sessionId}/`);
   }
 
-  /** Put a session on stage. Any other live session in the meeting closes. */
+  /** Put a session on stage. Any other live session in the event closes. */
   async startSession(sessionId: string): Promise<Session> {
     const response = await this.client.post(`/sessions/${sessionId}/start/`);
     return response.data;
@@ -807,7 +736,7 @@ class ApiClient {
     return response.data;
   }
 
-  /** Requests waiting on the host, for one meeting or the whole programme. */
+  /** Requests waiting on the host, for one event or the whole programme. */
   /**
    * List a speaker publicly, or take them back off the list.
    *
@@ -826,7 +755,7 @@ class ApiClient {
   }
 
   async listContactRequests(
-    params: { meeting?: string; event?: string; status?: string } = {}
+    params: { event?: string; status?: string } = {}
   ): Promise<ContactRequestRow[]> {
     const response = await this.client.get('/sessions/contact_requests/', { params });
     return response.data;
@@ -861,39 +790,39 @@ class ApiClient {
 
   // Participant endpoints
   /**
-   * Who is in the meeting now.
+   * Who is in the event now.
    *
    * ``everyone`` asks a different question - who was in it at all - which
-   * is what a team page wants: ending a meeting empties the room, so
+   * is what a team page wants: ending a event empties the room, so
    * asking the room's question there shows nobody.
    */
-  async getParticipants(meetingId: string, everyone = false): Promise<any[]> {
+  async getParticipants(eventId: string, everyone = false): Promise<any[]> {
     const response = await this.client.get(
-      `/meetings/${meetingId}/participants/${everyone ? '?everyone=1' : ''}`
+      `/events/${eventId}/participants/${everyone ? '?everyone=1' : ''}`
     );
     return response.data;
   }
 
-  async updateParticipantState(meetingId: string, userId: string, state: any): Promise<void> {
-    await this.client.patch(`/meetings/${meetingId}/participants/${userId}/`, state);
+  async updateParticipantState(eventId: string, userId: string, state: any): Promise<void> {
+    await this.client.patch(`/events/${eventId}/participants/${userId}/`, state);
   }
 
   /** Change a participant's role. Host only; 'host' transfers ownership. */
   async updateParticipantRole(
-    meetingId: string,
+    eventId: string,
     participantId: string,
     role: 'host' | 'co_host' | 'presenter' | 'attendee'
-  ): Promise<MeetingParticipant> {
+  ): Promise<EventParticipant> {
     const response = await this.client.patch(
-      `/meetings/${meetingId}/participants/${participantId}/role/`,
+      `/events/${eventId}/participants/${participantId}/role/`,
       { role }
     );
     return response.data;
   }
 
-  /** Files shared in the meeting, for an admitted guest. */
+  /** Files shared in the event, for an admitted guest. */
   async guestResources(token: string): Promise<GuestResource[]> {
-    const response = await axios.get(`${API_BASE_URL}/meetings/guest/resources/`, {
+    const response = await axios.get(`${API_BASE_URL}/events/guest/resources/`, {
       params: { token },
     });
     return response.data;
@@ -905,7 +834,7 @@ class ApiClient {
     messages: ChatMessage[];
     me?: { id: string; name: string };
   }> {
-    const response = await axios.get(`${API_BASE_URL}/meetings/guest/chat/`, {
+    const response = await axios.get(`${API_BASE_URL}/events/guest/chat/`, {
       params: { token },
     });
     return response.data;
@@ -913,47 +842,42 @@ class ApiClient {
 
   /** People an admitted guest may message directly. */
   async guestPresenters(token: string): Promise<ChatPerson[]> {
-    const response = await axios.get(`${API_BASE_URL}/meetings/guest/presenters/`, {
+    const response = await axios.get(`${API_BASE_URL}/events/guest/presenters/`, {
       params: { token },
     });
     return response.data;
   }
 
   // Invitations - each shared link counts toward expected attendance
-  async getMeetingInvites(meetingId: string): Promise<MeetingInvite[]> {
-    const response = await this.client.get(`/meetings/${meetingId}/invites/`);
-    return response.data;
-  }
-
-  async addMeetingInvites(
-    meetingId: string,
+  async addEventInvites(
+    eventId: string,
     emails: string[]
-  ): Promise<{ added: MeetingInvite[]; already_invited: MeetingInvite[]; total_invited: number }> {
-    const response = await this.client.post(`/meetings/${meetingId}/invites/`, { emails });
+  ): Promise<{ added: EventInvite[]; already_invited: EventInvite[]; total_invited: number }> {
+    const response = await this.client.post(`/events/${eventId}/invites/`, { emails });
     return response.data;
   }
 
-  async getAttendance(meetingId: string): Promise<AttendanceReport> {
-    const response = await this.client.get(`/meetings/${meetingId}/attendance/`);
+  async getAttendance(eventId: string): Promise<AttendanceReport> {
+    const response = await this.client.get(`/events/${eventId}/attendance/`);
     return response.data;
   }
 
   /**
    * Transcript lines already spoken, so joining late still shows the record.
-   * The live stream itself arrives over the meeting websocket.
+   * The live stream itself arrives over the event websocket.
    */
-  async getMeetingSegments(meetingCode: string): Promise<TranscriptionSegment[]> {
-    const response = await this.client.get(`/meetings/${meetingCode}/segments/`);
+  async getEventSegments(eventCode: string): Promise<TranscriptionSegment[]> {
+    const response = await this.client.get(`/events/${eventCode}/segments/`);
     return response.data;
   }
 
   /** The same history, for a guest holding a signed token. */
   async getGuestSegments(
-    meetingCode: string,
+    eventCode: string,
     guestToken: string
   ): Promise<TranscriptionSegment[]> {
     const response = await axios.get(
-      `${API_BASE_URL}/meetings/${meetingCode}/segments/`,
+      `${API_BASE_URL}/events/${eventCode}/segments/`,
       { params: { guest_token: guestToken } }
     );
     return response.data;
@@ -968,64 +892,64 @@ class ApiClient {
    * name on its own never does that - it is not a credential.
    */
   async guestKnock(data: {
-    meeting_code: string;
+    code: string;
     full_name: string;
     token?: string;
   }): Promise<GuestSession> {
     // Deliberately bypasses the auth interceptor's token: guests have none.
-    const response = await axios.post(`${API_BASE_URL}/meetings/guest/knock/`, data);
+    const response = await axios.post(`${API_BASE_URL}/events/guest/knock/`, data);
     return response.data;
   }
 
-  async guestStatus(token: string): Promise<{ guest: GuestAttendee; meeting: any }> {
-    const response = await axios.get(`${API_BASE_URL}/meetings/guest/status/`, {
+  async guestStatus(token: string): Promise<{ guest: GuestAttendee; event: any }> {
+    const response = await axios.get(`${API_BASE_URL}/events/guest/status/`, {
       params: { token },
     });
     return response.data;
   }
 
   async guestLeave(token: string): Promise<void> {
-    await axios.post(`${API_BASE_URL}/meetings/guest/leave/`, { token });
+    await axios.post(`${API_BASE_URL}/events/guest/leave/`, { token });
   }
 
   /** Guests in the waiting room. Host only. */
-  async getGuests(meetingId: string): Promise<GuestAttendee[]> {
-    const response = await this.client.get(`/meetings/${meetingId}/guests/`);
+  async getGuests(eventId: string): Promise<GuestAttendee[]> {
+    const response = await this.client.get(`/events/${eventId}/guests/`);
     return response.data;
   }
 
   /** Admit or deny a waiting guest. Host only. */
   async admitGuest(
-    meetingId: string,
+    eventId: string,
     guestId: string,
     decision: 'admit' | 'deny'
   ): Promise<GuestAttendee> {
-    const response = await this.client.post(`/meetings/${meetingId}/admit_guest/`, {
+    const response = await this.client.post(`/events/${eventId}/admit_guest/`, {
       guest_id: guestId,
       decision,
     });
     return response.data;
   }
 
-  // Meeting chat (host-gated)
-  async getChatSettings(meetingId: string): Promise<ChatSettings> {
-    const response = await this.client.get(`/meetings/${meetingId}/chat_settings/`);
+  // Event chat (host-gated)
+  async getChatSettings(eventId: string): Promise<ChatSettings> {
+    const response = await this.client.get(`/events/${eventId}/chat_settings/`);
     return response.data;
   }
 
-  async updateChatSettings(meetingId: string, settings: Partial<ChatSettings>): Promise<ChatSettings> {
-    const response = await this.client.patch(`/meetings/${meetingId}/chat_settings/`, settings);
+  async updateChatSettings(eventId: string, settings: Partial<ChatSettings>): Promise<ChatSettings> {
+    const response = await this.client.patch(`/events/${eventId}/chat_settings/`, settings);
     return response.data;
   }
 
-  async getChatMessages(meetingId: string): Promise<ChatMessage[]> {
-    const response = await this.client.get(`/meetings/${meetingId}/messages/`);
+  async getChatMessages(eventId: string): Promise<ChatMessage[]> {
+    const response = await this.client.get(`/events/${eventId}/messages/`);
     return response.data;
   }
 
   /** Messages held for host review. Host only. */
-  async getPendingMessages(meetingId: string): Promise<ChatMessage[]> {
-    const response = await this.client.get(`/meetings/${meetingId}/pending_messages/`);
+  async getPendingMessages(eventId: string): Promise<ChatMessage[]> {
+    const response = await this.client.get(`/events/${eventId}/pending_messages/`);
     return response.data;
   }
 
@@ -1037,26 +961,26 @@ class ApiClient {
    * the board in the same breath - which is when the host has just read it.
    */
   async moderateMessage(
-    meetingId: string,
+    eventId: string,
     messageId: string,
     decision: 'approve' | 'decline' | 'remove',
     topic?: MessageTopic
   ): Promise<ChatMessage> {
     const response = await this.client.post(
-      `/meetings/${meetingId}/moderate_message/`,
+      `/events/${eventId}/moderate_message/`,
       { message_id: messageId, decision, ...(topic ? { topic } : {}) }
     );
     return response.data;
   }
 
-  // Shared meeting resources (stored in the host's Google Drive)
-  async getResources(meetingId: string): Promise<Artifact[]> {
-    const response = await this.client.get(`/meetings/${meetingId}/resources/`);
+  // Shared event resources (stored in the host's Google Drive)
+  async getResources(eventId: string): Promise<Artifact[]> {
+    const response = await this.client.get(`/events/${eventId}/resources/`);
     return response.data;
   }
 
   async uploadResource(
-    meetingId: string,
+    eventId: string,
     file: File,
     onProgress?: (percent: number) => void
   ): Promise<Artifact> {
@@ -1064,7 +988,7 @@ class ApiClient {
     formData.append('file', file);
 
     const response = await this.client.post(
-      `/meetings/${meetingId}/resources/`,
+      `/events/${eventId}/resources/`,
       formData,
       {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -1079,24 +1003,24 @@ class ApiClient {
   }
 
   // Artifact endpoints
-  async getArtifacts(meetingId: string): Promise<Artifact[]> {
-    const response = await this.client.get(`/meetings/${meetingId}/artifacts/`);
+  async getArtifacts(eventId: string): Promise<Artifact[]> {
+    const response = await this.client.get(`/events/${eventId}/artifacts/`);
     return response.data;
   }
 
-  async getTranscript(meetingId: string): Promise<Transcript> {
-    const response = await this.client.get(`/meetings/${meetingId}/transcript/`);
+  async getTranscript(eventId: string): Promise<Transcript> {
+    const response = await this.client.get(`/events/${eventId}/transcript/`);
     return response.data;
   }
 
-  async getSummary(meetingId: string): Promise<TranscriptSummary> {
-    const response = await this.client.get(`/meetings/${meetingId}/summary/`);
+  async getSummary(eventId: string): Promise<TranscriptSummary> {
+    const response = await this.client.get(`/events/${eventId}/summary/`);
     return response.data;
   }
 
   // Analytics endpoints
-  async getMeetingAnalytics(meetingId: string): Promise<any> {
-    const response = await this.client.get(`/admin/meeting/${meetingId}/analytics/`);
+  async getEventAnalytics(eventId: string): Promise<any> {
+    const response = await this.client.get(`/admin/event/${eventId}/analytics/`);
     return response.data;
   }
 
@@ -1105,8 +1029,8 @@ class ApiClient {
     return response.data;
   }
 
-  async getAttendanceReport(meetingId: string): Promise<any> {
-    const response = await this.client.get(`/admin/attendance/${meetingId}/`);
+  async getAttendanceReport(eventId: string): Promise<any> {
+    const response = await this.client.get(`/admin/attendance/${eventId}/`);
     return response.data;
   }
 
@@ -1175,8 +1099,8 @@ class ApiClient {
   }
 
   // Recording endpoints
-  async getRecordings(meetingId?: string): Promise<Recording[]> {
-    const url = meetingId ? `/recordings/?meeting_id=${meetingId}` : '/recordings/';
+  async getRecordings(eventId?: string): Promise<Recording[]> {
+    const url = eventId ? `/recordings/?event_id=${eventId}` : '/recordings/';
     const response = await this.client.get(url);
     return response.data.results || response.data;
   }
@@ -1190,20 +1114,20 @@ class ApiClient {
   }
 
   // Transcription endpoints
-  async editTranscriptSegment(meetingId: string, segmentIdx: number, text: string): Promise<void> {
-    await this.client.patch(`/meetings/${meetingId}/transcript/segments/${segmentIdx}/`, { text });
+  async editTranscriptSegment(eventId: string, segmentIdx: number, text: string): Promise<void> {
+    await this.client.patch(`/events/${eventId}/transcript/segments/${segmentIdx}/`, { text });
   }
 
-  async exportTranscript(meetingId: string, format: 'pdf' | 'docx' | 'txt'): Promise<Blob> {
-    const response = await this.client.get(`/meetings/${meetingId}/transcript/export/`, {
+  async exportTranscript(eventId: string, format: 'pdf' | 'docx' | 'txt'): Promise<Blob> {
+    const response = await this.client.get(`/events/${eventId}/transcript/export/`, {
       params: { format },
       responseType: 'blob',
     });
     return response.data;
   }
 
-  async searchTranscript(meetingId: string, query: string): Promise<any[]> {
-    const response = await this.client.get(`/meetings/${meetingId}/transcript/search/`, {
+  async searchTranscript(eventId: string, query: string): Promise<any[]> {
+    const response = await this.client.get(`/events/${eventId}/transcript/search/`, {
       params: { q: query },
     });
     return response.data;
@@ -1240,13 +1164,13 @@ class ApiClient {
     return response.data;
   }
 
-  async getDriveSyncStatus(meetingId: string): Promise<DriveSyncStatus> {
-    const response = await this.client.get(`/drive/sync-status/${meetingId}/`);
+  async getDriveSyncStatus(eventId: string): Promise<DriveSyncStatus> {
+    const response = await this.client.get(`/drive/sync-status/${eventId}/`);
     return response.data;
   }
 
-  async setSyncEnabled(meetingId: string, enabled: boolean): Promise<void> {
-    await this.client.patch(`/drive/sync-status/${meetingId}/`, { sync_enabled: enabled });
+  async setSyncEnabled(eventId: string, enabled: boolean): Promise<void> {
+    await this.client.patch(`/drive/sync-status/${eventId}/`, { sync_enabled: enabled });
   }
 
   // Analytics endpoints

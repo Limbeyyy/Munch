@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
-import { BoardEntry, MeetingBoard } from '../types';
+import { BoardEntry, EventBoard } from '../types';
 import { Pair, useOrganizer } from './i18n';
 import { Btn, Chip, Empty, Panel, Tabs } from './ui';
 import { Modal } from './OrganizerShell';
@@ -118,10 +118,10 @@ const clock = (iso: string) =>
 
 interface Props {
   /** Read as an account holder. */
-  meetingId?: string;
+  eventId?: string;
   /** Read as a guest, with the token they hold. */
   guestToken?: string;
-  /** Poll, for a board somebody is watching during a meeting. */
+  /** Poll, for a board somebody is watching during a event. */
   refreshMs?: number;
   /** The host may write the answers. Everyone else only reads them. */
   canAnswer?: boolean;
@@ -130,15 +130,15 @@ interface Props {
 /**
  * The questions and suggestions the host has put up.
  *
- * The same board for everyone in the meeting - host, attendee and guest -
+ * The same board for everyone in the event - host, attendee and guest -
  * because a question worth answering is worth everybody seeing. Only the
  * asker is named; who a message was originally sent to is not shown.
  */
 export const MessageBoard: React.FC<Props> = ({
-  meetingId, guestToken, refreshMs, canAnswer,
+  eventId, guestToken, refreshMs, canAnswer,
 }) => {
   const { t, num } = useOrganizer();
-  const [board, setBoard] = useState<MeetingBoard | null>(null);
+  const [board, setBoard] = useState<EventBoard | null>(null);
   const [tab, setTab] = useState('faq');
   const [answering, setAnswering] = useState<BoardEntry | null>(null);
   const [draft, setDraft] = useState('');
@@ -149,15 +149,15 @@ export const MessageBoard: React.FC<Props> = ({
     try {
       if (guestToken) {
         setBoard(await apiClient.getGuestBoard(guestToken));
-      } else if (meetingId) {
-        setBoard(await apiClient.getMeetingBoard(meetingId));
+      } else if (eventId) {
+        setBoard(await apiClient.getEventBoard(eventId));
       } else {
         setBoard(null);
       }
     } catch {
       setBoard({ faq: [], suggestions: [] });
     }
-  }, [meetingId, guestToken]);
+  }, [eventId, guestToken]);
 
   useEffect(() => {
     load();
@@ -173,10 +173,10 @@ export const MessageBoard: React.FC<Props> = ({
    * live, or days later once somebody has actually found out.
    */
   const saveAnswer = async () => {
-    if (!answering || !meetingId) return;
+    if (!answering || !eventId) return;
     try {
       setSaving(true);
-      await apiClient.answerBoardMessage(meetingId, answering.id, draft.trim());
+      await apiClient.answerBoardMessage(eventId, answering.id, draft.trim());
       toast.success(
         draft.trim()
           ? t({ ne: 'जवाफ राखियो', en: 'Answer posted' })
@@ -195,8 +195,8 @@ export const MessageBoard: React.FC<Props> = ({
       setVoting(entry.id);
       const updated = guestToken
         ? await apiClient.guestVoteOnBoard(guestToken, entry.id, value)
-        : meetingId
-        ? await apiClient.voteOnBoard(meetingId, entry.id, value)
+        : eventId
+        ? await apiClient.voteOnBoard(eventId, entry.id, value)
         : null;
       if (updated) setBoard(updated);
     } catch (e: any) {
@@ -330,7 +330,7 @@ export const MessageBoard: React.FC<Props> = ({
             rows={5}
             placeholder={t({
               ne: 'जवाफ — सबैले पढ्न सक्छन्।',
-              en: 'Your answer. Everyone in the meeting reads it.',
+              en: 'Your answer. Everyone in the event reads it.',
             })}
             className="w-full border border-navy-800/15 rounded-lg px-3 py-2 text-[14px] font-read leading-relaxed"
           />

@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useArtifactStore } from '../store/artifactStore';
 
 export const ArtifactsPage: React.FC = () => {
-  const { meetingId } = useParams<{ meetingId: string }>();
+  const { eventId } = useParams<{ eventId: string }>();
   const {
     artifacts,
     loading,
@@ -14,10 +14,10 @@ export const ArtifactsPage: React.FC = () => {
   } = useArtifactStore();
 
   useEffect(() => {
-    if (meetingId) {
-      fetchArtifacts(meetingId);
+    if (eventId) {
+      fetchArtifacts(eventId);
     }
-  }, [meetingId, fetchArtifacts]);
+  }, [eventId, fetchArtifacts]);
 
   const handleDownload = async (artifactId: string) => {
     try {
@@ -40,7 +40,7 @@ export const ArtifactsPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-page py-12 px-4">
       <div className="max-w-6xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-900 mb-8">Meeting Artifacts</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-8">Event Artifacts</h1>
 
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
@@ -52,7 +52,7 @@ export const ArtifactsPage: React.FC = () => {
           <div className="text-center text-gray-600">Loading artifacts...</div>
         ) : artifacts.length === 0 ? (
           <div className="bg-white rounded-lg shadow p-8 text-center text-gray-600">
-            No artifacts generated yet for this meeting.
+            No artifacts generated yet for this event.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

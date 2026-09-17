@@ -1,13 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '../services/api';
-import {
-  Artifact, EventProgramme, Meeting, Session, TranscriptionSegment,
-} from '../types';
+import { Artifact, Event, Session, TranscriptionSegment } from '../types';
 import { Pair, useOrganizer } from './i18n';
 import { Modal } from './OrganizerShell';
 import { Btn, Chip, Empty, Tabs } from './ui';
 import {
-  MEETING_STATE_LABEL, MEETING_STATE_TONE, meetingState,
+  EVENT_STATE_LABEL, EVENT_STATE_TONE, eventState,
   SESSION_STATE_LABEL, SESSION_STATE_TONE, sessionState,
 } from './sessionState';
 
@@ -33,20 +31,19 @@ const Line: React.FC<{ label: Pair; children: React.ReactNode }> = ({ label, chi
 };
 
 /**
- * Everything about one meeting in one place, to read rather than to edit.
+ * Everything about one event in one place, to read rather than to edit.
  *
  * The pieces exist on their own screens - the programme, the files, the
- * transcripts - but somebody checking a meeting over should not have to
+ * transcripts - but somebody checking a event over should not have to
  * visit three of them and hold the answer in their head. Nothing here
  * changes anything; the screens that own each piece keep that job.
  */
-export const MeetingOverview: React.FC<{
-  meeting: Meeting;
+export const EventOverview: React.FC<{
+  event: Event;
   onClose: () => void;
-}> = ({ meeting, onClose }) => {
+}> = ({ event, onClose }) => {
   const { t, num } = useOrganizer();
   const [tab, setTab] = useState('details');
-  const [event, setEvent] = useState<EventProgramme | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [files, setFiles] = useState<Artifact[]>([]);
   const [segments, setSegments] = useState<TranscriptionSegment[]>([]);
@@ -54,23 +51,17 @@ export const MeetingOverview: React.FC<{
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [events, ownSessions, resources, transcript] = await Promise.allSettled([
-      apiClient.listEvents(),
-      apiClient.listSessions(meeting.id),
-      apiClient.getResources(meeting.id),
-      apiClient.getMeetingSegments(meeting.meeting_code),
+    const [ownSessions, resources, transcript] = await Promise.allSettled([
+      apiClient.listSessions(event.id),
+      apiClient.getResources(event.id),
+      apiClient.getEventSegments(event.code),
     ]);
 
-    if (events.status === 'fulfilled') {
-      setEvent(
-        events.value.find((e) => e.meetings.some((m) => m.id === meeting.id)) ?? null
-      );
-    }
     if (ownSessions.status === 'fulfilled') setSessions(ownSessions.value);
     if (resources.status === 'fulfilled') setFiles(resources.value);
     if (transcript.status === 'fulfilled') setSegments(transcript.value);
     setLoading(false);
-  }, [meeting.id, meeting.meeting_code]);
+  }, [event.id, event.code]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -84,7 +75,7 @@ export const MeetingOverview: React.FC<{
     return found;
   }, {});
 
-  /** The transcript of one session, from the meeting's whole stream. */
+  /** The transcript of one session, from the event's whole stream. */
   const segmentsOf = (session: Session) =>
     segments.filter((s) => s.session_id === session.id);
 
@@ -94,8 +85,8 @@ export const MeetingOverview: React.FC<{
     <Modal
       open
       onClose={onClose}
-      title={meeting.title}
-      lede={`${clock(meeting.scheduled_start)}–${clock(meeting.scheduled_end)} · ${meeting.meeting_code}`}
+      title={event.title}
+      lede={`${clock(event.scheduled_start)}–${clock(event.scheduled_end)} · ${event.code}`}
       footer={<Btn tone="solid" onClick={onClose}>{t({ ne: 'बन्द', en: 'Close' })}</Btn>}
     >
       <Tabs
@@ -122,50 +113,43 @@ export const MeetingOverview: React.FC<{
             <p className="text-[12px] text-[#6E7C8E] mb-1">
               {t({ ne: 'कार्यक्रम', en: 'Event' })}
             </p>
-            {event ? (
-              <div className="bg-cream rounded-lg px-3 py-2">
-                <Line label={{ ne: 'नाम', en: 'Title' }}>{event.title}</Line>
+            <div className="bg-cream rounded-lg px-3 py-2">
+              <Line label={{ ne: 'नाम', en: 'Title' }}>{event.title}</Line>
+              {event.event_date && (
                 <Line label={{ ne: 'मिति', en: 'Date' }}>
-                  {new Date(event.event_date).toLocaleDateString(undefined, {
+                  {new Date(event.event_date ?? event.scheduled_start).toLocaleDateString(undefined, {
                     weekday: 'long', day: 'numeric', month: 'long',
                   })}
                 </Line>
-                {event.venue && (
-                  <Line label={{ ne: 'स्थान', en: 'Venue' }}>{event.venue}</Line>
-                )}
-                <Line label={{ ne: 'बैठक', en: 'Meetings' }}>
-                  {t({
-                    ne: `${num(event.meeting_count)} बैठक · ${num(event.session_count)} सत्र`,
-                    en: `${event.meeting_count} meetings · ${event.session_count} sessions`,
-                  })}
-                </Line>
-              </div>
-            ) : (
-              <p className="text-[12.5px] text-[#6E7C8E]">
+              )}
+              {event.venue && (
+                <Line label={{ ne: 'स्थान', en: 'Venue' }}>{event.venue}</Line>
+              )}
+              <Line label={{ ne: 'सत्र', en: 'Sessions' }}>
                 {t({
-                  ne: 'यो बैठक कुनै कार्यक्रमभित्र छैन।',
-                  en: 'This meeting stands outside any programme.',
+                  ne: `${num(event.session_count ?? 0)} सत्र`,
+                  en: `${event.session_count ?? 0} session${event.session_count === 1 ? '' : 's'}`,
                 })}
-              </p>
-            )}
+              </Line>
+            </div>
           </div>
 
           <div>
             <p className="text-[12px] text-[#6E7C8E] mb-1">
-              {t({ ne: 'यो बैठक', en: 'This meeting' })}
+              {t({ ne: 'यो बैठक', en: 'This event' })}
             </p>
             <div className="bg-cream rounded-lg px-3 py-2">
               <Line label={{ ne: 'कोड', en: 'Code' }}>
-                <span className="font-mono text-navy-700">{meeting.meeting_code}</span>
+                <span className="font-mono text-navy-700">{event.code}</span>
               </Line>
               <Line label={{ ne: 'समय', en: 'Runs' }}>
                 <span className="tabular-nums">
-                  {clock(meeting.scheduled_start)}–{clock(meeting.scheduled_end)}
+                  {clock(event.scheduled_start)}–{clock(event.scheduled_end)}
                 </span>
               </Line>
               <Line label={{ ne: 'अवस्था', en: 'State' }}>
-                <Chip tone={MEETING_STATE_TONE[meetingState(meeting)]}>
-                  {t(MEETING_STATE_LABEL[meetingState(meeting)])}
+                <Chip tone={EVENT_STATE_TONE[eventState(event)]}>
+                  {t(EVENT_STATE_LABEL[eventState(event)])}
                 </Chip>
               </Line>
             </div>
@@ -193,8 +177,8 @@ export const MeetingOverview: React.FC<{
                     </span>
                   </span>
                   <span className="ml-auto flex-none">
-                    <Chip tone={SESSION_STATE_TONE[sessionState(session, Date.now(), meeting)]}>
-                      {t(SESSION_STATE_LABEL[sessionState(session, Date.now(), meeting)])}
+                    <Chip tone={SESSION_STATE_TONE[sessionState(session, Date.now(), event)]}>
+                      {t(SESSION_STATE_LABEL[sessionState(session, Date.now(), event)])}
                     </Chip>
                   </span>
                 </div>
@@ -245,7 +229,7 @@ export const MeetingOverview: React.FC<{
           <Empty>
             {t({
               ne: 'यो बैठकमा कुनै फाइल छैन।',
-              en: 'Nothing has been uploaded to this meeting.',
+              en: 'Nothing has been uploaded to this event.',
             })}
           </Empty>
         ) : (

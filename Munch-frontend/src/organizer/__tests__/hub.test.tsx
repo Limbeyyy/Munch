@@ -6,7 +6,7 @@ import { apiClient } from '../../services/api';
 
 jest.mock('../../services/api', () => ({
   apiClient: {
-    getMeetingBoard: jest.fn(),
+    getEventBoard: jest.fn(),
     getGuestBoard: jest.fn(),
     getPhotos: jest.fn(),
     getPhotoObjectUrl: jest.fn(),
@@ -33,14 +33,14 @@ beforeEach(() => {
 });
 
 describe('the attendee hub', () => {
-  const meetings = [
-    { id: 'm1', title: 'Opening day', meeting_code: 'ABC123' } as any,
+  const events = [
+    { id: 'm1', title: 'Opening day', code: 'ABC123' } as any,
   ];
 
   it('is down to the board and the photographs', async () => {
-    api.getMeetingBoard.mockResolvedValue({ questions: [], suggestions: [] } as any);
+    api.getEventBoard.mockResolvedValue({ questions: [], suggestions: [] } as any);
 
-    show(<HubView meetings={meetings} myName="Sabina" />);
+    show(<HubView events={events} myName="Sabina" />);
 
     expect(
       await screen.findByRole('tab', { name: 'Questions & suggestions' })
@@ -52,9 +52,9 @@ describe('the attendee hub', () => {
   });
 
   it('has no room chat or private word in it any more', async () => {
-    api.getMeetingBoard.mockResolvedValue({ questions: [], suggestions: [] } as any);
+    api.getEventBoard.mockResolvedValue({ questions: [], suggestions: [] } as any);
 
-    show(<HubView meetings={meetings} myName="Sabina" />);
+    show(<HubView events={events} myName="Sabina" />);
 
     await screen.findByRole('tab', { name: 'Photos' });
     expect(screen.queryByRole('tab', { name: 'The room' })).not.toBeInTheDocument();
@@ -65,10 +65,10 @@ describe('the attendee hub', () => {
   });
 
   it('opens the photographs from that tab', async () => {
-    api.getMeetingBoard.mockResolvedValue({ questions: [], suggestions: [] } as any);
+    api.getEventBoard.mockResolvedValue({ questions: [], suggestions: [] } as any);
     api.getPhotos.mockResolvedValue({
-      meeting_id: 'm1', meeting_code: 'ABC123', meeting_title: 'Opening day',
-      meeting_is_finished: true, can_upload: false, is_a_photographer: false,
+      event_id: 'm1', code: 'ABC123', event_title: 'Opening day',
+      event_is_finished: true, can_upload: false, is_a_photographer: false,
       can_arrange: false,
       folders: [{
         id: 'f1', name: 'Default', is_default: true, created_by: '',
@@ -77,7 +77,7 @@ describe('the attendee hub', () => {
       photos: [],
     } as any);
 
-    show(<HubView meetings={meetings} myName="Sabina" />);
+    show(<HubView events={events} myName="Sabina" />);
     fireEvent.click(await screen.findByRole('tab', { name: 'Photos' }));
 
     await waitFor(() => expect(api.getPhotos).toHaveBeenCalledWith('ABC123'));

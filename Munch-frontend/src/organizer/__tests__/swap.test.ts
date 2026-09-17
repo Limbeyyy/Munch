@@ -1,5 +1,5 @@
-import { PlannedMeeting, swapSessions, toPlan, whyNotSwap } from '../schedule';
-import { EventMeeting } from '../../types';
+import { PlannedEvent, swapSessions, toPlan, whyNotSwap } from '../schedule';
+import { Event } from '../../types';
 
 const at = (hhmm: string) => `2026-09-08T${hhmm}:00Z`;
 
@@ -8,21 +8,21 @@ const session = (id: string, title: string, start: string, minutes = 60, status 
   speaker_name: '', hall: '',
 } as any);
 
-const meeting = (id: string, start: string, end: string, sessions: any[], status = 'scheduled') => ({
-  id, title: `Meeting ${id}`, meeting_code: id.toUpperCase(), status,
+const event = (id: string, start: string, end: string, sessions: any[], status = 'scheduled') => ({
+  id, title: `Event ${id}`, code: id.toUpperCase(), status,
   scheduled_start: at(start), scheduled_end: at(end), sessions,
-} as unknown as EventMeeting);
+} as unknown as Event);
 
 /** Session A nine to ten, session B eleven to twelve. */
-const day = (): PlannedMeeting[] =>
+const day = (): PlannedEvent[] =>
   toPlan([
-    meeting('m1', '09:00', '13:00', [
+    event('m1', '09:00', '13:00', [
       session('a', 'Session A', '09:00'),
       session('b', 'Session B', '11:00'),
     ]),
   ]);
 
-const times = (plan: PlannedMeeting[]) =>
+const times = (plan: PlannedEvent[]) =>
   plan[0].sessions.map((s) => [
     s.title,
     new Date(s.startsAt).toISOString().slice(11, 16),
@@ -45,7 +45,7 @@ describe('two sessions changing places', () => {
 
   it('leaves the rest of the running order alone', () => {
     const plan = toPlan([
-      meeting('m1', '09:00', '15:00', [
+      event('m1', '09:00', '15:00', [
         session('a', 'Session A', '09:00'),
         session('b', 'Session B', '11:00'),
         session('c', 'Session C', '13:00'),
@@ -79,7 +79,7 @@ describe('two sessions changing places', () => {
     // Not a raw exchange of clock times: a longer session taking an
     // earlier slot has to leave the gap the next one needs.
     const plan = toPlan([
-      meeting('m1', '09:00', '15:00', [
+      event('m1', '09:00', '15:00', [
         session('a', 'Session A', '09:00', 30),
         session('b', 'Session B', '10:00', 120),
       ]),
@@ -97,7 +97,7 @@ describe('two sessions changing places', () => {
 describe('what cannot change places', () => {
   it('refuses a session that has already run', () => {
     const plan = toPlan([
-      meeting('m1', '09:00', '13:00', [
+      event('m1', '09:00', '13:00', [
         session('a', 'Session A', '09:00', 60, 'done'),
         session('b', 'Session B', '11:00'),
       ]),
@@ -109,7 +109,7 @@ describe('what cannot change places', () => {
 
   it('refuses one that is on stage', () => {
     const plan = toPlan([
-      meeting('m1', '09:00', '13:00', [
+      event('m1', '09:00', '13:00', [
         session('a', 'Session A', '09:00', 60, 'live'),
         session('b', 'Session B', '11:00'),
       ]),
@@ -118,13 +118,13 @@ describe('what cannot change places', () => {
     expect(whyNotSwap(plan, 'b', 'a')).toBe('settled');
   });
 
-  it('refuses across two meetings', () => {
+  it('refuses across two events', () => {
     const plan = toPlan([
-      meeting('m1', '09:00', '10:00', [session('a', 'Session A', '09:00')]),
-      meeting('m2', '11:00', '12:00', [session('b', 'Session B', '11:00')]),
+      event('m1', '09:00', '10:00', [session('a', 'Session A', '09:00')]),
+      event('m2', '11:00', '12:00', [session('b', 'Session B', '11:00')]),
     ]);
 
-    expect(whyNotSwap(plan, 'a', 'b')).toBe('other-meeting');
+    expect(whyNotSwap(plan, 'a', 'b')).toBe('other-event');
     expect(swapSessions(plan, 'a', 'b')).toEqual(plan);
   });
 

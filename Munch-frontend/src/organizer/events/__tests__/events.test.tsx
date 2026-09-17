@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { OrganizerProvider } from '../../i18n';
-import { EventProgramme } from '../../../types';
+import { Event } from '../../../types';
 import { EventsDashboard, deckOf, whenLine } from '../EventsDashboard';
 import { Stepper } from '../chrome';
 
@@ -14,30 +14,25 @@ beforeEach(() => {
 
 const day = '2026-09-15';
 
-const anEvent = (over: Partial<EventProgramme> = {}): EventProgramme => ({
+const anEvent = (over: Partial<Event> = {}): Event => ({
   id: 'e1',
-  title: 'Emergency Service Meeting',
+  title: 'Emergency Service Event',
   description: '',
   venue: 'Kathmandu Convention Center',
   event_date: day,
   status: 'scheduled',
-  organizer_email: 'host@example.com',
-  meetings: [
-    {
-      id: 'm1', meeting_code: 'MXC-DOX', title: 'Morning', description: '',
-      status: 'scheduled',
-      scheduled_start: `${day}T10:00:00`,
-      scheduled_end: `${day}T12:00:00`,
-      participant_count: 0, sessions: [], session_count: 3,
-    } as any,
-  ],
-  meeting_count: 1,
+  host_email: 'host@example.com',
+  code: 'MXC-DOX',
+  scheduled_start: `${day}T10:00:00`,
+  scheduled_end: `${day}T12:00:00`,
+  participant_count: 0,
+  sessions: [],
   session_count: 3,
   created_at: '', updated_at: '',
   ...over,
 });
 
-const show = (events: EventProgramme[], spies: Partial<Record<string, jest.Mock>> = {}) =>
+const show = (events: Event[], spies: Partial<Record<string, jest.Mock>> = {}) =>
   render(
     <OrganizerProvider>
       <EventsDashboard
@@ -92,13 +87,13 @@ describe('sorting events onto decks', () => {
   it('shows only the deck that is selected', () => {
     show([anEvent({ id: 'e1' }), anEvent({ id: 'e2', status: 'ended', title: 'Last year' })]);
 
-    expect(screen.getByText('Emergency Service Meeting')).toBeInTheDocument();
+    expect(screen.getByText('Emergency Service Event')).toBeInTheDocument();
     expect(screen.queryByText('Last year')).toBeNull();
 
     fireEvent.click(screen.getByRole('tab', { name: /Completed/ }));
 
     expect(screen.getByText('Last year')).toBeInTheDocument();
-    expect(screen.queryByText('Emergency Service Meeting')).toBeNull();
+    expect(screen.queryByText('Emergency Service Event')).toBeNull();
   });
 });
 
@@ -108,7 +103,7 @@ describe('sorting events onto decks', () => {
 describe('an event card', () => {
   // The day itself is written in the reader's own locale, so these look
   // for the day, month and year rather than one country's order for them.
-  it('says when it runs, from the meetings inside it', () => {
+  it('says when it runs, from the events inside it', () => {
     const line = whenLine(anEvent());
     expect(line).toMatch(/September/);
     expect(line).toMatch(/\b15\b/);
@@ -116,23 +111,12 @@ describe('an event card', () => {
     expect(line).toMatch(/10:00.*12:00/);
   });
 
-  it('spans the first meeting to the last, not just the first', () => {
-    const two = anEvent();
-    two.meetings = [
-      ...two.meetings,
-      { ...two.meetings[0], id: 'm2',
-        scheduled_start: `${day}T13:00:00`, scheduled_end: `${day}T16:30:00` } as any,
-    ];
+  it('runs from its own opening hour to its own closing one', () => {
+    const late = anEvent({ scheduled_end: `${day}T16:30:00` });
     // Formatted the way the reader's clock formats it, 12-hour or not.
     const closing = new Date(`${day}T16:30:00`)
       .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    expect(whenLine(two)).toMatch(new RegExp(`10:00.*${closing}`));
-  });
-
-  it('still says the day when nothing is scheduled inside it yet', () => {
-    const bare = whenLine(anEvent({ meetings: [], meeting_count: 0 }));
-    expect(bare).toMatch(/September/);
-    expect(bare).not.toContain('\u00b7');
+    expect(whenLine(late)).toMatch(new RegExp(`10:00.*${closing}`));
   });
 
   it('carries the three numbers that say whether it is ready', () => {
@@ -148,7 +132,7 @@ describe('an event card', () => {
     const onEdit = jest.fn();
     show([anEvent()], { onOpen, onEdit });
 
-    fireEvent.click(screen.getByText('Emergency Service Meeting'));
+    fireEvent.click(screen.getByText('Emergency Service Event'));
     expect(onOpen).toHaveBeenCalled();
     expect(onEdit).not.toHaveBeenCalled();
 

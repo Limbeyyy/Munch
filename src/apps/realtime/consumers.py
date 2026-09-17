@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 CHAT_MAX_LENGTH = 2000
 
 
-class MeetingConsumer(AsyncWebsocketConsumer):
+class EventConsumer(AsyncWebsocketConsumer):
     """
     Handles real-time event state updates and participant communication
     """

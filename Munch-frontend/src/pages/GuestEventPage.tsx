@@ -40,17 +40,17 @@ const formatElapsed = (totalSeconds: number): string => {
 };
 
 /**
- * The meeting as a guest sees it.
+ * The event as a guest sees it.
  *
  * Guests have no account, so anything attributed to a user - chat, presence,
  * role - is not available to them. They get their own camera and mic.
  */
-export const GuestMeetingPage: React.FC = () => {
+export const GuestEventPage: React.FC = () => {
   const navigate = useNavigate();
 
   const token = sessionStorage.getItem('guest_token');
-  const meetingCode = sessionStorage.getItem('guest_meeting_code') ?? '';
-  const meetingTitle = sessionStorage.getItem('guest_meeting_title') ?? 'Meeting';
+  const eventCode = sessionStorage.getItem('guest_event_code') ?? '';
+  const eventTitle = sessionStorage.getItem('guest_event_title') ?? 'Event';
   const guestName = sessionStorage.getItem('guest_name') ?? 'Guest';
 
   const [elapsed, setElapsed] = useState(0);
@@ -116,21 +116,21 @@ export const GuestMeetingPage: React.FC = () => {
   /**
    * What has arrived while nobody was looking at it.
    *
-   * The meeting carries on while a guest reads something else in it. The
+   * The event carries on while a guest reads something else in it. The
    * count on each control is how much has piled up behind it, and opening
    * that panel is what clears it.
    */
   const [unseen, setUnseen] = useState({ questions: 0, resources: 0 });
 
-  /** The running order, and the meeting's own hours, to read only. */
+  /** The running order, and the event's own hours, to read only. */
   const [agenda, setAgenda] = useState<any[]>([]);
-  const [meeting, setMeeting] = useState<any>(null);
+  const [event, setCurrentEvent] = useState<any>(null);
 
   /**
    * A pass that no longer names anybody.
    *
-   * A guest's pass belongs to one meeting and lasts as long as it does:
-   * when the meeting ends everybody in it is forgotten, and the pass stops
+   * A guest's pass belongs to one event and lasts as long as it does:
+   * when the event ends everybody in it is forgotten, and the pass stops
    * resolving. A browser still holding one sat here retrying a socket that
    * would never open, saying nothing at all. Say it, and send them back to
    * the door.
@@ -138,7 +138,7 @@ export const GuestMeetingPage: React.FC = () => {
   const passIsDead = useCallback((error: any) => {
     if (error?.response?.status !== 401) return false;
     sessionStorage.clear();
-    toast('That meeting pass is no longer valid. Ask to join again.', {
+    toast('That event pass is no longer valid. Ask to join again.', {
       icon: '\uD83D\uDD11', duration: 8000,
     });
     navigate('/login');
@@ -180,12 +180,12 @@ export const GuestMeetingPage: React.FC = () => {
   }, [token]);
 
   useEffect(() => {
-    if (!token || !meetingCode) return;
+    if (!token || !eventCode) return;
     apiClient
-      .getGuestSegments(meetingCode, token)
+      .getGuestSegments(eventCode, token)
       .then(setTranscript)
       .catch(() => undefined);
-  }, [token, meetingCode]);
+  }, [token, eventCode]);
 
   useEffect(() => {
     loadChat();
@@ -194,7 +194,7 @@ export const GuestMeetingPage: React.FC = () => {
   /*
    * Which session the room is holding, and whether its clock has started.
    *
-   * The room is the meeting's; the clock is the talk's. Kept polling
+   * The room is the event's; the clock is the talk's. Kept polling
    * rather than stopped once a clock appears, because the day moves on -
    * one talk ends, the room waits, and the host puts the next on stage.
    */
@@ -204,14 +204,14 @@ export const GuestMeetingPage: React.FC = () => {
     let cancelled = false;
     const fetchStart = async () => {
       try {
-        const { meeting } = await apiClient.guestStatus(token);
+        const { event } = await apiClient.guestStatus(token);
         if (cancelled) return;
-        const running = (meeting as any)?.current_session;
-        setMeeting(meeting);
-        setAgenda((meeting as any)?.sessions ?? []);
+        const running = (event as any)?.current_session;
+        setCurrentEvent(event);
+        setAgenda((event as any)?.sessions ?? []);
         // The room's session, if one is on stage. Between talks there is
         // no title and no clock - and the room is still the guest's to sit
-        // in, because the room belongs to the meeting.
+        // in, because the room belongs to the event.
         setSessionTitle(running?.title ?? '');
         setStartedAt(running?.started_at ?? null);
         setNextTitle(running?.next_title ?? '');
@@ -232,17 +232,17 @@ export const GuestMeetingPage: React.FC = () => {
 
   // Live chat over the same socket that delivered the admission decision.
   useEffect(() => {
-    if (!token || !meetingCode) return;
+    if (!token || !eventCode) return;
 
     const apiUrl = new URL(process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1');
     const protocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(
-      `${protocol}//${apiUrl.host}/ws/meeting/${meetingCode}/?guest_token=${encodeURIComponent(token)}`
+      `${protocol}//${apiUrl.host}/ws/event/${eventCode}/?guest_token=${encodeURIComponent(token)}`
     );
     wsRef.current = ws;
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+    ws.onmessage = (message) => {
+      const data = JSON.parse(message.data);
 
       if (data.type === 'transcription_update' && data.segment) {
         setTranscript((prev) => [...prev, data.segment]);
@@ -267,11 +267,11 @@ export const GuestMeetingPage: React.FC = () => {
           }]
         );
         if (!showChatRef.current) setUnread((n) => n + 1);
-      } else if (data.type === 'meeting_started') {
+      } else if (data.type === 'event_started') {
         setStartedAt(data.started_at);
-      } else if (data.type === 'meeting_ended') {
-        // The only way a meeting ends now: somebody decided it had.
-        toast('The host ended the meeting', { icon: '👋' });
+      } else if (data.type === 'event_ended') {
+        // The only way a event ends now: somebody decided it had.
+        toast('The host ended the event', { icon: '👋' });
         leave();
       } else if (data.type === 'chat_settings_update') {
         // The room is always open; what the host turns on and off is
@@ -297,7 +297,7 @@ export const GuestMeetingPage: React.FC = () => {
     };
 
     return () => ws.close();
-  }, [token, meetingCode, leave]);
+  }, [token, eventCode, leave]);
 
   useEffect(() => {
     if (showChat) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -345,7 +345,7 @@ export const GuestMeetingPage: React.FC = () => {
     if (!body || !to) return;
     const socket = wsRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
-      toast.error('Not connected to the meeting');
+      toast.error('Not connected to the event');
       return;
     }
     socket.send(JSON.stringify({
@@ -365,16 +365,16 @@ export const GuestMeetingPage: React.FC = () => {
     const id = setInterval(async () => {
       // Who there is to write to is read again with it: a guest admitted
       // a moment after the page opened used to be left with an empty list
-      // for the rest of the meeting, because it was only ever read once.
+      // for the rest of the event, because it was only ever read once.
       loadChat();
       try {
-        const { guest, meeting } = await apiClient.guestStatus(token);
-        if (meeting?.started_at) setStartedAt(meeting.started_at);
-        if (meeting?.status === 'ended') {
-          toast('The meeting has ended');
+        const { guest, event } = await apiClient.guestStatus(token);
+        if (event?.started_at) setStartedAt(event.started_at);
+        if (event?.status === 'ended') {
+          toast('The event has ended');
           leave();
         } else if (guest.status !== 'admitted') {
-          toast('You are no longer in this meeting');
+          toast('You are no longer in this event');
           leave();
         }
       } catch (error) {
@@ -391,10 +391,10 @@ export const GuestMeetingPage: React.FC = () => {
   /**
    * A session ending is not the room ending.
    *
-   * A guest is admitted to the meeting, and the meeting is the room: it
+   * A guest is admitted to the event, and the event is the room: it
    * holds the whole running order, gaps and all. So when a talk comes off
-   * stage the guest is told, and stays. They leave when the meeting ends,
-   * which arrives over the socket as ``meeting_ended``.
+   * stage the guest is told, and stays. They leave when the event ends,
+   * which arrives over the socket as ``event_ended``.
    */
   const lastOnStage = useRef<string>('');
   useEffect(() => {
@@ -421,7 +421,7 @@ export const GuestMeetingPage: React.FC = () => {
     return () => clearInterval(id);
   }, [startedAt]);
 
-  const onStage = (meeting as any)?.current_session ?? null;
+  const onStage = (event as any)?.current_session ?? null;
   const speaker =
     agenda.find((item) => item.id === onStage?.id)?.speaker_name || '';
 
@@ -450,13 +450,13 @@ export const GuestMeetingPage: React.FC = () => {
             it - and to read only, like every other guest thing. */}
         <RoomCard className="xl:sticky xl:top-4">
           <RoomAgenda
-            meeting={{
-              id: meeting?.id ?? '',
-              title: meetingTitle,
-              meeting_code: meetingCode,
-              status: meeting?.status ?? 'active',
-              scheduled_start: meeting?.scheduled_start ?? new Date().toISOString(),
-              scheduled_end: meeting?.scheduled_end ?? new Date().toISOString(),
+            event={{
+              id: event?.id ?? '',
+              title: eventTitle,
+              code: eventCode,
+              status: event?.status ?? 'active',
+              scheduled_start: event?.scheduled_start ?? new Date().toISOString(),
+              scheduled_end: event?.scheduled_end ?? new Date().toISOString(),
             } as any}
             sessions={agenda as any}
             liveSessionId={onStage?.id ?? null}
@@ -472,7 +472,7 @@ export const GuestMeetingPage: React.FC = () => {
               gap-3 px-4 py-2.5 flex-wrap">
               <h1 className="flex-1 min-w-0 text-[24px] font-medium text-black text-center
                 leading-[1.2] truncate">
-                {meetingTitle}
+                {eventTitle}
               </h1>
               <span className="text-[12px] text-[#4a5567] flex-none">
                 Joined as guest · {guestName}
@@ -487,10 +487,10 @@ export const GuestMeetingPage: React.FC = () => {
 
             <div className="flex flex-col gap-3 px-4 py-2.5">
               <div className="flex gap-2 items-center">
-                <RoomPortrait name={speaker || sessionTitle || meetingTitle} size={84} />
+                <RoomPortrait name={speaker || sessionTitle || eventTitle} size={84} />
                 <div className="min-w-0">
                   <p className="text-[22px] font-medium text-black leading-[1.2] truncate">
-                    {sessionTitle || meetingTitle}
+                    {sessionTitle || eventTitle}
                   </p>
                   <p className="text-[18px] text-[#030712] leading-[1.5] truncate">
                     {speaker || 'No speaker named'}
@@ -502,7 +502,7 @@ export const GuestMeetingPage: React.FC = () => {
                 <span className="border border-[#e3e8ef] rounded-[4px] h-6 px-2 flex items-center gap-1.5">
                   <i className="w-[5px] h-[5px] rounded-full bg-[#13cef7]" aria-hidden />
                   <span className="text-[14px] text-[#030712] tracking-[-0.07px]">
-                    {meetingCode}
+                    {eventCode}
                   </span>
                 </span>
                 <span aria-hidden className="w-px h-3 bg-[#e3e8ef]" />
@@ -605,7 +605,7 @@ export const GuestMeetingPage: React.FC = () => {
                         ))
                       )}
                       <p className="text-[11px] text-[#656565] mt-1">
-                        Files are downloaded through this meeting — you do not
+                        Files are downloaded through this event — you do not
                         need a Google account.
                       </p>
                     </div>
@@ -659,11 +659,11 @@ export const GuestMeetingPage: React.FC = () => {
       </div>
 
       {/* The bar. A guest has no roster to open, no register to read and
-          no meeting to end - only the three things beside the room, and
+          no event to end - only the three things beside the room, and
           the way out. */}
       <nav
         className="fixed inset-x-0 bottom-0 z-30 bg-navy-800 px-4 py-3"
-        aria-label="Meeting controls"
+        aria-label="Event controls"
       >
         <div className="flex items-center justify-center gap-2 sm:gap-[38px] overflow-x-auto">
           <RoomBarButton

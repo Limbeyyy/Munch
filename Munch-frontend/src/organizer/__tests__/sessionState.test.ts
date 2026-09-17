@@ -1,4 +1,4 @@
-import { sessionState, meetingState, isPast } from '../sessionState';
+import { sessionState, eventState, isPast } from '../sessionState';
 
 const NOW = Date.UTC(2026, 8, 20, 12, 0);
 const at = (h: number) => new Date(Date.UTC(2026, 8, 20, h, 0)).toISOString();
@@ -52,18 +52,18 @@ describe('an overrun session, and whether that is final', () => {
     expect(sessionState(overrun, NOW)).toBe('never-started');
   });
 
-  it('is only overdue while its meeting is still running', () => {
+  it('is only overdue while its event is still running', () => {
     // The host is in the room; this can still go on stage. Calling it
-    // "never started" here contradicts the meeting's own state, which is
+    // "never started" here contradicts the event's own state, which is
     // exactly the inconsistency this guards against.
     expect(sessionState(overrun, NOW, { status: 'active' })).toBe('overdue');
   });
 
-  it('is overdue while its meeting has not begun either', () => {
+  it('is overdue while its event has not begun either', () => {
     expect(sessionState(overrun, NOW, { status: 'scheduled' })).toBe('overdue');
   });
 
-  it('becomes never started once the meeting is over', () => {
+  it('becomes never started once the event is over', () => {
     expect(sessionState(overrun, NOW, { status: 'ended' })).toBe('never-started');
   });
 
@@ -78,7 +78,7 @@ describe('an overrun session, and whether that is final', () => {
   });
 });
 
-describe('what a meeting reads as', () => {
+describe('what a event reads as', () => {
   const m = (status: string, endHour: number, started = true) => ({
     status,
     scheduled_end: at(endHour),
@@ -86,38 +86,38 @@ describe('what a meeting reads as', () => {
   });
 
   it('is live while it is running', () => {
-    expect(meetingState(m('active', 14), NOW)).toBe('live');
+    expect(eventState(m('active', 14), NOW)).toBe('live');
   });
 
   it('is upcoming while its window is still ahead', () => {
-    expect(meetingState(m('scheduled', 14, false), NOW)).toBe('upcoming');
+    expect(eventState(m('scheduled', 14, false), NOW)).toBe('upcoming');
   });
 
   it('is finished when it ran and ended', () => {
-    expect(meetingState(m('ended', 10), NOW)).toBe('finished');
+    expect(eventState(m('ended', 10), NOW)).toBe('finished');
   });
 
   it('never started when it was closed without ever running', () => {
     // Closed automatically once its time ran out, with nobody having
     // opened it. Calling that "Finished" claims something happened.
-    expect(meetingState(m('ended', 10, false), NOW)).toBe('never-started');
+    expect(eventState(m('ended', 10, false), NOW)).toBe('never-started');
   });
 
   it('never started when its window went by while it sat scheduled', () => {
-    expect(meetingState(m('scheduled', 10, false), NOW)).toBe('never-started');
+    expect(eventState(m('scheduled', 10, false), NOW)).toBe('never-started');
   });
 });
 
 /**
- * What the running order reads as once the meeting is over.
+ * What the running order reads as once the event is over.
  *
- * Ending a meeting settles every talk in it: the ones that ran are
+ * Ending a event settles every talk in it: the ones that ran are
  * finished, and the ones nobody opened never started. The second half of
  * that used to depend on the clock, which the elastic timetable made
  * unreliable - a talk nobody reached is usually left sitting in the
  * future, because the running order slides forward as the day runs late.
  */
-describe('a session in a meeting that has ended', () => {
+describe('a session in a event that has ended', () => {
   const ended = { status: 'ended' };
   const running = { status: 'active' };
 
@@ -131,16 +131,16 @@ describe('a session in a meeting that has ended', () => {
 
   it('reads as never started even where its slot is still ahead', () => {
     // The case the clock got wrong: the host ran late, the talk slid into
-    // the evening, and the meeting ended without it. "Upcoming" promised
+    // the evening, and the event ended without it. "Upcoming" promised
     // a talk that is not going to happen.
     expect(sessionState(s('scheduled', 20), NOW, ended)).toBe('never-started');
   });
 
-  it('still reads as upcoming while the meeting is running', () => {
+  it('still reads as upcoming while the event is running', () => {
     expect(sessionState(s('scheduled', 20), NOW, running)).toBe('upcoming');
   });
 
-  it('and as overdue while the meeting runs on past its slot', () => {
+  it('and as overdue while the event runs on past its slot', () => {
     expect(sessionState(s('scheduled', 9), NOW, running)).toBe('overdue');
   });
 });

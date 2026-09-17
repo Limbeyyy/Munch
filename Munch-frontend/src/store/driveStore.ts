@@ -20,8 +20,8 @@ interface DriveState {
   createFolder: (folderName: string) => Promise<DriveFile>;
   uploadFile: (file: File, folderId?: string) => Promise<DriveFile>;
   deleteFile: (fileId: string) => Promise<void>;
-  syncMeetingArtifacts: (meetingId: string, folderId: string) => Promise<void>;
-  setSyncEnabled: (meetingId: string, enabled: boolean) => Promise<void>;
+  syncEventArtifacts: (eventId: string, folderId: string) => Promise<void>;
+  setSyncEnabled: (eventId: string, enabled: boolean) => Promise<void>;
   resetError: () => void;
 }
 
@@ -100,7 +100,7 @@ export const useDriveStore = create<DriveState>((set) => ({
     }
   },
 
-  syncMeetingArtifacts: async (meetingId, folderId) => {
+  syncEventArtifacts: async (eventId, folderId) => {
     set({ loading: true, error: null });
     try {
       // API call here
@@ -110,7 +110,7 @@ export const useDriveStore = create<DriveState>((set) => ({
     }
   },
 
-  setSyncEnabled: async (meetingId, enabled) => {
+  setSyncEnabled: async (eventId, enabled) => {
     set({ loading: true, error: null });
     try {
       // API call here

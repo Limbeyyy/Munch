@@ -1,15 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useMeetingStore } from '../store/meetingStore';
+import { useEventStore } from '../store/eventStore';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../services/api';
 import { RESOURCE_POLL_MS } from '../services/polling';
 import {
   Artifact, AttendanceReport, ChatMessage, ChatSettings, Session,
-  GuestAttendee, MeetingParticipant,
+  GuestAttendee, EventParticipant,
 } from '../types';
 import toast from 'react-hot-toast';
-import { ShareMeetingDialog } from '../components/ShareMeetingDialog';
+import { ShareEventDialog } from '../components/ShareEventDialog';
 import { ResourceControls } from '../organizer/ResourceVisibility';
 import { PhotoUploads } from '../organizer/Photos';
 import { RoomChat } from '../organizer/RoomChat';
@@ -45,11 +45,11 @@ const formatElapsed = (totalSeconds: number): string => {
     : `${pad(minutes)}:${pad(seconds)}`;
 };
 
-const MeetingRoomInner: React.FC = () => {
-  const { meetingCode } = useParams<{ meetingCode: string }>();
+const EventRoomInner: React.FC = () => {
+  const { eventCode } = useParams<{ eventCode: string }>();
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const { currentMeeting, setMeeting, participants, setParticipants, transcript, addTranscriptSegment } = useMeetingStore();
+  const { currentEvent, setCurrentEvent, participants, setParticipants, transcript, addTranscriptSegment } = useEventStore();
   const wsRef = useRef<WebSocket | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [elapsed, setElapsed] = useState(0);
@@ -77,7 +77,7 @@ const MeetingRoomInner: React.FC = () => {
   /**
    * What has arrived while nobody was looking at it.
    *
-   * A meeting runs while you are reading something else in it: a question
+   * A event runs while you are reading something else in it: a question
    * is asked while the resources are open, a file is shared while you are
    * in the chat. The count on each control is how many of those have piled
    * up, and opening that panel is what clears it - not a timer, and not
@@ -111,7 +111,7 @@ const MeetingRoomInner: React.FC = () => {
   const closeSide = (panel: SidePanelId) =>
     setSide((open) => open.filter((x) => x !== panel));
 
-  /** The meeting's running order, for the agenda down the left. */
+  /** The event's running order, for the agenda down the left. */
   const [agenda, setAgenda] = useState<Session[]>([]);
   const [attendance, setAttendance] = useState<AttendanceReport | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -131,25 +131,25 @@ const MeetingRoomInner: React.FC = () => {
     roster: () => {},
     resources: () => {},
     attendance: () => {},
-    meeting: () => {},
+    event: () => {},
     agenda: () => {},
   });
-  const meetingIdRef = useRef<string | null>(null);
+  const eventIdRef = useRef<string | null>(null);
   const elapsedRef = useRef(0);
 
-  // Effects key off these primitives rather than the meeting object, whose
+  // Effects key off these primitives rather than the event object, whose
   // identity changes on every refetch and would otherwise tear down the
   // websocket, the camera and the timer.
-  const meetingId = currentMeeting?.id ?? null;
-  // A room is a session, not a meeting. The meeting may be a whole
+  const eventId = currentEvent?.id ?? null;
+  // A room is a session, not a event. The event may be a whole
   // morning; what people are sitting through is one talk, and that is
   // what the clock on the wall should count.
-  const session = currentMeeting?.current_session ?? null;
+  const session = currentEvent?.current_session ?? null;
   const startedAt = session?.started_at ?? null;
 
   useEffect(() => {
-    meetingIdRef.current = meetingId;
-  }, [meetingId]);
+    eventIdRef.current = eventId;
+  }, [eventId]);
 
   /**
    * What the finished talks settled, where it has been written up.
@@ -160,13 +160,13 @@ const MeetingRoomInner: React.FC = () => {
    */
   const [summaries, setSummaries] = useState<Record<string, any>>({});
   const refreshSummaries = useCallback(async () => {
-    const id = meetingIdRef.current;
+    const id = eventIdRef.current;
     if (!id) return;
     try {
       const { conclusions } = await apiClient.getConclusions();
       const mine: Record<string, any> = {};
       conclusions
-        .filter((one) => one.meeting_id === id)
+        .filter((one) => one.event_id === id)
         .forEach((one) => { mine[one.session_id] = one; });
       setSummaries(mine);
     } catch {
@@ -176,29 +176,29 @@ const MeetingRoomInner: React.FC = () => {
 
   /** Re-read the running order. The host moves it; the room follows. */
   const refreshAgenda = useCallback(async () => {
-    const id = meetingIdRef.current;
+    const id = eventIdRef.current;
     if (!id) return;
     try {
       setAgenda(await apiClient.listSessions(id));
     } catch {
-      // A dropped refresh is not worth interrupting the meeting for.
+      // A dropped refresh is not worth interrupting the event for.
     }
   }, []);
 
   useEffect(() => {
-    if (!meetingId) { setAgenda([]); return; }
-    apiClient.listSessions(meetingId).then(setAgenda).catch(() => setAgenda([]));
+    if (!eventId) { setAgenda([]); return; }
+    apiClient.listSessions(eventId).then(setAgenda).catch(() => setAgenda([]));
     refreshSummaries();
-  }, [meetingId, refreshSummaries]);
+  }, [eventId, refreshSummaries]);
 
-  /** Refresh participants only - no spinner, no meeting object churn. */
+  /** Refresh participants only - no spinner, no event object churn. */
   const refreshParticipants = useCallback(async () => {
-    const id = meetingIdRef.current;
+    const id = eventIdRef.current;
     if (!id) return;
     try {
       setParticipants(await apiClient.getParticipants(id));
     } catch {
-      // A dropped refresh is not worth interrupting the meeting for.
+      // A dropped refresh is not worth interrupting the event for.
     }
   }, [setParticipants]);
 
@@ -216,12 +216,12 @@ const MeetingRoomInner: React.FC = () => {
     }));
   }, [showChat, side, peopleTab]);
 
-  const isHost = !!user && currentMeeting?.host?.id === user.id;
+  const isHost = !!user && currentEvent?.host?.id === user.id;
 
   /** Whoever runs the room: the host, or anyone helping run it. */
   const canOrganize =
     isHost ||
-    (participants as MeetingParticipant[]).some(
+    (participants as EventParticipant[]).some(
       (p) => p.user?.id === user?.id && ['host', 'co_host'].includes(p.role)
     );
   /*
@@ -230,11 +230,11 @@ const MeetingRoomInner: React.FC = () => {
    * There is no room-wide thread any more: what people have to say goes
    * to the host or to the speaker, and the host decides what to do with
    * it - which is the moderation queue that was already there. Anything
-   * left over from a meeting that had a public thread stays out of the
+   * left over from a event that had a public thread stays out of the
    * way rather than appearing with nobody to have received it.
    */
   const visibleMessages = messages.filter((m) => m.is_direct);
-  const myRole = (participants as MeetingParticipant[])
+  const myRole = (participants as EventParticipant[])
     .find((p) => p.user?.id === user?.id)?.role;
 
   /**
@@ -246,10 +246,10 @@ const MeetingRoomInner: React.FC = () => {
    * private thread simply had no return path: guests are not participants,
    * so they never appeared in this list at all.
    */
-  const organizers = (participants as MeetingParticipant[]).filter(
+  const organizers = (participants as EventParticipant[]).filter(
     (p) => p.user?.id !== user?.id && ['host', 'co_host', 'presenter'].includes(p.role)
   );
-  const others = (participants as MeetingParticipant[]).filter(
+  const others = (participants as EventParticipant[]).filter(
     (p) => p.user?.id !== user?.id && !['host', 'co_host', 'presenter'].includes(p.role)
   );
 
@@ -281,10 +281,10 @@ const MeetingRoomInner: React.FC = () => {
   const [changingRole, setChangingRole] = useState<string | null>(null);
 
   const changeRole = async (
-    participant: MeetingParticipant,
+    participant: EventParticipant,
     role: 'host' | 'co_host' | 'presenter' | 'attendee'
   ) => {
-    const id = meetingIdRef.current;
+    const id = eventIdRef.current;
     if (!id || role === participant.role) return;
 
     if (role === 'host') {
@@ -301,7 +301,7 @@ const MeetingRoomInner: React.FC = () => {
       await apiClient.updateParticipantRole(id, participant.user.id, role);
       await refreshParticipants();
       if (role === 'host') {
-        await loadMeeting();
+        await loadEvent();
         toast.success(`${participant.user.email} is now the host`);
       } else {
         toast.success(`${participant.user.email} is now ${role.replace('_', '-')}`);
@@ -314,7 +314,7 @@ const MeetingRoomInner: React.FC = () => {
   };
 
   const loadChat = useCallback(async () => {
-    const id = meetingIdRef.current;
+    const id = eventIdRef.current;
     if (!id) return;
     try {
       const settings = await apiClient.getChatSettings(id);
@@ -330,7 +330,7 @@ const MeetingRoomInner: React.FC = () => {
   }, []);
 
   const toggleChatSetting = async (patch: Partial<ChatSettings>) => {
-    const id = meetingIdRef.current;
+    const id = eventIdRef.current;
     if (!id) return;
     try {
       setSavingSettings(true);
@@ -347,7 +347,7 @@ const MeetingRoomInner: React.FC = () => {
   };
 
   const loadPending = useCallback(async () => {
-    const id = meetingIdRef.current;
+    const id = eventIdRef.current;
     if (!id) return;
     try {
       setPending(await apiClient.getPendingMessages(id));
@@ -357,7 +357,7 @@ const MeetingRoomInner: React.FC = () => {
   }, []);
 
   const loadGuests = useCallback(async () => {
-    const id = meetingIdRef.current;
+    const id = eventIdRef.current;
     if (!id) return;
     try {
       const all = await apiClient.getGuests(id);
@@ -370,7 +370,7 @@ const MeetingRoomInner: React.FC = () => {
   }, []);
 
   const decideGuest = async (guestId: string, decision: 'admit' | 'deny') => {
-    const id = meetingIdRef.current;
+    const id = eventIdRef.current;
     if (!id) return;
     try {
       setDecidingGuest(guestId);
@@ -385,7 +385,7 @@ const MeetingRoomInner: React.FC = () => {
   };
 
   const loadAttendance = useCallback(async () => {
-    const id = meetingIdRef.current;
+    const id = eventIdRef.current;
     if (!id) return;
     try {
       setAttendance(await apiClient.getAttendance(id));
@@ -399,7 +399,7 @@ const MeetingRoomInner: React.FC = () => {
 
     const socket = wsRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
-      toast.error('Not connected to the meeting');
+      toast.error('Not connected to the event');
       return;
     }
 
@@ -411,32 +411,32 @@ const MeetingRoomInner: React.FC = () => {
   };
 
   /**
-   * Re-read the meeting without the ceremony of arriving at it.
+   * Re-read the event without the ceremony of arriving at it.
    *
-   * ``loadMeeting`` puts a spinner up, joins the room and checks the door,
+   * ``loadEvent`` puts a spinner up, joins the room and checks the door,
    * all of which is right on the way in and wrong for a socket saying the
    * running order moved on.
    */
-  const refreshMeeting = useCallback(async () => {
-    const id = meetingIdRef.current;
-    if (!id || !meetingCode) return;
+  const refreshEvent = useCallback(async () => {
+    const id = eventIdRef.current;
+    if (!id || !eventCode) return;
     try {
-      setMeeting(await apiClient.getMeeting(meetingCode));
+      setCurrentEvent(await apiClient.getEvent(eventCode));
     } catch {
-      // A dropped refresh is not worth interrupting the meeting for.
+      // A dropped refresh is not worth interrupting the event for.
     }
-  }, [meetingCode, setMeeting]);
+  }, [eventCode, setCurrentEvent]);
 
-  const loadMeeting = useCallback(async () => {
+  const loadEvent = useCallback(async () => {
     try {
       setIsLoading(true);
-      const meeting = await apiClient.getMeeting(meetingCode!);
-      setMeeting(meeting);
+      const event = await apiClient.getEvent(eventCode!);
+      setCurrentEvent(event);
 
       // The room opens a quarter of an hour before its hour. Coming
       // earlier is not an error to shout about - say when to come back.
-      if (meeting.entry && !meeting.entry.is_open) {
-        const opens = new Date(meeting.entry.opens_at);
+      if (event.entry && !event.entry.is_open) {
+        const opens = new Date(event.entry.opens_at);
         toast(
           `This room opens at ${opens.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. It is too early to go in.`,
           { icon: '\u23F1\uFE0F', duration: 6000 }
@@ -450,24 +450,24 @@ const MeetingRoomInner: React.FC = () => {
       // member endpoint - participants, chat settings, files - answers 404
       // and the room comes up empty. Joining also records that they were
       // here, which is what attendance is counted from.
-      await apiClient.joinMeeting(meeting.meeting_code);
+      await apiClient.joinEvent(event.code);
 
-      const participants = await apiClient.getParticipants(meeting.id);
+      const participants = await apiClient.getParticipants(event.id);
       setParticipants(participants);
     } catch (error: any) {
       const refusal = error.response?.data;
       if (refusal?.code === 'too_early') {
         toast(refusal.error, { icon: '\u23F1\uFE0F', duration: 6000 });
       } else if (error.response?.status === 404) {
-        toast.error('No meeting with that code.');
+        toast.error('No event with that code.');
       } else {
-        toast.error('Failed to load meeting: ' + error.message);
+        toast.error('Failed to load event: ' + error.message);
       }
       navigate('/');
     } finally {
       setIsLoading(false);
     }
-  }, [meetingCode, navigate, setMeeting, setParticipants]);
+  }, [eventCode, navigate, setCurrentEvent, setParticipants]);
 
   const connectWebSocket = useCallback(() => {
     // The websocket lives on the Django backend, not on the dev server that
@@ -479,15 +479,15 @@ const MeetingRoomInner: React.FC = () => {
     // access token goes in the query string.
     const token = localStorage.getItem('access_token');
     const query = token ? `?token=${encodeURIComponent(token)}` : '';
-    const wsUrl = `${protocol}//${apiUrl.host}/ws/meeting/${meetingCode}/${query}`;
+    const wsUrl = `${protocol}//${apiUrl.host}/ws/event/${eventCode}/${query}`;
 
     wsRef.current = new WebSocket(wsUrl);
     wsRef.current.onopen = () => {
       console.log('WebSocket connected');
     };
 
-    wsRef.current.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+    wsRef.current.onmessage = (message) => {
+      const data = JSON.parse(message.data);
       if (data.type === 'transcription_update' && data.segment) {
         addTranscriptSegment(data.segment);
       } else if (data.type === 'state_update' || data.type === 'participant_joined'
@@ -499,7 +499,7 @@ const MeetingRoomInner: React.FC = () => {
         // has finished should be shown the door, and whoever is sitting in
         // one that has just been handed the stage should stay put.
         if (data.state?.session_ended || data.state?.session_started) {
-          refreshRef.current.meeting();
+          refreshRef.current.event();
         }
         // The host has rearranged the running order, or a talk running
         // long has moved everything after it. Either way the times on
@@ -587,17 +587,17 @@ const MeetingRoomInner: React.FC = () => {
         refreshRef.current.resources();
       } else if (data.type === 'attendance_update') {
         if (showAttendanceRef.current) refreshRef.current.attendance();
-      } else if (data.type === 'meeting_started') {
-        setMeeting({
-          ...(useMeetingStore.getState().currentMeeting as any),
+      } else if (data.type === 'event_started') {
+        setCurrentEvent({
+          ...(useEventStore.getState().currentEvent as any),
           started_at: data.started_at,
           status: data.status,
         });
-      } else if (data.type === 'meeting_ended') {
+      } else if (data.type === 'event_ended') {
         toast(
           data.reason === 'time_elapsed'
-            ? 'The meeting time is over'
-            : 'The host ended the meeting',
+            ? 'The event time is over'
+            : 'The host ended the event',
           { icon: '👋' }
         );
         navigate('/');
@@ -618,18 +618,18 @@ const MeetingRoomInner: React.FC = () => {
       console.error('WebSocket error:', error);
       toast.error('Connection error');
     };
-  }, [meetingCode, addTranscriptSegment, refreshParticipants, setMeeting, navigate]);
+  }, [eventCode, addTranscriptSegment, refreshParticipants, setCurrentEvent, navigate]);
 
   useEffect(() => {
-    if (meetingCode) {
-      loadMeeting();
+    if (eventCode) {
+      loadEvent();
     }
-  }, [meetingCode, loadMeeting]);
+  }, [eventCode, loadEvent]);
 
-  // Keyed on the meeting id: re-running this on every meeting refetch would
+  // Keyed on the event id: re-running this on every event refetch would
   // drop the websocket and restart the camera mid-call.
   useEffect(() => {
-    if (!meetingId) return;
+    if (!eventId) return;
 
     connectWebSocket();
     return () => {
@@ -637,11 +637,11 @@ const MeetingRoomInner: React.FC = () => {
         wsRef.current.close();
       }
     };
-  }, [meetingId, connectWebSocket]);
+  }, [eventId, connectWebSocket]);
 
-  const loadResources = useCallback(async (meetingId: string) => {
+  const loadResources = useCallback(async (eventId: string) => {
     try {
-      setResources(await apiClient.getResources(meetingId));
+      setResources(await apiClient.getResources(eventId));
     } catch {
       // Resources are supplementary; a failure here must not break the room.
     }
@@ -652,79 +652,79 @@ const MeetingRoomInner: React.FC = () => {
   useEffect(() => {
     refreshRef.current = {
       roster: () => {
-        const id = meetingIdRef.current;
+        const id = eventIdRef.current;
         if (id) apiClient.getParticipants(id).then(setParticipants).catch(() => undefined);
       },
       resources: () => {
-        const id = meetingIdRef.current;
+        const id = eventIdRef.current;
         if (id) loadResources(id);
       },
       attendance: () => loadAttendance(),
-      meeting: () => refreshMeeting(),
+      event: () => refreshEvent(),
       agenda: () => { refreshAgenda(); refreshSummaries(); },
     };
   }, [
-    loadResources, loadAttendance, setParticipants, refreshMeeting,
+    loadResources, loadAttendance, setParticipants, refreshEvent,
     refreshAgenda, refreshSummaries,
   ]);
 
   // The device streams new lines over the socket; this fills in what was
   // said before we arrived.
   useEffect(() => {
-    if (!meetingCode) return;
+    if (!eventCode) return;
     apiClient
-      .getMeetingSegments(meetingCode)
+      .getEventSegments(eventCode)
       .then((segments) => segments.forEach(addTranscriptSegment))
       .catch(() => undefined);
-  }, [meetingCode, addTranscriptSegment]);
+  }, [eventCode, addTranscriptSegment]);
 
   useEffect(() => {
-    if (meetingId) loadChat();
-  }, [meetingId, loadChat]);
+    if (eventId) loadChat();
+  }, [eventId, loadChat]);
 
   useEffect(() => {
-    if (meetingId && isHost && chatSettings.chat_enabled) loadPending();
-  }, [meetingId, isHost, chatSettings.chat_enabled, loadPending]);
+    if (eventId && isHost && chatSettings.chat_enabled) loadPending();
+  }, [eventId, isHost, chatSettings.chat_enabled, loadPending]);
 
   useEffect(() => {
-    if (meetingId && isHost) loadGuests();
-  }, [meetingId, isHost, loadGuests]);
+    if (eventId && isHost) loadGuests();
+  }, [eventId, isHost, loadGuests]);
 
   // Keep the newest message in view while the panel is open.
   useEffect(() => {
     if (showChat) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, showChat]);
 
-  // Anyone in the meeting can upload, so poll to pick up other people's
+  // Anyone in the event can upload, so poll to pick up other people's
   // files. Also refresh on tab focus, since polling is paused while hidden.
   useEffect(() => {
-    if (!meetingId) return;
+    if (!eventId) return;
 
-    loadResources(meetingId);
+    loadResources(eventId);
 
     const id = setInterval(() => {
       if (document.visibilityState === 'visible') {
-        loadResources(meetingId);
+        loadResources(eventId);
       }
     }, RESOURCE_POLL_MS);
 
-    const onFocus = () => loadResources(meetingId);
+    const onFocus = () => loadResources(eventId);
     window.addEventListener('focus', onFocus);
 
     return () => {
       clearInterval(id);
       window.removeEventListener('focus', onFocus);
     };
-  }, [meetingId, loadResources]);
+  }, [eventId, loadResources]);
 
-  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !currentMeeting) return;
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentEvent) return;
 
     setUploadPercent(0);
     try {
       const artifact = await apiClient.uploadResource(
-        currentMeeting.id,
+        currentEvent.id,
         file,
         setUploadPercent
       );
@@ -743,12 +743,12 @@ const MeetingRoomInner: React.FC = () => {
   /**
    * A session ending does not end the room.
    *
-   * The room belongs to the meeting, not to one talk in it: a meeting of
+   * The room belongs to the event, not to one talk in it: a event of
    * ten sessions is one room that all ten happen in. When a session comes
    * off stage its transcript, its chat and its resources are closed off
    * and belong to it, and the room goes on - waiting for the host to start
-   * the next speaker. Only the meeting ending shows anybody the door, and
-   * that arrives over the socket as ``meeting_ended``.
+   * the next speaker. Only the event ending shows anybody the door, and
+   * that arrives over the socket as ``event_ended``.
    *
    * This is all that is left of the old behaviour: saying so, once, rather
    * than navigating away.
@@ -769,12 +769,12 @@ const MeetingRoomInner: React.FC = () => {
   /** Put the next speaker on stage. The host advances the running order. */
   const [starting, setStarting] = useState(false);
   const startSession = async (sessionId?: string | null) => {
-    const nextId = sessionId ?? currentMeeting?.current_session?.next_id;
+    const nextId = sessionId ?? currentEvent?.current_session?.next_id;
     if (!nextId) return;
     setStarting(true);
     try {
       await apiClient.startSession(nextId);
-      await refreshRef.current.meeting();
+      await refreshRef.current.event();
       await refreshAgenda();
     } catch (error: any) {
       toast.error(error.response?.data?.error ?? 'Could not start that session');
@@ -786,7 +786,7 @@ const MeetingRoomInner: React.FC = () => {
   // Session timer, anchored to the server's started_at so every participant
   // sees the same count, and leaving and returning resumes rather than resets.
   useEffect(() => {
-    if (!meetingId || !startedAt) {
+    if (!eventId || !startedAt) {
       setElapsed(0);
       return;
     }
@@ -800,7 +800,7 @@ const MeetingRoomInner: React.FC = () => {
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [meetingId, startedAt]);
+  }, [eventId, startedAt]);
 
   /**
    * Host only: end it for everyone.
@@ -809,16 +809,16 @@ const MeetingRoomInner: React.FC = () => {
    * The two are asked about rather than guessed at, because one of them
    * empties the hall.
    */
-  const endMeeting = async () => {
-    if (!currentMeeting) return;
+  const endEvent = async () => {
+    if (!currentEvent) return;
     setShowEndChoice(false);
     try {
-      await apiClient.endMeeting(currentMeeting.id);
-      toast.success('Meeting ended');
+      await apiClient.endEvent(currentEvent.id);
+      toast.success('Event ended');
       navigate('/');
     } catch (error: any) {
       toast.error(
-        error.response?.data?.error ?? 'Failed to end meeting: ' + error.message
+        error.response?.data?.error ?? 'Failed to end event: ' + error.message
       );
     }
   };
@@ -827,19 +827,19 @@ const MeetingRoomInner: React.FC = () => {
    * End the talk on stage. The room is not ended with it.
    *
    * Its transcript, its chat and its resources are closed off and belong
-   * to it; the meeting carries on and offers the host the next speaker.
-   * The other half of the same button, one line down, ends the meeting -
+   * to it; the event carries on and offers the host the next speaker.
+   * The other half of the same button, one line down, ends the event -
    * which is a different thing, and worth being asked which you meant.
    */
   const [endingSession, setEndingSession] = useState(false);
   const endSession = async () => {
-    const onStage = currentMeeting?.current_session?.id;
+    const onStage = currentEvent?.current_session?.id;
     if (!onStage) return;
     setEndingSession(true);
     try {
       await apiClient.endSession(onStage);
       setShowEndChoice(false);
-      await refreshRef.current.meeting();
+      await refreshRef.current.event();
       await refreshAgenda();
       toast.success('Session ended. The room stays open.');
     } catch (error: any) {
@@ -849,11 +849,11 @@ const MeetingRoomInner: React.FC = () => {
     }
   };
 
-  /** Everyone else: step out, meeting carries on. */
-  const leaveMeeting = async () => {
-    if (!currentMeeting) return;
+  /** Everyone else: step out, event carries on. */
+  const leaveEvent = async () => {
+    if (!currentEvent) return;
     try {
-      await apiClient.leaveMeeting(currentMeeting.id);
+      await apiClient.leaveEvent(currentEvent.id);
     } catch {
       // Leaving is best-effort; navigate away regardless.
     }
@@ -863,15 +863,15 @@ const MeetingRoomInner: React.FC = () => {
   if (isLoading) {
     return (
       <div className="min-h-screen grid place-items-center bg-[#f1f4f8]">
-        <p className="text-[16px] text-[#4a5567]">Loading meeting…</p>
+        <p className="text-[16px] text-[#4a5567]">Loading event…</p>
       </div>
     );
   }
 
-  if (!currentMeeting) {
+  if (!currentEvent) {
     return (
       <div className="min-h-screen grid place-items-center bg-[#f1f4f8]">
-        <p className="text-[16px] text-[#4a5567]">Meeting not found</p>
+        <p className="text-[16px] text-[#4a5567]">Event not found</p>
       </div>
     );
   }
@@ -880,7 +880,7 @@ const MeetingRoomInner: React.FC = () => {
     agenda.find((s) => s.id === session?.id)?.speaker_name || '';
 
   /** Nothing on stage: the room is between talks, not finished. */
-  const room = currentMeeting.current_session;
+  const room = currentEvent.current_session;
   const waiting = !session?.id;
   const nextTitle = room?.next_title || '';
 
@@ -890,7 +890,7 @@ const MeetingRoomInner: React.FC = () => {
    * While a session is on stage the room shows that session's lines, so
    * the next speaker starts on a clean page rather than underneath the
    * last one. Between talks there is nothing being said, and what the
-   * room has is the record of the meeting so far.
+   * room has is the record of the event so far.
    */
   const roomLines = session?.id
     ? transcript.filter(
@@ -900,7 +900,7 @@ const MeetingRoomInner: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#f1f4f8] text-[#030712] pb-[110px]">
-      {showEndChoice && currentMeeting && (
+      {showEndChoice && currentEvent && (
         <div className="fixed inset-0 z-50 bg-black/60 grid place-items-center p-4">
           <div className="bg-white text-gray-900 rounded-2xl max-w-md w-full p-6">
             <h3 className="text-lg font-semibold">Leaving, or ending it?</h3>
@@ -910,10 +910,10 @@ const MeetingRoomInner: React.FC = () => {
             </p>
 
             <button
-              onClick={endMeeting}
+              onClick={endEvent}
               className="mt-5 w-full text-left rounded-xl border border-red-200 hover:border-red-400 p-4"
             >
-              <span className="block font-semibold text-red-700">End the meeting</span>
+              <span className="block font-semibold text-red-700">End the event</span>
               <span className="block text-sm text-gray-600 mt-0.5">
                 Everything ends with it. Whatever is on stage is finished,
                 anything never opened reads as never started, and the room
@@ -922,12 +922,12 @@ const MeetingRoomInner: React.FC = () => {
             </button>
 
             <button
-              onClick={() => { setShowEndChoice(false); leaveMeeting(); }}
+              onClick={() => { setShowEndChoice(false); leaveEvent(); }}
               className="mt-3 w-full text-left rounded-xl border border-navy-800/15 hover:border-navy-800/40 p-4"
             >
               <span className="block font-semibold">Just leave</span>
               <span className="block text-sm text-gray-600 mt-0.5">
-                The meeting carries on without you, and you can come back.
+                The event carries on without you, and you can come back.
               </span>
             </button>
 
@@ -941,10 +941,10 @@ const MeetingRoomInner: React.FC = () => {
         </div>
       )}
 
-      {showShare && currentMeeting && (
-        <ShareMeetingDialog
-          meetingId={currentMeeting.id}
-          meetingCode={currentMeeting.meeting_code}
+      {showShare && currentEvent && (
+        <ShareEventDialog
+          eventId={currentEvent.id}
+          eventCode={currentEvent.code}
           onClose={() => setShowShare(false)}
           onInvited={() => loadAttendance()}
         />
@@ -1002,7 +1002,7 @@ const MeetingRoomInner: React.FC = () => {
             rearranges it from here; everybody else watches it move. */}
         <RoomCard className="xl:sticky xl:top-4">
           <RoomAgenda
-            meeting={currentMeeting}
+            event={currentEvent}
             sessions={agenda}
             liveSessionId={session?.id ?? null}
             canEdit={isHost}
@@ -1020,15 +1020,15 @@ const MeetingRoomInner: React.FC = () => {
               gap-3 px-4 py-2.5 flex-wrap">
               <h1 className="flex-1 min-w-0 text-[24px] font-medium text-black text-center
                 leading-[1.2] truncate">
-                {currentMeeting.title}
+                {currentEvent.title}
               </h1>
 
               <div className="flex items-center gap-2 flex-none">
 
-                {/* Nothing here starts the meeting. Putting a talk on
+                {/* Nothing here starts the event. Putting a talk on
                     stage does that - it is the same decision, and asking
                     for it twice only made it possible to be half-started:
-                    a meeting under way with nobody speaking. */}
+                    a event under way with nobody speaking. */}
                 {startedAt && (
                   <span className="bg-[#fce2ef] text-[#f83995] text-[12px] tracking-[-0.06px]
                     rounded-[4px] h-6 px-2 grid place-items-center">
@@ -1040,10 +1040,10 @@ const MeetingRoomInner: React.FC = () => {
 
             <div className="flex flex-col gap-3 px-4 py-2.5">
               <div className="flex gap-2 items-center">
-                <RoomPortrait name={speaker || currentMeeting.title} size={84} />
+                <RoomPortrait name={speaker || currentEvent.title} size={84} />
                 <div className="min-w-0">
                   <p className="text-[22px] font-medium text-black leading-[1.2] truncate">
-                    {session?.title || currentMeeting.title}
+                    {session?.title || currentEvent.title}
                   </p>
                   <p className="text-[18px] text-[#030712] leading-[1.5] truncate">
                     {speaker || 'No speaker named'}
@@ -1055,7 +1055,7 @@ const MeetingRoomInner: React.FC = () => {
                 <span className="border border-[#e3e8ef] rounded-[4px] h-6 px-2 flex items-center gap-1.5">
                   <i className="w-[5px] h-[5px] rounded-full bg-[#13cef7]" aria-hidden />
                   <span className="text-[14px] text-[#030712] tracking-[-0.07px]">
-                    {currentMeeting.meeting_code}
+                    {currentEvent.code}
                   </span>
                 </span>
                 <span aria-hidden className="w-px h-3 bg-[#e3e8ef]" />
@@ -1064,7 +1064,7 @@ const MeetingRoomInner: React.FC = () => {
                 </span>
 
                 {/* Ending the talk belongs beside the talk. Ending the
-                    meeting is a different thing and lives behind Leave,
+                    event is a different thing and lives behind Leave,
                     where it is asked about rather than sat next to. */}
                 {isHost && session?.id && (
                   <button
@@ -1202,7 +1202,7 @@ const MeetingRoomInner: React.FC = () => {
 
             {resourceTab === 'photos' ? (
               <div className="px-4 py-3">
-                <PhotoUploads meetingRef={meetingCode ?? ''} />
+                <PhotoUploads eventRef={eventCode ?? ''} />
               </div>
             ) : (
             <div className="max-h-[276px] overflow-y-auto">
@@ -1237,14 +1237,14 @@ const MeetingRoomInner: React.FC = () => {
                         </span>
                       </span>
                     </a>
-                    {canOrganize && meetingId && (
+                    {canOrganize && eventId && (
                       <div className="px-4 pb-2.5">
                         <ResourceControls
-                          meetingId={meetingId}
+                          eventId={eventId}
                           resource={r}
                           index={i}
                           total={resources.length}
-                          onChanged={() => loadResources(meetingId)}
+                          onChanged={() => loadResources(eventId)}
                         />
                       </div>
                     )}
@@ -1310,12 +1310,12 @@ const MeetingRoomInner: React.FC = () => {
 
             <div className="max-h-[460px] overflow-y-auto">
               {peopleTab === 'here' ? (
-                (participants as MeetingParticipant[]).length === 0 ? (
+                (participants as EventParticipant[]).length === 0 ? (
                   <p className="text-[14px] text-[#656565] px-4 py-3">
                     Nobody is here yet.
                   </p>
                 ) : (
-                  (participants as MeetingParticipant[]).map((p) => {
+                  (participants as EventParticipant[]).map((p) => {
                     const isMe = p.user.id === user?.id;
                     return (
                       <div
@@ -1369,7 +1369,7 @@ const MeetingRoomInner: React.FC = () => {
                     {[
                       ['On the roll', attendance.expected_total],
                       ['Attended', attendance.attended_count],
-                      ['In meeting now', attendance.active_count],
+                      ['In event now', attendance.active_count],
                       ['Absent', attendance.absent_count],
                     ].map(([label, value]) => (
                       <div
@@ -1438,9 +1438,9 @@ const MeetingRoomInner: React.FC = () => {
                 {panel === 'questions' && (
           <RoomCard>
             <SidePanelHead title="Questions" onClose={() => closeSide('questions')} />
-            {meetingId && (
+            {eventId && (
               <RoomQuestions
-                meetingId={meetingId}
+                eventId={eventId}
                 refreshMs={20000}
                 canSort={canOrganize}
                 waiting={pending}
@@ -1460,7 +1460,7 @@ const MeetingRoomInner: React.FC = () => {
           everything else off centre, which is what it had been doing. */}
       <nav
         className="fixed inset-x-0 bottom-0 z-30 bg-navy-800 px-4 py-3"
-        aria-label="Meeting controls"
+        aria-label="Event controls"
       >
         <div className="flex items-center justify-center gap-2 sm:gap-[38px] overflow-x-auto">
           <RoomBarButton
@@ -1499,10 +1499,10 @@ const MeetingRoomInner: React.FC = () => {
             label="Leave"
             tone="leave"
             // The host is always asked. It used to depend on something
-            // being on stage, which left them no way to end the meeting
+            // being on stage, which left them no way to end the event
             // from inside the room between two talks - and the room lives
             // between two talks now.
-            onClick={() => (isHost ? setShowEndChoice(true) : leaveMeeting())}
+            onClick={() => (isHost ? setShowEndChoice(true) : leaveEvent())}
           />
         </span>
       </nav>
@@ -1518,8 +1518,8 @@ const MeetingRoomInner: React.FC = () => {
  * the same context every other screen gives them. Without it they throw
  * on first render, and the whole room goes down with them.
  */
-export const MeetingRoomPage: React.FC = () => (
+export const EventRoomPage: React.FC = () => (
   <OrganizerProvider>
-    <MeetingRoomInner />
+    <EventRoomInner />
   </OrganizerProvider>
 );
