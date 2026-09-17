@@ -6,8 +6,7 @@ import { ACTIVE_POLL_MS } from '../../services/polling';
 import { deskSession, startableNow } from '../sessionState';
 import { ChatRules } from '../ChatRules';
 import { RequestButton, RequestCard, RequestRow } from '../RequestCard';
-import { DashboardView } from '../../attendee/views/DashboardView';
-import { SpineItem } from '../../attendee/Spine';
+import { LiveDashboard } from '../LiveDashboard';
 import { ChatMessage, GuestAttendee, Event, Session } from '../../types';
 import { useOrganizer } from '../i18n';
 import { Btn, Card, Head, Panel } from '../ui';
@@ -79,7 +78,6 @@ export const LiveView: React.FC<Props> = ({ events, onChanged, onNavigate }) => 
   // knows when the door is open.
 
   const [pending, setPending] = useState<ChatMessage[]>([]);
-  const [elapsed, setElapsed] = useState(0);
   const [busy, setBusy] = useState(false);
   const [knocking, setKnocking] = useState<GuestAttendee[]>([]);
   const [deciding, setDeciding] = useState<string | null>(null);
@@ -130,16 +128,10 @@ export const LiveView: React.FC<Props> = ({ events, onChanged, onNavigate }) => 
     return () => clearInterval(id);
   }, [load]);
 
-  // The clock is anchored to the server's start time, so every screen agrees.
-  useEffect(() => {
-    // The clock counts the session on stage, not the whole morning.
-    if (!onStage?.started_at) { setElapsed(0); return; }
-    const origin = new Date(onStage.started_at).getTime();
-    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - origin) / 1000)));
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [onStage?.started_at]);
+  // The running clock that used to sit on the stage card is gone with the
+  // layout it belonged to: the design gives the card the session's hours
+  // rather than a counter. The times themselves still come from the
+  // server, so every screen still agrees about them.
 
   const start = async () => {
     if (!stage) return;
@@ -227,41 +219,12 @@ export const LiveView: React.FC<Props> = ({ events, onChanged, onNavigate }) => 
     );
   }
 
-  /**
-   * The day as the dashboard draws it, from what this desk already has.
-   *
-   * The host's live control and the attendee's dashboard are the same
-   * screen - what is on stage, what is being said, what the day has come
-   * to - so it is the same component rather than a second copy of it that
-   * would drift. What the host gets on top are the things only a host
-   * does: the people asking to come in, the messages waiting to be
-   * sorted, and the switches for the talk that is running.
-   */
-  const items: SpineItem[] = sessions.map((one) => ({
-    session: one,
-    event: current as any,
-  }));
-  const liveItem = onStage
-    ? items.find((i) => i.session.id === onStage.id) ?? null
-    : null;
-
   return (
-    <DashboardView
-      event={null}
-      items={items}
-      live={liveItem}
-      attendedIds={new Set()}
-      onOpen={() => onNavigate('agenda')}
-      onNavigate={onNavigate}
-      onJoinRoom={(m) => navigate(`/event/${m.code}`)}
-      elapsed={elapsed}
-      heading={{
-        title: { ne: 'लाइभ नियन्त्रण', en: 'Live control' },
-        lede: {
-          ne: 'सत्र सुरु/अन्त्य, हलको गणना, र सन्देशको लाइन — सबै यहीँबाट।',
-          en: 'Start and end sessions, watch the room, clear the queue — all from here.',
-        },
-      }}
+    <LiveDashboard
+      event={current}
+      sessions={sessions}
+      live={onStage ?? null}
+      onBackToRoom={() => navigate(`/event/${current.code}`)}
       stageActions={
         isLive ? (
           <Btn sm tone="danger" disabled={busy} onClick={end}>
@@ -291,7 +254,7 @@ export const LiveView: React.FC<Props> = ({ events, onChanged, onNavigate }) => 
           </Btn>
         ) : null
       }
-      extras={
+      queues={
         <>
           {/* The counters that were here said what the rest of the
               screen already shows, in numbers nobody was acting on. The

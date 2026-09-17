@@ -87,7 +87,10 @@ const usePhotos = (eventRef: string) => {
   const load = useCallback(async (quiet = false) => {
     if (!eventRef) { setPage(null); setLoading(false); return; }
     try {
-      setPage(await apiClient.getPhotos(eventRef));
+      // An album that came back without its lists is an empty album, not
+      // a reason to take the page down with it.
+      const got = await apiClient.getPhotos(eventRef);
+      setPage({ ...got, folders: got?.folders ?? [], photos: got?.photos ?? [] });
     } catch {
       if (!quiet) {
         toast.error(t({ ne: 'तस्बिर ल्याउन सकिएन', en: 'Could not load the photographs' }));
