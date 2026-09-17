@@ -12,7 +12,7 @@ from src.apps.artifacts.models import Artifact, ArtifactType
 
 
 def is_released(artifact) -> bool:
-    """True when everyone in the meeting may read this file.
+    """True when everyone in the event may read this file.
 
     Four answers, and the uploader picks which:
 
@@ -36,14 +36,14 @@ def is_released(artifact) -> bool:
     return artifact.session.status == 'done'
 
 
-def resources_for(meeting, *, include_unreleased: bool):
-    """The meeting's shared files, newest first.
+def resources_for(event, *, include_unreleased: bool):
+    """The event's shared files, newest first.
 
     ``include_unreleased`` is for organizers, who need to see the files
     they have staged against sessions that have not run yet.
     """
     resources = (
-        Artifact.objects.filter(meeting=meeting, artifact_type=ArtifactType.RESOURCE)
+        Artifact.objects.filter(event=event, artifact_type=ArtifactType.RESOURCE)
         .select_related('session')
         # The order the organizer set, then newest first among equals.
         .order_by('position', '-created_at')
@@ -58,17 +58,17 @@ def is_public(artifact) -> bool:
     return getattr(artifact, 'visibility', None) == Artifact.Visibility.PUBLIC
 
 
-def can_organize(meeting, user) -> bool:
-    """Whether this person runs the meeting, rather than attends it."""
+def can_organize(event, user) -> bool:
+    """Whether this person runs the event, rather than attends it."""
     if not user or not user.is_authenticated:
         return False
-    if str(user.id) == str(meeting.host_id):
+    if str(user.id) == str(event.host_id):
         return True
-    if meeting.participants.filter(user=user, role__in=['host', 'co_host']).exists():
+    if event.participants.filter(user=user, role__in=['host', 'co_host']).exists():
         return True
 
     # Being named a co-host is enough; it should not also require having
     # walked into the room, which is what a participant row records.
     from src.apps.meetings.roles import is_co_host
 
-    return is_co_host(meeting, user)
+    return is_co_host(event, user)

@@ -5,19 +5,18 @@ each speaker's name, address and number - are usually already in a
 spreadsheet somebody keeps. So: a template to fill in, and a reader that
 turns it back into the same programme the form would have made.
 
-The sheet is three tables, one under the other: the programmes, then the
-meetings, then the sessions. Each row is one thing, and the tables are
-joined by id - a meeting names the event it belongs to, a session names
-the meeting. It used to be one very wide table with the programme and the
-meeting repeated on every session's row, which meant fourteen columns to
+The sheet is two tables, one under the other: the events, then the
+sessions. Each row is one thing, and the tables are joined by id - a
+session names the event it belongs to. It used to be one very wide table
+with the event repeated on every session's row, which meant columns to
 scroll through sideways and the same title typed ten times, with nothing
 to stop the tenth disagreeing with the first.
 
 Two files, the same shape in both. The CSV opens anywhere and survives
 being emailed round an office. The Excel one adds what a CSV cannot
-carry: the id columns in the sessions table are dropdowns, filled from
-the events and meetings typed above, so a session cannot point at a
-meeting that is not there. Either can be filled in and sent back.
+carry: the id column in the sessions table is a dropdown, filled from
+the events typed above, so a session cannot point at an event that is
+not there. Either can be filled in and sent back.
 
 Nothing here validates a programme itself. The rows are turned into the
 same payload the form sends and handed to the same serializer, so the
@@ -36,46 +35,41 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 #: The three tables the sheet is made of, in the order they appear.
-EVENT_COLUMNS = ['event_id', 'event_title', 'event_date', 'venue']
-
-MEETING_COLUMNS = [
-    'meeting_id', 'event_id', 'meeting_title',
-    'meeting_starts_at', 'meeting_duration_minutes',
+EVENT_COLUMNS = [
+    'event_id', 'event_title', 'event_date', 'venue',
+    'event_starts_at', 'event_duration_minutes',
 ]
 
 SESSION_COLUMNS = [
-    'session_id', 'event_id', 'meeting_id', 'session_title',
+    'session_id', 'event_id', 'session_title',
     'session_starts_at', 'session_duration_minutes', 'hall',
     'speaker_name', 'speaker_email', 'speaker_phone', 'speaker_visibility',
 ]
 
 TABLES = [
     ('EVENTS', EVENT_COLUMNS),
-    ('MEETINGS', MEETING_COLUMNS),
     ('SESSIONS', SESSION_COLUMNS),
 ]
 
 #: How many blank rows each table is given to be filled in. Enough for a
 #: long day; more can be added underneath, and the reader does not count.
-ROOM_TO_FILL = {'EVENTS': 8, 'MEETINGS': 12, 'SESSIONS': 30}
+ROOM_TO_FILL = {'EVENTS': 10, 'SESSIONS': 30}
 
 #: Said once at the top rather than in a note under every column, so the
 #: tables themselves are the clean thing the eye lands on.
 HOW_TO = [
-    'Three tables: the programmes, the meetings inside them, the sessions '
-    'inside those.',
-    'Give every event and every meeting an id - 1, 2, 3 will do - and use '
-    'those ids to say what belongs to what.',
-    'A meeting names its event_id. A session names its meeting_id, and the '
-    'event_id that meeting belongs to.',
+    'Two tables: the events, and the sessions inside them.',
+    'Give every event an id - 1, 2, 3 will do - and use those ids to say '
+    'which event each session belongs to.',
+    'A session names its event_id.',
     'Dates and times are YYYY-MM-DD HH:MM, on the 24-hour clock: '
     '2026-09-14 14:40. They are read as the clock in the hall, so type '
     'the time the thing actually happens.',
-    'The first session of a meeting starts when the meeting starts.',
+    'The first session of an event starts when the event starts.',
     'speaker_name, speaker_email and speaker_phone are required; the email '
     'is what makes them a presenter when they sign in.',
     'speaker_visibility is private or public, and private if left blank.',
-    'session_duration_minutes is 30 if left blank; a meeting is as long as '
+    'session_duration_minutes is 30 if left blank; an event is as long as '
     'the sessions in it.',
     'Lines beginning with # are ignored, so this guidance can stay where it is.',
 ]
@@ -84,32 +78,28 @@ HOW_TO = [
 EXAMPLE_ROWS = {
     'EVENTS': [
         ['1', 'National Health Workers Conference', '2026-10-02',
-         'National Assembly Hall'],
-    ],
-    'MEETINGS': [
-        ['1', '1', 'Opening day', '2026-10-02 09:00', '240'],
+         'National Assembly Hall', '2026-10-02 09:00', '240'],
     ],
     'SESSIONS': [
-        ['1001', '1', '1', 'Health service delivery in federalism',
+        ['1001', '1', 'Health service delivery in federalism',
          '2026-10-02 09:00', '60', 'Hall A', 'Dr Sarita Poudel',
          'sarita.poudel@example.org', '9800000001', 'private'],
-        ['1002', '1', '1', 'Digital health records', '2026-10-02 10:15', '45',
+        ['1002', '1', 'Digital health records', '2026-10-02 10:15', '45',
          'Hall A', 'Bikash Shrestha', 'bikash.shrestha@example.org',
          '9800000002', 'public'],
     ],
 }
 
-#: The old shape: one very wide table, the programme and the meeting
-#: repeated on every session's row. Sheets already filled in against it
-#: are still read, so nobody is stranded halfway through one.
+#: The old shape: one very wide table, the event repeated on every
+#: session's row. Sheets already filled in against it are still read, so
+#: nobody is stranded halfway through one.
 #: The columns, in the order the template lays them out.
 COLUMNS = [
     'event_title',
     'event_date',
     'venue',
-    'meeting_title',
-    'meeting_starts_at',
-    'meeting_duration_minutes',
+    'event_starts_at',
+    'event_duration_minutes',
     'session_title',
     'session_starts_at',
     'session_duration_minutes',
@@ -123,12 +113,11 @@ COLUMNS = [
 #: What each column is for, written into the template so the person
 #: filling it in does not have to be told separately.
 NOTES = {
-    'event_title': 'The programme this belongs to. Repeat it on every row of the programme.',
+    'event_title': 'The event this belongs to. Repeat it on every row of the event.',
     'event_date': 'YYYY-MM-DD, the day the programme runs.',
     'venue': 'Where it is held. Optional.',
-    'meeting_title': 'The meeting. Repeat it on every row of the meeting.',
-    'meeting_starts_at': 'YYYY-MM-DD HH:MM. The first session must start at this time.',
-    'meeting_duration_minutes': 'Optional; the sessions decide the real length.',
+    'event_starts_at': 'YYYY-MM-DD HH:MM. The first session must start at this time.',
+    'event_duration_minutes': 'Optional; the sessions decide the real length.',
     'session_title': 'One row per session.',
     'session_starts_at': 'YYYY-MM-DD HH:MM.',
     'session_duration_minutes': 'How long the session runs. 30 if left blank.',
@@ -145,9 +134,8 @@ EXAMPLE = [
         'event_title': 'National Health Workers Conference',
         'event_date': '2026-10-02',
         'venue': 'National Assembly Hall',
-        'meeting_title': 'Opening day',
-        'meeting_starts_at': '2026-10-02 09:00',
-        'meeting_duration_minutes': '240',
+        'event_starts_at': '2026-10-02 09:00',
+        'event_duration_minutes': '240',
         'session_title': 'Health service delivery in federalism',
         'session_starts_at': '2026-10-02 09:00',
         'session_duration_minutes': '60',
@@ -161,9 +149,8 @@ EXAMPLE = [
         'event_title': 'National Health Workers Conference',
         'event_date': '2026-10-02',
         'venue': 'National Assembly Hall',
-        'meeting_title': 'Opening day',
-        'meeting_starts_at': '2026-10-02 09:00',
-        'meeting_duration_minutes': '240',
+        'event_starts_at': '2026-10-02 09:00',
+        'event_duration_minutes': '240',
         'session_title': 'Digital health records',
         'session_starts_at': '2026-10-02 10:15',
         'session_duration_minutes': '45',
@@ -239,11 +226,11 @@ def template_workbook() -> bytes:
     """The same template as a workbook, with the id columns as dropdowns.
 
     This is the one thing a CSV cannot carry. The sessions table has to
-    name the meeting each session belongs to, and typing an id by hand is
+    name the event each session belongs to, and typing an id by hand is
     exactly the sort of thing that goes wrong quietly - a 2 where a 3 was
-    meant points a session at the wrong meeting and nothing looks amiss.
+    meant points a session at the wrong event and nothing looks amiss.
     So in the workbook those two cells are lists, drawn from the ids typed
-    into the tables above: you pick a meeting rather than remembering one.
+    into the tables above: you pick an event rather than remembering one.
     """
     try:
         from openpyxl import Workbook
@@ -290,12 +277,11 @@ def template_workbook() -> bytes:
     for column, width in widest.items():
         sheet.column_dimensions[get_column_letter(column)].width = min(width, 42)
 
-    # The dropdowns: a session's event and meeting are picked from the ids
-    # typed above rather than typed again.
+    # The dropdown: a session's event is picked from the ids typed above
+    # rather than typed again.
     session_first, session_last = id_ranges['SESSIONS']
     picks = (
-        ('EVENTS', 'event_id', 'programme', 'Events'),
-        ('MEETINGS', 'meeting_id', 'meeting', 'Meetings'),
+        ('EVENTS', 'event_id', 'event', 'Events'),
     )
     for name, column_name, thing, table in picks:
         source_first, source_last = id_ranges[name]
@@ -339,7 +325,7 @@ def _clean(value):
 
 def _is_guidance(row) -> bool:
     """The notes row, and any row somebody has commented out."""
-    first = _clean(row.get('event_title')) or _clean(row.get('meeting_title'))
+    first = _clean(row.get('event_title')) or _clean(row.get('session_title'))
     return first.startswith('#')
 
 
@@ -349,9 +335,9 @@ def sheet_timezone():
     Not the server's. Everything is stored in UTC and rendered in each
     reader's own zone, which is right for a time the app itself recorded -
     but a time somebody typed into a spreadsheet carries no zone with it.
-    "2026-09-14 15:00" in the meeting_starts_at column means three in the
+    "2026-09-14 15:00" in the event_starts_at column means three in the
     afternoon in the hall, and reading it as UTC put every imported
-    programme five and three quarter hours out: a three o'clock meeting
+    programme five and three quarter hours out: a three o'clock event
     turned up on the organizer's screen at a quarter to nine.
     """
     from django.conf import settings
@@ -547,69 +533,49 @@ def _read_tables(rows) -> list:
             'description': '',
             'venue': _clean(row.get('venue')),
             'event_date': _day(row.get('event_date'), row=number),
-            'meetings': [],
+            # Optional: an event can be set up before its hours are
+            # settled, the same as through the form. The day it runs is
+            # what is compulsory.
+            'scheduled_start': (
+                _moment(row.get('event_starts_at'), row=number, column='event_starts_at')
+                if _clean(row.get('event_starts_at'))
+                else None
+            ),
+            'duration_minutes': _minutes(
+                row.get('event_duration_minutes'), 60,
+                row=number, column='event_duration_minutes',
+            ),
+            'sessions': [],
         }
         key = _clean(row.get('event_id')) or title.lower()
         if key in by_event_id:
             raise ImportProblem(
-                f'Two programmes share the id “{key}”. Each needs its own.',
+                f'Two events share the id “{key}”. Each needs its own.',
                 row=number, column='event_id',
             )
         by_event_id[key] = entry
         events.append(entry)
 
     if not events:
-        raise ImportProblem('There are no programmes in that sheet.')
+        raise ImportProblem('There are no events in that sheet.')
 
     def the_event(key, *, number, column):
-        """The programme an id points at, forgiving a blank when there is one."""
+        """The event an id points at, forgiving a blank when there is one."""
         key = _clean(key)
         if not key:
             if len(events) == 1:
                 return events[0]
             raise ImportProblem(
-                'Which programme does this belong to? Put its event_id here.',
+                'Which event does this belong to? Put its event_id here.',
                 row=number, column=column,
             )
         found = by_event_id.get(key)
         if found is None:
             raise ImportProblem(
-                f'There is no programme with the id “{key}” in the EVENTS table.',
+                f'There is no event with the id “{key}” in the EVENTS table.',
                 row=number, column=column,
             )
         return found
-
-    meetings = []
-    by_meeting_id = {}
-
-    for number, row in gathered['MEETINGS']:
-        title = _clean(row.get('meeting_title'))
-        if not title:
-            raise ImportProblem(
-                'Every meeting needs a title.', row=number, column='meeting_title'
-            )
-        event = the_event(row.get('event_id'), number=number, column='event_id')
-        meeting = {
-            'title': title,
-            'description': '',
-            'scheduled_start': _moment(
-                row.get('meeting_starts_at'), row=number, column='meeting_starts_at'
-            ),
-            'duration_minutes': _minutes(
-                row.get('meeting_duration_minutes'), 60,
-                row=number, column='meeting_duration_minutes',
-            ),
-            'sessions': [],
-        }
-        key = _clean(row.get('meeting_id')) or title.lower()
-        if key in by_meeting_id:
-            raise ImportProblem(
-                f'Two meetings share the id “{key}”. Each needs its own.',
-                row=number, column='meeting_id',
-            )
-        by_meeting_id[key] = (meeting, event)
-        event['meetings'].append(meeting)
-        meetings.append(meeting)
 
     for number, row in gathered['SESSIONS']:
         title = _clean(row.get('session_title'))
@@ -618,33 +584,7 @@ def _read_tables(rows) -> list:
                 'Every session needs a title.', row=number, column='session_title'
             )
 
-        key = _clean(row.get('meeting_id'))
-        if not key:
-            if len(meetings) != 1:
-                raise ImportProblem(
-                    'Which meeting is this session in? Put its meeting_id here.',
-                    row=number, column='meeting_id',
-                )
-            meeting, event = meetings[0], None
-        else:
-            found = by_meeting_id.get(key)
-            if found is None:
-                raise ImportProblem(
-                    f'There is no meeting with the id “{key}” in the MEETINGS table.',
-                    row=number, column='meeting_id',
-                )
-            meeting, event = found
-
-        # Both ids are on the row, so they can disagree. Saying so is the
-        # whole reason for asking for both: a session pointing at a meeting
-        # in another programme is a typo, and a silent one.
-        said_event = _clean(row.get('event_id'))
-        if said_event and event is not None and by_event_id.get(said_event) is not event:
-            raise ImportProblem(
-                f'Meeting “{key}” is not in programme “{said_event}”. '
-                'Check the two ids against the tables above.',
-                row=number, column='event_id',
-            )
+        event = the_event(row.get('event_id'), number=number, column='event_id')
 
         visibility = _clean(row.get('speaker_visibility')).lower() or 'private'
         if visibility not in ('private', 'public'):
@@ -653,7 +593,7 @@ def _read_tables(rows) -> list:
                 row=number, column='speaker_visibility',
             )
 
-        meeting['sessions'].append({
+        event['sessions'].append({
             'title': title,
             'description': '',
             'speaker_name': _clean(row.get('speaker_name')),
@@ -668,14 +608,17 @@ def _read_tables(rows) -> list:
                 row.get('session_duration_minutes'), 30,
                 row=number, column='session_duration_minutes',
             ),
-            'position': len(meeting['sessions']) + 1,
+            'position': len(event['sessions']) + 1,
         })
 
-    for meeting in meetings:
-        if not meeting['sessions']:
-            raise ImportProblem(
-                f'“{meeting["title"]}” has no sessions under it. '
-                'Every meeting needs at least one.'
+    # An event with nothing under it yet is allowed: set it up now, fill
+    # in the running order later, exactly as the form permits. Its hours
+    # are taken from the first session when it was not typed.
+    for event in events:
+        if event['scheduled_start'] is None:
+            event['scheduled_start'] = (
+                event['sessions'][0]['starts_at'] if event['sessions']
+                else _moment(f'{event["event_date"]} 09:00', row=0, column='event_date')
             )
 
     return events
@@ -692,7 +635,7 @@ def _read_flat(rows) -> list:
 
     got = {name.lower() for name in fieldnames}
     missing = [c for c in COLUMNS if c not in got and c not in (
-        'venue', 'meeting_duration_minutes', 'session_duration_minutes',
+        'venue', 'event_duration_minutes', 'session_duration_minutes',
         'hall', 'speaker_visibility',
     )]
     if missing:
@@ -722,11 +665,10 @@ def _read_flat(rows) -> list:
             )
 
         event_title = _clean(row.get('event_title'))
-        meeting_title = _clean(row.get('meeting_title'))
-        if not meeting_title:
+        if not event_title:
             raise ImportProblem(
-                'Which meeting does this session belong to?',
-                row=number, column='meeting_title',
+                'Which event does this session belong to?',
+                row=number, column='event_title',
             )
 
         key = event_title.lower()
@@ -736,31 +678,19 @@ def _read_flat(rows) -> list:
                 'description': '',
                 'venue': _clean(row.get('venue')),
                 'event_date': _day(row.get('event_date'), row=number),
-                'meetings': [],
-                '_by_meeting': {},
+                'scheduled_start': _moment(
+                    row.get('event_starts_at'),
+                    row=number, column='event_starts_at',
+                ),
+                'duration_minutes': _minutes(
+                    row.get('event_duration_minutes'), 60,
+                    row=number, column='event_duration_minutes',
+                ),
+                'sessions': [],
             }
             by_event[key] = entry
             events.append(entry)
         event = by_event[key]
-
-        meeting_key = meeting_title.lower()
-        if meeting_key not in event['_by_meeting']:
-            meeting = {
-                'title': meeting_title,
-                'description': '',
-                'scheduled_start': _moment(
-                    row.get('meeting_starts_at'),
-                    row=number, column='meeting_starts_at',
-                ),
-                'duration_minutes': _minutes(
-                    row.get('meeting_duration_minutes'), 60,
-                    row=number, column='meeting_duration_minutes',
-                ),
-                'sessions': [],
-            }
-            event['_by_meeting'][meeting_key] = meeting
-            event['meetings'].append(meeting)
-        meeting = event['_by_meeting'][meeting_key]
 
         visibility = _clean(row.get('speaker_visibility')).lower() or 'private'
         if visibility not in ('private', 'public'):
@@ -769,7 +699,7 @@ def _read_flat(rows) -> list:
                 row=number, column='speaker_visibility',
             )
 
-        meeting['sessions'].append({
+        event['sessions'].append({
             'title': session_title,
             'description': '',
             'speaker_name': _clean(row.get('speaker_name')),
@@ -784,12 +714,10 @@ def _read_flat(rows) -> list:
                 row.get('session_duration_minutes'), 30,
                 row=number, column='session_duration_minutes',
             ),
-            'position': len(meeting['sessions']) + 1,
+            'position': len(event['sessions']) + 1,
         })
 
     if not events:
         raise ImportProblem('There are no sessions in that sheet.')
 
-    for event in events:
-        event.pop('_by_meeting', None)
     return events

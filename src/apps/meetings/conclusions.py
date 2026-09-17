@@ -24,7 +24,7 @@ def tidy_actions(raw) -> list:
     """Check and clean an action list on its way in.
 
     Each row is a task, whose it is, and when it is due. The owner and the
-    date are free text on purpose: "before the next meeting" and "Asoj 9"
+    date are free text on purpose: "before the next event" and "Asoj 9"
     are both real answers, and a date picker that insists on a calendar
     day would turn one of them into a lie.
     """
@@ -87,24 +87,22 @@ def for_reader(user):
             status=SessionSummary.Status.PUBLISHED,
             session__in=Session.objects.filter(sessions_visible_to(user)),
         )
-        .select_related('session', 'session__meeting', 'session__meeting__event')
+        .select_related('session', 'session__event')
         .order_by('session__starts_at')
     )
 
     out = []
     for summary in summaries:
         session = summary.session
-        meeting = session.meeting
+        event = session.event
         out.append({
             'session_id': str(session.id),
             'session_title': session.title,
             'session_starts_at': session.starts_at,
             'speaker_name': session.speaker_name,
             'hall': session.hall,
-            'meeting_id': str(meeting.id),
-            'meeting_title': meeting.title,
-            'event_id': str(meeting.event_id) if meeting.event_id else '',
-            'event_title': meeting.event.title if meeting.event else '',
+            'event_id': str(event.id),
+            'event_title': event.title,
             'findings': findings_from(summary.body),
             'actions': summary.actions or [],
             'published_at': summary.published_at,

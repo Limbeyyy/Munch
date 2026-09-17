@@ -1,4 +1,4 @@
-"""Public endpoints for guests joining by meeting code.
+"""Public endpoints for guests joining by event code.
 
 Guests have no account, so these are unauthenticated and identified instead by
 a signed token issued when they knock.
@@ -15,7 +15,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 
 from django.db import models as db_models
-from src.apps.meetings.models import Meeting, GuestAttendee, ChatMessage
+from src.apps.meetings.models import Event, GuestAttendee, ChatMessage
 from src.apps.meetings.serializers import (
     GuestJoinSerializer, GuestAttendeeSerializer, ChatMessageSerializer
 )
@@ -38,7 +38,7 @@ def notify_host_of_guest(guest):
         if layer is None:
             return
         async_to_sync(layer.group_send)(
-            f'meeting_{guest.meeting.meeting_code}_user_{guest.meeting.host_id}',
+            f'event_{guest.event.code}_user_{guest.event.host_id}',
             {
                 'type': 'guest_waiting',
                 'guest_id': str(guest.id),
@@ -61,7 +61,7 @@ def notify_guest_of_decision(guest):
         if layer is None:
             return
         async_to_sync(layer.group_send)(
-            f'meeting_{guest.meeting.meeting_code}_guest_{guest.id}',
+            f'event_{guest.event.code}_guest_{guest.id}',
             {'type': 'guest_decision', 'status': guest.status},
         )
     except Exception as e:
@@ -72,23 +72,23 @@ def notify_guest_of_decision(guest):
 @permission_classes([AllowAny])
 @throttle_classes([GuestKnockThrottle])
 def guest_knock(request):
-    """A guest asks to join a meeting by code. Returns a waiting token."""
+    """A guest asks to join a event by code. Returns a waiting token."""
     serializer = GuestJoinSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     data = serializer.validated_data
 
-    meeting = Meeting.objects.filter(meeting_code=data['meeting_code']).first()
-    if meeting is None:
+    event = Event.objects.filter(code=data['code']).first()
+    if event is None:
         return Response(
-            {'error': f"No meeting found with code {data['meeting_code']}"},
+            {'error': f"No event found with code {data['code']}"},
             status=status.HTTP_404_NOT_FOUND
         )
     from src.apps.meetings.entry import guest_door_open, no_session_response
 
-    if meeting.status == Meeting.Status.ENDED:
+    if event.status == Event.Status.ENDED:
         return Response(
             {
-                'error': 'No session is live right now. This meeting has finished.',
+                'error': 'No session is live right now. This event has finished.',
                 'code': 'no_session_live',
                 'opens_at': None,
             },
@@ -100,8 +100,8 @@ def guest_knock(request):
     # nothing to come in for and saying so beats an empty hall. Knocking
     # is unchanged - the request waits in the host's queue until answered,
     # so a late host still finds everybody who came early.
-    if not guest_door_open(meeting):
-        return no_session_response(meeting)
+    if not guest_door_open(event):
+        return no_session_response(event)
 
     # Presenting is tied to an account, so somebody arriving at the guest
     # door with a presenter's details is turned round rather than seated.
@@ -110,13 +110,13 @@ def guest_knock(request):
     from src.apps.meetings.roles import presenter_details
 
     presenting_as = presenter_details(
-        meeting, name=data['full_name'], phone=data.get('phone', '')
+        event, name=data['full_name'], phone=data.get('phone', '')
     )
     if presenting_as:
         return Response(
             {
                 'error': (
-                    f'{presenting_as} is down to present at this meeting. '
+                    f'{presenting_as} is down to present at this event. '
                     'Presenters sign in with Google rather than joining as a '
                     'guest, and are recognised by the address the organizer '
                     'has for them.'
@@ -164,7 +164,7 @@ def guest_knock(request):
         candidate = resolve_guest(held)
         if (
             candidate is not None
-            and candidate.meeting_id == meeting.id
+            and candidate.event_id == event.id
             and candidate.status in (
                 GuestAttendee.Status.ADMITTED, GuestAttendee.Status.LEFT
             )
@@ -172,7 +172,7 @@ def guest_knock(request):
             returning = candidate
         elif candidate is not None and candidate.status == GuestAttendee.Status.DENIED:
             return Response(
-                {'error': 'The host declined your request to join this meeting'},
+                {'error': 'The host declined your request to join this event'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -181,16 +181,16 @@ def guest_knock(request):
             returning.status = GuestAttendee.Status.ADMITTED
             returning.save(update_fields=['status', 'updated_at'])
         logger.info(
-            f"Guest {returning.full_name} rejoined {meeting.meeting_code} "
+            f"Guest {returning.full_name} rejoined {event.code} "
             f"without re-approval"
         )
         return Response(
             {
                 'guest_token': make_guest_token(returning),
                 'guest': GuestAttendeeSerializer(returning).data,
-                'meeting': {
-                    'meeting_code': meeting.meeting_code,
-                    'title': meeting.title,
+                'event': {
+                    'code': event.code,
+                    'title': event.title,
                 },
                 'rejoined': True,
             },
@@ -198,7 +198,7 @@ def guest_knock(request):
         )
 
     guest = GuestAttendee.objects.create(
-        meeting=meeting,
+        event=event,
         full_name=data['full_name'],
     )
     notify_host_of_guest(guest)
@@ -207,9 +207,9 @@ def guest_knock(request):
         {
             'guest_token': make_guest_token(guest),
             'guest': GuestAttendeeSerializer(guest).data,
-            'meeting': {
-                'meeting_code': meeting.meeting_code,
-                'title': meeting.title,
+            'event': {
+                'code': event.code,
+                'title': event.title,
             },
             'rejoined': False,
         },
@@ -229,8 +229,8 @@ def guest_status(request):
             status=status.HTTP_401_UNAUTHORIZED
         )
 
-    # Reading the room does not end it. A meeting's closing time is a plan
-    # like everything else on the timetable: the host ends the meeting, and
+    # Reading the room does not end it. A event's closing time is a plan
+    # like everything else on the timetable: the host ends the event, and
     # until they do it is still going on. This used to close it the moment
     # its hour struck - so a guest sitting quietly in a room where the talk
     # was still running was thrown out by their own page asking how things
@@ -239,22 +239,22 @@ def guest_status(request):
 
     return Response({
         'guest': GuestAttendeeSerializer(guest).data,
-        'meeting': {
-            'id': str(guest.meeting.id),
-            'meeting_code': guest.meeting.meeting_code,
-            'title': guest.meeting.title,
-            'status': guest.meeting.status,
+        'event': {
+            'id': str(guest.event.id),
+            'code': guest.event.code,
+            'title': guest.event.title,
+            'status': guest.event.status,
             'started_at': (
-                guest.meeting.started_at.isoformat()
-                if guest.meeting.started_at else None
+                guest.event.started_at.isoformat()
+                if guest.event.started_at else None
             ),
-            'scheduled_start': guest.meeting.scheduled_start.isoformat(),
+            'scheduled_start': guest.event.scheduled_start.isoformat(),
             'scheduled_end': (
-                guest.meeting.scheduled_end.isoformat()
-                if guest.meeting.scheduled_end else None
+                guest.event.scheduled_end.isoformat()
+                if guest.event.scheduled_end else None
             ),
             # What is on stage, and its clock.
-            'current_session': session_room_state(guest.meeting),
+            'current_session': session_room_state(guest.event),
             # The running order, so a guest sees the same list of talks as
             # everybody else in the room, with the same times on it. To
             # read only: the host moves it, nobody else. Nothing private
@@ -270,7 +270,7 @@ def guest_status(request):
                     'duration_minutes': session.duration_minutes,
                     'status': session.status,
                 }
-                for session in guest.meeting.sessions.order_by('starts_at', 'position')
+                for session in guest.event.sessions.order_by('starts_at', 'position')
             ],
         },
     })
@@ -309,13 +309,13 @@ def guest_board(request):
         )
     if not guest.is_admitted:
         return Response(
-            {'error': 'You have not been admitted to this meeting'},
+            {'error': 'You have not been admitted to this event'},
             status=status.HTTP_403_FORBIDDEN
         )
 
     from src.apps.meetings.board import board_for
 
-    return Response(board_for(guest.meeting, guest=guest))
+    return Response(board_for(guest.event, guest=guest))
 
 
 @api_view(['POST'])
@@ -330,7 +330,7 @@ def guest_vote_board(request):
         )
     if not guest.is_admitted:
         return Response(
-            {'error': 'You have not been admitted to this meeting'},
+            {'error': 'You have not been admitted to this event'},
             status=status.HTTP_403_FORBIDDEN
         )
 
@@ -341,7 +341,7 @@ def guest_vote_board(request):
         )
 
     message = ChatMessage.objects.filter(
-        meeting=guest.meeting, id=request.data.get('message_id')
+        event=guest.event, id=request.data.get('message_id')
     ).exclude(topic=ChatMessage.Topic.NONE).first()
     if message is None:
         return Response(
@@ -352,7 +352,7 @@ def guest_vote_board(request):
     from src.apps.meetings.board import board_for, cast
 
     cast(message, value, guest=guest)
-    return Response(board_for(guest.meeting, guest=guest))
+    return Response(board_for(guest.event, guest=guest))
 
 
 @api_view(['GET'])
@@ -371,16 +371,16 @@ def guest_chat(request):
         )
     if not guest.is_admitted:
         return Response(
-            {'error': 'You have not been admitted to this meeting'},
+            {'error': 'You have not been admitted to this event'},
             status=status.HTTP_403_FORBIDDEN
         )
 
-    meeting = guest.meeting
+    event = guest.event
     # The room is open, always: there is no room-wide thread to close, and
     # whether anybody may write is the one switch below.
     settings_payload = {
         'chat_enabled': True,
-        'direct_messages_enabled': meeting.direct_messages_enabled,
+        'direct_messages_enabled': event.direct_messages_enabled,
     }
 
     deliverable = db_models.Q(moderation_status__in=[
@@ -393,7 +393,7 @@ def guest_chat(request):
         | (db_models.Q(guest_recipient=guest) & deliverable)
     )
 
-    qs = ChatMessage.objects.filter(meeting=meeting).filter(visible).exclude(
+    qs = ChatMessage.objects.filter(event=event).filter(visible).exclude(
         moderation_status=ChatMessage.Moderation.REMOVED
     ).select_related(
         'sender', 'recipient', 'guest_sender', 'guest_recipient'
@@ -410,7 +410,7 @@ def guest_chat(request):
 @permission_classes([AllowAny])
 def guest_presenters(request):
     """People an admitted guest may address directly."""
-    from src.apps.meetings.models import MeetingParticipant
+    from src.apps.meetings.models import EventParticipant
 
     guest = resolve_guest(request.query_params.get('token', ''))
     if guest is None or not guest.is_admitted:
@@ -421,11 +421,11 @@ def guest_presenters(request):
 
     # Everyone who holds a speaking role, whether or not they are connected
     # right now: someone who dropped out should still be addressable.
-    people = guest.meeting.participants.filter(
+    people = guest.event.participants.filter(
         role__in=[
-            MeetingParticipant.Role.HOST,
-            MeetingParticipant.Role.CO_HOST,
-            MeetingParticipant.Role.PRESENTER,
+            EventParticipant.Role.HOST,
+            EventParticipant.Role.CO_HOST,
+            EventParticipant.Role.PRESENTER,
         ],
     ).select_related('user')
 
@@ -443,7 +443,7 @@ def guest_presenters(request):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def guest_resources(request):
-    """Files shared in the meeting, for an admitted guest.
+    """Files shared in the event, for an admitted guest.
 
     Guests have no Google account, so the Drive link is useless to them; each
     entry carries a download URL served by this backend instead.
@@ -458,7 +458,7 @@ def guest_resources(request):
         )
     if not guest.is_admitted:
         return Response(
-            {'error': 'You have not been admitted to this meeting'},
+            {'error': 'You have not been admitted to this event'},
             status=status.HTTP_403_FORBIDDEN
         )
 
@@ -468,7 +468,7 @@ def guest_resources(request):
     # them only once that session is over.
     from src.apps.artifacts.visibility import resources_for
 
-    resources = resources_for(guest.meeting, include_unreleased=False)
+    resources = resources_for(guest.event, include_unreleased=False)
 
     return Response([
         {
@@ -479,7 +479,7 @@ def guest_resources(request):
             'created_at': a.created_at,
             'uploaded_by': a.metadata.get('uploaded_by_email'),
             'download_url': (
-                f"/api/v1/meetings/guest/resources/{a.id}/download/"
+                f"/api/v1/events/guest/resources/{a.id}/download/"
                 f"?token={quote(token)}"
             ),
         }
@@ -508,7 +508,7 @@ def guest_resource_download(request, artifact_id):
 
     artifact = Artifact.objects.filter(
         id=artifact_id,
-        meeting=guest.meeting,
+        event=guest.event,
         artifact_type=ArtifactType.RESOURCE,
     ).first()
     if artifact is None or not artifact.drive_file_id:
@@ -528,7 +528,7 @@ def guest_resource_download(request, artifact_id):
         )
 
     try:
-        adapter = GoogleDriveAdapter(str(guest.meeting.host_id))
+        adapter = GoogleDriveAdapter(str(guest.event.host_id))
         content = adapter.download_file(artifact.drive_file_id)
     except Exception as e:
         logger.error(f"Guest download failed for {artifact.id}: {e}")

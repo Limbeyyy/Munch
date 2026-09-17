@@ -1,12 +1,12 @@
 """
-Artifact service - abstracts storage operations for meeting artifacts
+Artifact service - abstracts storage operations for event artifacts
 Separates business logic from Drive/S3 implementation details
 """
 import logging
 from typing import Optional, Dict, Any
 from django.utils import timezone
 from src.apps.artifacts.models import Artifact, ArtifactType
-from src.apps.meetings.models import Meeting
+from src.apps.meetings.models import Event
 from src.apps.drive.services.google_drive_adapter import GoogleDriveAdapter
 from src.apps.monitoring.models import ErrorLog
 from src.utilities.exceptions import DriveException
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class ArtifactService:
     """
-    Manages meeting artifacts (transcripts, metadata, recordings, etc)
+    Manages event artifacts (transcripts, metadata, recordings, etc)
     Abstracts storage provider (Drive, S3, etc)
     """
 
@@ -24,13 +24,13 @@ class ArtifactService:
         self.user_id = user_id
         self.drive = GoogleDriveAdapter(user_id)
 
-    def create_meeting_folder_structure(self, meeting: Meeting) -> Dict[str, str]:
+    def create_meeting_folder_structure(self, event: Event) -> Dict[str, str]:
         """
-        Create folder structure for meeting in Drive
+        Create folder structure for event in Drive
         Returns: dict with folder IDs
         """
         try:
-            folder_name = f"{meeting.meeting_code} - {meeting.title}"
+            folder_name = f"{event.code} - {event.title}"
             main_folder = self.drive.create_folder(folder_name)
 
             # Create subfolders
@@ -52,7 +52,7 @@ class ArtifactService:
                 folder_ids[key] = subfolder['id']
 
                 Artifact.objects.create(
-                    meeting=meeting,
+                    event=event,
                     artifact_type=ArtifactType.FOLDER,
                     drive_folder_id=subfolder['id'],
                     display_name=name,
@@ -60,26 +60,26 @@ class ArtifactService:
                     sync_status=Artifact.SyncStatus.SYNCED
                 )
 
-            # Update meeting with main folder ID
-            meeting.drive_folder_id = main_folder['id']
-            meeting.save()
+            # Update event with main folder ID
+            event.drive_folder_id = main_folder['id']
+            event.save()
 
-            logger.info(f"Created Drive folder structure for {meeting.meeting_code}")
+            logger.info(f"Created Drive folder structure for {event.code}")
             return folder_ids
 
         except DriveException as e:
             logger.error(f"Failed to create folder structure: {str(e)}")
-            self._log_error(meeting, 'drive', f"Failed to create folder structure: {str(e)}")
+            self._log_error(event, 'drive', f"Failed to create folder structure: {str(e)}")
             raise
 
-    def create_transcript_document(self, meeting: Meeting) -> str:
+    def create_transcript_document(self, event: Event) -> str:
         """Create Google Doc for transcript"""
         try:
-            doc_name = f"{meeting.meeting_code} - Transcript"
+            doc_name = f"{event.code} - Transcript"
 
             # Get transcripts folder
             transcripts_folder = Artifact.objects.filter(
-                meeting=meeting,
+                event=event,
                 artifact_type=ArtifactType.FOLDER,
                 display_name='Transcripts'
             ).first()
@@ -90,7 +90,7 @@ class ArtifactService:
 
             # Create artifact record
             artifact = Artifact.objects.create(
-                meeting=meeting,
+                event=event,
                 artifact_type=ArtifactType.TRANSCRIPT,
                 drive_file_id=doc['id'],
                 display_name=doc_name,
@@ -99,22 +99,22 @@ class ArtifactService:
                 sync_status=Artifact.SyncStatus.SYNCED
             )
 
-            logger.info(f"Created transcript document for {meeting.meeting_code}")
+            logger.info(f"Created transcript document for {event.code}")
             return doc['id']
 
         except DriveException as e:
             logger.error(f"Failed to create transcript document: {str(e)}")
-            self._log_error(meeting, 'drive', f"Failed to create transcript: {str(e)}")
+            self._log_error(event, 'drive', f"Failed to create transcript: {str(e)}")
             raise
 
-    def create_attendance_sheet(self, meeting: Meeting) -> str:
+    def create_attendance_sheet(self, event: Event) -> str:
         """Create Google Sheet for attendance tracking"""
         try:
-            sheet_name = f"{meeting.meeting_code} - Attendance"
+            sheet_name = f"{event.code} - Attendance"
 
             # Get attendance folder
             attendance_folder = Artifact.objects.filter(
-                meeting=meeting,
+                event=event,
                 artifact_type=ArtifactType.FOLDER,
                 display_name='Attendance'
             ).first()
@@ -126,19 +126,19 @@ class ArtifactService:
             doc_name = sheet_name
 
             artifact = Artifact.objects.create(
-                meeting=meeting,
+                event=event,
                 artifact_type=ArtifactType.ATTENDANCE,
                 display_name=doc_name,
                 sync_status=Artifact.SyncStatus.PENDING,
                 metadata={'type': 'attendance_sheet'}
             )
 
-            logger.info(f"Created attendance sheet for {meeting.meeting_code}")
+            logger.info(f"Created attendance sheet for {event.code}")
             return str(artifact.id)
 
         except Exception as e:
             logger.error(f"Failed to create attendance sheet: {str(e)}")
-            self._log_error(meeting, 'other', f"Failed to create attendance sheet: {str(e)}")
+            self._log_error(event, 'other', f"Failed to create attendance sheet: {str(e)}")
             raise
 
     def sync_artifact(self, artifact: Artifact) -> bool:
@@ -169,9 +169,9 @@ class ArtifactService:
             logger.error(f"Failed to sync artifact {artifact.id}: {str(e)}")
             return False
 
-    def list_meeting_artifacts(self, meeting: Meeting) -> Dict[str, Any]:
-        """List all artifacts for a meeting"""
-        artifacts = Artifact.objects.filter(meeting=meeting)
+    def list_meeting_artifacts(self, event: Event) -> Dict[str, Any]:
+        """List all artifacts for a event"""
+        artifacts = Artifact.objects.filter(event=event)
 
         grouped = {}
         for artifact in artifacts:
@@ -190,11 +190,11 @@ class ArtifactService:
 
         return grouped
 
-    def _log_error(self, meeting: Meeting, error_type: str, message: str):
+    def _log_error(self, event: Event, error_type: str, message: str):
         """Log error to monitoring"""
         try:
             ErrorLog.objects.create(
-                meeting=meeting,
+                event=event,
                 error_type=error_type,
                 severity='error',
                 error_message=message,

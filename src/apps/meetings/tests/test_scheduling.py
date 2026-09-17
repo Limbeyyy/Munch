@@ -2,7 +2,7 @@
 from django.test import TestCase
 from django.utils import timezone
 
-from src.apps.meetings.models import Meeting, Session
+from src.apps.meetings.models import Event, Session
 from src.apps.meetings.scheduling import (
     GAP_MINUTES,
     ScheduleConflict,
@@ -12,7 +12,7 @@ from src.apps.meetings.scheduling import (
     reschedule,
 )
 from src.apps.meetings.tests.factories import (
-    at, make_event, make_host, make_meeting, make_session,
+    at, make_event, make_host, make_session,
 )
 
 GAP = timezone.timedelta(minutes=GAP_MINUTES)
@@ -61,28 +61,27 @@ class SlotValidationTests(TestCase):
 
     def setUp(self):
         self.host = make_host()
-        self.event = make_event(self.host)
         self.nine = (timezone.now() + timezone.timedelta(days=1)).replace(
             hour=9, minute=0, second=0, microsecond=0
         )
-        self.meeting = make_meeting(self.host, self.event, start=self.nine)
-        make_session(self.meeting, self.nine, 60, 'Opening')
+        self.event = make_event(self.host, start=self.nine)
+        make_session(self.event, self.nine, 60, 'Opening')
 
     def test_a_clean_slot_after_the_gap_is_accepted(self):
-        check_slot(self.meeting, at(self.nine, hours=1, minutes=15), 60)
+        check_slot(self.event, at(self.nine, hours=1, minutes=15), 60)
 
     def test_an_overlapping_slot_is_refused(self):
         with self.assertRaises(ScheduleConflict):
-            check_slot(self.meeting, at(self.nine, minutes=30), 60)
+            check_slot(self.event, at(self.nine, minutes=30), 60)
 
     def test_a_slot_inside_the_gap_is_refused(self):
         # Ends at 10:00, so 10:10 leaves only ten minutes.
         with self.assertRaises(ScheduleConflict):
-            check_slot(self.meeting, at(self.nine, hours=1, minutes=10), 30)
+            check_slot(self.event, at(self.nine, hours=1, minutes=10), 30)
 
     def test_the_refusal_names_the_earliest_legal_time(self):
         with self.assertRaises(ScheduleConflict) as caught:
-            check_slot(self.meeting, at(self.nine, minutes=30), 60)
+            check_slot(self.event, at(self.nine, minutes=30), 60)
 
         detail = caught.exception.detail
         self.assertEqual(str(detail['code']), 'schedule_conflict')
@@ -90,19 +89,14 @@ class SlotValidationTests(TestCase):
 
     def test_earliest_start_is_the_last_end_plus_the_gap(self):
         self.assertEqual(
-            earliest_start(self.meeting), at(self.nine, hours=1, minutes=15)
+            earliest_start(self.event), at(self.nine, hours=1, minutes=15)
         )
 
-    def test_the_gap_holds_across_meetings_in_one_event(self):
-        other = make_meeting(self.host, self.event, start=at(self.nine, hours=2), title='Evening')
-        with self.assertRaises(ScheduleConflict):
-            # 10:05 clashes with the first meeting's session, even though
-            # this session would belong to a different meeting.
-            check_slot(other, at(self.nine, hours=1, minutes=5), 30)
-
-    def test_a_standalone_meeting_answers_only_to_itself(self):
-        alone = make_meeting(self.host, event=None, start=self.nine)
-        # The event's 9:00 session is no concern of a meeting outside it.
+    def test_an_event_answers_only_to_itself(self):
+        # There is no layer above an event any more, so one event's
+        # running order is no concern of the next: two halls on the same
+        # morning are two events, and the gap is kept inside each.
+        alone = make_event(self.host, start=self.nine, title='Evening')
         check_slot(alone, self.nine, 60)
 
 
@@ -111,14 +105,13 @@ class ReflowTests(TestCase):
 
     def setUp(self):
         self.host = make_host()
-        self.event = make_event(self.host)
         self.nine = (timezone.now() + timezone.timedelta(days=1)).replace(
             hour=9, minute=0, second=0, microsecond=0
         )
-        self.meeting = make_meeting(self.host, self.event, start=self.nine)
-        self.a = make_session(self.meeting, self.nine, 60, 'A')
-        self.b = make_session(self.meeting, at(self.nine, hours=1, minutes=15), 60, 'B')
-        self.c = make_session(self.meeting, at(self.nine, hours=2, minutes=30), 60, 'C')
+        self.event = make_event(self.host, start=self.nine)
+        self.a = make_session(self.event, self.nine, 60, 'A')
+        self.b = make_session(self.event, at(self.nine, hours=1, minutes=15), 60, 'B')
+        self.c = make_session(self.event, at(self.nine, hours=2, minutes=30), 60, 'C')
 
     def refreshed(self):
         return [s.starts_at for s in [self.a, self.b, self.c] for s in [Session.objects.get(id=s.id)]]
@@ -127,7 +120,7 @@ class ReflowTests(TestCase):
         # The brief's example: A 9:00-10:00 becomes 9:30-10:30, so B goes to
         # 10:45 and C to 12:00.
         reschedule(
-            self.meeting,
+            self.event,
             {self.a.id: {'starts_at': at(self.nine, minutes=30)}},
             anchored_id=self.a.id,
         )
@@ -138,7 +131,7 @@ class ReflowTests(TestCase):
 
     def test_a_longer_session_pushes_what_follows(self):
         reschedule(
-            self.meeting,
+            self.event,
             {self.a.id: {'duration_minutes': 120}},
             anchored_id=self.a.id,
         )
@@ -149,7 +142,7 @@ class ReflowTests(TestCase):
 
     def test_moving_something_later_leaves_the_earlier_ones_alone(self):
         reschedule(
-            self.meeting,
+            self.event,
             {self.c.id: {'starts_at': at(self.nine, hours=5)}},
             anchored_id=self.c.id,
         )
@@ -160,13 +153,13 @@ class ReflowTests(TestCase):
 
     def test_nothing_overlaps_after_a_reflow(self):
         reschedule(
-            self.meeting,
+            self.event,
             {self.a.id: {'duration_minutes': 200}},
             anchored_id=self.a.id,
         )
         times = sorted(
             (s.starts_at, s.duration_minutes)
-            for s in Session.objects.filter(meeting=self.meeting)
+            for s in Session.objects.filter(event=self.event)
         )
         for (start, minutes), (next_start, _) in zip(times, times[1:]):
             ends = start + timezone.timedelta(minutes=minutes)
@@ -177,7 +170,7 @@ class ReflowTests(TestCase):
         self.b.save(update_fields=['status'])
 
         reschedule(
-            self.meeting,
+            self.event,
             {self.a.id: {'duration_minutes': 180}},
             anchored_id=self.a.id,
         )
@@ -188,55 +181,54 @@ class ReflowTests(TestCase):
 
     def test_the_meeting_window_follows_its_running_order(self):
         reschedule(
-            self.meeting,
+            self.event,
             {self.c.id: {'starts_at': at(self.nine, hours=6)}},
             anchored_id=self.c.id,
         )
-        meeting = Meeting.objects.get(id=self.meeting.id)
-        self.assertEqual(meeting.scheduled_start, self.nine)
-        self.assertEqual(meeting.scheduled_end, at(self.nine, hours=7))
+        event = Event.objects.get(id=self.event.id)
+        self.assertEqual(event.scheduled_start, self.nine)
+        self.assertEqual(event.scheduled_end, at(self.nine, hours=7))
 
     def test_reflow_reports_only_what_actually_moved(self):
         moved = reschedule(
-            self.meeting,
+            self.event,
             {self.c.id: {'starts_at': at(self.nine, hours=6)}},
             anchored_id=self.c.id,
         )
         self.assertEqual([s.title for s in moved], ['C'])
 
     def test_a_settled_day_is_left_alone(self):
-        self.assertEqual(reschedule(self.meeting, {}), [])
+        self.assertEqual(reschedule(self.event, {}), [])
 
 
 class ReopeningTests(TestCase):
-    """A meeting whose sessions are moved into the future is not over.
+    """A event whose sessions are moved into the future is not over.
 
     The reported failure: the sessions were rescheduled to the afternoon,
-    the meeting's own window stayed in the morning, and the door stayed
-    shut saying the meeting had already ended.
+    the event's own window stayed in the morning, and the door stayed
+    shut saying the event had already ended.
     """
 
     def setUp(self):
         self.host = make_host()
-        self.event = make_event(self.host)
         self.past = timezone.now() - timezone.timedelta(hours=4)
-        self.meeting = make_meeting(self.host, self.event, start=self.past, minutes=75)
-        self.session = make_session(self.meeting, self.past, 30, 'Only session')
+        self.event = make_event(self.host, start=self.past, minutes=75)
+        self.session = make_session(self.event, self.past, 30, 'Only session')
 
     def reloaded(self):
-        return Meeting.objects.get(id=self.meeting.id)
+        return Event.objects.get(id=self.event.id)
 
     def end_it(self):
-        self.meeting.status = Meeting.Status.ENDED
-        self.meeting.started_at = self.past
-        self.meeting.ended_at = self.past + timezone.timedelta(minutes=30)
-        self.meeting.save()
+        self.event.status = Event.Status.ENDED
+        self.event.started_at = self.past
+        self.event.ended_at = self.past + timezone.timedelta(minutes=30)
+        self.event.save()
 
     def test_the_window_follows_a_session_moved_into_the_future(self):
         self.end_it()
         later = timezone.now() + timezone.timedelta(hours=4)
 
-        reschedule(self.meeting, {self.session.id: {'starts_at': later}},
+        reschedule(self.event, {self.session.id: {'starts_at': later}},
                    anchored_id=self.session.id)
 
         moved = self.reloaded()
@@ -247,16 +239,16 @@ class ReopeningTests(TestCase):
         self.end_it()
         later = timezone.now() + timezone.timedelta(hours=4)
 
-        reschedule(self.meeting, {self.session.id: {'starts_at': later}},
+        reschedule(self.event, {self.session.id: {'starts_at': later}},
                    anchored_id=self.session.id)
 
-        self.assertEqual(self.reloaded().status, Meeting.Status.SCHEDULED)
+        self.assertEqual(self.reloaded().status, Event.Status.SCHEDULED)
 
     def test_reopening_clears_the_clock_from_the_old_sitting(self):
         self.end_it()
         later = timezone.now() + timezone.timedelta(hours=4)
 
-        reschedule(self.meeting, {self.session.id: {'starts_at': later}},
+        reschedule(self.event, {self.session.id: {'starts_at': later}},
                    anchored_id=self.session.id)
 
         moved = self.reloaded()
@@ -270,7 +262,7 @@ class ReopeningTests(TestCase):
         self.assertFalse(is_open(self.reloaded()))
 
         reschedule(
-            self.meeting,
+            self.event,
             {self.session.id: {'starts_at': timezone.now() + timezone.timedelta(minutes=10)}},
             anchored_id=self.session.id,
         )
@@ -283,25 +275,25 @@ class ReopeningTests(TestCase):
         self.end_it()
         earlier = self.past - timezone.timedelta(hours=1)
 
-        reschedule(self.meeting, {self.session.id: {'starts_at': earlier}},
+        reschedule(self.event, {self.session.id: {'starts_at': earlier}},
                    anchored_id=self.session.id)
 
-        self.assertEqual(self.reloaded().status, Meeting.Status.ENDED)
+        self.assertEqual(self.reloaded().status, Event.Status.ENDED)
 
     def test_a_meeting_under_way_keeps_its_window(self):
         # Moving it out from under a room full of people would be worse
         # than a window that no longer matches.
-        self.meeting.status = Meeting.Status.ACTIVE
-        self.meeting.started_at = self.past
-        self.meeting.save()
-        original = self.meeting.scheduled_start
+        self.event.status = Event.Status.ACTIVE
+        self.event.started_at = self.past
+        self.event.save()
+        original = self.event.scheduled_start
 
         reschedule(
-            self.meeting,
+            self.event,
             {self.session.id: {'starts_at': timezone.now() + timezone.timedelta(hours=4)}},
             anchored_id=self.session.id,
         )
 
         still = self.reloaded()
         self.assertEqual(still.scheduled_start, original)
-        self.assertEqual(still.status, Meeting.Status.ACTIVE)
+        self.assertEqual(still.status, Event.Status.ACTIVE)

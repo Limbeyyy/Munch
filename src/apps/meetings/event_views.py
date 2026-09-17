@@ -1,4 +1,4 @@
-"""Endpoints for the event / meeting / session hierarchy."""
+"""Endpoints for the event / session hierarchy."""
 import logging
 
 from django.db.models import Prefetch
@@ -15,10 +15,8 @@ from src.apps.meetings.event_serializers import (
     ContactRequestSerializer,
     EventCreateSerializer,
     EventSerializer,
-    MeetingWriteSerializer,
     SessionAttendanceSerializer,
     SessionSerializer,
-    build_meeting,
 )
 from src.apps.meetings.lifecycle import (
     broadcast as _broadcast,
@@ -26,12 +24,12 @@ from src.apps.meetings.lifecycle import (
     session_is_over as _session_is_over,
 )
 from src.apps.meetings.scheduling import absorb_overrun, begin_now
+from src.apps.meetings.views import EventRoomViewSet
 from src.apps.meetings.models import (
     RoleGrant,
     SessionSummary,
     ContactRequest,
     Event,
-    Meeting,
     Session,
     SessionAttendance,
 )
@@ -39,28 +37,20 @@ from src.apps.meetings.models import (
 logger = logging.getLogger(__name__)
 
 
-class EventViewSet(viewsets.ModelViewSet):
-    """A day's programme, with the meetings and sessions inside it."""
+class EventViewSet(EventRoomViewSet):
+    """An event: the programme, and the room it is run from.
+
+    One resource, because there is one thing. The room actions - joining,
+    starting, the people in the hall, what is said in it - come from
+    EventRoomViewSet; what is added here is the programme half: building
+    one, importing one from a sheet, and who is allowed to run it.
+    """
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # An organizer sees the programmes they run; everyone else sees the
-        # ones they were invited into or have joined. Meetings and sessions
-        # are prefetched because the list view always renders the tree.
-        from src.apps.meetings.access import events_visible_to
-        from src.apps.meetings.access import sessions_visible_to
-
-        return (
-            Event.objects.filter(events_visible_to(self.request.user))
-            .distinct()
-            .prefetch_related(
-                Prefetch(
-                    'meetings',
-                    queryset=Meeting.objects.order_by('scheduled_start')
-                    .prefetch_related('sessions'),
-                )
-            )
-        )
+        # Whoever may see the event sees its running order with it: the
+        # list view always renders the tree.
+        return super().get_queryset().prefetch_related('sessions')
 
     def get_serializer_class(self):
         return EventCreateSerializer if self.action == 'create' else EventSerializer
@@ -73,17 +63,16 @@ class EventViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        for meeting in serializer.validated_data.get('meetings') or []:
-            check_session_count(
-                request.user,
-                len(meeting.get('sessions') or []),
-                f'"{meeting.get("title", "a meeting")}"',
-            )
+        check_session_count(
+            request.user,
+            len(serializer.validated_data.get('sessions') or []),
+            f'"{serializer.validated_data.get("title", "this event")}"',
+        )
 
         # Opening a programme is the decision to host; record it once it sticks.
         ensure_host(request.user)
         event = serializer.save()
-        logger.info(f"Created event {event.id} with {event.meetings.count()} meetings")
+        logger.info(f"Created event {event.id} with {event.sessions.count()} sessions")
         return Response(
             EventSerializer(event, context=self.get_serializer_context()).data,
             status=status.HTTP_201_CREATED,
@@ -95,7 +84,7 @@ class EventViewSet(viewsets.ModelViewSet):
 
         ``?shape=xlsx`` asks for the workbook instead of the CSV. Same
         tables either way; the workbook adds the one thing a CSV cannot
-        carry, which is the sessions table picking its event and meeting
+        carry, which is the sessions table picking its event and event
         from the ids typed above rather than having them typed again.
         """
         from django.http import HttpResponse
@@ -188,22 +177,16 @@ class EventViewSet(viewsets.ModelViewSet):
                 'title': event['title'],
                 'event_date': event['event_date'],
                 'venue': event['venue'],
-                'meetings': [
+                'scheduled_start': event['scheduled_start'],
+                'sessions': [
                     {
-                        'title': meeting['title'],
-                        'scheduled_start': meeting['scheduled_start'],
-                        'sessions': [
-                            {
-                                'title': session['title'],
-                                'starts_at': session['starts_at'],
-                                'duration_minutes': session['duration_minutes'],
-                                'speaker_name': session['speaker_name'],
-                                'hall': session['hall'],
-                            }
-                            for session in meeting['sessions']
-                        ],
+                        'title': session['title'],
+                        'starts_at': session['starts_at'],
+                        'duration_minutes': session['duration_minutes'],
+                        'speaker_name': session['speaker_name'],
+                        'hall': session['hall'],
                     }
-                    for meeting in event['meetings']
+                    for session in event['sessions']
                 ],
             }
             for event in programmes
@@ -246,18 +229,16 @@ class EventViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get', 'post'])
     def invites(self, request, pk=None):
-        """Who has been asked to this programme.
+        """Who has been asked to this event.
 
-        An invitation is to the event, so it reaches every meeting inside
-        it: being asked to the day should not mean being asked to each
-        room separately. Meetings added later are covered when the invite
-        list is next read.
+        An invitation is to the event itself, which is the room as well as
+        the programme, so being asked covers everything that happens in it.
         """
-        from src.apps.meetings.models import MeetingInvite
-        from src.apps.meetings.serializers import MeetingInviteSerializer
+        from src.apps.meetings.models import EventInvite
+        from src.apps.meetings.serializers import EventInviteSerializer
 
         event = self.get_object()
-        if str(event.organizer_id) != str(request.user.id):
+        if str(event.host_id) != str(request.user.id):
             return Response(
                 {'error': 'Only the organizer can invite people to this event'},
                 status=status.HTTP_403_FORBIDDEN
@@ -280,32 +261,29 @@ class EventViewSet(viewsets.ModelViewSet):
                 )
 
             added = 0
-            for meeting in event.meetings.all():
-                for email in emails:
-                    _, created = MeetingInvite.objects.get_or_create(
-                        meeting=meeting,
-                        email=email,
-                        defaults={'invited_by': request.user},
-                    )
-                    added += int(created)
-                    _match_existing_participant(meeting, email)
+            for email in emails:
+                _, created = EventInvite.objects.get_or_create(
+                    event=event,
+                    email=email,
+                    defaults={'invited_by': request.user},
+                )
+                added += int(created)
+                _match_existing_participant(event, email)
 
             logger.info(f"Invited {len(emails)} address(es) to event {event.id}")
 
-        invites = MeetingInvite.objects.filter(meeting__event=event).select_related(
-            'meeting', 'joined_user'
+        invites = EventInvite.objects.filter(event=event).select_related(
+            'joined_user'
         )
 
-        # One row per person, since the invitation was to the day.
+        # One row per person, since the invitation was to the event.
         by_email = {}
         for invite in invites:
             row = by_email.setdefault(invite.email, {
                 'email': invite.email,
-                'meetings': 0,
                 'joined': False,
                 'invited_at': invite.created_at,
             })
-            row['meetings'] += 1
             row['joined'] = row['joined'] or invite.joined_at is not None
 
         return Response({
@@ -318,10 +296,10 @@ class EventViewSet(viewsets.ModelViewSet):
     def roles(self, request, pk=None):
         """Who helps run this programme, and over how much of it.
 
-        A role is given at one scope - the whole event, one meeting, or one
-        session - and reaches exactly that far. Naming somebody a co-host of
-        the morning does not make them one in the evening; that is a
-        separate decision, taken here again.
+        A role is given at one scope - the whole event, or one session of
+        it - and reaches exactly that far. Naming somebody a co-host of one
+        event does not make them one at the next; that is a separate
+        decision, taken here again.
 
         Speakers are listed alongside but not stored here: a session names
         its own speaker, and naming them is what makes them its presenter.
@@ -330,7 +308,7 @@ class EventViewSet(viewsets.ModelViewSet):
         from src.apps.meetings.roles import claim_grants, grants_in_event, speakers_of
 
         event = self.get_object()
-        if str(event.organizer_id) != str(request.user.id):
+        if str(event.host_id) != str(request.user.id):
             return Response(
                 {'error': 'Only the organizer sets the roles'},
                 status=status.HTTP_403_FORBIDDEN,
@@ -344,7 +322,7 @@ class EventViewSet(viewsets.ModelViewSet):
                         'name': speaker['name'],
                         'email': speaker['email'],
                         'sessions': [
-                            {'id': str(s.id), 'title': s.title, 'meeting': s.meeting.title}
+                            {'id': str(s.id), 'title': s.title, 'event': s.event.title}
                             for s in speaker['sessions']
                         ],
                     }
@@ -383,7 +361,7 @@ class EventViewSet(viewsets.ModelViewSet):
         if target is None:
             return Response(
                 {'error': 'Name what the role covers: this event, one of its '
-                          'meetings, or one session of one.'},
+                          'events, or one session of one.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -401,59 +379,38 @@ class EventViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
-    @action(detail=True, methods=['post'])
-    def meetings(self, request, pk=None):
-        """Add a meeting, with its sessions, to an existing event."""
-        from src.apps.accounts.plans import check_can_add_meeting, check_session_count
-
-        event = self.get_object()
-        check_can_add_meeting(request.user, event)
-
-        serializer = MeetingWriteSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        check_session_count(
-            request.user, len(serializer.validated_data.get('sessions') or [])
-        )
-
-        meeting = build_meeting(serializer.validated_data, event=event)
-        from src.apps.meetings.event_serializers import MeetingSummarySerializer
-
-        return Response(
-            MeetingSummarySerializer(meeting).data, status=status.HTTP_201_CREATED
-        )
-
 
 class SessionViewSet(viewsets.ModelViewSet):
-    """Segments of the running order inside a meeting."""
+    """Segments of the running order inside a event."""
     serializer_class = SessionSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # A session is visible to whoever may see the meeting holding it.
+        # A session is visible to whoever may see the event holding it.
         from src.apps.meetings.access import sessions_visible_to
 
         queryset = (
             Session.objects.filter(sessions_visible_to(self.request.user))
             .distinct()
-            .select_related('meeting')
+            .select_related('event')
         )
 
-        # A meeting is addressed by its id or its room code, and only one of
+        # A event is addressed by its id or its room code, and only one of
         # those parses as a UUID.
-        meeting_ref = self.request.query_params.get('meeting')
-        if meeting_ref:
+        event_ref = self.request.query_params.get('event')
+        if event_ref:
             import uuid as _uuid
 
             try:
-                _uuid.UUID(str(meeting_ref))
+                _uuid.UUID(str(event_ref))
             except (ValueError, AttributeError, TypeError):
-                queryset = queryset.filter(meeting__meeting_code=meeting_ref)
+                queryset = queryset.filter(event__code=event_ref)
             else:
-                queryset = queryset.filter(meeting_id=meeting_ref)
+                queryset = queryset.filter(event_id=event_ref)
         return queryset
 
     def _require_host(self, session):
-        if str(session.meeting.host_id) != str(self.request.user.id):
+        if str(session.event.host_id) != str(self.request.user.id):
             return Response(
                 {'error': 'Only the host can change the running order'},
                 status=status.HTTP_403_FORBIDDEN,
@@ -461,8 +418,8 @@ class SessionViewSet(viewsets.ModelViewSet):
         return None
 
     def perform_create(self, serializer):
-        meeting = serializer.validated_data['meeting']
-        if str(meeting.host_id) != str(self.request.user.id):
+        event = serializer.validated_data['event']
+        if str(event.host_id) != str(self.request.user.id):
             from rest_framework.exceptions import PermissionDenied
 
             raise PermissionDenied('Only the host can add sessions')
@@ -470,13 +427,13 @@ class SessionViewSet(viewsets.ModelViewSet):
         from src.apps.accounts.plans import check_can_add_sessions
         from src.apps.meetings.scheduling import check_slot
 
-        check_can_add_sessions(self.request.user, meeting)
+        check_can_add_sessions(self.request.user, event)
 
         # A session being added has to fit the day as it stands. Moving one
         # that already exists is the other case, and that one shifts the
         # rest instead of being refused - see perform_update.
         check_slot(
-            meeting,
+            event,
             serializer.validated_data['starts_at'],
             serializer.validated_data.get('duration_minutes', 30),
         )
@@ -492,7 +449,7 @@ class SessionViewSet(viewsets.ModelViewSet):
         transaction, so simultaneous edits cannot leave an overlap behind.
         """
         session = serializer.instance
-        if str(session.meeting.host_id) != str(self.request.user.id):
+        if str(session.event.host_id) != str(self.request.user.id):
             from rest_framework.exceptions import PermissionDenied
 
             raise PermissionDenied('Only the host can change the running order')
@@ -507,11 +464,11 @@ class SessionViewSet(viewsets.ModelViewSet):
             if field in serializer.validated_data
         }
         if timing:
-            reschedule(session.meeting, {session.id: timing}, anchored_id=session.id)
+            reschedule(session.event, {session.id: timing}, anchored_id=session.id)
             session.refresh_from_db()
 
     def perform_destroy(self, instance):
-        if str(instance.meeting.host_id) != str(self.request.user.id):
+        if str(instance.event.host_id) != str(self.request.user.id):
             from rest_framework.exceptions import PermissionDenied
 
             raise PermissionDenied('Only the host can remove sessions')
@@ -545,14 +502,14 @@ class SessionViewSet(viewsets.ModelViewSet):
                     {'error': f"No session {change.get('id')} in your programme"},
                     status=status.HTTP_404_NOT_FOUND,
                 )
-            if str(session.meeting.host_id) != str(request.user.id):
+            if str(session.event.host_id) != str(request.user.id):
                 return Response(
                     {'error': 'Only the host can change the running order'},
                     status=status.HTTP_403_FORBIDDEN,
                 )
             wanted[session] = change
 
-        meeting = next(iter(wanted)).meeting
+        event = next(iter(wanted)).event
         edits = {}
         for session, change in wanted.items():
             edit = {}
@@ -564,14 +521,14 @@ class SessionViewSet(viewsets.ModelViewSet):
                 edit['hall'] = change['hall']
             edits[session.id] = edit
 
-        moved = apply_reschedule(meeting, edits)
+        moved = apply_reschedule(event, edits)
 
         # Every room whose running order this touched, told at once: the
         # host rearranges the day from inside the room, and the people in
         # it are looking at the same list.
         from src.apps.meetings.lifecycle import broadcast_schedule_changed
 
-        for touched in {s.meeting for s in moved} | {meeting}:
+        for touched in {s.event for s in moved} | {event}:
             broadcast_schedule_changed(touched)
 
         return Response({
@@ -584,7 +541,7 @@ class SessionViewSet(viewsets.ModelViewSet):
         """Put this session on stage.
 
         Only one session runs at a time, so any other live session in the
-        same meeting is closed first - otherwise transcript lines would not
+        same event is closed first - otherwise transcript lines would not
         know which segment they belong to.
         """
         session = self.get_object()
@@ -599,7 +556,7 @@ class SessionViewSet(viewsets.ModelViewSet):
 
         # Starting a talk before its hour brings it - and the rest of the
         # day - forward. Half a day early is somebody opening next week's
-        # meeting by mistake, and that is worth stopping.
+        # event by mistake, and that is worth stopping.
         from src.apps.meetings.scheduling import EARLY_START_LIMIT
 
         if session.starts_at - now > EARLY_START_LIMIT:
@@ -619,7 +576,7 @@ class SessionViewSet(viewsets.ModelViewSet):
         # Only one session at a time, so anything else on stage comes off
         # it first - and takes the time it really ran with it, the same as
         # if the host had pressed end.
-        for other in session.meeting.sessions.filter(status=Session.Status.LIVE):
+        for other in session.event.sessions.filter(status=Session.Status.LIVE):
             _close_session(other, now)
             absorb_overrun(other, now)
 
@@ -632,7 +589,7 @@ class SessionViewSet(viewsets.ModelViewSet):
             session.refresh_from_db()
             from src.apps.meetings.lifecycle import broadcast_schedule_changed
 
-            broadcast_schedule_changed(session.meeting)
+            broadcast_schedule_changed(session.event)
 
         # A new run, not a rejoin: anything already on stage returned
         # further up, so reaching here means the clock starts now. Keeping
@@ -643,17 +600,17 @@ class SessionViewSet(viewsets.ModelViewSet):
         session.ended_at = None
         session.save(update_fields=['status', 'started_at', 'ended_at', 'updated_at'])
 
-        # A session on stage means the meeting is happening, so the room
+        # A session on stage means the event is happening, so the room
         # opens with it rather than waiting to be started separately.
-        meeting = session.meeting
-        if meeting.status != Meeting.Status.ACTIVE:
+        event = session.event
+        if event.status != Event.Status.ACTIVE:
             # Not running, so this opens it afresh and the clock starts now.
-            meeting.status = Meeting.Status.ACTIVE
-            meeting.started_at = now
-            meeting.ended_at = None
-            meeting.save(update_fields=['status', 'started_at', 'ended_at', 'updated_at'])
+            event.status = Event.Status.ACTIVE
+            event.started_at = now
+            event.ended_at = None
+            event.save(update_fields=['status', 'started_at', 'ended_at', 'updated_at'])
 
-        _broadcast(meeting.meeting_code, session, 'session_started')
+        _broadcast(event.code, session, 'session_started')
         return Response(SessionSerializer(session).data)
 
     @action(detail=True, methods=['post'])
@@ -675,30 +632,30 @@ class SessionViewSet(viewsets.ModelViewSet):
         if moved:
             from src.apps.meetings.lifecycle import broadcast_schedule_changed
 
-            broadcast_schedule_changed(session.meeting)
+            broadcast_schedule_changed(session.event)
 
-        _broadcast(session.meeting.meeting_code, session, 'session_ended')
+        _broadcast(session.event.code, session, 'session_ended')
 
         from src.apps.meetings.views import broadcast_attendance_changed
 
-        broadcast_attendance_changed(session.meeting)
+        broadcast_attendance_changed(session.event)
 
-        # The meeting is the room, and the room is not one talk. Ending a
+        # The event is the room, and the room is not one talk. Ending a
         # session ends the session: its transcript, its chat and its
         # resources are closed off and belong to it, and the room stays
         # open for the host to start the next one. Only the host ending the
-        # meeting - or its window running out - shuts the door.
-        session.meeting.refresh_from_db()
+        # event - or its window running out - shuts the door.
+        session.event.refresh_from_db()
 
         return Response({
             **SessionSerializer(session).data,
             'attendance_recorded': recorded,
-            'meeting_status': session.meeting.status,
-            'meeting_ended': False,
+            'event_status': session.event.status,
+            'event_ended': False,
             'sessions_moved': [str(s.id) for s in moved],
-            'meeting_scheduled_end': (
-                session.meeting.scheduled_end.isoformat()
-                if session.meeting.scheduled_end else None
+            'event_scheduled_end': (
+                session.event.scheduled_end.isoformat()
+                if session.event.scheduled_end else None
             ),
         })
 
@@ -712,7 +669,7 @@ class SessionViewSet(viewsets.ModelViewSet):
         only by the host, and by anyone whose request the host approved.
         """
         session = self.get_object()
-        is_host = str(session.meeting.host_id) == str(request.user.id)
+        is_host = str(session.event.host_id) == str(request.user.id)
         over = _session_is_over(session)
 
         body = {
@@ -782,7 +739,7 @@ class SessionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
         for session in sessions:
-            if str(session.meeting.host_id) != str(request.user.id):
+            if str(session.event.host_id) != str(request.user.id):
                 return Response(
                     {'error': 'Only the host can change a speaker\'s visibility'},
                     status=status.HTTP_403_FORBIDDEN,
@@ -868,25 +825,25 @@ class SessionViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='contact_requests')
     def contact_requests(self, request):
-        """Requests waiting on the host, across a meeting or everything."""
+        """Requests waiting on the host, across a event or everything."""
         requests = ContactRequest.objects.filter(
-            session__meeting__host=request.user
-        ).select_related('session', 'session__meeting', 'user', 'guest')
+            session__event__host=request.user
+        ).select_related('session', 'session__event', 'user', 'guest')
 
-        meeting_ref = request.query_params.get('meeting')
-        if meeting_ref:
+        event_ref = request.query_params.get('event')
+        if event_ref:
             import uuid as _uuid
 
             try:
-                _uuid.UUID(str(meeting_ref))
+                _uuid.UUID(str(event_ref))
             except (ValueError, AttributeError, TypeError):
-                requests = requests.filter(session__meeting__meeting_code=meeting_ref)
+                requests = requests.filter(session__event__code=event_ref)
             else:
-                requests = requests.filter(session__meeting_id=meeting_ref)
+                requests = requests.filter(session__event_id=event_ref)
 
         event_id = request.query_params.get('event')
         if event_id:
-            requests = requests.filter(session__meeting__event_id=event_id)
+            requests = requests.filter(session__event_id=event_id)
 
         state = request.query_params.get('status')
         if state:
@@ -910,7 +867,7 @@ class SessionViewSet(viewsets.ModelViewSet):
         from src.apps.meetings.event_serializers import SessionSummarySerializer
 
         session = self.get_object()
-        is_host = str(session.meeting.host_id) == str(request.user.id)
+        is_host = str(session.event.host_id) == str(request.user.id)
         existing = SessionSummary.objects.filter(session=session).first()
 
         if request.method == 'GET':
@@ -1037,25 +994,25 @@ class SessionViewSet(viewsets.ModelViewSet):
         # reloaded.
         from src.apps.meetings.views import broadcast_attendance_changed
 
-        broadcast_attendance_changed(session.meeting)
+        broadcast_attendance_changed(session.event)
         return Response({'present': bool(present)})
 
 
-def _match_existing_participant(meeting, email):
+def _match_existing_participant(event, email):
     """Tie an invitation to somebody who had already joined.
 
     Inviting an address after the person walked in should still count as
     them having turned up.
     """
-    from src.apps.meetings.models import MeetingInvite
+    from src.apps.meetings.models import EventInvite
 
-    invite = MeetingInvite.objects.filter(
-        meeting=meeting, email__iexact=email, joined_at__isnull=True
+    invite = EventInvite.objects.filter(
+        event=event, email__iexact=email, joined_at__isnull=True
     ).first()
     if invite is None:
         return
 
-    participant = meeting.participants.filter(
+    participant = event.participants.filter(
         user__email__iexact=email
     ).select_related('user').first()
     if participant:
@@ -1067,17 +1024,14 @@ def _match_existing_participant(meeting, email):
 def _resolve_scope(event, scope, scope_id):
     """Turn a named scope into the field that records it.
 
-    Everything has to sit inside the programme being edited, so a meeting
-    id from somebody else's event cannot be smuggled through.
+    Everything has to sit inside the event being edited, so a session id
+    from somebody else's event cannot be smuggled through.
     """
     if scope == 'event':
         return {'event': event}
-    if scope == 'meeting':
-        meeting = Meeting.objects.filter(id=scope_id, event=event).first()
-        return {'meeting': meeting} if meeting else None
     if scope == 'session':
         session = Session.objects.filter(
-            id=scope_id, meeting__event=event
+            id=scope_id, event=event
         ).first()
         return {'session': session} if session else None
     return None

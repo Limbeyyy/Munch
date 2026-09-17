@@ -1,5 +1,5 @@
 """
-Transcription service for processing meeting audio into text.
+Transcription service for processing event audio into text.
 Handles real-time speech-to-text, segment management, and integration
 with the MeetingArtifactService for storing transcripts.
 """
@@ -8,7 +8,7 @@ import time
 from typing import Optional, Dict, Any, List, Callable
 from django.conf import settings
 from django.utils import timezone
-from src.apps.meetings.models import Meeting
+from src.apps.meetings.models import Event
 from src.apps.artifacts.services.artifact_service import MeetingArtifactService
 from src.utilities.logger import get_logger
 
@@ -16,7 +16,7 @@ logger = get_logger(__name__)
 
 class TranscriptionService:
     """
-    Service for handling meeting transcriptions.
+    Service for handling event transcriptions.
     Supports real-time speech-to-text processing and transcript storage.
     """
 
@@ -29,20 +29,20 @@ class TranscriptionService:
     # Minimum words to consider a segment meaningful
     MIN_SEGMENT_WORDS = 3
 
-    def __init__(self, meeting_id: str, user_id: str, language: str = None):
+    def __init__(self, event_id: str, user_id: str, language: str = None):
         """
-        Initialize the transcription service for a meeting.
+        Initialize the transcription service for a event.
 
         Args:
-            meeting_id: UUID of the meeting
+            event_id: UUID of the event
             user_id: UUID of the user initiating transcription (usually host)
             language: Language code for speech recognition (e.g., 'en-US')
         """
-        self.meeting_id = meeting_id
+        self.event_id = event_id
         self.user_id = user_id
         self.language = language or self.DEFAULT_LANGUAGE
-        self.meeting = Meeting.objects.get(id=meeting_id)
-        self.artifact_service = MeetingArtifactService(meeting_id, user_id)
+        self.event = Event.objects.get(id=event_id)
+        self.artifact_service = MeetingArtifactService(event_id, user_id)
 
         # In-memory buffer for current segment
         self._segment_buffer = {
@@ -71,13 +71,13 @@ class TranscriptionService:
 
     def start_transcription(self) -> bool:
         """
-        Start the transcription session for the meeting.
+        Start the transcription session for the event.
 
         Returns:
             bool: True if started successfully
         """
         if self._is_active:
-            logger.warning(f"Transcription already active for meeting {self.meeting_id}")
+            logger.warning(f"Transcription already active for event {self.event_id}")
             return False
 
         self._is_active = True
@@ -87,20 +87,20 @@ class TranscriptionService:
         # Create or ensure transcript artifact exists
         self._ensure_transcript_artifact()
 
-        logger.info(f"Transcription started for meeting {self.meeting.meeting_code}")
+        logger.info(f"Transcription started for event {self.event.code}")
         return True
 
     def _ensure_transcript_artifact(self):
         """
-        Ensure the transcript artifact exists in the meeting.
+        Ensure the transcript artifact exists in the event.
         """
         from src.apps.artifacts.models import Artifact, ArtifactType
 
         transcript, created = Artifact.objects.get_or_create(
-            meeting=self.meeting,
+            event=self.event,
             artifact_type=ArtifactType.TRANSCRIPT,
             defaults={
-                'display_name': f"Transcript - {self.meeting.meeting_code}",
+                'display_name': f"Transcript - {self.event.code}",
                 'mime_type': "application/vnd.google-apps.document",
                 'metadata': {'segments': []}
             }
@@ -125,7 +125,7 @@ class TranscriptionService:
             or None if error
         """
         if not self._is_active:
-            logger.warning(f"Transcription not active for meeting {self.meeting_id}")
+            logger.warning(f"Transcription not active for event {self.event_id}")
             return None
 
         try:
@@ -176,7 +176,7 @@ class TranscriptionService:
             "Can everyone see the shared screen?",
             "I'll take notes on the action items.",
             "Let's move on to the next agenda item.",
-            "Thanks for joining the meeting today.",
+            "Thanks for joining the event today.",
         ]
         idx = int(hash_val, 16) % len(dummy_texts)
         return dummy_texts[idx]
@@ -234,7 +234,7 @@ class TranscriptionService:
         )
 
         if success:
-            logger.debug(f"Saved transcript segment {segment_id} for meeting {self.meeting_id}")
+            logger.debug(f"Saved transcript segment {segment_id} for event {self.event_id}")
         else:
             logger.error(f"Failed to save transcript segment {segment_id}")
 
@@ -274,7 +274,7 @@ class TranscriptionService:
         # Add a finalization marker
         self._add_finalization_marker()
 
-        logger.info(f"Transcription stopped for meeting {self.meeting.meeting_code}")
+        logger.info(f"Transcription stopped for event {self.event.code}")
         return True
 
     def _add_finalization_marker(self):
@@ -285,7 +285,7 @@ class TranscriptionService:
         try:
             from src.apps.artifacts.models import Artifact, ArtifactType
             transcript = Artifact.objects.get(
-                meeting=self.meeting,
+                event=self.event,
                 artifact_type=ArtifactType.TRANSCRIPT
             )
             if transcript.drive_file_id:
@@ -311,7 +311,7 @@ class TranscriptionService:
         from src.apps.artifacts.models import Artifact, ArtifactType
         try:
             transcript = Artifact.objects.get(
-                meeting=self.meeting,
+                event=self.event,
                 artifact_type=ArtifactType.TRANSCRIPT
             )
             metadata = transcript.metadata or {}
@@ -338,7 +338,7 @@ class TranscriptionService:
             language: Language code (e.g., 'en-US', 'es-ES')
         """
         self.language = language
-        logger.info(f"Transcription language updated to {language} for meeting {self.meeting_id}")
+        logger.info(f"Transcription language updated to {language} for event {self.event_id}")
 
     def set_segment_criteria(self, max_duration: int, min_words: int):
         """

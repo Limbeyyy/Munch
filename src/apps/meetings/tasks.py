@@ -16,14 +16,14 @@ def write_reminders():
     """
     from django.utils import timezone
 
-    from src.apps.meetings.models import Meeting
+    from src.apps.meetings.models import Event
     from src.apps.meetings.reminders import generate_for_meeting
 
-    upcoming = Meeting.objects.filter(
+    upcoming = Event.objects.filter(
         scheduled_end__gte=timezone.now()
-    ).exclude(status=Meeting.Status.ENDED)
+    ).exclude(status=Event.Status.ENDED)
 
-    written = sum(generate_for_meeting(meeting) for meeting in upcoming)
+    written = sum(generate_for_meeting(event) for event in upcoming)
     if written:
         logger.info(f"Wrote {written} reminder(s)")
     return written
@@ -31,22 +31,22 @@ def write_reminders():
 
 @shared_task(name='src.apps.meetings.tasks.forget_guests_of_ended_meetings')
 def forget_guests_of_ended_meetings():
-    """Delete guest rows left behind by meetings that are over.
+    """Delete guest rows left behind by events that are over.
 
-    Every ordinary way a meeting ends forgets its guests on the way out.
-    This is for the rest: a meeting that ended before there was a rule
+    Every ordinary way a event ends forgets its guests on the way out.
+    This is for the rest: a event that ended before there was a rule
     about it, or one whose closing did not run to the end. A guest gave a
     name at a door for an afternoon, and a row about them should not
     outlive the afternoon by a year because a worker was restarted.
     """
     from src.apps.meetings.lifecycle import forget_guests
-    from src.apps.meetings.models import GuestAttendee, Meeting
+    from src.apps.meetings.models import GuestAttendee, Event
 
-    stale = Meeting.objects.filter(
-        status=Meeting.Status.ENDED,
-        id__in=GuestAttendee.objects.values('meeting_id'),
+    stale = Event.objects.filter(
+        status=Event.Status.ENDED,
+        id__in=GuestAttendee.objects.values('event_id'),
     )
-    forgotten = sum(forget_guests(meeting) for meeting in stale)
+    forgotten = sum(forget_guests(event) for event in stale)
     if forgotten:
-        logger.info(f"Forgot {forgotten} guest row(s) from meetings that are over")
+        logger.info(f"Forgot {forgotten} guest row(s) from events that are over")
     return forgotten

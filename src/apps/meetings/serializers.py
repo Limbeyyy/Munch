@@ -1,12 +1,12 @@
 from rest_framework import serializers
 from django.utils import timezone
 from src.apps.meetings.models import (
-    Meeting, MeetingParticipant, ChatMessage, GuestAttendee, MeetingInvite
+    Event, EventParticipant, ChatMessage, GuestAttendee, EventInvite
 )
 from src.apps.accounts.serializers import UserSerializer
-from src.utilities.validators import validate_meeting_code
+from src.utilities.validators import validate_event_code
 
-class MeetingSerializer(serializers.ModelSerializer):
+class EventSerializer(serializers.ModelSerializer):
     host = UserSerializer(read_only=True)
     participant_count = serializers.SerializerMethodField()
     is_active = serializers.BooleanField(read_only=True)
@@ -15,19 +15,19 @@ class MeetingSerializer(serializers.ModelSerializer):
     current_session = serializers.SerializerMethodField()
 
     class Meta:
-        model = Meeting
+        model = Event
         fields = [
-            'id', 'meeting_code', 'title', 'description', 'host', 'status',
+            'id', 'code', 'title', 'description', 'host', 'status',
             'drive_folder_id', 'drive_metadata_file_id',
             'scheduled_start', 'scheduled_end', 'started_at', 'ended_at',
             'max_participants', 'allow_recording', 'require_authentication',
             'chat_enabled', 'direct_messages_enabled',
-            'meeting_metadata', 'created_at', 'updated_at',
+            'event_metadata', 'created_at', 'updated_at',
             'participant_count', 'is_active', 'duration_seconds', 'entry',
             'current_session',
         ]
         read_only_fields = [
-            'id', 'meeting_code', 'host', 'created_at', 'updated_at',
+            'id', 'code', 'host', 'created_at', 'updated_at',
             'started_at', 'ended_at', 'drive_folder_id', 'drive_metadata_file_id'
         ]
     
@@ -50,7 +50,7 @@ class MeetingSerializer(serializers.ModelSerializer):
     def get_participant_count(self, obj):
         return obj.get_participant_count()
 
-class MeetingCreateSerializer(serializers.Serializer):
+class EventCreateSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=255)
     description = serializers.CharField(required=False, allow_blank=True)
     scheduled_start = serializers.DateTimeField()
@@ -66,17 +66,17 @@ class MeetingCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Start time must be in the future")
         return data
 
-class MeetingJoinSerializer(serializers.Serializer):
+class EventJoinSerializer(serializers.Serializer):
     role = serializers.ChoiceField(
-        choices=MeetingParticipant.Role.choices, 
-        default=MeetingParticipant.Role.ATTENDEE
+        choices=EventParticipant.Role.choices, 
+        default=EventParticipant.Role.ATTENDEE
     )
 
 class ParticipantSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     
     class Meta:
-        model = MeetingParticipant
+        model = EventParticipant
         fields = [
             'id', 'user', 'role', 'session_id', 'joined_at', 'left_at',
             'is_active', 'is_muted', 'is_video_on', 'is_screen_sharing',
@@ -84,11 +84,11 @@ class ParticipantSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'joined_at', 'left_at']
 
-class MeetingParticipantUpdateSerializer(serializers.Serializer):
+class EventParticipantUpdateSerializer(serializers.Serializer):
     is_muted = serializers.BooleanField(required=False)
     is_video_on = serializers.BooleanField(required=False)
     is_screen_sharing = serializers.BooleanField(required=False)
-    role = serializers.ChoiceField(choices=MeetingParticipant.Role.choices, required=False)
+    role = serializers.ChoiceField(choices=EventParticipant.Role.choices, required=False)
 
 class ChatMessageSerializer(serializers.ModelSerializer):
     """A message from either an account holder or a guest.
@@ -151,7 +151,7 @@ class ChatSettingsSerializer(serializers.Serializer):
 
 
 class GuestJoinSerializer(serializers.Serializer):
-    """A guest knocking on a meeting: a code and a name.
+    """A guest knocking on a event: a code and a name.
 
     A telephone number used to be required as well. Nothing was ever done
     with it - the host decides on the name, the register keeps the name -
@@ -164,7 +164,7 @@ class GuestJoinSerializer(serializers.Serializer):
     again; without one, every knock is a fresh request, because there is
     nothing to look them up by and nothing that should be.
     """
-    meeting_code = serializers.CharField(max_length=20)
+    code = serializers.CharField(max_length=20)
     full_name = serializers.CharField(max_length=120)
     phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
     token = serializers.CharField(required=False, allow_blank=True)
@@ -175,7 +175,7 @@ class GuestJoinSerializer(serializers.Serializer):
             raise serializers.ValidationError("Please enter your name")
         return name
 
-    def validate_meeting_code(self, value):
+    def validate_event_code(self, value):
         return value.strip().upper()
 
 
@@ -186,12 +186,12 @@ class GuestAttendeeSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class MeetingInviteSerializer(serializers.ModelSerializer):
+class EventInviteSerializer(serializers.ModelSerializer):
     has_joined = serializers.BooleanField(read_only=True)
     invited_by_email = serializers.CharField(source='invited_by.email', read_only=True)
 
     class Meta:
-        model = MeetingInvite
+        model = EventInvite
         fields = [
             'id', 'email', 'created_at', 'joined_at', 'has_joined',
             'invited_by_email',
@@ -200,7 +200,7 @@ class MeetingInviteSerializer(serializers.ModelSerializer):
 
 
 class InviteCreateSerializer(serializers.Serializer):
-    """Accepts the addresses a host shared the meeting link with."""
+    """Accepts the addresses a host shared the event link with."""
     emails = serializers.ListField(
         child=serializers.EmailField(),
         allow_empty=False,

@@ -22,7 +22,7 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
-        # Users can only see themselves and their meeting participants
+        # Users can only see themselves and their event participants
         return User.objects.filter(id=self.request.user.id)
     
     @action(detail=False, methods=['get', 'put'])
@@ -96,8 +96,7 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
             **payload,
             'remaining': {
                 'events': left(plan.max_events, usage['events']),
-                'meetings': left(plan.max_meetings, usage['meetings']),
-                'sessions_per_meeting': plan.max_sessions_per_meeting,
+                'sessions_per_event': plan.max_sessions_per_event,
                 'attendees': plan.max_attendees,
             },
             'plans': [PLANS[key].as_json() for key in PLANS],
@@ -110,8 +109,8 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
         How much room a hall needs between one session and the next, and
         how much warning the people coming are given. All three were fixed
         numbers written into the code: fifteen minutes between sessions, an
-        hour before a meeting, a quarter of an hour before a talk. They
-        suit a conference people travel to and not a ward meeting down the
+        hour before an event, a quarter of an hour before a talk. They
+        suit a conference people travel to and not a ward event down the
         corridor, so they are the host's to set.
 
         Fields are taken one at a time, so a screen may send only what it
@@ -119,14 +118,14 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
         """
         from src.apps.accounts.roles import ensure_host
         from src.apps.meetings.reminders import (
-            MAX_LEAD_MINUTES, MEETING_LEAD_MINUTES, SESSION_LEAD_MINUTES,
+            MAX_LEAD_MINUTES, EVENT_LEAD_MINUTES, SESSION_LEAD_MINUTES,
         )
         from src.apps.meetings.scheduling import GAP_MINUTES, MAX_GAP_MINUTES
 
         #: field -> (default, largest allowed)
         NUMBERS = {
             'session_gap_minutes': (GAP_MINUTES, MAX_GAP_MINUTES),
-            'meeting_reminder_minutes': (MEETING_LEAD_MINUTES, MAX_LEAD_MINUTES),
+            'event_reminder_minutes': (EVENT_LEAD_MINUTES, MAX_LEAD_MINUTES),
             'session_reminder_minutes': (SESSION_LEAD_MINUTES, MAX_LEAD_MINUTES),
         }
 

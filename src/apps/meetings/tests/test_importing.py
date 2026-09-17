@@ -12,10 +12,10 @@ from django.utils import timezone
 from rest_framework_simplejwt.tokens import AccessToken
 
 from src.apps.meetings.importing import (
-    COLUMNS, EVENT_COLUMNS, MEETING_COLUMNS, SESSION_COLUMNS,
+    COLUMNS, EVENT_COLUMNS, SESSION_COLUMNS,
     ImportProblem, read_sheet, sheet_timezone, template_csv, template_workbook,
 )
-from src.apps.meetings.models import Event, Meeting, Session
+from src.apps.meetings.models import Event, Session
 from src.apps.meetings.tests.factories import make_host
 
 API = '/api/v1'
@@ -36,9 +36,8 @@ def a_session(**over):
         'event_title': 'Health Conference',
         'event_date': '2026-10-02',
         'venue': 'Assembly Hall',
-        'meeting_title': 'Opening day',
-        'meeting_starts_at': '2026-10-02 09:00',
-        'meeting_duration_minutes': '240',
+        'event_starts_at': '2026-10-02 09:00',
+        'event_duration_minutes': '240',
         'session_title': 'Service delivery',
         'session_starts_at': '2026-10-02 09:00',
         'session_duration_minutes': '60',
@@ -59,7 +58,7 @@ class TemplateTests(TestCase):
         found = {}
         for index, line in enumerate(lines):
             name = line.strip().rstrip(',').upper()
-            if name in ('EVENTS', 'MEETINGS', 'SESSIONS'):
+            if name in ('EVENTS', 'SESSIONS'):
                 found[name] = lines[index + 1].split(',')
         return found
 
@@ -67,14 +66,13 @@ class TemplateTests(TestCase):
         found = self.headers()
 
         self.assertEqual(found['EVENTS'], EVENT_COLUMNS)
-        self.assertEqual(found['MEETINGS'], MEETING_COLUMNS)
         self.assertEqual(found['SESSIONS'], SESSION_COLUMNS)
 
     def test_the_tables_are_joined_by_id(self):
-        # What makes it three tables rather than three lists: a meeting
-        # names its event, and a session names its meeting.
-        self.assertIn('event_id', MEETING_COLUMNS)
-        self.assertIn('meeting_id', SESSION_COLUMNS)
+        # What makes it three tables rather than three lists: a event
+        # names its event, and a session names its event.
+        self.assertIn('event_id', EVENT_COLUMNS)
+        self.assertIn('event_id', SESSION_COLUMNS)
         self.assertIn('event_id', SESSION_COLUMNS)
 
     def test_it_says_how_to_fill_it_in(self):
@@ -99,12 +97,12 @@ class TemplateTests(TestCase):
         programmes = read_sheet(template_csv())
 
         self.assertEqual(len(programmes), 1)
-        self.assertEqual(len(programmes[0]['meetings'][0]['sessions']), 2)
+        self.assertEqual(len(programmes[0]['sessions']), 2)
 
     def test_the_guidance_row_is_not_read_as_a_session(self):
         titles = [
             s['title']
-            for s in read_sheet(template_csv())[0]['meetings'][0]['sessions']
+            for s in read_sheet(template_csv())[0]['sessions']
         ]
 
         self.assertNotIn('# One row per session.', titles)
@@ -118,8 +116,7 @@ class ReadingTests(TestCase):
         event = programmes[0]
         self.assertEqual(event['title'], 'Health Conference')
         self.assertEqual(event['venue'], 'Assembly Hall')
-        self.assertEqual(len(event['meetings']), 1)
-        self.assertEqual(event['meetings'][0]['sessions'][0]['title'], 'Service delivery')
+        self.assertEqual(event['sessions'][0]['title'], 'Service delivery')
 
     def test_rows_sharing_a_meeting_are_one_meeting(self):
         programmes = read_sheet(sheet(
@@ -127,22 +124,22 @@ class ReadingTests(TestCase):
             a_session(session_title='Records', session_starts_at='2026-10-02 10:15'),
         ))
 
-        meetings = programmes[0]['meetings']
-        self.assertEqual(len(meetings), 1)
-        self.assertEqual(len(meetings[0]['sessions']), 2)
+        events = programmes
+        self.assertEqual(len(events), 1)
+        self.assertEqual(len(events[0]['sessions']), 2)
 
-    def test_two_meetings_in_one_programme(self):
+    def test_two_events_in_one_sheet(self):
         programmes = read_sheet(sheet(
             a_session(),
             a_session(
-                meeting_title='Afternoon', meeting_starts_at='2026-10-02 14:00',
+                event_title='Afternoon', event_starts_at='2026-10-02 14:00',
                 session_title='Panel', session_starts_at='2026-10-02 14:00',
             ),
         ))
 
         self.assertEqual(
-            [m['title'] for m in programmes[0]['meetings']],
-            ['Opening day', 'Afternoon'],
+            [m['title'] for m in programmes],
+            ['Health Conference', 'Afternoon'],
         )
 
     def test_two_programmes_in_one_sheet(self):
@@ -150,7 +147,7 @@ class ReadingTests(TestCase):
             a_session(),
             a_session(
                 event_title='District Review', event_date='2026-10-09',
-                meeting_starts_at='2026-10-09 09:00',
+                event_starts_at='2026-10-09 09:00',
                 session_starts_at='2026-10-09 09:00',
             ),
         ))
@@ -165,14 +162,14 @@ class ReadingTests(TestCase):
             a_session(session_title='Third', session_starts_at='2026-10-02 11:30'),
         ))
 
-        sessions = programmes[0]['meetings'][0]['sessions']
+        sessions = programmes[0]['sessions']
         self.assertEqual([s['position'] for s in sessions], [1, 2, 3])
 
     def test_a_missing_duration_gets_the_default(self):
         programmes = read_sheet(sheet(a_session(session_duration_minutes='')))
 
         self.assertEqual(
-            programmes[0]['meetings'][0]['sessions'][0]['duration_minutes'], 30
+            programmes[0]['sessions'][0]['duration_minutes'], 30
         )
 
     def test_the_shapes_a_spreadsheet_writes_dates_in(self):
@@ -181,7 +178,7 @@ class ReadingTests(TestCase):
             '2026/10/02 09:00', '2026-10-02 09:00 AM',
         ):
             programmes = read_sheet(sheet(a_session(session_starts_at=written)))
-            when = programmes[0]['meetings'][0]['sessions'][0]['starts_at']
+            when = programmes[0]['sessions'][0]['starts_at']
             # Nine as the hall's clock has it, whatever the server's is.
             self.assertEqual(when.astimezone(sheet_timezone()).hour, 9, written)
 
@@ -287,7 +284,7 @@ class ImportEndpointTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(Event.objects.count(), 1)
-        self.assertEqual(Meeting.objects.count(), 1)
+        self.assertEqual(Event.objects.count(), 1)
         self.assertEqual(Session.objects.count(), 2)
         self.assertEqual(
             Session.objects.order_by('starts_at').first().speaker_email,
@@ -301,7 +298,7 @@ class ImportEndpointTests(TestCase):
         self.assertTrue(response.json()['dry_run'])
         self.assertEqual(Event.objects.count(), 0)
         self.assertEqual(
-            response.json()['programmes'][0]['meetings'][0]['sessions'][0]['title'],
+            response.json()['programmes'][0]['sessions'][0]['title'],
             'Service delivery',
         )
 
@@ -315,9 +312,9 @@ class ImportEndpointTests(TestCase):
     def test_the_first_session_is_pinned_to_the_meeting_as_the_form_does(self):
         self.send(sheet(a_session(session_starts_at='2026-10-02 09:30')))
 
-        meeting = Meeting.objects.get()
-        first = meeting.sessions.order_by('starts_at').first()
-        self.assertEqual(first.starts_at, meeting.scheduled_start)
+        event = Event.objects.get()
+        first = event.sessions.order_by('starts_at').first()
+        self.assertEqual(first.starts_at, event.scheduled_start)
 
     def test_a_running_order_typed_too_tight_is_spaced_out(self):
         self.send(sheet(
@@ -325,7 +322,7 @@ class ImportEndpointTests(TestCase):
             a_session(session_title='Second', session_starts_at='2026-10-02 10:00'),
         ))
 
-        first, second = Meeting.objects.get().sessions.order_by('starts_at')
+        first, second = Event.objects.get().sessions.order_by('starts_at')
         gap = (second.starts_at - (first.starts_at + timezone.timedelta(
             minutes=first.duration_minutes
         ))).total_seconds() / 60
@@ -338,7 +335,7 @@ class ImportEndpointTests(TestCase):
             a_session(),
             a_session(
                 event_title='Second programme', event_date='2026-10-09',
-                meeting_starts_at='2026-10-09 09:00',
+                event_starts_at='2026-10-09 09:00',
                 session_starts_at='2026-10-09 09:00',
                 speaker_phone='',
             ),
@@ -362,13 +359,12 @@ class ImportEndpointTests(TestCase):
         self.assertEqual(response.json()['code'], 'no_file')
 
 
-def tables(events=(), meetings=(), sessions=()):
-    """A sheet in the shape the template now has: three tables, one under
+def tables(events=(), sessions=()):
+    """A sheet in the shape the template now has: two tables, one under
     the other, joined by the ids they carry."""
     lines = ['Manch programme template', '# guidance goes here', '']
     for name, columns, rows in (
         ('EVENTS', EVENT_COLUMNS, events),
-        ('MEETINGS', MEETING_COLUMNS, meetings),
         ('SESSIONS', SESSION_COLUMNS, sessions),
     ):
         lines += [name, ','.join(columns)]
@@ -381,16 +377,13 @@ def tables(events=(), meetings=(), sessions=()):
 AN_EVENT = {
     'event_id': '1', 'event_title': 'Nepal Can Move',
     'event_date': '2026-09-14', 'venue': 'National Assembly Hall',
-}
-A_MEETING = {
-    'meeting_id': '1', 'event_id': '1', 'meeting_title': 'Opening day',
-    'meeting_starts_at': '2026-09-14 12:40', 'meeting_duration_minutes': '30',
+    'event_starts_at': '2026-09-14 12:40', 'event_duration_minutes': '30',
 }
 
 
 def a_row(**over):
     row = {
-        'session_id': '1001', 'event_id': '1', 'meeting_id': '1',
+        'session_id': '1001', 'event_id': '1',
         'session_title': 'Health service delivery in federalism',
         'session_starts_at': '2026-09-14 12:40', 'session_duration_minutes': '5',
         'hall': 'Hall A', 'speaker_name': 'Dr Sarita Poudel',
@@ -401,56 +394,34 @@ def a_row(**over):
     return row
 
 
-class ThreeTablesTests(TestCase):
-    """The sheet as three tables, joined by id.
+class TwoTablesTests(TestCase):
+    """The sheet as two tables, joined by id.
 
-    One row is one thing - one programme, one meeting, one session - and
-    nothing is typed twice. What used to hold the programme together was
-    repeating its title on every session's row, which meant the tenth row
-    could quietly disagree with the first.
+    One row is one thing - one event, one session - and nothing is typed
+    twice. What used to hold an event together was repeating its title on
+    every session's row, which meant the tenth row could quietly disagree
+    with the first.
     """
 
     def test_it_reads_the_shape_the_template_is_in(self):
-        programmes = read_sheet(template_csv())
+        events = read_sheet(template_csv())
 
-        self.assertEqual(len(programmes), 1)
-        self.assertEqual(len(programmes[0]['meetings']), 1)
-        self.assertEqual(len(programmes[0]['meetings'][0]['sessions']), 2)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(len(events[0]['sessions']), 2)
 
-    def test_a_session_lands_in_the_meeting_its_id_names(self):
-        raw = tables(
-            events=[AN_EVENT],
-            meetings=[
-                A_MEETING,
-                {'meeting_id': '2', 'event_id': '1', 'meeting_title': 'Afternoon',
-                 'meeting_starts_at': '2026-09-14 14:00'},
-            ],
-            sessions=[
-                a_row(meeting_id='2', session_title='Second',
-                      session_starts_at='2026-09-14 14:00'),
-                a_row(session_title='First'),
-            ],
-        )
-
-        [programme] = read_sheet(raw)
-        first, second = programme['meetings']
-        self.assertEqual([s['title'] for s in first['sessions']], ['First'])
-        self.assertEqual([s['title'] for s in second['sessions']], ['Second'])
-
-    def test_a_meeting_lands_in_the_programme_its_id_names(self):
+    def test_a_session_lands_in_the_event_its_id_names(self):
         raw = tables(
             events=[
                 AN_EVENT,
                 {'event_id': '2', 'event_title': 'Nepal Cannot Move',
                  'event_date': '2026-09-14'},
             ],
-            meetings=[{**A_MEETING, 'event_id': '2'}],
             sessions=[a_row(event_id='2')],
         )
 
         one, two = read_sheet(raw)
-        self.assertEqual(one['meetings'], [])
-        self.assertEqual(len(two['meetings']), 1)
+        self.assertEqual(one['sessions'], [])
+        self.assertEqual(len(two['sessions']), 1)
 
     def test_a_programme_with_nothing_under_it_yet_is_still_made(self):
         # Set the programme up now, fill in its day later. The form allows
@@ -458,7 +429,6 @@ class ThreeTablesTests(TestCase):
         raw = tables(
             events=[AN_EVENT, {'event_id': '2', 'event_title': 'Later',
                                'event_date': '2026-09-14'}],
-            meetings=[A_MEETING],
             sessions=[a_row()],
         )
 
@@ -468,8 +438,7 @@ class ThreeTablesTests(TestCase):
 
     def test_the_order_of_the_rows_is_the_order_of_the_day(self):
         raw = tables(
-            events=[AN_EVENT], meetings=[A_MEETING],
-            sessions=[
+            events=[AN_EVENT], sessions=[
                 a_row(session_id='1', session_title='One'),
                 a_row(session_id='2', session_title='Two',
                       session_starts_at='2026-09-14 13:00'),
@@ -477,49 +446,22 @@ class ThreeTablesTests(TestCase):
         )
 
         [programme] = read_sheet(raw)
-        sessions = programme['meetings'][0]['sessions']
+        sessions = programme['sessions']
         self.assertEqual([s['title'] for s in sessions], ['One', 'Two'])
         self.assertEqual([s['position'] for s in sessions], [1, 2])
 
     def test_a_meeting_id_that_is_not_there_is_named(self):
-        raw = tables(events=[AN_EVENT], meetings=[A_MEETING],
-                     sessions=[a_row(meeting_id='9')])
+        raw = tables(events=[AN_EVENT], sessions=[a_row(event_id='9')])
 
         with self.assertRaises(ImportProblem) as problem:
             read_sheet(raw)
 
-        self.assertIn('no meeting with the id “9”', str(problem.exception))
-        self.assertEqual(problem.exception.column, 'meeting_id')
-
-    def test_an_event_id_that_is_not_there_is_named(self):
-        raw = tables(events=[AN_EVENT], meetings=[{**A_MEETING, 'event_id': '7'}],
-                     sessions=[a_row()])
-
-        with self.assertRaises(ImportProblem) as problem:
-            read_sheet(raw)
-
-        self.assertIn('no programme with the id “7”', str(problem.exception))
-
-    def test_two_ids_that_disagree_are_caught(self):
-        # The session says programme 2; its meeting is in programme 1. One
-        # of the two is a typo, and it would not show up anywhere else.
-        raw = tables(
-            events=[AN_EVENT, {'event_id': '2', 'event_title': 'Other',
-                               'event_date': '2026-09-14'}],
-            meetings=[A_MEETING],
-            sessions=[a_row(event_id='2')],
-        )
-
-        with self.assertRaises(ImportProblem) as problem:
-            read_sheet(raw)
-
-        self.assertIn('not in programme', str(problem.exception))
+        self.assertIn('no event with the id “9”', str(problem.exception))
         self.assertEqual(problem.exception.column, 'event_id')
 
     def test_two_things_cannot_share_an_id(self):
         raw = tables(
-            events=[AN_EVENT, {**AN_EVENT, 'event_title': 'Same id'}],
-            meetings=[A_MEETING], sessions=[a_row()],
+            events=[AN_EVENT, {**AN_EVENT, 'event_title': 'Same id'}], sessions=[a_row()],
         )
 
         with self.assertRaises(ImportProblem) as problem:
@@ -527,31 +469,20 @@ class ThreeTablesTests(TestCase):
 
         self.assertIn('share the id', str(problem.exception))
 
-    def test_a_single_meeting_needs_no_id_typed_at_all(self):
-        # One programme, one meeting: there is nothing to be ambiguous
-        # about, so the ids can be left blank.
+    def test_a_single_event_needs_no_id_typed_at_all(self):
+        # One event: there is nothing to be ambiguous about, so the id can
+        # be left blank.
         raw = tables(
             events=[{'event_title': 'Small day', 'event_date': '2026-09-14'}],
-            meetings=[{'meeting_title': 'The morning',
-                       'meeting_starts_at': '2026-09-14 09:00'}],
-            sessions=[a_row(event_id='', meeting_id='',
+            sessions=[a_row(event_id='',
                             session_starts_at='2026-09-14 09:00')],
         )
 
         [programme] = read_sheet(raw)
-        self.assertEqual(len(programme['meetings'][0]['sessions']), 1)
-
-    def test_a_meeting_with_no_sessions_is_refused(self):
-        raw = tables(events=[AN_EVENT], meetings=[A_MEETING], sessions=[])
-
-        with self.assertRaises(ImportProblem) as problem:
-            read_sheet(raw)
-
-        self.assertIn('no sessions under it', str(problem.exception))
+        self.assertEqual(len(programme['sessions']), 1)
 
     def test_the_row_number_of_a_bad_cell_is_the_one_in_the_spreadsheet(self):
-        raw = tables(events=[AN_EVENT], meetings=[A_MEETING],
-                     sessions=[a_row(session_starts_at='the afternoon')])
+        raw = tables(events=[AN_EVENT], sessions=[a_row(session_starts_at='the afternoon')])
         lines = raw.decode('utf-8').splitlines()
         expected = lines.index(
             [line for line in lines if 'the afternoon' in line][0]
@@ -568,7 +499,7 @@ class ThreeTablesTests(TestCase):
         programmes = read_sheet(sheet(a_session()))
 
         self.assertEqual(len(programmes), 1)
-        self.assertEqual(len(programmes[0]['meetings'][0]['sessions']), 1)
+        self.assertEqual(len(programmes[0]['sessions']), 1)
 
 
 class WorkbookTests(TestCase):
@@ -584,10 +515,10 @@ class WorkbookTests(TestCase):
         sheet_ = book.active
         markers = [
             row[0].value for row in sheet_.iter_rows(min_col=1, max_col=1)
-            if row[0].value in ('EVENTS', 'MEETINGS', 'SESSIONS')
+            if row[0].value in ('EVENTS', 'SESSIONS')
         ]
 
-        self.assertEqual(markers, ['EVENTS', 'MEETINGS', 'SESSIONS'])
+        self.assertEqual(markers, ['EVENTS', 'SESSIONS'])
 
     def test_the_session_ids_are_chosen_rather_than_typed(self):
         from openpyxl import load_workbook
@@ -595,17 +526,17 @@ class WorkbookTests(TestCase):
         book = load_workbook(io.BytesIO(template_workbook()))
         lists = book.active.data_validations.dataValidation
 
-        self.assertEqual(len(lists), 2)
+        self.assertEqual(len(lists), 1)
         for validation in lists:
             self.assertEqual(validation.type, 'list')
-            # Each points at the id column of a table above.
+            # It points at the id column of the table above.
             self.assertTrue(validation.formula1.startswith('=$A$'))
             # And is enforced rather than decorative: without this the
             # arrow appears but anything typed is accepted.
             self.assertTrue(validation.showErrorMessage)
             self.assertEqual(validation.errorStyle, 'stop')
 
-    def test_the_dropdowns_sit_on_the_two_id_columns_of_the_sessions_table(self):
+    def test_the_dropdown_sits_on_the_id_column_of_the_sessions_table(self):
         from openpyxl import load_workbook
 
         book = load_workbook(io.BytesIO(template_workbook()))
@@ -614,11 +545,9 @@ class WorkbookTests(TestCase):
             for v in book.active.data_validations.dataValidation
         )
 
-        # event_id is the second column of the sessions table, meeting_id
-        # the third.
-        self.assertEqual(columns, ['B', 'C'])
+        # event_id is the second column of the sessions table.
+        self.assertEqual(columns, ['B'])
         self.assertEqual(SESSION_COLUMNS[1], 'event_id')
-        self.assertEqual(SESSION_COLUMNS[2], 'meeting_id')
 
     def test_a_filled_in_workbook_can_be_read_straight_back(self):
         # The loop has to close: the file we hand out has to be one we
@@ -626,7 +555,7 @@ class WorkbookTests(TestCase):
         programmes = read_sheet(template_workbook())
 
         self.assertEqual(len(programmes), 1)
-        self.assertEqual(len(programmes[0]['meetings'][0]['sessions']), 2)
+        self.assertEqual(len(programmes[0]['sessions']), 2)
 
 
 class TheClockInTheHallTests(TestCase):
@@ -636,7 +565,7 @@ class TheClockInTheHallTests(TestCase):
     which is right for a time the app recorded itself. But "2026-09-14
     15:00" in a spreadsheet means three in the afternoon in the hall, and
     reading it as UTC put every imported programme five and three quarter
-    hours out - a three o'clock meeting arrived on the organizer's screen
+    hours out - a three o'clock event arrived on the organizer's screen
     at a quarter to nine, matching nothing in the sheet it came from.
     """
 
@@ -647,52 +576,49 @@ class TheClockInTheHallTests(TestCase):
 
     def test_three_in_the_afternoon_stays_three_in_the_afternoon(self):
         raw = tables(
-            events=[AN_EVENT],
-            meetings=[{**A_MEETING, 'meeting_starts_at': '2026-09-14 15:00'}],
+            events=[{**AN_EVENT, 'event_starts_at': '2026-09-14 15:00'}],
             sessions=[a_row(session_starts_at='2026-09-14 15:00')],
         )
 
         [programme] = read_sheet(raw)
-        meeting = programme['meetings'][0]
+        event = programme
 
-        self.assertEqual(self.in_the_hall(meeting['scheduled_start']).hour, 15)
+        self.assertEqual(self.in_the_hall(event['scheduled_start']).hour, 15)
         self.assertEqual(
-            self.in_the_hall(meeting['sessions'][0]['starts_at']).hour, 15
+            self.in_the_hall(event['sessions'][0]['starts_at']).hour, 15
         )
 
     def test_the_twelve_hour_clock_a_spreadsheet_writes_reads_the_same_way(self):
         # Excel hands back "3:00 PM" as often as "15:00".
         raw = tables(
-            events=[AN_EVENT],
-            meetings=[{**A_MEETING, 'meeting_starts_at': '2026-09-14 3:00 PM'}],
+            events=[{**AN_EVENT, 'event_starts_at': '2026-09-14 3:00 PM'}],
             sessions=[a_row(session_starts_at='2026-09-14 3:00 PM')],
         )
 
         [programme] = read_sheet(raw)
 
         self.assertEqual(
-            self.in_the_hall(programme['meetings'][0]['scheduled_start']).hour, 15
+            self.in_the_hall(programme['scheduled_start']).hour, 15
         )
 
     def test_the_day_is_the_day_in_the_hall_too(self):
         # Late enough that reading it as UTC would land it on the 15th.
         raw = tables(
-            events=[AN_EVENT],
-            meetings=[{**A_MEETING, 'meeting_starts_at': '2026-09-14 23:30'}],
+            events=[{**AN_EVENT, 'event_starts_at': '2026-09-14 23:30'}],
             sessions=[a_row(session_starts_at='2026-09-14 23:30')],
         )
 
         [programme] = read_sheet(raw)
-        starts = self.in_the_hall(programme['meetings'][0]['scheduled_start'])
+        starts = self.in_the_hall(programme['scheduled_start'])
 
         self.assertEqual(starts.date().isoformat(), '2026-09-14')
 
     def test_the_old_wide_sheet_is_read_on_the_same_clock(self):
         [programme] = read_sheet(sheet(a_session(
-            meeting_starts_at='2026-10-02 15:00',
+            event_starts_at='2026-10-02 15:00',
             session_starts_at='2026-10-02 15:00',
         )))
 
         self.assertEqual(
-            self.in_the_hall(programme['meetings'][0]['scheduled_start']).hour, 15
+            self.in_the_hall(programme['scheduled_start']).hour, 15
         )

@@ -17,8 +17,8 @@ class JSONFormatter(logging.Formatter):
         }
         if hasattr(record, 'user_id'):
             log_data['user_id'] = record.user_id
-        if hasattr(record, 'meeting_code'):
-            log_data['meeting_code'] = record.meeting_code
+        if hasattr(record, 'code'):
+            log_data['code'] = record.code
         if record.exc_info:
             log_data['exception'] = self.formatException(record.exc_info)
         return json.dumps(log_data)

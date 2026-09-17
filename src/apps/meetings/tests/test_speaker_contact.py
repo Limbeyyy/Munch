@@ -8,9 +8,9 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from src.apps.meetings.models import ContactRequest, MeetingParticipant, Session
+from src.apps.meetings.models import ContactRequest, EventParticipant, Session
 from src.apps.meetings.tests.factories import (
-    make_event, make_host, make_meeting, make_session,
+    make_event, make_host, make_session,
 )
 
 API = '/api/v1'
@@ -28,13 +28,12 @@ class SpeakerContactTests(TestCase):
         self.asker = make_host('asker@example.com')
         self.stranger = make_host('stranger@example.com')
 
-        self.event = make_event(self.host)
         # An hour ago, so the sessions are over and following up is the point.
         past = timezone.now() - timezone.timedelta(hours=2)
-        self.meeting = make_meeting(self.host, self.event, start=past)
-        self.private = make_session(self.meeting, past, 30, 'Private talk')
+        self.event = make_event(self.host, start=past)
+        self.private = make_session(self.event, past, 30, 'Private talk')
         self.public = make_session(
-            self.meeting, past + timezone.timedelta(minutes=45), 30, 'Public talk'
+            self.event, past + timezone.timedelta(minutes=45), 30, 'Public talk'
         )
         self.public.speaker_visibility = Session.SpeakerVisibility.PUBLIC
         self.public.speaker_name = 'Open Speaker'
@@ -43,8 +42,8 @@ class SpeakerContactTests(TestCase):
         self.public.save()
 
         for person in (self.asker, self.stranger):
-            MeetingParticipant.objects.create(
-                meeting=self.meeting, user=person, role='attendee'
+            EventParticipant.objects.create(
+                event=self.event, user=person, role='attendee'
             )
 
         self.host_client = signed_in(self.host)
@@ -129,7 +128,7 @@ class SpeakerContactTests(TestCase):
     # --- the ways somebody might try to get round it ----------------------
 
     def test_the_session_list_never_carries_a_speaker_email(self):
-        rows = self.asker_client.get(f'{API}/sessions/?meeting={self.meeting.id}').json()
+        rows = self.asker_client.get(f'{API}/sessions/?event={self.event.id}').json()
         body = rows['results'] if isinstance(rows, dict) else rows
 
         for session in body:
@@ -138,7 +137,7 @@ class SpeakerContactTests(TestCase):
             self.assertNotIn('speaker_phone', session)
 
     def test_the_host_reads_their_own_speakers_from_the_session(self):
-        rows = self.host_client.get(f'{API}/sessions/?meeting={self.meeting.id}').json()
+        rows = self.host_client.get(f'{API}/sessions/?event={self.event.id}').json()
         body = rows['results'] if isinstance(rows, dict) else rows
 
         contacts = {s['title']: s['speaker_contact'] for s in body}
@@ -195,23 +194,22 @@ class VisibilityToggleTests(TestCase):
     def setUp(self):
         self.host = make_host('host@example.com')
         self.asker = make_host('asker@example.com')
-        self.event = make_event(self.host)
         past = timezone.now() - timezone.timedelta(hours=3)
-        self.meeting = make_meeting(self.host, self.event, start=past)
+        self.event = make_event(self.host, start=past)
         # One speaker, two sessions - the card covers both.
-        self.first = make_session(self.meeting, past, 30, 'Morning talk')
+        self.first = make_session(self.event, past, 30, 'Morning talk')
         self.second = make_session(
-            self.meeting, past + timezone.timedelta(minutes=45), 30, 'Second talk'
+            self.event, past + timezone.timedelta(minutes=45), 30, 'Second talk'
         )
-        MeetingParticipant.objects.create(
-            meeting=self.meeting, user=self.asker, role='attendee'
+        EventParticipant.objects.create(
+            event=self.event, user=self.asker, role='attendee'
         )
         self.host_client = signed_in(self.host)
         self.asker_client = signed_in(self.asker)
 
     def visibilities(self):
         return sorted(
-            Session.objects.filter(meeting=self.meeting).values_list(
+            Session.objects.filter(event=self.event).values_list(
                 'speaker_visibility', flat=True
             )
         )
@@ -296,7 +294,7 @@ class VisibilityToggleTests(TestCase):
     def test_a_session_outside_the_programme_is_refused(self):
         other_host = make_host('other@example.com')
         other = make_session(
-            make_meeting(other_host, make_event(other_host)),
+            make_event(other_host),
             timezone.now(), 30, 'Not mine',
         )
 

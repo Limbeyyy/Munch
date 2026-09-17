@@ -1,6 +1,6 @@
-"""Reading and adding the photographs from a meeting.
+"""Reading and adding the photographs from a event.
 
-Who may see them is the same question as who may see the meeting, so the
+Who may see them is the same question as who may see the event, so the
 existing visibility rules answer it. Who may add them is narrower, and
 lives in ``photos``.
 """
@@ -15,7 +15,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from src.apps.artifacts import photos as photo_service
-from src.apps.artifacts.models import MeetingPhoto, PhotoFolder
+from src.apps.artifacts.models import EventPhoto, PhotoFolder
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ def _refused(error):
     """Turn a refusal into the status that describes it."""
     codes = {
         'not_an_organizer': status.HTTP_403_FORBIDDEN,
-        'meeting_not_finished': status.HTTP_409_CONFLICT,
+        'event_not_finished': status.HTTP_409_CONFLICT,
         'folder_is_default': status.HTTP_409_CONFLICT,
         'name_taken': status.HTTP_409_CONFLICT,
     }
@@ -34,15 +34,15 @@ def _refused(error):
     )
 
 
-def _meeting_for(user, meeting_ref):
-    """The meeting behind a code or an id, if this person may see it."""
-    from src.apps.meetings.access import meetings_visible_to
-    from src.apps.meetings.models import Meeting
+def _event_for(user, event_ref):
+    """The event behind a code or an id, if this person may see it."""
+    from src.apps.meetings.access import events_visible_to
+    from src.apps.meetings.models import Event
 
-    visible = Meeting.objects.filter(meetings_visible_to(user)).distinct()
-    found = visible.filter(meeting_code=str(meeting_ref).upper()).first()
-    if found is None and str(meeting_ref).count('-') >= 4:
-        found = visible.filter(pk=meeting_ref).first()
+    visible = Event.objects.filter(events_visible_to(user)).distinct()
+    found = visible.filter(code=str(event_ref).upper()).first()
+    if found is None and str(event_ref).count('-') >= 4:
+        found = visible.filter(pk=event_ref).first()
     return found
 
 
@@ -65,7 +65,7 @@ def _photo_json(photo, request):
         # Served from here rather than from Drive: a Drive link opens Drive's
         # own viewer and asks the reader to sign in to an account they may
         # not have, which is no use as the source of a preview.
-        'url': f'/api/v1/meetings/photos/{photo.id}/file/',
+        'url': f'/api/v1/events/photos/{photo.id}/file/',
     }
 
 
@@ -85,18 +85,18 @@ def _folder_json(folder, request, counts):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def meeting_photos(request, meeting_ref):
-    """Every folder for this meeting, and the photographs in them."""
-    meeting = _meeting_for(request.user, meeting_ref)
-    if meeting is None:
+def event_photos(request, event_ref):
+    """Every folder for this event, and the photographs in them."""
+    event = _event_for(request.user, event_ref)
+    if event is None:
         return Response(
-            {'error': f'No meeting found for {meeting_ref}'},
+            {'error': f'No event found for {event_ref}'},
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    folders = list(photo_service.folders_for(meeting))
+    folders = list(photo_service.folders_for(event))
     rows = list(
-        MeetingPhoto.objects.filter(meeting=meeting).select_related('uploaded_by')
+        EventPhoto.objects.filter(event=event).select_related('uploaded_by')
     )
 
     counts = {}
@@ -104,19 +104,19 @@ def meeting_photos(request, meeting_ref):
         counts[photo.folder_id] = counts.get(photo.folder_id, 0) + 1
 
     return Response({
-        'meeting_id': str(meeting.id),
-        'meeting_code': meeting.meeting_code,
-        'meeting_title': meeting.title,
-        'meeting_is_finished': photo_service.meeting_is_done(meeting),
+        'event_id': str(event.id),
+        'code': event.code,
+        'event_title': event.title,
+        'event_is_finished': photo_service.event_is_done(event),
         # Whether this person may add one *now*: the permission and the
         # timing together, so the page does not offer a button the server
         # is going to refuse.
         'can_upload': (
-            photo_service.may_upload(meeting, request.user)
-            and photo_service.meeting_is_done(meeting)
+            photo_service.may_upload(event, request.user)
+            and photo_service.event_is_done(event)
         ),
-        'is_a_photographer': photo_service.may_upload(meeting, request.user),
-        'can_arrange': photo_service.may_arrange(meeting, request.user),
+        'is_a_photographer': photo_service.may_upload(event, request.user),
+        'can_arrange': photo_service.may_arrange(event, request.user),
         'folders': [_folder_json(f, request, counts) for f in folders],
         'photos': [_photo_json(p, request) for p in rows],
     })
@@ -124,18 +124,18 @@ def meeting_photos(request, meeting_ref):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def create_photo_folder(request, meeting_ref):
+def create_photo_folder(request, event_ref):
     """Make a folder to file photographs under. Host and co-hosts only."""
-    meeting = _meeting_for(request.user, meeting_ref)
-    if meeting is None:
+    event = _event_for(request.user, event_ref)
+    if event is None:
         return Response(
-            {'error': f'No meeting found for {meeting_ref}'},
+            {'error': f'No event found for {event_ref}'},
             status=status.HTTP_404_NOT_FOUND,
         )
 
     try:
         folder = photo_service.create_folder(
-            meeting, request.user, request.data.get('name', '')
+            event, request.user, request.data.get('name', '')
         )
     except photo_service.PhotoRefused as refusal:
         return _refused(refusal)
@@ -147,16 +147,16 @@ def create_photo_folder(request, meeting_ref):
 
 @api_view(['POST', 'DELETE'])
 @permission_classes([IsAuthenticated])
-def photo_folder(request, meeting_ref, folder_id):
+def photo_folder(request, event_ref, folder_id):
     """Rename a folder, or remove it and keep what was inside."""
-    meeting = _meeting_for(request.user, meeting_ref)
-    if meeting is None:
+    event = _event_for(request.user, event_ref)
+    if event is None:
         return Response(
-            {'error': f'No meeting found for {meeting_ref}'},
+            {'error': f'No event found for {event_ref}'},
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    folder = PhotoFolder.objects.filter(id=folder_id, meeting=meeting).first()
+    folder = PhotoFolder.objects.filter(id=folder_id, event=event).first()
     if folder is None:
         return Response(
             {'error': 'No such folder'}, status=status.HTTP_404_NOT_FOUND
@@ -164,10 +164,10 @@ def photo_folder(request, meeting_ref, folder_id):
 
     try:
         if request.method == 'DELETE':
-            kept = photo_service.delete_folder(meeting, request.user, folder)
+            kept = photo_service.delete_folder(event, request.user, folder)
             return Response({'moved_to': str(kept.id)})
         renamed = photo_service.rename_folder(
-            meeting, request.user, folder, request.data.get('name', '')
+            event, request.user, folder, request.data.get('name', '')
         )
     except photo_service.PhotoRefused as refusal:
         return _refused(refusal)
@@ -178,16 +178,16 @@ def photo_folder(request, meeting_ref, folder_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
-def upload_photo(request, meeting_ref, folder_id):
+def upload_photo(request, event_ref, folder_id):
     """Add a photograph to one folder."""
-    meeting = _meeting_for(request.user, meeting_ref)
-    if meeting is None:
+    event = _event_for(request.user, event_ref)
+    if event is None:
         return Response(
-            {'error': f'No meeting found for {meeting_ref}'},
+            {'error': f'No event found for {event_ref}'},
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    folder = PhotoFolder.objects.filter(id=folder_id, meeting=meeting).first()
+    folder = PhotoFolder.objects.filter(id=folder_id, event=event).first()
     if folder is None:
         return Response(
             {'error': 'No such folder'}, status=status.HTTP_404_NOT_FOUND
@@ -207,7 +207,7 @@ def upload_photo(request, meeting_ref, folder_id):
     except photo_service.PhotoRefused as refusal:
         return _refused(refusal)
     except Exception as e:
-        logger.error(f"Photo upload failed for {meeting.meeting_code}: {e}")
+        logger.error(f"Photo upload failed for {event.code}: {e}")
         return Response(
             {'error': f'Could not store the photograph: {e}'},
             status=status.HTTP_502_BAD_GATEWAY,
@@ -227,21 +227,21 @@ def photo_file(request, photo_id):
     """
     from django.http import HttpResponse
 
-    photo = MeetingPhoto.objects.filter(id=photo_id).select_related('meeting').first()
+    photo = EventPhoto.objects.filter(id=photo_id).select_related('event').first()
     if photo is None:
         return Response(
             {'error': 'No such photograph'}, status=status.HTTP_404_NOT_FOUND
         )
 
-    # Seeing the meeting is what entitles somebody to see its photographs.
-    if _meeting_for(request.user, photo.meeting.meeting_code) is None:
+    # Seeing the event is what entitles somebody to see its photographs.
+    if _event_for(request.user, photo.event.code) is None:
         return Response(
             {'error': 'No such photograph'}, status=status.HTTP_404_NOT_FOUND
         )
 
     if request.method == 'DELETE':
         mine = str(photo.uploaded_by_id or '') == str(request.user.id)
-        if not (mine or photo_service.may_arrange(photo.meeting, request.user)):
+        if not (mine or photo_service.may_arrange(photo.event, request.user)):
             return Response(
                 {
                     'error': 'Only the host, a co-host, or whoever added it can '

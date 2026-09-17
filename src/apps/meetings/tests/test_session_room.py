@@ -1,8 +1,8 @@
-"""The room is a meeting, not a session.
+"""The room is a event, not a session.
 
-A meeting may hold ten talks. The room holds all of them: it opens before
+A event may hold ten talks. The room holds all of them: it opens before
 the first, stays through the gaps while the host sets up for the next
-speaker, and shuts when the meeting does. What the room's clock counts is
+speaker, and shuts when the event does. What the room's clock counts is
 whatever the host has put on stage, and between two talks it counts
 nothing - which is not the same as the room being over.
 """
@@ -10,45 +10,44 @@ from django.test import TestCase
 from django.utils import timezone
 
 from src.apps.meetings.lifecycle import current_session, session_room_state
-from src.apps.meetings.models import Meeting, Session
+from src.apps.meetings.models import Event, Session
 from src.apps.meetings.tests.factories import (
-    make_event, make_host, make_meeting, make_session,
+    make_event, make_host, make_session,
 )
 
 
 class SessionRoomTests(TestCase):
     def setUp(self):
         self.host = make_host()
-        self.event = make_event(self.host)
-        # A two-hour meeting holding two half-hour talks.
+        # A two-hour event holding two half-hour talks.
         self.opened = timezone.now() - timezone.timedelta(minutes=40)
-        self.meeting = make_meeting(self.host, self.event, start=self.opened, minutes=120)
-        self.meeting.status = Meeting.Status.ACTIVE
-        self.meeting.started_at = self.opened
-        self.meeting.save()
-        self.first = make_session(self.meeting, self.opened, 30, 'First talk')
+        self.event = make_event(self.host, start=self.opened, minutes=120)
+        self.event.status = Event.Status.ACTIVE
+        self.event.started_at = self.opened
+        self.event.save()
+        self.first = make_session(self.event, self.opened, 30, 'First talk')
         self.second = make_session(
-            self.meeting, self.opened + timezone.timedelta(minutes=45), 30, 'Second talk'
+            self.event, self.opened + timezone.timedelta(minutes=45), 30, 'Second talk'
         )
 
     def test_the_clock_is_the_sessions_not_the_meetings(self):
-        # The meeting has been open forty minutes; the talk has not.
+        # The event has been open forty minutes; the talk has not.
         self.second.status = Session.Status.LIVE
         self.second.started_at = timezone.now() - timezone.timedelta(minutes=3)
         self.second.save()
 
-        room = session_room_state(self.meeting)
+        room = session_room_state(self.event)
 
         self.assertEqual(room['title'], 'Second talk')
         self.assertEqual(room['started_at'], self.second.started_at.isoformat())
-        self.assertNotEqual(room['started_at'], self.meeting.started_at.isoformat())
+        self.assertNotEqual(room['started_at'], self.event.started_at.isoformat())
 
     def test_whatever_is_on_stage_is_the_room(self):
         self.second.status = Session.Status.LIVE
         self.second.save(update_fields=['status'])
         during = self.second.starts_at + timezone.timedelta(minutes=5)
 
-        self.assertEqual(current_session(self.meeting, during), self.second)
+        self.assertEqual(current_session(self.event, during), self.second)
 
     def test_a_session_that_has_overrun_is_still_the_room(self):
         """A talk is over when the host ends it, not when its hour strikes.
@@ -63,7 +62,7 @@ class SessionRoomTests(TestCase):
         self.first.save(update_fields=['status'])
         long_after = self.first.starts_at + timezone.timedelta(minutes=90)
 
-        self.assertEqual(current_session(self.meeting, long_after), self.first)
+        self.assertEqual(current_session(self.event, long_after), self.first)
 
     def test_a_slot_the_host_never_started_is_not_the_room(self):
         # The timetable says the second talk is happening now. Nobody put
@@ -71,7 +70,7 @@ class SessionRoomTests(TestCase):
         # running order, not the clock.
         at = self.second.starts_at + timezone.timedelta(minutes=5)
 
-        self.assertIsNone(current_session(self.meeting, at))
+        self.assertIsNone(current_session(self.event, at))
 
     def test_between_talks_the_room_holds_nothing_but_is_not_over(self):
         self.first.status = Session.Status.DONE
@@ -79,7 +78,7 @@ class SessionRoomTests(TestCase):
         self.first.save()
         between = self.first.starts_at + timezone.timedelta(minutes=35)
 
-        room = session_room_state(self.meeting, between)
+        room = session_room_state(self.event, between)
 
         self.assertIsNone(room['id'])
         self.assertFalse(room['is_over'])
@@ -95,7 +94,7 @@ class SessionRoomTests(TestCase):
             session.ended_at = timezone.now()
             session.save()
 
-        room = session_room_state(self.meeting)
+        room = session_room_state(self.event)
 
         self.assertFalse(room['is_over'])
         self.assertFalse(room['awaiting_next'])
@@ -106,7 +105,7 @@ class SessionRoomTests(TestCase):
         self.second.save(update_fields=['status'])
         at = self.second.starts_at + timezone.timedelta(minutes=5)
 
-        room = session_room_state(self.meeting, at)
+        room = session_room_state(self.event, at)
 
         self.assertEqual(
             room['ends_at'],
@@ -117,7 +116,7 @@ class SessionRoomTests(TestCase):
     def test_a_room_whose_talks_are_all_ahead_is_waiting_not_finished(self):
         before = self.first.starts_at - timezone.timedelta(minutes=10)
 
-        room = session_room_state(self.meeting, before)
+        room = session_room_state(self.event, before)
 
         self.assertFalse(room['is_over'])
         self.assertIsNone(room['id'])
@@ -125,7 +124,7 @@ class SessionRoomTests(TestCase):
         self.assertTrue(room['awaiting_next'])
 
     def test_a_meeting_with_no_sessions_holds_nothing(self):
-        bare = make_meeting(self.host, self.event, start=timezone.now())
+        bare = make_event(self.host, start=timezone.now())
 
         room = session_room_state(bare)
 

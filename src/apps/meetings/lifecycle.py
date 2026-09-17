@@ -17,7 +17,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from src.apps.meetings.models import (
-    GuestAttendee, Meeting, MeetingParticipant, Session, SessionAttendance,
+    GuestAttendee, Event, EventParticipant, Session, SessionAttendance,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ def deadline_passed(session, now=None):
 def close_session(session, now):
     """Mark a session done and snapshot who was in the room.
 
-    Presence is taken from the meeting at the moment the session ends,
+    Presence is taken from the event at the moment the session ends,
     which is the only point where the room's membership is settled.
     """
     session.status = Session.Status.DONE
@@ -60,7 +60,7 @@ def close_session(session, now):
     session.save(update_fields=['status', 'started_at', 'ended_at', 'updated_at'])
 
     recorded = 0
-    active_users = session.meeting.participants.filter(
+    active_users = session.event.participants.filter(
         is_active=True, user__isnull=False
     ).values_list('user_id', flat=True)
     for user_id in active_users:
@@ -69,12 +69,12 @@ def close_session(session, now):
         )
         recorded += int(created)
 
-    admitted_guests = session.meeting.guests.filter(status='admitted').values_list(
+    admitted_guests = session.event.guests.filter(status='admitted').values_list(
         'id', 'full_name'
     )
     for guest_id, guest_name in admitted_guests:
         # The name goes down with the seat. The guest's own row is
-        # forgotten when the meeting ends, and the register has to still
+        # forgotten when the event ends, and the register has to still
         # say who was there.
         _, created = SessionAttendance.objects.get_or_create(
             session=session, guest_id=guest_id,
@@ -85,126 +85,126 @@ def close_session(session, now):
     return recorded
 
 
-def has_more_to_run(meeting, now=None) -> bool:
-    """Whether anything in this meeting could still happen.
+def has_more_to_run(event, now=None) -> bool:
+    """Whether anything in this event could still happen.
 
     Something on stage, or a session whose slot has not yet run out. A
     session nobody ever started and whose time has been and gone does not
     count - it is missed, not pending, and waiting for it would keep the
-    meeting open for ever.
+    event open for ever.
     """
     now = now or timezone.now()
 
-    if meeting.sessions.filter(status=Session.Status.LIVE).exists():
+    if event.sessions.filter(status=Session.Status.LIVE).exists():
         return True
 
-    for session in meeting.sessions.filter(status=Session.Status.SCHEDULED):
+    for session in event.sessions.filter(status=Session.Status.SCHEDULED):
         if now <= scheduled_end(session):
             return True
     return False
 
 
-def clear_room(meeting, now=None):
-    """Empty the room: nobody is left sitting in a meeting that is over.
+def clear_room(event, now=None):
+    """Empty the room: nobody is left sitting in a event that is over.
 
     Called after attendance has been taken, never before - the register is
     a snapshot of who is present when a session closes, so clearing the
     room first would record nobody.
 
-    Every way a meeting can end goes through here, because the way this
+    Every way a event can end goes through here, because the way this
     went wrong before was not the rule but the number of places that had
     to remember it.
     """
     now = now or timezone.now()
 
-    left = MeetingParticipant.objects.filter(
-        meeting=meeting, is_active=True
+    left = EventParticipant.objects.filter(
+        event=event, is_active=True
     ).update(is_active=False, left_at=now)
 
     # Guests hold no participant row, so their side is closed separately.
     sent_home = GuestAttendee.objects.filter(
-        meeting=meeting, status=GuestAttendee.Status.ADMITTED
+        event=event, status=GuestAttendee.Status.ADMITTED
     ).update(status=GuestAttendee.Status.LEFT)
 
-    forget_guests(meeting)
+    forget_guests(event)
     return left + sent_home
 
 
-def record_guest_attendance(meeting, name, when=None):
-    """Write a guest's name on the meeting's own register.
+def record_guest_attendance(event, name, when=None):
+    """Write a guest's name on the event's own register.
 
     Called the moment the host admits somebody, because that is when they
     were in the hall - and because their row will not be here later to ask.
-    The register belongs to the meeting: it says who attended this
+    The register belongs to the event: it says who attended this
     afternoon, and it is not a list of people that anything else can join
     to. Idempotent, so a guest who drops out and comes back is one name.
     """
     now = when or timezone.now()
-    register = list(meeting.guest_attendance or [])
+    register = list(event.guest_attendance or [])
     if any((entry.get('name') or '').casefold() == name.casefold() for entry in register):
         return False
     register.append({'name': name, 'at': now.isoformat()})
-    meeting.guest_attendance = register
-    meeting.save(update_fields=['guest_attendance', 'updated_at'])
+    event.guest_attendance = register
+    event.save(update_fields=['guest_attendance', 'updated_at'])
     return True
 
 
-def guests_who_attended(meeting):
-    """The guests this meeting had, whether or not their rows are still here.
+def guests_who_attended(event):
+    """The guests this event had, whether or not their rows are still here.
 
     While it is running they are the admitted rows; afterwards they are the
     register, which is all that is kept. One reader for both so a report
-    written during the meeting and the same report a week later do not
+    written during the event and the same report a week later do not
     disagree about who was there.
     """
     register = [
         {'name': entry.get('name') or 'Guest', 'at': entry.get('at')}
-        for entry in (meeting.guest_attendance or [])
+        for entry in (event.guest_attendance or [])
         if (entry.get('name') or '').strip()
     ]
     if register:
         return register
 
-    # Nothing written down: a meeting from before the register existed, or
+    # Nothing written down: a event from before the register existed, or
     # one whose guests are still in the room.
     return [
         {'name': guest.full_name, 'at': (guest.decided_at or guest.created_at).isoformat()}
-        for guest in meeting.guests.filter(
+        for guest in event.guests.filter(
             status__in=[GuestAttendee.Status.ADMITTED, GuestAttendee.Status.LEFT]
         ).order_by('created_at')
     ]
 
 
-def forget_guests(meeting):
-    """Delete the guest rows once the meeting they belonged to is over.
+def forget_guests(event):
+    """Delete the guest rows once the event they belonged to is over.
 
     A guest gave a name at a door to sit in a hall for an afternoon. That
     is not a relationship with this platform, and a row about them sitting
     in the database for years afterwards would quietly make it one - so
-    they are kept for exactly as long as the meeting and then forgotten.
+    they are kept for exactly as long as the event and then forgotten.
 
     What survives is the register: their name against the sessions they
     were actually present for, which is attendance and nothing else. It
     was written when each session closed, which is why this can only be
     called after that has happened.
 
-    The meeting's own list of who attended is topped up here before
+    The event's own list of who attended is topped up here before
     anything is deleted. It is normally written the moment the host admits
     somebody, but this is the last point at which the rows exist to be
     asked, so it is also the place that cannot miss one.
     """
-    for guest in meeting.guests.filter(
+    for guest in event.guests.filter(
         status__in=[GuestAttendee.Status.ADMITTED, GuestAttendee.Status.LEFT]
     ).order_by('created_at'):
-        record_guest_attendance(meeting, guest.full_name, guest.decided_at)
+        record_guest_attendance(event, guest.full_name, guest.decided_at)
 
     # What they wrote outlives them, so it keeps their name rather than a
     # pointer to a row that is about to go. A question asked from the floor
-    # belongs to the meeting - it may be on the board already - and the
+    # belongs to the event - it may be on the board already - and the
     # host should still be able to put it up, or read who asked it.
     from src.apps.meetings.models import ChatMessage
 
-    for guest in meeting.guests.all():
+    for guest in event.guests.all():
         ChatMessage.objects.filter(guest_sender=guest).update(
             guest_sender_name=guest.full_name
         )
@@ -212,21 +212,21 @@ def forget_guests(meeting):
             guest_recipient_name=guest.full_name
         )
 
-    gone, _ = GuestAttendee.objects.filter(meeting=meeting).delete()
+    gone, _ = GuestAttendee.objects.filter(event=event).delete()
     if gone:
         logger.info(
-            f"Forgot {gone} guest row(s) from {meeting.meeting_code}; "
+            f"Forgot {gone} guest row(s) from {event.code}; "
             f"their names stay in the register"
         )
     return gone
 
 
-def broadcast_meeting_ended(meeting, reason='host_ended'):
+def broadcast_event_ended(event, reason='host_ended'):
     """Tell everyone in the room it is over, and why.
 
     The consumer hangs up after passing this on, so a client that ignores
     the message still leaves - the room is shut for everybody at the same
-    moment rather than one browser at a time. Best effort: a meeting that
+    moment rather than one browser at a time. Best effort: a event that
     has ended in the database has ended whether or not the news got out.
     """
     try:
@@ -237,26 +237,26 @@ def broadcast_meeting_ended(meeting, reason='host_ended'):
         if layer is None:
             return
         async_to_sync(layer.group_send)(
-            f'meeting_{meeting.meeting_code}',
+            f'event_{event.code}',
             {
-                'type': 'meeting_ended',
+                'type': 'event_ended',
                 'reason': reason,
-                'ended_at': meeting.ended_at.isoformat() if meeting.ended_at else None,
+                'ended_at': event.ended_at.isoformat() if event.ended_at else None,
             },
         )
     except Exception as e:
         logger.warning(
-            f"Could not broadcast end of {meeting.meeting_code}: {e}"
+            f"Could not broadcast end of {event.code}: {e}"
         )
 
 
-# Nor does anything here end a meeting by the clock.
+# Nor does anything here end a event by the clock.
 #
-# There was a rule for that too: a meeting whose window had passed with
-# nothing left to run closed itself, and every read of the meeting checked
+# There was a rule for that too: a event whose window had passed with
+# nothing left to run closed itself, and every read of the event checked
 # it. It went the same way as the session rule and for the same reason - a
 # closing time is a plan, and a room with people in it is not a plan. The
-# host ends the meeting. Until they do, it is happening.
+# host ends the event. Until they do, it is happening.
 
 
 # Nothing here ends a session by the clock, and nothing anywhere else
@@ -273,11 +273,11 @@ def broadcast_meeting_ended(meeting, reason='host_ended'):
 # schedule attached.
 #
 # So a live session stays live until somebody says otherwise. The host
-# ends it, or ends the meeting; either way it is a person's decision, and
+# ends it, or ends the event; either way it is a person's decision, and
 # there is no longer any code that makes it for them.
 
 
-def broadcast(meeting_code, session, event_type):
+def broadcast(code, session, event_type):
     """Tell the room the running order moved on. Best effort."""
     try:
         from asgiref.sync import async_to_sync
@@ -287,7 +287,7 @@ def broadcast(meeting_code, session, event_type):
         if layer is None:
             return
         async_to_sync(layer.group_send)(
-            f'meeting_{meeting_code}',
+            f'event_{code}',
             {
                 'type': 'state_update',
                 'user_id': '',
@@ -301,10 +301,10 @@ def broadcast(meeting_code, session, event_type):
             },
         )
     except Exception as e:
-        logger.warning(f"Could not broadcast {event_type} for {meeting_code}: {e}")
+        logger.warning(f"Could not broadcast {event_type} for {code}: {e}")
 
 
-def broadcast_schedule_changed(meeting):
+def broadcast_schedule_changed(event):
     """Tell the room its running order has been rearranged.
 
     The host edits the timetable from inside the room now - dragging one
@@ -321,7 +321,7 @@ def broadcast_schedule_changed(meeting):
         if layer is None:
             return
         async_to_sync(layer.group_send)(
-            f'meeting_{meeting.meeting_code}',
+            f'event_{event.code}',
             {
                 'type': 'state_update',
                 'user_id': '',
@@ -333,17 +333,17 @@ def broadcast_schedule_changed(meeting):
     except Exception as e:
         logger.warning(
             f"Could not announce the new running order for "
-            f"{meeting.meeting_code}: {e}"
+            f"{event.code}: {e}"
         )
 
 
-def current_session(meeting, now=None):
+def current_session(event, now=None):
     """The session the room is holding, if one is on stage.
 
-    A room is a **meeting**, not a session. The meeting is the morning; the
+    A room is a **event**, not a session. The event is the morning; the
     sessions are the talks that happen inside it one after another, and the
     room outlives all of them - it opens before the first and stays until
-    the host closes the meeting or its window runs out. Between two talks
+    the host closes the event or its window runs out. Between two talks
     the room is still there, waiting for the host to start the next one.
 
     So this is only ever what is actually on stage. Not "whatever the
@@ -355,22 +355,22 @@ def current_session(meeting, now=None):
     """
     now = now or timezone.now()
     return (
-        meeting.sessions.filter(status=Session.Status.LIVE)
+        event.sessions.filter(status=Session.Status.LIVE)
         .order_by('starts_at')
         .first()
     )
 
 
-def next_up(meeting, now=None):
+def next_up(event, now=None):
     """The next session the host could put on stage, if any is left."""
     return (
-        meeting.sessions.filter(status=Session.Status.SCHEDULED)
+        event.sessions.filter(status=Session.Status.SCHEDULED)
         .order_by('starts_at')
         .first()
     )
 
 
-def session_room_state(meeting, now=None) -> dict:
+def session_room_state(event, now=None) -> dict:
     """What the room should show about the session it is holding.
 
     Worked out here rather than in each client so the two rooms - the one
@@ -379,14 +379,14 @@ def session_room_state(meeting, now=None) -> dict:
 
     Between sessions there is no clock and no title, but there is still a
     room: ``awaiting_next`` says so, and names what is coming. Nobody is
-    shown the door because a talk finished - the door is the meeting's.
+    shown the door because a talk finished - the door is the event's.
     """
     now = now or timezone.now()
-    session = current_session(meeting, now)
+    session = current_session(event, now)
 
     if session is None:
-        coming = next_up(meeting, now)
-        ran = meeting.sessions.filter(
+        coming = next_up(event, now)
+        ran = event.sessions.filter(
             status__in=[Session.Status.DONE, Session.Status.SKIPPED]
         ).exists()
         return {
@@ -397,7 +397,7 @@ def session_room_state(meeting, now=None) -> dict:
             'ends_at': None,
             'duration_minutes': None,
             'status': None,
-            # The room is not over. Only the meeting can be over, and if it
+            # The room is not over. Only the event can be over, and if it
             # were, nobody would be reading this.
             'is_over': False,
             'between_sessions': ran,

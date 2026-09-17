@@ -2,10 +2,10 @@
 # If you need separate tracking, you can uncomment below
 
 from django.db import models
-from src.apps.meetings.models import Meeting
+from src.apps.meetings.models import Event
 
 class DriveResource(models.Model):
-    meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name='drive_resources')
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='drive_resources')
     resource_type = models.CharField(max_length=50, choices=[('folder', 'Folder'), ('file', 'File')])
     drive_file_id = models.CharField(max_length=255, unique=True)
     drive_folder_id = models.CharField(max_length=255, null=True, blank=True)

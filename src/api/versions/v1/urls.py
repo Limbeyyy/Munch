@@ -13,11 +13,6 @@ except ImportError:
     AuthViewSet = None
 
 try:
-    from src.apps.meetings.views import MeetingViewSet
-except ImportError:
-    MeetingViewSet = None
-
-try:
     from src.apps.meetings.event_views import EventViewSet, SessionViewSet
 except ImportError:
     EventViewSet = None
@@ -30,32 +25,30 @@ if UserViewSet:
     router.register(r'users', UserViewSet, basename='user')
 if AuthViewSet:
     router.register(r'auth', AuthViewSet, basename='auth')
-if MeetingViewSet:
-    router.register(r'meetings', MeetingViewSet, basename='meeting')
 if EventViewSet:
     router.register(r'events', EventViewSet, basename='event')
 if SessionViewSet:
     router.register(r'sessions', SessionViewSet, basename='session')
 
-def _resolve_meeting(meeting_ref):
-    """Find a meeting by meeting_code or primary key."""
-    from src.apps.meetings.models import Meeting
+def _resolve_event(event_ref):
+    """Find an event by code or primary key."""
+    from src.apps.meetings.models import Event
 
-    meeting = Meeting.objects.filter(meeting_code=meeting_ref).first()
-    if meeting is None:
+    event = Event.objects.filter(code=event_ref).first()
+    if event is None:
         try:
-            meeting = Meeting.objects.filter(pk=meeting_ref).first()
+            event = Event.objects.filter(pk=event_ref).first()
         except (ValueError, ValidationError):
-            meeting = None
-    return meeting
+            event = None
+    return event
 
 
-def _resolve_participant(meeting, participant_ref):
+def _resolve_participant(event, participant_ref):
     """Find a participant by its own id or by the id of its user."""
     from django.db.models import Q
 
     try:
-        return meeting.participants.select_related('user').filter(
+        return event.participants.select_related('user').filter(
             Q(id=participant_ref) | Q(user_id=participant_ref)
         ).first()
     except (ValueError, ValidationError):
@@ -65,22 +58,22 @@ def _resolve_participant(meeting, participant_ref):
 # Custom view for participant update
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
-def update_participant_view(request, meeting_ref, participant_ref):
+def update_participant_view(request, event_ref, participant_ref):
     """Update a participant's own media state (mute, video, screen share).
 
     Roles are deliberately not settable here - see update_participant_role_view.
     """
     from src.apps.meetings.serializers import ParticipantSerializer
 
-    meeting = _resolve_meeting(meeting_ref)
-    if meeting is None:
-        return Response({'error': 'Meeting not found'}, status=status.HTTP_404_NOT_FOUND)
+    event = _resolve_event(event_ref)
+    if event is None:
+        return Response({'error': 'Event not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    participant = _resolve_participant(meeting, participant_ref)
+    participant = _resolve_participant(event, participant_ref)
     if participant is None:
         return Response({'error': 'Participant not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    is_host = str(request.user.id) == str(meeting.host_id)
+    is_host = str(request.user.id) == str(event.host_id)
     if str(participant.user_id) != str(request.user.id) and not is_host:
         return Response(
             {'error': 'You can only change your own state'},
@@ -104,57 +97,57 @@ def update_participant_view(request, meeting_ref, participant_ref):
 
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
-def update_participant_role_view(request, meeting_ref, participant_ref):
+def update_participant_role_view(request, event_ref, participant_ref):
     """Change a participant's role. Host only.
 
-    Assigning the ``host`` role transfers ownership of the meeting: the
+    Assigning the ``host`` role transfers ownership of the event: the
     previous host is demoted to co-host and loses host controls.
     """
     from django.db import transaction
-    from src.apps.meetings.models import MeetingParticipant
+    from src.apps.meetings.models import EventParticipant
     from src.apps.meetings.serializers import ParticipantSerializer
 
-    meeting = _resolve_meeting(meeting_ref)
-    if meeting is None:
-        return Response({'error': 'Meeting not found'}, status=status.HTTP_404_NOT_FOUND)
+    event = _resolve_event(event_ref)
+    if event is None:
+        return Response({'error': 'Event not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    if str(request.user.id) != str(meeting.host_id):
+    if str(request.user.id) != str(event.host_id):
         return Response(
             {'error': 'Only the host can change roles'},
             status=status.HTTP_403_FORBIDDEN
         )
 
-    participant = _resolve_participant(meeting, participant_ref)
+    participant = _resolve_participant(event, participant_ref)
     if participant is None:
         return Response({'error': 'Participant not found'}, status=status.HTTP_404_NOT_FOUND)
 
     role = request.data.get('role')
-    valid_roles = [c[0] for c in MeetingParticipant.Role.choices]
+    valid_roles = [c[0] for c in EventParticipant.Role.choices]
     if role not in valid_roles:
         return Response(
             {'error': f'Role must be one of {valid_roles}'},
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    is_self = str(participant.user_id) == str(meeting.host_id)
+    is_self = str(participant.user_id) == str(event.host_id)
 
-    if role == MeetingParticipant.Role.HOST:
+    if role == EventParticipant.Role.HOST:
         if is_self:
             return Response(ParticipantSerializer(participant).data)
 
         with transaction.atomic():
-            previous_host_participant = meeting.participants.filter(
-                user_id=meeting.host_id
+            previous_host_participant = event.participants.filter(
+                user_id=event.host_id
             ).first()
 
-            meeting.host = participant.user
-            meeting.save(update_fields=['host', 'updated_at'])
+            event.host = participant.user
+            event.save(update_fields=['host', 'updated_at'])
 
-            participant.role = MeetingParticipant.Role.HOST
+            participant.role = EventParticipant.Role.HOST
             participant.save(update_fields=['role'])
 
             if previous_host_participant:
-                previous_host_participant.role = MeetingParticipant.Role.CO_HOST
+                previous_host_participant.role = EventParticipant.Role.CO_HOST
                 previous_host_participant.save(update_fields=['role'])
     else:
         if is_self:
@@ -165,11 +158,11 @@ def update_participant_role_view(request, meeting_ref, participant_ref):
         participant.role = role
         participant.save(update_fields=['role'])
 
-    _broadcast_roles_changed(meeting.meeting_code)
+    _broadcast_roles_changed(event.code)
     return Response(ParticipantSerializer(participant).data)
 
 
-def _broadcast_roles_changed(meeting_code):
+def _broadcast_roles_changed(code):
     """Nudge everyone in the room to refetch participants."""
     import logging
 
@@ -181,7 +174,7 @@ def _broadcast_roles_changed(meeting_code):
         if layer is None:
             return
         async_to_sync(layer.group_send)(
-            f'meeting_{meeting_code}',
+            f'event_{code}',
             {
                 'type': 'state_update',
                 'user_id': '',
@@ -192,7 +185,7 @@ def _broadcast_roles_changed(meeting_code):
         )
     except Exception as e:
         logging.getLogger(__name__).warning(
-            f"Could not broadcast role change for {meeting_code}: {e}"
+            f"Could not broadcast role change for {code}: {e}"
         )
 
 
@@ -208,43 +201,43 @@ from src.apps.transcription import ingest as transcription_ingest
 urlpatterns = [
     # The hall's capture device streams text in; clients only read it out.
     re_path(
-        r'^meetings/(?P<meeting_ref>[^/.]+)/transcription/$',
+        r'^events/(?P<event_ref>[^/.]+)/transcription/$',
         transcription_ingest.ingest_transcription,
         name='transcription-ingest',
     ),
     re_path(
-        r'^meetings/(?P<meeting_ref>[^/.]+)/segments/$',
-        transcription_ingest.meeting_segments,
+        r'^events/(?P<event_ref>[^/.]+)/segments/$',
+        transcription_ingest.event_segments,
         name='transcription-segments',
     ),
-    path('meetings/guest/knock/', guest_views.guest_knock, name='guest-knock'),
-    path('meetings/guest/status/', guest_views.guest_status, name='guest-status'),
-    path('meetings/guest/leave/', guest_views.guest_leave, name='guest-leave'),
-    path('meetings/guest/chat/', guest_views.guest_chat, name='guest-chat'),
+    path('events/guest/knock/', guest_views.guest_knock, name='guest-knock'),
+    path('events/guest/status/', guest_views.guest_status, name='guest-status'),
+    path('events/guest/leave/', guest_views.guest_leave, name='guest-leave'),
+    path('events/guest/chat/', guest_views.guest_chat, name='guest-chat'),
     # The photographs of the day. Kept apart from files and summaries: one
     # is the record of an occasion, the other the papers circulated at it.
     re_path(
-        r'^meetings/(?P<meeting_ref>[^/.]+)/photos/$',
-        photo_views.meeting_photos,
-        name='meeting-photos',
+        r'^events/(?P<event_ref>[^/.]+)/photos/$',
+        photo_views.event_photos,
+        name='event-photos',
     ),
     re_path(
-        r'^meetings/(?P<meeting_ref>[^/.]+)/photos/folders/$',
+        r'^events/(?P<event_ref>[^/.]+)/photos/folders/$',
         photo_views.create_photo_folder,
         name='photo-folder-create',
     ),
     re_path(
-        r'^meetings/(?P<meeting_ref>[^/.]+)/photos/folders/(?P<folder_id>[0-9a-f-]+)/$',
+        r'^events/(?P<event_ref>[^/.]+)/photos/folders/(?P<folder_id>[0-9a-f-]+)/$',
         photo_views.photo_folder,
         name='photo-folder',
     ),
     re_path(
-        r'^meetings/(?P<meeting_ref>[^/.]+)/photos/folders/(?P<folder_id>[0-9a-f-]+)/upload/$',
+        r'^events/(?P<event_ref>[^/.]+)/photos/folders/(?P<folder_id>[0-9a-f-]+)/upload/$',
         photo_views.upload_photo,
         name='photo-upload',
     ),
     re_path(
-        r'^meetings/photos/(?P<photo_id>[0-9a-f-]+)/file/$',
+        r'^events/photos/(?P<photo_id>[0-9a-f-]+)/file/$',
         photo_views.photo_file,
         name='photo-file',
     ),
@@ -260,38 +253,38 @@ urlpatterns = [
     path('reminders/read/', reminder_views.mark_reminders_read,
          name='reminders-read'),
 
-    path('meetings/guest/board/', guest_views.guest_board, name='guest-board'),
-    path('meetings/guest/board/vote/', guest_views.guest_vote_board,
+    path('events/guest/board/', guest_views.guest_board, name='guest-board'),
+    path('events/guest/board/vote/', guest_views.guest_vote_board,
          name='guest-board-vote'),
 
     # The attendee hub: questions, ideas and suggestions, for account
     # holders and guests alike.
     re_path(
-        r'^meetings/(?P<meeting_ref>[^/.]+)/hub/$',
+        r'^events/(?P<event_ref>[^/.]+)/hub/$',
         hub_views.hub_posts,
         name='hub-posts',
     ),
     re_path(
-        r'^meetings/(?P<meeting_ref>[^/.]+)/hub/(?P<post_id>[0-9a-f-]+)/vote/$',
+        r'^events/(?P<event_ref>[^/.]+)/hub/(?P<post_id>[0-9a-f-]+)/vote/$',
         hub_views.hub_vote,
         name='hub-vote',
     ),
-    path('meetings/guest/presenters/', guest_views.guest_presenters, name='guest-presenters'),
-    path('meetings/guest/resources/', guest_views.guest_resources, name='guest-resources'),
+    path('events/guest/presenters/', guest_views.guest_presenters, name='guest-presenters'),
+    path('events/guest/resources/', guest_views.guest_resources, name='guest-resources'),
     re_path(
-        r'^meetings/guest/resources/(?P<artifact_id>[0-9a-f-]+)/download/$',
+        r'^events/guest/resources/(?P<artifact_id>[0-9a-f-]+)/download/$',
         guest_views.guest_resource_download,
         name='guest-resource-download',
     ),
     re_path(
-        r'^meetings/(?P<meeting_ref>[^/.]+)/participants/(?P<participant_ref>[^/.]+)/role/$',
+        r'^events/(?P<event_ref>[^/.]+)/participants/(?P<participant_ref>[^/.]+)/role/$',
         update_participant_role_view,
-        name='meeting-participant-role'
+        name='event-participant-role'
     ),
     re_path(
-        r'^meetings/(?P<meeting_ref>[^/.]+)/participants/(?P<participant_ref>[^/.]+)/$',
+        r'^events/(?P<event_ref>[^/.]+)/participants/(?P<participant_ref>[^/.]+)/$',
         update_participant_view,
-        name='meeting-participant-update'
+        name='event-participant-update'
     ),
     path('', include(router.urls)),
 ]

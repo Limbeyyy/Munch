@@ -1,4 +1,4 @@
-"""Attendance survives the host ending a meeting early.
+"""Attendance survives the host ending a event early.
 
 Attendance is a snapshot of who is present when a session ends. Clearing
 the room before taking it records nobody, which is how a session everybody
@@ -10,10 +10,10 @@ from rest_framework.test import APIClient
 
 from src.apps.accounts.tokens import issue_tokens
 from src.apps.meetings.models import (
-    GuestAttendee, Meeting, MeetingParticipant, Session, SessionAttendance,
+    GuestAttendee, Event, EventParticipant, Session, SessionAttendance,
 )
 from src.apps.meetings.tests.factories import (
-    make_event, make_host, make_meeting, make_session,
+    make_event, make_host, make_session,
 )
 
 API = '/api/v1'
@@ -29,31 +29,30 @@ class EndingEarlyTests(TestCase):
     def setUp(self):
         self.host = make_host('host@example.com')
         self.attendee = make_host('attendee@example.com')
-        self.event = make_event(self.host)
         began = timezone.now() - timezone.timedelta(minutes=15)
-        self.meeting = make_meeting(self.host, self.event, start=began, minutes=60)
-        self.meeting.status = Meeting.Status.ACTIVE
-        self.meeting.started_at = began
-        self.meeting.save()
+        self.event = make_event(self.host, start=began, minutes=60)
+        self.event.status = Event.Status.ACTIVE
+        self.event.started_at = began
+        self.event.save()
 
-        self.session = make_session(self.meeting, began, 30, 'Mehendi')
+        self.session = make_session(self.event, began, 30, 'Mehendi')
         self.session.status = Session.Status.LIVE
         self.session.started_at = began
         self.session.save()
 
         for person in (self.host, self.attendee):
-            MeetingParticipant.objects.create(
-                meeting=self.meeting, user=person, role='attendee', is_active=True
+            EventParticipant.objects.create(
+                event=self.event, user=person, role='attendee', is_active=True
             )
         for name, phone in [('Prabhat Karmacharya', '9811111111'),
                             ('Devraj Bhatta', '9822222222')]:
             GuestAttendee.objects.create(
-                meeting=self.meeting, full_name=name, phone=phone,
+                event=self.event, full_name=name, phone=phone,
                 status=GuestAttendee.Status.ADMITTED,
             )
 
     def end_it(self):
-        return signed_in(self.host).post(f'{API}/meetings/{self.meeting.id}/end/')
+        return signed_in(self.host).post(f'{API}/events/{self.event.id}/end/')
 
     def test_everybody_present_is_recorded(self):
         # The reported case: four people in the room, host ends fifteen
@@ -73,7 +72,7 @@ class EndingEarlyTests(TestCase):
 
     def test_the_guests_are_recorded_by_name(self):
         # By name, not by a row pointing at them: the guest's own row is
-        # forgotten when the meeting ends, and the register has to still
+        # forgotten when the event ends, and the register has to still
         # say who sat through the session.
         self.end_it()
 
@@ -95,16 +94,16 @@ class EndingEarlyTests(TestCase):
         self.end_it()
 
         self.assertFalse(
-            MeetingParticipant.objects.filter(meeting=self.meeting, is_active=True).exists()
+            EventParticipant.objects.filter(event=self.event, is_active=True).exists()
         )
         self.assertFalse(
-            self.meeting.guests.filter(status=GuestAttendee.Status.ADMITTED).exists()
+            self.event.guests.filter(status=GuestAttendee.Status.ADMITTED).exists()
         )
 
     def test_a_session_nobody_started_records_nobody(self):
         # It never ran, so there is nothing to have attended.
         never = make_session(
-            self.meeting, timezone.now() + timezone.timedelta(minutes=40), 30, 'Never ran'
+            self.event, timezone.now() + timezone.timedelta(minutes=40), 30, 'Never ran'
         )
 
         self.end_it()

@@ -44,9 +44,10 @@ class ProfileTests(TestCase):
         body = self.profile()
 
         self.assertEqual(body['plan']['id'], 'free')
-        # The free trial is two events, and none are used yet.
-        self.assertEqual(body['plan']['limits']['events'], 2)
-        self.assertEqual(body['remaining']['events'], 2)
+        # An event is the room now, so the free trial's allowance is what
+        # it always bought: two programmes of two rooms each.
+        self.assertEqual(body['plan']['limits']['events'], 4)
+        self.assertEqual(body['remaining']['events'], 4)
 
     def test_what_is_left_goes_down_as_it_is_used(self):
         from django.utils import timezone
@@ -56,7 +57,7 @@ class ProfileTests(TestCase):
         HostAccount.objects.create(user=self.user, plan='free', status='trial')
         make_event(self.user)
 
-        self.assertEqual(self.profile()['remaining']['events'], 1)
+        self.assertEqual(self.profile()['remaining']['events'], 3)
 
     def test_an_unlimited_plan_reports_no_ceiling(self):
         HostAccount.objects.create(user=self.user, plan='enterprise', status='active')

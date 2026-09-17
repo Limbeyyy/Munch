@@ -36,6 +36,6 @@ class Command(BaseCommand):
         usage = usage_for(user)
         self.stdout.write(self.style.SUCCESS(
             f"{user.email} is on {plan.name} ({account.status}). "
-            f"Running {usage['events']} events, {usage['meetings']} meetings, "
+            f"Running {usage['events']} events, "
             f"{usage['sessions']} sessions."
         ))

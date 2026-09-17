@@ -13,10 +13,10 @@ from src.apps.meetings.conclusions import (
     MAX_ACTIONS, findings_from, mine_from, tidy_actions,
 )
 from src.apps.meetings.models import (
-    MeetingParticipant, SessionSummary,
+    EventParticipant, SessionSummary,
 )
 from src.apps.meetings.tests.factories import (
-    make_event, make_host, make_meeting, make_session,
+    make_event, make_host, make_session,
 )
 
 API = '/api/v1'
@@ -67,11 +67,11 @@ class ActionTests(TestCase):
         self.assertEqual(tidy_actions([{'owner': 'Sunita', 'due': 'Asoj 9'}]), [])
 
     def test_the_owner_and_the_date_may_be_words(self):
-        # "before the next meeting" is a real answer, and a date picker
+        # "before the next event" is a real answer, and a date picker
         # insisting on a calendar day would turn it into a lie.
-        rows = tidy_actions([{'task': 'Send the letter', 'due': 'before the next meeting'}])
+        rows = tidy_actions([{'task': 'Send the letter', 'due': 'before the next event'}])
 
-        self.assertEqual(rows[0]['due'], 'before the next meeting')
+        self.assertEqual(rows[0]['due'], 'before the next event')
         self.assertEqual(rows[0]['owner'], '')
 
     def test_something_that_is_not_a_list_is_refused(self):
@@ -123,14 +123,13 @@ class MyActionsTests(TestCase):
 class ConclusionPageTests(TestCase):
     def setUp(self):
         self.host = make_host('host@example.com')
-        self.event = make_event(self.host)
         self.start = timezone.now() - timezone.timedelta(hours=3)
-        self.meeting = make_meeting(self.host, self.event, start=self.start, minutes=240)
-        self.session = make_session(self.meeting, self.start, 60, 'Service delivery')
+        self.event = make_event(self.host, start=self.start, minutes=240)
+        self.session = make_session(self.event, self.start, 60, 'Service delivery')
         self.attendee = make_host('attendee@example.com')
-        MeetingParticipant.objects.create(
-            meeting=self.meeting, user=self.attendee,
-            role=MeetingParticipant.Role.ATTENDEE, is_active=True,
+        EventParticipant.objects.create(
+            event=self.event, user=self.attendee,
+            role=EventParticipant.Role.ATTENDEE, is_active=True,
         )
 
     def as_(self, user):
@@ -175,7 +174,7 @@ class ConclusionPageTests(TestCase):
 
         entry = self.page(self.attendee)['conclusions'][0]
 
-        self.assertEqual(entry['meeting_title'], self.meeting.title)
+        self.assertEqual(entry['event_title'], self.event.title)
         self.assertEqual(entry['event_title'], self.event.title)
 
     def test_the_actions_come_with_it(self):
@@ -214,10 +213,9 @@ class ConclusionPageTests(TestCase):
 class HostWritesActionsTests(TestCase):
     def setUp(self):
         self.host = make_host('host@example.com')
-        self.event = make_event(self.host)
         start = timezone.now() - timezone.timedelta(hours=2)
-        self.meeting = make_meeting(self.host, self.event, start=start, minutes=120)
-        self.session = make_session(self.meeting, start, 60, 'Opening')
+        self.event = make_event(self.host, start=start, minutes=120)
+        self.session = make_session(self.event, start, 60, 'Opening')
 
     def as_host(self):
         from django.test import Client
@@ -258,9 +256,9 @@ class HostWritesActionsTests(TestCase):
 
     def test_an_attendee_cannot_write_them(self):
         attendee = make_host('attendee@example.com')
-        MeetingParticipant.objects.create(
-            meeting=self.meeting, user=attendee,
-            role=MeetingParticipant.Role.ATTENDEE, is_active=True,
+        EventParticipant.objects.create(
+            event=self.event, user=attendee,
+            role=EventParticipant.Role.ATTENDEE, is_active=True,
         )
         from django.test import Client
 

@@ -1,8 +1,8 @@
 """Recording management service"""
 import logging
 from django.utils import timezone
-from src.apps.recordings.models import Recording, Attendance, MeetingAnalytics
-from src.apps.meetings.models import Meeting
+from src.apps.recordings.models import Recording, Attendance, EventAnalytics
+from src.apps.meetings.models import Event
 
 logger = logging.getLogger(__name__)
 
@@ -11,13 +11,13 @@ class RecordingService:
     """Handle recording operations"""
 
     @staticmethod
-    def start_recording(meeting_id, storage_type='drive'):
-        """Start recording a meeting"""
+    def start_recording(event_id, storage_type='drive'):
+        """Start recording a event"""
         try:
-            meeting = Meeting.objects.get(id=meeting_id)
+            event = Event.objects.get(id=event_id)
 
             recording, created = Recording.objects.get_or_create(
-                meeting=meeting,
+                event=event,
                 defaults={
                     'start_time': timezone.now(),
                     'status': Recording.Status.RECORDING,
@@ -25,7 +25,7 @@ class RecordingService:
                 }
             )
 
-            logger.info(f"Started recording for {meeting.meeting_code}")
+            logger.info(f"Started recording for {event.code}")
             return recording
 
         except Exception as e:
@@ -33,10 +33,10 @@ class RecordingService:
             raise
 
     @staticmethod
-    def stop_recording(meeting_id):
+    def stop_recording(event_id):
         """Stop recording"""
         try:
-            recording = Recording.objects.get(meeting_id=meeting_id)
+            recording = Recording.objects.get(event_id=event_id)
             recording.end_time = timezone.now()
             recording.duration_seconds = int(
                 (recording.end_time - recording.start_time).total_seconds()
@@ -44,36 +44,36 @@ class RecordingService:
             recording.status = Recording.Status.PROCESSING
             recording.save()
 
-            logger.info(f"Stopped recording for meeting {meeting_id}")
+            logger.info(f"Stopped recording for event {event_id}")
             return recording
 
         except Recording.DoesNotExist:
-            logger.warning(f"No recording found for meeting {meeting_id}")
+            logger.warning(f"No recording found for event {event_id}")
             return None
 
     @staticmethod
-    def create_attendance_record(meeting_id, participant_id, participant_name, participant_email, joined_at):
+    def create_attendance_record(event_id, participant_id, participant_name, participant_email, joined_at):
         """Record participant attendance"""
         try:
             Attendance.objects.create(
-                meeting_id=meeting_id,
+                event_id=event_id,
                 participant_id=participant_id,
                 participant_name=participant_name,
                 participant_email=participant_email,
                 joined_at=joined_at
             )
 
-            logger.info(f"Recorded attendance for {participant_name} in meeting {meeting_id}")
+            logger.info(f"Recorded attendance for {participant_name} in event {event_id}")
 
         except Exception as e:
             logger.error(f"Failed to record attendance: {str(e)}")
 
     @staticmethod
-    def finalize_attendance(meeting_id):
+    def finalize_attendance(event_id):
         """Finalize all attendance records"""
         try:
             records = Attendance.objects.filter(
-                meeting_id=meeting_id,
+                event_id=event_id,
                 left_at__isnull=True
             )
 
@@ -84,16 +84,16 @@ class RecordingService:
                 )
                 record.save()
 
-            logger.info(f"Finalized attendance for meeting {meeting_id}")
+            logger.info(f"Finalized attendance for event {event_id}")
 
         except Exception as e:
             logger.error(f"Failed to finalize attendance: {str(e)}")
 
     @staticmethod
-    def get_attendance_report(meeting_id):
+    def get_attendance_report(event_id):
         """Generate attendance report"""
         try:
-            records = Attendance.objects.filter(meeting_id=meeting_id)
+            records = Attendance.objects.filter(event_id=event_id)
 
             report = {
                 'total_participants': records.count(),

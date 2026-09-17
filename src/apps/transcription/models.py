@@ -1,14 +1,14 @@
 from django.db import models
-from src.apps.meetings.models import Meeting
+from src.apps.meetings.models import Event
 import uuid
 
 
 class TranscriptionSegment(models.Model):
     """
-    Real-time transcription chunks during meeting
+    Real-time transcription chunks during an event
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name='transcription_segments')
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='transcription_segments')
     # Which part of the running order this was said during, when known.
     session = models.ForeignKey(
         'meetings.Session',
@@ -24,8 +24,8 @@ class TranscriptionSegment(models.Model):
     text = models.TextField()
     language = models.CharField(max_length=10, default='en')
 
-    start_time = models.FloatField(help_text="Start time in meeting (seconds)")
-    end_time = models.FloatField(help_text="End time in meeting (seconds)")
+    start_time = models.FloatField(help_text="Start time in the event (seconds)")
+    end_time = models.FloatField(help_text="End time in the event (seconds)")
     confidence = models.FloatField(default=0.0, help_text="Speech recognition confidence 0-1")
 
     is_final = models.BooleanField(default=False, help_text="Whether this is final or interim transcript")
@@ -35,21 +35,21 @@ class TranscriptionSegment(models.Model):
     class Meta:
         db_table = 'transcription_segments'
         indexes = [
-            models.Index(fields=['meeting', 'created_at']),
-            models.Index(fields=['meeting', 'start_time']),
+            models.Index(fields=['event', 'created_at']),
+            models.Index(fields=['event', 'start_time']),
             models.Index(fields=['is_final']),
         ]
 
     def __str__(self):
-        return f"{self.speaker_name} ({self.meeting.meeting_code}): {self.text[:50]}"
+        return f"{self.speaker_name} ({self.event.code}): {self.text[:50]}"
 
 
 class Transcript(models.Model):
     """
-    Complete meeting transcript (merged from all segments)
+    Complete event transcript (merged from all segments)
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    meeting = models.OneToOneField(Meeting, on_delete=models.CASCADE, related_name='transcript')
+    event = models.OneToOneField(Event, on_delete=models.CASCADE, related_name='transcript')
 
     full_text = models.TextField(blank=True)
     word_count = models.IntegerField(default=0)
@@ -66,19 +66,19 @@ class Transcript(models.Model):
     class Meta:
         db_table = 'transcripts'
         indexes = [
-            models.Index(fields=['meeting', 'is_complete']),
+            models.Index(fields=['event', 'is_complete']),
         ]
 
     def __str__(self):
-        return f"Transcript for {self.meeting.meeting_code}"
+        return f"Transcript for {self.event.code}"
 
 
 class TranscriptSummary(models.Model):
     """
-    AI-generated meeting summary
+    AI-generated event summary
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    meeting = models.OneToOneField(Meeting, on_delete=models.CASCADE, related_name='summary')
+    event = models.OneToOneField(Event, on_delete=models.CASCADE, related_name='summary')
     transcript = models.OneToOneField(Transcript, on_delete=models.CASCADE, related_name='summary', null=True)
 
     summary_text = models.TextField()
@@ -103,8 +103,8 @@ class TranscriptSummary(models.Model):
     class Meta:
         db_table = 'transcript_summaries'
         indexes = [
-            models.Index(fields=['meeting', 'is_complete']),
+            models.Index(fields=['event', 'is_complete']),
         ]
 
     def __str__(self):
-        return f"Summary for {self.meeting.meeting_code}"
+        return f"Summary for {self.event.code}"

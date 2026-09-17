@@ -1,8 +1,8 @@
 """Participant management service"""
 import logging
 from django.utils import timezone
-from src.apps.meetings.models import Meeting, MeetingParticipant
-from src.apps.monitoring.models import MeetingEvent
+from src.apps.meetings.models import Event, EventParticipant
+from src.apps.monitoring.models import EventLogEntry
 
 logger = logging.getLogger(__name__)
 
@@ -11,11 +11,11 @@ class ParticipantService:
     """Handles participant operations"""
 
     @staticmethod
-    def add_participant(meeting_id: str, user_id: str, role: str = 'attendee') -> MeetingParticipant:
-        """Add/join participant to meeting"""
+    def add_participant(event_id: str, user_id: str, role: str = 'attendee') -> EventParticipant:
+        """Add/join participant to event"""
         try:
-            participant, created = MeetingParticipant.objects.get_or_create(
-                meeting_id=meeting_id,
+            participant, created = EventParticipant.objects.get_or_create(
+                event_id=event_id,
                 user_id=user_id,
                 defaults={
                     'role': role,
@@ -30,15 +30,15 @@ class ParticipantService:
                 participant.joined_at = timezone.now()
                 participant.save()
 
-            MeetingEvent.objects.create(
-                meeting_id=meeting_id,
-                event_type=MeetingEvent.EventType.PARTICIPANT_JOINED,
+            EventLogEntry.objects.create(
+                event_id=event_id,
+                event_type=EventLogEntry.EventType.PARTICIPANT_JOINED,
                 description=f"Participant {participant.user.email} joined",
                 user=str(user_id),
                 data={'role': role}
             )
 
-            logger.info(f"Added participant {user_id} to meeting {meeting_id}")
+            logger.info(f"Added participant {user_id} to event {event_id}")
             return participant
 
         except Exception as e:
@@ -46,11 +46,11 @@ class ParticipantService:
             raise
 
     @staticmethod
-    def remove_participant(meeting_id: str, user_id: str) -> bool:
-        """Remove/leave participant from meeting"""
+    def remove_participant(event_id: str, user_id: str) -> bool:
+        """Remove/leave participant from event"""
         try:
-            participant = MeetingParticipant.objects.get(
-                meeting_id=meeting_id,
+            participant = EventParticipant.objects.get(
+                event_id=event_id,
                 user_id=user_id
             )
 
@@ -58,9 +58,9 @@ class ParticipantService:
             participant.left_at = timezone.now()
             participant.save()
 
-            MeetingEvent.objects.create(
-                meeting_id=meeting_id,
-                event_type=MeetingEvent.EventType.PARTICIPANT_LEFT,
+            EventLogEntry.objects.create(
+                event_id=event_id,
+                event_type=EventLogEntry.EventType.PARTICIPANT_LEFT,
                 description=f"Participant {participant.user.email} left",
                 user=str(user_id),
                 data={
@@ -68,19 +68,19 @@ class ParticipantService:
                 }
             )
 
-            logger.info(f"Removed participant {user_id} from meeting {meeting_id}")
+            logger.info(f"Removed participant {user_id} from event {event_id}")
             return True
 
-        except MeetingParticipant.DoesNotExist:
-            logger.warning(f"Participant {user_id} not found in meeting {meeting_id}")
+        except EventParticipant.DoesNotExist:
+            logger.warning(f"Participant {user_id} not found in event {event_id}")
             return False
 
     @staticmethod
-    def update_participant_state(meeting_id: str, user_id: str, **updates) -> MeetingParticipant:
+    def update_participant_state(event_id: str, user_id: str, **updates) -> EventParticipant:
         """Update participant media state (mute, video, screen share)"""
         try:
-            participant = MeetingParticipant.objects.get(
-                meeting_id=meeting_id,
+            participant = EventParticipant.objects.get(
+                event_id=event_id,
                 user_id=user_id
             )
 
@@ -93,14 +93,14 @@ class ParticipantService:
             logger.info(f"Updated participant {user_id} state: {updates}")
             return participant
 
-        except MeetingParticipant.DoesNotExist:
-            logger.error(f"Participant {user_id} not found in meeting {meeting_id}")
+        except EventParticipant.DoesNotExist:
+            logger.error(f"Participant {user_id} not found in event {event_id}")
             raise
 
     @staticmethod
-    def get_participants(meeting_id: str, only_active: bool = True):
-        """Get participants for a meeting"""
-        query = MeetingParticipant.objects.filter(meeting_id=meeting_id)
+    def get_participants(event_id: str, only_active: bool = True):
+        """Get participants for a event"""
+        query = EventParticipant.objects.filter(event_id=event_id)
         if only_active:
             query = query.filter(is_active=True)
 

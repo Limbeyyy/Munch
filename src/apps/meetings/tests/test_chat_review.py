@@ -17,9 +17,9 @@ from django.utils import timezone
 from rest_framework_simplejwt.tokens import AccessToken
 
 from src.apps.meetings.models import (
-    ChatMessage, GuestAttendee, Meeting, MeetingParticipant, Session,
+    ChatMessage, GuestAttendee, Event, EventParticipant, Session,
 )
-from src.apps.meetings.tests.factories import make_host, make_meeting, make_session
+from src.apps.meetings.tests.factories import make_host, make_event, make_session
 from src.apps.realtime.middleware import JWTAuthMiddlewareStack
 from src.apps.realtime.routing import websocket_urlpatterns
 
@@ -38,27 +38,27 @@ class WhatTheHostIsAskedToSortTests(TransactionTestCase):
         self.attendee = make_host('attendee@example.com')
 
         start = timezone.now() - timezone.timedelta(minutes=10)
-        self.meeting = make_meeting(self.host, start=start, minutes=120)
-        self.meeting.status = Meeting.Status.ACTIVE
-        self.meeting.started_at = start
-        self.meeting.chat_enabled = True
-        self.meeting.direct_messages_enabled = True
-        self.meeting.save()
-        make_session(self.meeting, start, 60, 'Haldi', status=Session.Status.LIVE)
+        self.event = make_event(self.host, start=start, minutes=120)
+        self.event.status = Event.Status.ACTIVE
+        self.event.started_at = start
+        self.event.chat_enabled = True
+        self.event.direct_messages_enabled = True
+        self.event.save()
+        make_session(self.event, start, 60, 'Haldi', status=Session.Status.LIVE)
 
         for user, role in (
-            (self.host, MeetingParticipant.Role.HOST),
-            (self.speaker, MeetingParticipant.Role.PRESENTER),
-            (self.attendee, MeetingParticipant.Role.ATTENDEE),
+            (self.host, EventParticipant.Role.HOST),
+            (self.speaker, EventParticipant.Role.PRESENTER),
+            (self.attendee, EventParticipant.Role.ATTENDEE),
         ):
-            MeetingParticipant.objects.create(
-                meeting=self.meeting, user=user, role=role, is_active=True
+            EventParticipant.objects.create(
+                event=self.event, user=user, role=role, is_active=True
             )
 
     async def speaking_as(self, user):
         token = str(AccessToken.for_user(user))
         comm = WebsocketCommunicator(
-            app(), f'/ws/meeting/{self.meeting.meeting_code}/?token={token}'
+            app(), f'/ws/event/{self.event.code}/?token={token}'
         )
         connected, _ = await comm.connect()
         assert connected, f'{user.email} could not reach the room'
@@ -68,12 +68,12 @@ class WhatTheHostIsAskedToSortTests(TransactionTestCase):
         from src.apps.meetings.guest_tokens import make_guest_token
 
         guest = await database_sync_to_async(GuestAttendee.objects.create)(
-            meeting=self.meeting, full_name='Bishnu Prasad',
+            event=self.event, full_name='Bishnu Prasad',
             status=GuestAttendee.Status.ADMITTED,
         )
         token = await database_sync_to_async(make_guest_token)(guest)
         comm = WebsocketCommunicator(
-            app(), f'/ws/meeting/{self.meeting.meeting_code}/?guest_token={token}'
+            app(), f'/ws/event/{self.event.code}/?guest_token={token}'
         )
         connected, _ = await comm.connect()
         assert connected, 'the guest could not reach the room'
@@ -181,18 +181,18 @@ class SortingFromTheQueueTests(TransactionTestCase):
         self.host = make_host('host@example.com')
         self.attendee = make_host('attendee@example.com')
         start = timezone.now() - timezone.timedelta(minutes=10)
-        self.meeting = make_meeting(self.host, start=start, minutes=120)
-        self.meeting.status = Meeting.Status.ACTIVE
-        self.meeting.started_at = start
-        self.meeting.chat_enabled = True
-        self.meeting.direct_messages_enabled = True
-        self.meeting.save()
-        MeetingParticipant.objects.create(
-            meeting=self.meeting, user=self.attendee,
-            role=MeetingParticipant.Role.ATTENDEE, is_active=True,
+        self.event = make_event(self.host, start=start, minutes=120)
+        self.event.status = Event.Status.ACTIVE
+        self.event.started_at = start
+        self.event.chat_enabled = True
+        self.event.direct_messages_enabled = True
+        self.event.save()
+        EventParticipant.objects.create(
+            event=self.event, user=self.attendee,
+            role=EventParticipant.Role.ATTENDEE, is_active=True,
         )
         self.asked = ChatMessage.objects.create(
-            meeting=self.meeting, sender=self.attendee, recipient=self.host,
+            event=self.event, sender=self.attendee, recipient=self.host,
             body='Why this budget?',
             moderation_status=ChatMessage.Moderation.PENDING,
         )
@@ -207,7 +207,7 @@ class SortingFromTheQueueTests(TransactionTestCase):
 
     def test_it_is_in_the_queue_the_room_reads(self):
         waiting = self.as_host().get(
-            f'/api/v1/meetings/{self.meeting.id}/pending_messages/'
+            f'/api/v1/events/{self.event.id}/pending_messages/'
         ).json()
 
         self.assertEqual([m['body'] for m in waiting], ['Why this budget?'])
@@ -217,7 +217,7 @@ class SortingFromTheQueueTests(TransactionTestCase):
         if topic:
             body['topic'] = topic
         return self.as_host().post(
-            f'/api/v1/meetings/{self.meeting.id}/moderate_message/',
+            f'/api/v1/events/{self.event.id}/moderate_message/',
             body, content_type='application/json',
         )
 
@@ -240,7 +240,7 @@ class SortingFromTheQueueTests(TransactionTestCase):
         self.sort('approve', 'faq')
 
         board = self.as_host().get(
-            f'/api/v1/meetings/{self.meeting.id}/board/'
+            f'/api/v1/events/{self.event.id}/board/'
         ).json()
 
         self.assertEqual([q['body'] for q in board['faq']], ['Why this budget?'])
@@ -251,7 +251,7 @@ class SortingFromTheQueueTests(TransactionTestCase):
         self.asked.refresh_from_db()
         self.assertEqual(self.asked.moderation_status, ChatMessage.Moderation.DECLINED)
         board = self.as_host().get(
-            f'/api/v1/meetings/{self.meeting.id}/board/'
+            f'/api/v1/events/{self.event.id}/board/'
         ).json()
         self.assertEqual(board['faq'], [])
         self.assertEqual(board['suggestions'], [])
@@ -274,22 +274,22 @@ class WritingToSomebodyWhoSteppedOutTests(TransactionTestCase):
         self.host = make_host('host@example.com')
         self.attendee = make_host('attendee@example.com')
         start = timezone.now() - timezone.timedelta(minutes=10)
-        self.meeting = make_meeting(self.host, start=start, minutes=120)
-        self.meeting.status = Meeting.Status.ACTIVE
-        self.meeting.started_at = start
-        self.meeting.chat_enabled = True
-        self.meeting.direct_messages_enabled = True
-        self.meeting.save()
-        make_session(self.meeting, start, 60, 'Haldi', status=Session.Status.LIVE)
+        self.event = make_event(self.host, start=start, minutes=120)
+        self.event.status = Event.Status.ACTIVE
+        self.event.started_at = start
+        self.event.chat_enabled = True
+        self.event.direct_messages_enabled = True
+        self.event.save()
+        make_session(self.event, start, 60, 'Haldi', status=Session.Status.LIVE)
 
         # The host's own row, left behind when they closed the tab.
-        MeetingParticipant.objects.create(
-            meeting=self.meeting, user=self.host,
-            role=MeetingParticipant.Role.HOST, is_active=False,
+        EventParticipant.objects.create(
+            event=self.event, user=self.host,
+            role=EventParticipant.Role.HOST, is_active=False,
         )
-        MeetingParticipant.objects.create(
-            meeting=self.meeting, user=self.attendee,
-            role=MeetingParticipant.Role.ATTENDEE, is_active=True,
+        EventParticipant.objects.create(
+            event=self.event, user=self.attendee,
+            role=EventParticipant.Role.ATTENDEE, is_active=True,
         )
 
     async def write(self, comm, body, to_id):
@@ -305,7 +305,7 @@ class WritingToSomebodyWhoSteppedOutTests(TransactionTestCase):
     async def speaking_as(self, user):
         token = str(AccessToken.for_user(user))
         comm = WebsocketCommunicator(
-            app(), f'/ws/meeting/{self.meeting.meeting_code}/?token={token}'
+            app(), f'/ws/event/{self.event.code}/?token={token}'
         )
         connected, _ = await comm.connect()
         assert connected
@@ -336,7 +336,7 @@ class WritingToSomebodyWhoSteppedOutTests(TransactionTestCase):
 
     async def test_a_guest_who_stepped_out_can_still_be_answered(self):
         guest = await database_sync_to_async(GuestAttendee.objects.create)(
-            meeting=self.meeting, full_name='Bishnu Prasad',
+            event=self.event, full_name='Bishnu Prasad',
             status=GuestAttendee.Status.LEFT,
         )
         comm = await self.speaking_as(self.host)
@@ -371,27 +371,27 @@ class AMessageThatCannotBeSavedSaysSoTests(TransactionTestCase):
     def setUp(self):
         self.host = make_host('host@example.com')
         start = timezone.now() - timezone.timedelta(minutes=10)
-        self.meeting = make_meeting(self.host, start=start, minutes=120)
-        self.meeting.status = Meeting.Status.ACTIVE
-        self.meeting.started_at = start
-        self.meeting.chat_enabled = True
-        self.meeting.direct_messages_enabled = True
-        self.meeting.save()
-        MeetingParticipant.objects.create(
-            meeting=self.meeting, user=self.host,
-            role=MeetingParticipant.Role.HOST, is_active=True,
+        self.event = make_event(self.host, start=start, minutes=120)
+        self.event.status = Event.Status.ACTIVE
+        self.event.started_at = start
+        self.event.chat_enabled = True
+        self.event.direct_messages_enabled = True
+        self.event.save()
+        EventParticipant.objects.create(
+            event=self.event, user=self.host,
+            role=EventParticipant.Role.HOST, is_active=True,
         )
 
     async def a_guest_socket(self):
         from src.apps.meetings.guest_tokens import make_guest_token
 
         guest = await database_sync_to_async(GuestAttendee.objects.create)(
-            meeting=self.meeting, full_name='Bishnu Prasad',
+            event=self.event, full_name='Bishnu Prasad',
             status=GuestAttendee.Status.ADMITTED,
         )
         token = await database_sync_to_async(make_guest_token)(guest)
         comm = WebsocketCommunicator(
-            app(), f'/ws/meeting/{self.meeting.meeting_code}/?guest_token={token}'
+            app(), f'/ws/event/{self.event.code}/?guest_token={token}'
         )
         connected, _ = await comm.connect()
         assert connected
@@ -421,7 +421,7 @@ class AMessageThatCannotBeSavedSaysSoTests(TransactionTestCase):
 
         token = str(AccessToken.for_user(self.host))
         comm = WebsocketCommunicator(
-            app(), f'/ws/meeting/{self.meeting.meeting_code}/?token={token}'
+            app(), f'/ws/event/{self.event.code}/?token={token}'
         )
         connected, _ = await comm.connect()
         self.assertTrue(connected)

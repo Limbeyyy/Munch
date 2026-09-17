@@ -1,7 +1,7 @@
 import logging
 from typing import Dict, Any, Optional, List
 from django.utils import timezone
-from src.apps.meetings.models import Meeting
+from src.apps.meetings.models import Event
 from src.apps.drive.services.google_drive_adapter import GoogleDriveAdapter
 from src.apps.artifacts.models import Artifact, ArtifactType
 from src.utilities.exceptions import ArtifactException
@@ -11,35 +11,35 @@ logger = logging.getLogger(__name__)
 
 class MeetingArtifactService:
     """
-    Service for managing meeting artifacts in Google Drive
+    Service for managing event artifacts in Google Drive
     """
     
-    def __init__(self, meeting_id: str, user_id: str):
-        self.meeting = Meeting.objects.get(id=meeting_id)
+    def __init__(self, event_id: str, user_id: str):
+        self.event = Event.objects.get(id=event_id)
         self.user_id = user_id
         self.drive_adapter = GoogleDriveAdapter(user_id)
         
-    def initialize_meeting_folder(self) -> Dict[str, Any]:
+    def initialize_event_folder(self) -> Dict[str, Any]:
         """
-        Create the meeting folder structure in Drive
+        Create the event folder structure in Drive
         """
         try:
-            # Create main meeting folder
-            folder_name = f"{self.meeting.meeting_code} - {self.meeting.title}"
+            # Create main event folder
+            folder_name = f"{self.event.code} - {self.event.title}"
             main_folder = self.drive_adapter.create_folder(
                 folder_name=folder_name
             )
             
-            # Update meeting with folder ID
-            self.meeting.drive_folder_id = main_folder['id']
-            self.meeting.save()
+            # Update event with folder ID
+            self.event.drive_folder_id = main_folder['id']
+            self.event.save()
             
             # Create subfolders
             subfolders = {
-                'metadata': 'Meeting Metadata',
+                'metadata': 'Event Metadata',
                 'transcripts': 'Transcripts',
                 'attendance': 'Attendance Records',
-                'notes': 'Meeting Notes',
+                'notes': 'Event Notes',
                 'resources': 'Shared Resources',
                 'recordings': 'Recordings'
             }
@@ -66,42 +66,42 @@ class MeetingArtifactService:
             }
             
         except Exception as e:
-            logger.error(f"Failed to initialize meeting folder: {str(e)}")
+            logger.error(f"Failed to initialize event folder: {str(e)}")
             raise ArtifactException(f"Folder initialization failed: {str(e)}")
     
     def _create_metadata_file(self, folder_id: str) -> None:
-        """Create the metadata file for the meeting"""
+        """Create the metadata file for the event"""
         try:
-            metadata_content = f"""Meeting Metadata
-Meeting Code: {self.meeting.meeting_code}
-Title: {self.meeting.title}
-Host: {self.meeting.host.display_name}
-Created: {self.meeting.created_at}
-Scheduled: {self.meeting.scheduled_start} - {self.meeting.scheduled_end}
-Status: {self.meeting.status}
+            metadata_content = f"""Event Metadata
+Event Code: {self.event.code}
+Title: {self.event.title}
+Host: {self.event.host.display_name}
+Created: {self.event.created_at}
+Scheduled: {self.event.scheduled_start} - {self.event.scheduled_end}
+Status: {self.event.status}
 
 Description:
-{self.meeting.description}
+{self.event.description}
 
 Participants:
 """
             
             # Add participants to metadata
-            participants = self.meeting.participants.filter(is_active=True)
+            participants = self.event.participants.filter(is_active=True)
             for participant in participants:
                 metadata_content += f"\n- {participant.user.display_name} ({participant.role})"
             
             file = self.drive_adapter.create_document(
-                name=f"Metadata - {self.meeting.meeting_code}",
+                name=f"Metadata - {self.event.code}",
                 content=metadata_content,
                 parent_id=folder_id
             )
             
             Artifact.objects.create(
-                meeting=self.meeting,
+                event=self.event,
                 artifact_type=ArtifactType.METADATA,
                 drive_file_id=file['id'],
-                display_name="Meeting Metadata",
+                display_name="Event Metadata",
                 mime_type="application/vnd.google-apps.document"
             )
             
@@ -116,13 +116,13 @@ Participants:
             ]
             
             file = self.drive_adapter.create_sheet(
-                name=f"Attendance - {self.meeting.meeting_code}",
+                name=f"Attendance - {self.event.code}",
                 data=headers,
                 parent_id=folder_id
             )
             
             Artifact.objects.create(
-                meeting=self.meeting,
+                event=self.event,
                 artifact_type=ArtifactType.ATTENDANCE,
                 drive_file_id=file['id'],
                 display_name="Attendance Record",
@@ -136,7 +136,7 @@ Participants:
         """Store subfolder IDs in artifacts table"""
         for folder_type, folder_id in folder_ids.items():
             Artifact.objects.get_or_create(
-                meeting=self.meeting,
+                event=self.event,
                 artifact_type=ArtifactType.FOLDER,
                 drive_folder_id=folder_id,
                 defaults={
@@ -147,15 +147,15 @@ Participants:
     
     def save_transcript(self, content: str, segment_id: Optional[str] = None) -> bool:
         """
-        Save or append to meeting transcript
+        Save or append to event transcript
         """
         try:
             # Get or create transcript artifact
             transcript_artifact, created = Artifact.objects.get_or_create(
-                meeting=self.meeting,
+                event=self.event,
                 artifact_type=ArtifactType.TRANSCRIPT,
                 defaults={
-                    'display_name': f"Transcript - {self.meeting.meeting_code}",
+                    'display_name': f"Transcript - {self.event.code}",
                     'mime_type': "application/vnd.google-apps.document",
                     'metadata': {'segments': []}
                 }
@@ -165,14 +165,14 @@ Participants:
             if not transcript_artifact.drive_file_id:
                 file = self.drive_adapter.create_document(
                     name=transcript_artifact.display_name,
-                    parent_id=self.meeting.drive_folder_id
+                    parent_id=self.event.drive_folder_id
                 )
                 transcript_artifact.drive_file_id = file['id']
                 transcript_artifact.save()
             
             # Get the subfolder for transcripts
             transcript_folder = Artifact.objects.filter(
-                meeting=self.meeting,
+                event=self.event,
                 artifact_type=ArtifactType.FOLDER,
                 display_name__icontains="transcript"
             ).first()
@@ -215,16 +215,16 @@ Participants:
             logger.error(f"Failed to save transcript: {str(e)}")
             return False
     
-    def save_meeting_notes(self, content: str) -> bool:
+    def save_event_notes(self, content: str) -> bool:
         """
-        Save meeting notes
+        Save event notes
         """
         try:
             notes_artifact, created = Artifact.objects.get_or_create(
-                meeting=self.meeting,
+                event=self.event,
                 artifact_type=ArtifactType.NOTES,
                 defaults={
-                    'display_name': f"Notes - {self.meeting.meeting_code}",
+                    'display_name': f"Notes - {self.event.code}",
                     'mime_type': "application/vnd.google-apps.document"
                 }
             )
@@ -232,12 +232,12 @@ Participants:
             if not notes_artifact.drive_file_id:
                 # Get notes folder
                 notes_folder = Artifact.objects.filter(
-                    meeting=self.meeting,
+                    event=self.event,
                     artifact_type=ArtifactType.FOLDER,
                     display_name__icontains="notes"
                 ).first()
                 
-                parent_id = notes_folder.drive_folder_id if notes_folder else self.meeting.drive_folder_id
+                parent_id = notes_folder.drive_folder_id if notes_folder else self.event.drive_folder_id
                 
                 file = self.drive_adapter.create_document(
                     name=notes_artifact.display_name,
@@ -256,7 +256,7 @@ Participants:
                 )
             
         except Exception as e:
-            logger.error(f"Failed to save meeting notes: {str(e)}")
+            logger.error(f"Failed to save event notes: {str(e)}")
             return False
     
     def record_attendance(self, participant_data: Dict[str, Any]) -> bool:
@@ -265,7 +265,7 @@ Participants:
         """
         try:
             attendance_artifact = Artifact.objects.get(
-                meeting=self.meeting,
+                event=self.event,
                 artifact_type=ArtifactType.ATTENDANCE
             )
             
@@ -292,13 +292,13 @@ Participants:
             return False
     
     def _get_or_create_resources_folder(self) -> str:
-        """Return the Drive id of the meeting's Shared Resources folder.
+        """Return the Drive id of the event's Shared Resources folder.
 
-        Created on demand, since folder initialisation at meeting creation is
+        Created on demand, since folder initialisation at event creation is
         best-effort and may not have run.
         """
         resources_folder = Artifact.objects.filter(
-            meeting=self.meeting,
+            event=self.event,
             artifact_type=ArtifactType.FOLDER,
             display_name__icontains="resources"
         ).first()
@@ -306,11 +306,11 @@ Participants:
         if resources_folder and resources_folder.drive_folder_id:
             return resources_folder.drive_folder_id
 
-        if not self.meeting.drive_folder_id:
-            self.initialize_meeting_folder()
-            self.meeting.refresh_from_db()
+        if not self.event.drive_folder_id:
+            self.initialize_event_folder()
+            self.event.refresh_from_db()
             resources_folder = Artifact.objects.filter(
-                meeting=self.meeting,
+                event=self.event,
                 artifact_type=ArtifactType.FOLDER,
                 display_name__icontains="resources"
             ).first()
@@ -319,10 +319,10 @@ Participants:
 
         folder = self.drive_adapter.create_folder(
             folder_name='Shared Resources',
-            parent_id=self.meeting.drive_folder_id
+            parent_id=self.event.drive_folder_id
         )
         Artifact.objects.create(
-            meeting=self.meeting,
+            event=self.event,
             artifact_type=ArtifactType.FOLDER,
             drive_folder_id=folder['id'],
             display_name='Resources',
@@ -331,7 +331,7 @@ Participants:
         return folder['id']
 
     def get_or_create_photos_folder(self) -> str:
-        """Return the Drive id of the meeting's Photos folder.
+        """Return the Drive id of the event's Photos folder.
 
         A sibling of Shared Resources rather than a room inside it: the
         photographs of a day are a different kind of thing from the papers
@@ -339,23 +339,23 @@ Participants:
         should not have to know our filing to tell them apart.
         """
         existing = Artifact.objects.filter(
-            meeting=self.meeting,
+            event=self.event,
             artifact_type=ArtifactType.FOLDER,
             display_name='Photos',
         ).first()
         if existing and existing.drive_folder_id:
             return existing.drive_folder_id
 
-        if not self.meeting.drive_folder_id:
-            self.initialize_meeting_folder()
-            self.meeting.refresh_from_db()
+        if not self.event.drive_folder_id:
+            self.initialize_event_folder()
+            self.event.refresh_from_db()
 
         folder = self.drive_adapter.create_folder(
             folder_name='Photos',
-            parent_id=self.meeting.drive_folder_id,
+            parent_id=self.event.drive_folder_id,
         )
         Artifact.objects.create(
-            meeting=self.meeting,
+            event=self.event,
             artifact_type=ArtifactType.FOLDER,
             drive_folder_id=folder['id'],
             display_name='Photos',
@@ -364,7 +364,7 @@ Participants:
         return folder['id']
 
     def upload_resource(self, uploaded_file, uploader) -> Artifact:
-        """Upload a file to the meeting's Shared Resources folder in the
+        """Upload a file to the event's Shared Resources folder in the
         host's Drive, and grant every participant read access."""
         parent_id = self._get_or_create_resources_folder()
 
@@ -377,10 +377,10 @@ Participants:
 
         # Whatever is on stage owns this file, which is what decides when
         # the rest of the room gets to read it.
-        live_session = self.meeting.sessions.filter(status='live').first()
+        live_session = self.event.sessions.filter(status='live').first()
 
         artifact = Artifact.objects.create(
-            meeting=self.meeting,
+            event=self.event,
             session=live_session,
             artifact_type=ArtifactType.RESOURCE,
             drive_file_id=drive_file['id'],
@@ -401,37 +401,37 @@ Participants:
 
     def _share_with_participants(self, file_id: str) -> None:
         """Give every participant except the host read access to a file."""
-        emails = self.meeting.participants.exclude(
-            user_id=self.meeting.host_id
+        emails = self.event.participants.exclude(
+            user_id=self.event.host_id
         ).values_list('user__email', flat=True)
 
         for email in {e for e in emails if e}:
             self.drive_adapter.share_file(file_id, email, role='reader')
 
     def list_resources(self, include_unreleased: bool = True):
-        """Resource artifacts for this meeting, newest first.
+        """Resource artifacts for this event, newest first.
 
         A file shared during a session waits until that session is over
         before the room can read it; organizers see everything.
         """
         from src.apps.artifacts.visibility import resources_for
 
-        return resources_for(self.meeting, include_unreleased=include_unreleased)
+        return resources_for(self.event, include_unreleased=include_unreleased)
 
     def create_shared_resource(self, name: str, content: str,
                               resource_type: str = 'document') -> Optional[str]:
         """
-        Create a shared resource in the meeting
+        Create a shared resource in the event
         """
         try:
             # Get resources folder
             resources_folder = Artifact.objects.filter(
-                meeting=self.meeting,
+                event=self.event,
                 artifact_type=ArtifactType.FOLDER,
                 display_name__icontains="resources"
             ).first()
             
-            parent_id = resources_folder.drive_folder_id if resources_folder else self.meeting.drive_folder_id
+            parent_id = resources_folder.drive_folder_id if resources_folder else self.event.drive_folder_id
             
             if resource_type == 'document':
                 file = self.drive_adapter.create_document(
@@ -450,7 +450,7 @@ Participants:
                 raise ValueError(f"Unsupported resource type: {resource_type}")
             
             Artifact.objects.create(
-                meeting=self.meeting,
+                event=self.event,
                 artifact_type=ArtifactType.RESOURCE,
                 drive_file_id=file['id'],
                 display_name=name,

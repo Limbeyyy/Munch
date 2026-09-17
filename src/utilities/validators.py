@@ -2,21 +2,21 @@ import re
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 
-def validate_meeting_code(value):
+def validate_event_code(value):
     """
-    Validate meeting code format (alphanumeric, 6-10 characters, no ambiguous characters)
+    Validate event code format (alphanumeric, 6-10 characters, no ambiguous characters)
     """
     pattern = re.compile(r'^[A-Z0-9]{6,10}$')
     if not pattern.match(value):
         raise ValidationError(
-            _('Meeting code must be 6-10 alphanumeric characters (uppercase)'),
-            code='invalid_meeting_code'
+            _('Event code must be 6-10 alphanumeric characters (uppercase)'),
+            code='invalid_event_code'
         )
     # Exclude ambiguous characters
     ambiguous = ['0', 'O', '1', 'I', 'L']
     if any(c in value for c in ambiguous):
         raise ValidationError(
-            _('Meeting code cannot contain ambiguous characters: 0, O, 1, I, L'),
+            _('Event code cannot contain ambiguous characters: 0, O, 1, I, L'),
             code='ambiguous_characters'
         )
 

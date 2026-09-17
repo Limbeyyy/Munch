@@ -11,10 +11,10 @@ from rest_framework.test import APIClient
 from src.apps.accounts.tokens import issue_tokens
 from src.apps.meetings.guest_tokens import make_guest_token
 from src.apps.meetings.models import (
-    ChatMessage, GuestAttendee, HubVote, MeetingParticipant,
+    ChatMessage, GuestAttendee, HubVote, EventParticipant,
 )
 from src.apps.meetings.tests.factories import (
-    make_event, make_host, make_meeting, make_session,
+    make_event, make_host, make_session,
 )
 
 API = '/api/v1'
@@ -31,12 +31,11 @@ class BoardTests(TestCase):
         self.host = make_host('host@example.com')
         self.asker = make_host('asker@example.com')
         self.onlooker = make_host('onlooker@example.com')
-        self.event = make_event(self.host)
-        self.meeting = make_meeting(self.host, self.event, start=timezone.now())
-        make_session(self.meeting, timezone.now(), 60)
+        self.event = make_event(self.host, start=timezone.now())
+        make_session(self.event, timezone.now(), 60)
         for person in (self.asker, self.onlooker):
-            MeetingParticipant.objects.create(
-                meeting=self.meeting, user=person, role='attendee'
+            EventParticipant.objects.create(
+                event=self.event, user=person, role='attendee'
             )
         self.host_client = signed_in(self.host)
         self.asker_client = signed_in(self.asker)
@@ -44,26 +43,26 @@ class BoardTests(TestCase):
 
     def public(self, body='When does it start?'):
         return ChatMessage.objects.create(
-            meeting=self.meeting, sender=self.asker, body=body,
+            event=self.event, sender=self.asker, body=body,
             moderation_status=ChatMessage.Moderation.NOT_REQUIRED,
         )
 
     def held_direct(self, body='A word in private'):
         return ChatMessage.objects.create(
-            meeting=self.meeting, sender=self.asker, recipient=self.host, body=body,
+            event=self.event, sender=self.asker, recipient=self.host, body=body,
             moderation_status=ChatMessage.Moderation.PENDING,
         )
 
     def sort(self, message, topic, client=None):
         return (client or self.host_client).post(
-            f'{API}/meetings/{self.meeting.id}/sort_message/',
+            f'{API}/events/{self.event.id}/sort_message/',
             {'message_id': str(message.id), 'topic': topic},
             format='json',
         )
 
     def board(self, client=None):
         return (client or self.host_client).get(
-            f'{API}/meetings/{self.meeting.id}/board/'
+            f'{API}/events/{self.event.id}/board/'
         ).json()
 
     # --- sorting -----------------------------------------------------------
@@ -79,7 +78,7 @@ class BoardTests(TestCase):
         """A private message the host has already let through."""
         held = self.held_direct(body)
         self.host_client.post(
-            f'{API}/meetings/{self.meeting.id}/moderate_message/',
+            f'{API}/events/{self.event.id}/moderate_message/',
             {'message_id': str(held.id), 'decision': 'approve'},
             format='json',
         )
@@ -107,12 +106,12 @@ class BoardTests(TestCase):
 
     def test_a_room_message_cannot_be_sorted_while_approving_either(self):
         room = ChatMessage.objects.create(
-            meeting=self.meeting, sender=self.asker, body='Hello all',
+            event=self.event, sender=self.asker, body='Hello all',
             moderation_status=ChatMessage.Moderation.PENDING,
         )
 
         response = self.host_client.post(
-            f'{API}/meetings/{self.meeting.id}/moderate_message/',
+            f'{API}/events/{self.event.id}/moderate_message/',
             {'message_id': str(room.id), 'decision': 'approve', 'topic': 'faq'},
             format='json',
         )
@@ -172,7 +171,7 @@ class BoardTests(TestCase):
         # two deliberate host decisions to happen.
         held = self.held_direct()
         self.host_client.post(
-            f'{API}/meetings/{self.meeting.id}/moderate_message/',
+            f'{API}/events/{self.event.id}/moderate_message/',
             {'message_id': str(held.id), 'decision': 'approve'},
             format='json',
         )
@@ -187,7 +186,7 @@ class BoardTests(TestCase):
         # for a message the host deliberately published.
         held = self.held_direct()
         self.host_client.post(
-            f'{API}/meetings/{self.meeting.id}/moderate_message/',
+            f'{API}/events/{self.event.id}/moderate_message/',
             {'message_id': str(held.id), 'decision': 'approve', 'topic': 'faq'},
             format='json',
         )
@@ -200,7 +199,7 @@ class BoardTests(TestCase):
         held = self.held_direct()
 
         self.host_client.post(
-            f'{API}/meetings/{self.meeting.id}/moderate_message/',
+            f'{API}/events/{self.event.id}/moderate_message/',
             {'message_id': str(held.id), 'decision': 'approve', 'topic': 'suggestion'},
             format='json',
         )
@@ -211,7 +210,7 @@ class BoardTests(TestCase):
         held = self.held_direct()
 
         self.host_client.post(
-            f'{API}/meetings/{self.meeting.id}/moderate_message/',
+            f'{API}/events/{self.event.id}/moderate_message/',
             {'message_id': str(held.id), 'decision': 'decline', 'topic': 'faq'},
             format='json',
         )
@@ -238,43 +237,43 @@ class BoardTests(TestCase):
         self.sort(self.approved_direct(), 'faq')
         outsider = signed_in(make_host('outsider@example.com'))
 
-        response = outsider.get(f'{API}/meetings/{self.meeting.id}/board/')
+        response = outsider.get(f'{API}/events/{self.event.id}/board/')
 
         self.assertEqual(response.status_code, 404)
 
     def test_a_guest_reads_the_same_board(self):
         guest = GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='A Guest', phone='9800000000',
+            event=self.event, full_name='A Guest', phone='9800000000',
             status=GuestAttendee.Status.ADMITTED,
         )
         self.sort(self.approved_direct(), 'faq')
 
         body = APIClient().get(
-            f'{API}/meetings/guest/board/?token={make_guest_token(guest)}'
+            f'{API}/events/guest/board/?token={make_guest_token(guest)}'
         ).json()
 
         self.assertEqual(len(body['faq']), 1)
 
     def test_a_guest_who_was_not_admitted_reads_nothing(self):
         waiting = GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='Waiting', phone='9800000001',
+            event=self.event, full_name='Waiting', phone='9800000001',
             status=GuestAttendee.Status.PENDING,
         )
         self.sort(self.approved_direct(), 'faq')
 
         response = APIClient().get(
-            f'{API}/meetings/guest/board/?token={make_guest_token(waiting)}'
+            f'{API}/events/guest/board/?token={make_guest_token(waiting)}'
         )
 
         self.assertEqual(response.status_code, 403)
 
     def test_a_guest_question_can_go_on_the_board(self):
         guest = GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='Curious Guest', phone='9800000002',
+            event=self.event, full_name='Curious Guest', phone='9800000002',
             status=GuestAttendee.Status.ADMITTED,
         )
         asked = ChatMessage.objects.create(
-            meeting=self.meeting, guest_sender=guest, recipient=self.host,
+            event=self.event, guest_sender=guest, recipient=self.host,
             body='Is there parking?',
             moderation_status=ChatMessage.Moderation.APPROVED,
         )
@@ -298,28 +297,27 @@ class ReviewedMessagesTests(TestCase):
     def setUp(self):
         self.host = make_host('host@example.com')
         self.asker = make_host('asker@example.com')
-        self.event = make_event(self.host)
-        self.meeting = make_meeting(self.host, self.event, start=timezone.now())
-        make_session(self.meeting, timezone.now(), 60)
-        MeetingParticipant.objects.create(
-            meeting=self.meeting, user=self.asker, role='attendee'
+        self.event = make_event(self.host, start=timezone.now())
+        make_session(self.event, timezone.now(), 60)
+        EventParticipant.objects.create(
+            event=self.event, user=self.asker, role='attendee'
         )
         self.guest = GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='A Guest', phone='9800000000',
+            event=self.event, full_name='A Guest', phone='9800000000',
             status=GuestAttendee.Status.ADMITTED,
         )
         self.host_client = signed_in(self.host)
 
     def held(self, sender=None, guest=None, body='A word in private'):
         return ChatMessage.objects.create(
-            meeting=self.meeting, sender=sender, guest_sender=guest,
+            event=self.event, sender=sender, guest_sender=guest,
             recipient=self.host, body=body,
             moderation_status=ChatMessage.Moderation.PENDING,
         )
 
     def approve(self, message, topic=None):
         return self.host_client.post(
-            f'{API}/meetings/{self.meeting.id}/moderate_message/',
+            f'{API}/events/{self.event.id}/moderate_message/',
             {'message_id': str(message.id), 'decision': 'approve',
              **({'topic': topic} if topic else {})},
             format='json',
@@ -327,7 +325,7 @@ class ReviewedMessagesTests(TestCase):
 
     def reviewed(self):
         return self.host_client.get(
-            f'{API}/meetings/{self.meeting.id}/reviewed_messages/'
+            f'{API}/events/{self.event.id}/reviewed_messages/'
         ).json()
 
     def test_nothing_is_recorded_before_a_decision(self):
@@ -352,11 +350,11 @@ class ReviewedMessagesTests(TestCase):
         self.assertEqual(len(body['from_guests']), 1)
 
     def test_a_plain_approval_puts_nothing_on_the_board(self):
-        # Approving from the meeting room does exactly this and no more.
+        # Approving from the event room does exactly this and no more.
         self.approve(self.held(sender=self.asker))
 
         self.assertEqual(len(self.reviewed()['from_users']), 1)
-        board = self.host_client.get(f'{API}/meetings/{self.meeting.id}/board/').json()
+        board = self.host_client.get(f'{API}/events/{self.event.id}/board/').json()
         self.assertEqual(board['faq'], [])
         self.assertEqual(board['suggestions'], [])
 
@@ -366,13 +364,13 @@ class ReviewedMessagesTests(TestCase):
         recorded = self.reviewed()['from_users']
         self.assertEqual(len(recorded), 1)
         self.assertEqual(recorded[0]['topic'], 'faq')
-        board = self.host_client.get(f'{API}/meetings/{self.meeting.id}/board/').json()
+        board = self.host_client.get(f'{API}/events/{self.event.id}/board/').json()
         self.assertEqual(len(board['faq']), 1)
 
     def test_a_declined_message_is_not_recorded(self):
         held = self.held(sender=self.asker)
         self.host_client.post(
-            f'{API}/meetings/{self.meeting.id}/moderate_message/',
+            f'{API}/events/{self.event.id}/moderate_message/',
             {'message_id': str(held.id), 'decision': 'decline'},
             format='json',
         )
@@ -388,7 +386,7 @@ class ReviewedMessagesTests(TestCase):
         of thing worth filing as a question afterwards.
         """
         ChatMessage.objects.create(
-            meeting=self.meeting, sender=self.asker, recipient=self.host,
+            event=self.event, sender=self.asker, recipient=self.host,
             body='what is kataho?',
             moderation_status=ChatMessage.Moderation.NOT_REQUIRED,
         )
@@ -400,7 +398,7 @@ class ReviewedMessagesTests(TestCase):
 
     def test_the_same_from_a_guest_lands_under_guests(self):
         ChatMessage.objects.create(
-            meeting=self.meeting, guest_sender=self.guest, recipient=self.host,
+            event=self.event, guest_sender=self.guest, recipient=self.host,
             body='Is there parking?',
             moderation_status=ChatMessage.Moderation.NOT_REQUIRED,
         )
@@ -411,24 +409,24 @@ class ReviewedMessagesTests(TestCase):
 
     def test_it_can_then_be_filed_as_a_question(self):
         asked = ChatMessage.objects.create(
-            meeting=self.meeting, sender=self.asker, recipient=self.host,
+            event=self.event, sender=self.asker, recipient=self.host,
             body='what is kataho?',
             moderation_status=ChatMessage.Moderation.NOT_REQUIRED,
         )
 
         response = self.host_client.post(
-            f'{API}/meetings/{self.meeting.id}/sort_message/',
+            f'{API}/events/{self.event.id}/sort_message/',
             {'message_id': str(asked.id), 'topic': 'faq'},
             format='json',
         )
 
         self.assertEqual(response.status_code, 200)
-        board = self.host_client.get(f'{API}/meetings/{self.meeting.id}/board/').json()
+        board = self.host_client.get(f'{API}/events/{self.event.id}/board/').json()
         self.assertEqual(len(board['faq']), 1)
 
     def test_the_hosts_own_messages_are_not_a_queue(self):
         ChatMessage.objects.create(
-            meeting=self.meeting, sender=self.host, recipient=self.asker,
+            event=self.event, sender=self.host, recipient=self.asker,
             body='Sent by me',
             moderation_status=ChatMessage.Moderation.NOT_REQUIRED,
         )
@@ -438,7 +436,7 @@ class ReviewedMessagesTests(TestCase):
     def test_a_room_message_is_never_in_the_record(self):
         # The record is of what the host passed on privately.
         ChatMessage.objects.create(
-            meeting=self.meeting, sender=self.asker, body='Hello all',
+            event=self.event, sender=self.asker, body='Hello all',
             moderation_status=ChatMessage.Moderation.NOT_REQUIRED,
         )
 
@@ -448,7 +446,7 @@ class ReviewedMessagesTests(TestCase):
         self.approve(self.held(sender=self.asker))
 
         response = signed_in(self.asker).get(
-            f'{API}/meetings/{self.meeting.id}/reviewed_messages/'
+            f'{API}/events/{self.event.id}/reviewed_messages/'
         )
         self.assertEqual(response.status_code, 403)
 
@@ -459,17 +457,16 @@ class AnsweringTests(TestCase):
     def setUp(self):
         self.host = make_host('host@example.com')
         self.asker = make_host('asker@example.com')
-        self.event = make_event(self.host)
-        self.meeting = make_meeting(self.host, self.event, start=timezone.now())
-        make_session(self.meeting, timezone.now(), 60)
-        MeetingParticipant.objects.create(
-            meeting=self.meeting, user=self.asker, role='attendee'
+        self.event = make_event(self.host, start=timezone.now())
+        make_session(self.event, timezone.now(), 60)
+        EventParticipant.objects.create(
+            event=self.event, user=self.asker, role='attendee'
         )
         self.host_client = signed_in(self.host)
         self.asker_client = signed_in(self.asker)
 
         self.question = ChatMessage.objects.create(
-            meeting=self.meeting, sender=self.asker, recipient=self.host,
+            event=self.event, sender=self.asker, recipient=self.host,
             body='How is the grant released?',
             moderation_status=ChatMessage.Moderation.APPROVED,
             topic=ChatMessage.Topic.FAQ,
@@ -477,14 +474,14 @@ class AnsweringTests(TestCase):
 
     def answer(self, text, client=None):
         return (client or self.host_client).post(
-            f'{API}/meetings/{self.meeting.id}/answer_message/',
+            f'{API}/events/{self.event.id}/answer_message/',
             {'message_id': str(self.question.id), 'answer': text},
             format='json',
         )
 
     def board(self, client=None):
         return (client or self.asker_client).get(
-            f'{API}/meetings/{self.meeting.id}/board/'
+            f'{API}/events/{self.event.id}/board/'
         ).json()
 
     def test_a_question_starts_unanswered(self):
@@ -540,13 +537,13 @@ class AnsweringTests(TestCase):
     def test_something_not_on_the_board_cannot_be_answered(self):
         # An answer the room cannot see would be talking to nobody.
         off = ChatMessage.objects.create(
-            meeting=self.meeting, sender=self.asker, recipient=self.host,
+            event=self.event, sender=self.asker, recipient=self.host,
             body='A private word',
             moderation_status=ChatMessage.Moderation.APPROVED,
         )
 
         response = self.host_client.post(
-            f'{API}/meetings/{self.meeting.id}/answer_message/',
+            f'{API}/events/{self.event.id}/answer_message/',
             {'message_id': str(off.id), 'answer': 'Not visible'},
             format='json',
         )
@@ -562,26 +559,25 @@ class AnsweringTests(TestCase):
 
 
 class BoardVotingTests(TestCase):
-    """Everybody in the meeting gets one vote on what is up there."""
+    """Everybody in the event gets one vote on what is up there."""
 
     def setUp(self):
         self.host = make_host('host@example.com')
         self.asker = make_host('asker@example.com')
         self.other = make_host('other@example.com')
-        self.event = make_event(self.host)
-        self.meeting = make_meeting(self.host, self.event, start=timezone.now())
-        make_session(self.meeting, timezone.now(), 60)
+        self.event = make_event(self.host, start=timezone.now())
+        make_session(self.event, timezone.now(), 60)
         for person in (self.asker, self.other):
-            MeetingParticipant.objects.create(
-                meeting=self.meeting, user=person, role='attendee'
+            EventParticipant.objects.create(
+                event=self.event, user=person, role='attendee'
             )
         self.guest = GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='A Guest', phone='9800000000',
+            event=self.event, full_name='A Guest', phone='9800000000',
             status=GuestAttendee.Status.ADMITTED,
         )
         self.host_client = signed_in(self.host)
         self.question = ChatMessage.objects.create(
-            meeting=self.meeting, sender=self.asker, recipient=self.host,
+            event=self.event, sender=self.asker, recipient=self.host,
             body='When is the reception?',
             moderation_status=ChatMessage.Moderation.APPROVED,
             topic=ChatMessage.Topic.FAQ,
@@ -589,14 +585,14 @@ class BoardVotingTests(TestCase):
 
     def cast(self, value, client=None, message=None):
         return (client or signed_in(self.other)).post(
-            f'{API}/meetings/{self.meeting.id}/vote_board/',
+            f'{API}/events/{self.event.id}/vote_board/',
             {'message_id': str((message or self.question).id), 'value': value},
             format='json',
         )
 
     def board(self, client=None):
         return (client or signed_in(self.other)).get(
-            f'{API}/meetings/{self.meeting.id}/board/'
+            f'{API}/events/{self.event.id}/board/'
         ).json()
 
     def test_a_question_starts_at_nothing(self):
@@ -636,7 +632,7 @@ class BoardVotingTests(TestCase):
 
         token = make_guest_token(self.guest)
         for _ in range(2):
-            APIClient().post(f'{API}/meetings/guest/board/vote/', {
+            APIClient().post(f'{API}/events/guest/board/vote/', {
                 'token': token, 'message_id': str(self.question.id), 'value': 1,
             }, format='json')
 
@@ -651,7 +647,7 @@ class BoardVotingTests(TestCase):
 
     def test_the_most_wanted_question_comes_first(self):
         quiet = ChatMessage.objects.create(
-            meeting=self.meeting, sender=self.asker, recipient=self.host,
+            event=self.event, sender=self.asker, recipient=self.host,
             body='A quieter one',
             moderation_status=ChatMessage.Moderation.APPROVED,
             topic=ChatMessage.Topic.FAQ,
@@ -664,7 +660,7 @@ class BoardVotingTests(TestCase):
 
     def test_nothing_off_the_board_can_be_voted_on(self):
         off = ChatMessage.objects.create(
-            meeting=self.meeting, sender=self.asker, recipient=self.host,
+            event=self.event, sender=self.asker, recipient=self.host,
             body='Not up there',
             moderation_status=ChatMessage.Moderation.APPROVED,
         )

@@ -1,20 +1,20 @@
 from django.contrib import admin
-from .models import ErrorLog, MeetingEvent, SystemMetric
+from .models import ErrorLog, EventLogEntry, SystemMetric
 
 
 @admin.register(ErrorLog)
 class ErrorLogAdmin(admin.ModelAdmin):
     list_display = ('error_type', 'severity', 'is_resolved', 'error_message', 'created_at')
     list_filter = ('error_type', 'severity', 'is_resolved', 'created_at')
-    search_fields = ('error_message', 'error_code', 'meeting__meeting_code')
+    search_fields = ('error_message', 'error_code', 'event__code')
     readonly_fields = ('id', 'created_at', 'updated_at')
 
 
-@admin.register(MeetingEvent)
+@admin.register(EventLogEntry)
 class MeetingEventAdmin(admin.ModelAdmin):
-    list_display = ('meeting', 'event_type', 'user', 'created_at')
+    list_display = ('event', 'event_type', 'user', 'created_at')
     list_filter = ('event_type', 'created_at')
-    search_fields = ('meeting__meeting_code', 'description')
+    search_fields = ('event__code', 'description')
     readonly_fields = ('id', 'created_at')
 
 

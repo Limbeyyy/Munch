@@ -10,10 +10,10 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from src.apps.accounts.tokens import issue_tokens
-from src.apps.meetings.access import can_see_meeting
-from src.apps.meetings.models import MeetingInvite, RoleGrant, Session
+from src.apps.meetings.access import can_see_event
+from src.apps.meetings.models import EventInvite, RoleGrant, Session
 from src.apps.meetings.tests.factories import (
-    make_event, make_host, make_meeting, make_session,
+    make_event, make_host, make_session,
 )
 
 API = '/api/v1'
@@ -28,10 +28,9 @@ def signed_in(user):
 class WhoSeesTheProgrammeTests(TestCase):
     def setUp(self):
         self.host = make_host('host@example.com')
-        self.event = make_event(self.host)
         self.start = timezone.now() + timezone.timedelta(days=1)
-        self.meeting = make_meeting(self.host, self.event, start=self.start)
-        self.session = make_session(self.meeting, self.start, 30, 'Haldi')
+        self.event = make_event(self.host, start=self.start)
+        self.session = make_session(self.event, self.start, 30, 'Haldi')
 
     def counts(self, user):
         client = signed_in(user)
@@ -42,7 +41,7 @@ class WhoSeesTheProgrammeTests(TestCase):
 
         return (
             rows(f'{API}/events/'),
-            rows(f'{API}/meetings/'),
+            rows(f'{API}/events/'),
             rows(f'{API}/sessions/'),
         )
 
@@ -53,8 +52,8 @@ class WhoSeesTheProgrammeTests(TestCase):
 
     def test_an_invited_attendee_sees_it(self):
         guest = make_host('invited@example.com')
-        MeetingInvite.objects.create(
-            meeting=self.meeting, email=guest.email, invited_by=self.host
+        EventInvite.objects.create(
+            event=self.event, email=guest.email, invited_by=self.host
         )
 
         self.assertEqual(self.counts(guest), (1, 1, 1))
@@ -72,7 +71,7 @@ class WhoSeesTheProgrammeTests(TestCase):
         self.session.speaker_email = speaker.email
         self.session.save(update_fields=['speaker_email'])
         make_session(
-            self.meeting, self.start + timezone.timedelta(minutes=45), 30, 'Mehendi'
+            self.event, self.start + timezone.timedelta(minutes=45), 30, 'Mehendi'
         )
 
         self.assertEqual(self.counts(speaker)[2], 2)
@@ -87,7 +86,7 @@ class WhoSeesTheProgrammeTests(TestCase):
     def test_a_co_host_named_by_email_sees_it(self):
         helper = make_host('helper@example.com')
         RoleGrant.objects.create(
-            email=helper.email, role='co_host', meeting=self.meeting
+            email=helper.email, role='co_host', event=self.event
         )
 
         self.assertEqual(self.counts(helper), (1, 1, 1))
@@ -132,15 +131,15 @@ class WhoSeesTheProgrammeTests(TestCase):
         # Somebody else's day, which they have no part in.
         other_host = make_host('other@example.com')
         make_session(
-            make_meeting(other_host, make_event(other_host)), timezone.now(), 30, 'Theirs'
+            make_event(other_host), timezone.now(), 30, 'Theirs'
         )
 
         self.assertEqual(self.counts(speaker), (1, 1, 1))
 
-    def test_can_see_meeting_agrees_with_the_lists(self):
+    def test_can_see_event_agrees_with_the_lists(self):
         speaker = make_host('surya@example.com')
         self.session.speaker_email = speaker.email
         self.session.save(update_fields=['speaker_email'])
 
-        self.assertTrue(can_see_meeting(self.meeting, speaker))
-        self.assertFalse(can_see_meeting(self.meeting, make_host('stranger@example.com')))
+        self.assertTrue(can_see_event(self.event, speaker))
+        self.assertFalse(can_see_event(self.event, make_host('stranger@example.com')))

@@ -5,7 +5,7 @@ class ArtifactSerializer(serializers.ModelSerializer):
     class Meta:
         model = Artifact
         fields = [
-            'id', 'meeting', 'session', 'session_title', 'is_released',
+            'id', 'event', 'session', 'session_title', 'is_released',
             'visibility', 'position', 'artifact_type', 'drive_file_id',
             'drive_folder_id', 'display_name', 'mime_type',
             'file_size', 'web_view_link', 'sync_status',
@@ -22,7 +22,7 @@ class ArtifactSerializer(serializers.ModelSerializer):
         return obj.session.title if obj.session_id else None
 
     def get_is_released(self, obj):
-        """Whether everyone in the meeting can read this yet."""
+        """Whether everyone in the event can read this yet."""
         from src.apps.artifacts.visibility import is_released
 
         return is_released(obj)
