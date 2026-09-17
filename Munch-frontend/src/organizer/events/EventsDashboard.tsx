@@ -18,6 +18,31 @@ const DECK_TAG = {
   done: { ne: 'सकियो', en: 'Completed' },
 };
 
+/**
+ * The colour a card is washed in, which is the colour of its state.
+ *
+ * The tag and the card are the same hue at two strengths, so the deck an
+ * event is on can be read from across the page without stopping to read
+ * the word.
+ */
+const DECK_PAINT: Record<'upcoming' | 'draft' | 'done', {
+  card: string; tag: string; ink: string;
+}> = {
+  upcoming: { card: 'bg-[#eff6ff]', tag: 'bg-[#dbeafe]', ink: 'text-[#1447e6]' },
+  draft: { card: 'bg-[#f5f5f5]', tag: 'bg-[#e1e1e1]', ink: 'text-[#656565]' },
+  done: { card: 'bg-[#e1faea]', tag: 'bg-[#ebfbf1]', ink: 'text-[#019939]' },
+};
+
+/**
+ * Whether an event is ready to be run rather than still being written.
+ *
+ * Two things make the difference between a page of notes and an event:
+ * something to run, and somebody to run it for. Until both are there the
+ * card offers to carry on setting it up rather than to edit it.
+ */
+export const isSetUp = (event: Event, head?: EventHeadcount): boolean =>
+  (event.session_count ?? 0) > 0 && (head?.attendees ?? 0) > 0;
+
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -121,11 +146,13 @@ export const EventsDashboard: React.FC<Props> = ({
         ) : (
           showing.map((event) => {
             const head = counts[event.id];
+            const paint = DECK_PAINT[deckOf(event)];
+            const ready = isSetUp(event, head);
             return (
               <div
                 key={event.id}
-                className="bg-sheet border-[0.6px] border-line rounded-[12px] p-5
-                  hover:border-navy-800/40 transition-colors"
+                className={`${paint.card} border-[0.6px] border-line rounded-[12px] p-5
+                  hover:border-navy-800/40 transition-colors`}
               >
                 <div className="flex gap-4 items-start">
                   <button
@@ -155,13 +182,18 @@ export const EventsDashboard: React.FC<Props> = ({
                   </button>
 
                   <div className="flex flex-col gap-8 items-end flex-none">
-                    <span className="bg-tagbg text-tagink rounded-[4px] px-2 py-0.5
-                      text-[12px] font-medium leading-4">
+                    <span className={`${paint.tag} ${paint.ink} rounded-[4px] px-2 py-0.5
+                      text-[12px] font-medium leading-4`}>
                       {t(DECK_TAG[deckOf(event)])}
                     </span>
-                    <Btn onClick={() => onEdit(event)} className="border-navy-800">
+                    <Btn
+                      onClick={() => onEdit(event)}
+                      className="border-navy-800 bg-transparent hover:bg-white/60"
+                    >
                       <PenGlyph />
-                      {t({ ne: 'सम्पादन', en: 'Edit' })}
+                      {ready
+                        ? t({ ne: 'सम्पादन', en: 'Edit' })
+                        : t({ ne: 'सेटअप जारी राख्नुहोस्', en: 'Continue Setup' })}
                     </Btn>
                   </div>
                 </div>

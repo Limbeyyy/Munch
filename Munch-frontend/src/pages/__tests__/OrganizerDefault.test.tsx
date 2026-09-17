@@ -82,7 +82,7 @@ describe('opening the organizer', () => {
 
     await waitFor(() => expect(api.listEventRooms).toHaveBeenCalled());
     expect(
-      await screen.findByRole('heading', { name: 'Live control' })
+      await screen.findByRole('heading', { name: 'Live Dashboard' })
     ).toBeInTheDocument();
   });
 
@@ -96,7 +96,7 @@ describe('opening the organizer', () => {
   it('does not land on the programme', async () => {
     showOrganizer();
 
-    await screen.findByRole('heading', { name: 'Live control' });
+    await screen.findByRole('heading', { name: 'Live Dashboard' });
     expect(screen.queryByRole('heading', { name: 'Programme' })).not.toBeInTheDocument();
   });
 
