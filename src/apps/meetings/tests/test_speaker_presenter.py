@@ -10,10 +10,10 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from src.apps.accounts.tokens import issue_tokens
-from src.apps.meetings.models import GuestAttendee, MeetingParticipant, Session
+from src.apps.meetings.models import GuestAttendee, EventParticipant, Session
 from src.apps.meetings.roles import participant_role_for, speaks_at
 from src.apps.meetings.tests.factories import (
-    make_event, make_host, make_meeting, make_session,
+    make_event, make_host, make_session,
 )
 
 API = '/api/v1'
@@ -30,49 +30,48 @@ class SpeakerArrivesAsPresenterTests(TestCase):
         self.host = make_host('host@example.com')
         self.speaker = make_host('surya@example.com')
         self.stranger = make_host('stranger@example.com')
-        self.event = make_event(self.host)
         start = timezone.now()
-        self.meeting = make_meeting(self.host, self.event, start=start)
-        self.session = make_session(self.meeting, start, 30, 'Haldi')
+        self.event = make_event(self.host, start=start)
+        self.session = make_session(self.event, start, 30, 'Haldi')
         self.session.speaker_name = 'Surya Chandra Adh'
         self.session.speaker_email = 'surya@example.com'
         self.session.speaker_phone = '9800000000'
         self.session.save()
 
     def test_the_named_speaker_is_recognised(self):
-        self.assertTrue(speaks_at(self.meeting, user=self.speaker))
-        self.assertFalse(speaks_at(self.meeting, user=self.stranger))
+        self.assertTrue(speaks_at(self.event, user=self.speaker))
+        self.assertFalse(speaks_at(self.event, user=self.stranger))
 
     def test_the_address_is_matched_whatever_its_case(self):
         self.session.speaker_email = 'SURYA@example.com'
         self.session.save(update_fields=['speaker_email'])
 
-        self.assertTrue(speaks_at(self.meeting, user=self.speaker))
+        self.assertTrue(speaks_at(self.event, user=self.speaker))
 
     def test_they_join_as_a_presenter(self):
-        signed_in(self.speaker).post(f'{API}/meetings/{self.meeting.meeting_code}/join/')
+        signed_in(self.speaker).post(f'{API}/events/{self.event.code}/join/')
 
         self.assertEqual(
-            MeetingParticipant.objects.get(meeting=self.meeting, user=self.speaker).role,
-            MeetingParticipant.Role.PRESENTER,
+            EventParticipant.objects.get(event=self.event, user=self.speaker).role,
+            EventParticipant.Role.PRESENTER,
         )
 
     def test_everybody_else_still_joins_as_an_attendee(self):
-        signed_in(self.stranger).post(f'{API}/meetings/{self.meeting.meeting_code}/join/')
+        signed_in(self.stranger).post(f'{API}/events/{self.event.code}/join/')
 
         self.assertEqual(
-            MeetingParticipant.objects.get(meeting=self.meeting, user=self.stranger).role,
-            MeetingParticipant.Role.ATTENDEE,
+            EventParticipant.objects.get(event=self.event, user=self.stranger).role,
+            EventParticipant.Role.ATTENDEE,
         )
 
     def test_speaking_at_one_meeting_is_not_speaking_at_another(self):
-        elsewhere = make_meeting(self.host, make_event(self.host))
+        elsewhere = make_event(self.host)
         make_session(elsewhere, timezone.now(), 30, 'Someone else')
 
         self.assertFalse(speaks_at(elsewhere, user=self.speaker))
         self.assertEqual(
             participant_role_for(elsewhere, self.speaker),
-            MeetingParticipant.Role.ATTENDEE,
+            EventParticipant.Role.ATTENDEE,
         )
 
     def test_the_host_speaking_is_still_the_host(self):
@@ -80,17 +79,17 @@ class SpeakerArrivesAsPresenterTests(TestCase):
         self.session.save(update_fields=['speaker_email'])
 
         self.assertEqual(
-            participant_role_for(self.meeting, self.host),
-            MeetingParticipant.Role.HOST,
+            participant_role_for(self.event, self.host),
+            EventParticipant.Role.HOST,
         )
 
     def test_a_session_with_no_speaker_address_names_nobody(self):
         self.session.speaker_email = ''
         self.session.save(update_fields=['speaker_email'])
 
-        self.assertFalse(speaks_at(self.meeting, user=self.speaker))
+        self.assertFalse(speaks_at(self.event, user=self.speaker))
         # And an empty address must not match everybody with no address.
-        self.assertFalse(speaks_at(self.meeting, email=''))
+        self.assertFalse(speaks_at(self.event, email=''))
 
 
 class GuestsAreOnlyEverAttendeesTests(TestCase):
@@ -98,18 +97,17 @@ class GuestsAreOnlyEverAttendeesTests(TestCase):
 
     def setUp(self):
         self.host = make_host('host@example.com')
-        self.event = make_event(self.host)
         start = timezone.now()
-        self.meeting = make_meeting(self.host, self.event, start=start)
-        self.session = make_session(self.meeting, start, 30, 'Haldi')
+        self.event = make_event(self.host, start=start)
+        self.session = make_session(self.event, start, 30, 'Haldi')
         self.session.speaker_name = 'Surya Chandra Adh'
         self.session.speaker_email = 'surya@example.com'
         self.session.speaker_phone = '9800000000'
         self.session.save()
 
     def knock(self, name, phone):
-        return APIClient().post(f'{API}/meetings/guest/knock/', {
-            'meeting_code': self.meeting.meeting_code,
+        return APIClient().post(f'{API}/events/guest/knock/', {
+            'code': self.event.code,
             'full_name': name,
             'phone': phone,
         }, format='json')
@@ -125,7 +123,7 @@ class GuestsAreOnlyEverAttendeesTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()['code'], 'presenter_must_sign_in')
-        self.assertEqual(GuestAttendee.objects.filter(meeting=self.meeting).count(), 0)
+        self.assertEqual(GuestAttendee.objects.filter(event=self.event).count(), 0)
 
     def test_the_speakers_address_typed_as_a_name_is_turned_away_too(self):
         # What the screenshot showed: the address typed into the name box.
@@ -148,7 +146,7 @@ class GuestsAreOnlyEverAttendeesTests(TestCase):
         from src.apps.meetings.models import RoleGrant
 
         RoleGrant.objects.create(
-            email='helper@example.com', role='co_host', meeting=self.meeting
+            email='helper@example.com', role='co_host', event=self.event
         )
 
         response = self.knock('helper@example.com', '9899999999')
@@ -161,7 +159,7 @@ class GuestsAreOnlyEverAttendeesTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(
-            GuestAttendee.objects.get(meeting=self.meeting).status,
+            GuestAttendee.objects.get(event=self.event).status,
             GuestAttendee.Status.PENDING,
         )
 
@@ -177,14 +175,13 @@ class GuestsAreOnlyEverAttendeesTests(TestCase):
 
     def test_a_presenter_at_another_meeting_is_only_a_guest_here(self):
         elsewhere_host = make_host('elsewhere@example.com')
-        elsewhere = make_meeting(elsewhere_host, make_event(elsewhere_host),
-                                 start=timezone.now())
+        elsewhere = make_event(elsewhere_host, start=timezone.now())
         theirs = make_session(elsewhere, timezone.now(), 30, 'Their talk')
         theirs.speaker_email = 'guestly@example.com'
         theirs.speaker_phone = '9877777777'
         theirs.save()
 
-        # Speaking there says nothing about this meeting.
+        # Speaking there says nothing about this event.
         self.assertEqual(self.knock('Guestly', '9877777777').status_code, 201)
 
     def test_the_real_speaker_signing_in_still_presents(self):
@@ -192,9 +189,9 @@ class GuestsAreOnlyEverAttendeesTests(TestCase):
         # the actual speaker out.
         speaker = make_host('surya@example.com')
 
-        signed_in(speaker).post(f'{API}/meetings/{self.meeting.meeting_code}/join/')
+        signed_in(speaker).post(f'{API}/events/{self.event.code}/join/')
 
         self.assertEqual(
-            MeetingParticipant.objects.get(meeting=self.meeting, user=speaker).role,
-            MeetingParticipant.Role.PRESENTER,
+            EventParticipant.objects.get(event=self.event, user=speaker).role,
+            EventParticipant.Role.PRESENTER,
         )

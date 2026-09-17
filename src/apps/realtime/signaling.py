@@ -1,11 +1,11 @@
 """
-WebRTC signaling handlers for the meeting platform.
+WebRTC signaling handlers for the event platform.
 """
 import json
 import logging
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.core.exceptions import ObjectDoesNotExist
-from src.apps.meetings.models import Meeting, MeetingParticipant
+from src.apps.meetings.models import Event, EventParticipant
 from src.utilities.logger import get_logger
 
 logger = get_logger(__name__)
@@ -29,7 +29,7 @@ class SignalingHandler:
         
         # Forward the offer to the target participant
         await consumer.channel_layer.group_send(
-            consumer.meeting_group_name,
+            consumer.room_group_name,
             {
                 'type': 'signal_message',
                 'sender': consumer.user.id,
@@ -54,7 +54,7 @@ class SignalingHandler:
             return
         
         await consumer.channel_layer.group_send(
-            consumer.meeting_group_name,
+            consumer.room_group_name,
             {
                 'type': 'signal_message',
                 'sender': consumer.user.id,
@@ -79,7 +79,7 @@ class SignalingHandler:
             return
         
         await consumer.channel_layer.group_send(
-            consumer.meeting_group_name,
+            consumer.room_group_name,
             {
                 'type': 'signal_message',
                 'sender': consumer.user.id,
@@ -99,7 +99,7 @@ class SignalingHandler:
         target_user_id = data.get('target_user')
         
         await consumer.channel_layer.group_send(
-            consumer.meeting_group_name,
+            consumer.room_group_name,
             {
                 'type': 'signal_message',
                 'sender': consumer.user.id,

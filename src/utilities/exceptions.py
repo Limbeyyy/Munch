@@ -1,9 +1,9 @@
 """
-Custom exceptions for the meeting platform.
+Custom exceptions for the event platform.
 """
 
 class MeetingPlatformException(Exception):
-    """Base exception for the meeting platform."""
+    """Base exception for the event platform."""
     pass
 
 
@@ -13,7 +13,7 @@ class AccountException(MeetingPlatformException):
 
 
 class MeetingException(MeetingPlatformException):
-    """Exception for meeting-related errors (e.g., joining, ending)."""
+    """Exception for event-related errors (e.g., joining, ending)."""
     pass
 
 

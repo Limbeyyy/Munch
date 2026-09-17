@@ -62,9 +62,9 @@ def decrypt_token(encrypted_token):
         logger.error(f"Failed to decrypt token: {str(e)}")
         return None
 
-def generate_meeting_code(length=8):
+def generate_code(length=8):
     """
-    Generate a unique meeting code
+    Generate a unique event code
     """
     import random
     import string
@@ -132,9 +132,9 @@ def mask_sensitive_data(data, fields=['token', 'password', 'secret']):
     
     return masked
 
-def validate_meeting_code(code):
+def validate_event_code(code):
     """
-    Validate meeting code format
+    Validate event code format
     """
     import re
     pattern = re.compile(r'^[A-Z0-9]{6,10}$')

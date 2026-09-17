@@ -2,7 +2,7 @@
 
 Three kinds of people use Manch. A **host** runs programmes; a **attendee**
 has been put on the list for someone else's; a **guest** never signs in at all
-and reaches a meeting by code or QR, so they have no account here to describe.
+and reaches a event by code or QR, so they have no account here to describe.
 
 Someone can be both host and attendee — an organizer is often on another
 department's invitation list — which is why the sign-in chooser asks rather
@@ -18,10 +18,10 @@ def is_host(user) -> bool:
 
 def is_attendee(user) -> bool:
     """Whether anyone has put this person on a list."""
-    from src.apps.meetings.access import meetings_visible_to
-    from src.apps.meetings.models import Meeting
+    from src.apps.meetings.access import events_visible_to
+    from src.apps.meetings.models import Event
 
-    return Meeting.objects.filter(meetings_visible_to(user)).exclude(host=user).exists()
+    return Event.objects.filter(events_visible_to(user)).exclude(host=user).exists()
 
 
 def portals_for(user) -> list:

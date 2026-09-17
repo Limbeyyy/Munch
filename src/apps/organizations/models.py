@@ -97,9 +97,9 @@ class Subscription(models.Model):
 class WebhookEndpoint(models.Model):
     """Webhook endpoint for external integrations"""
     class Event(models.TextChoices):
-        MEETING_CREATED = 'meeting.created'
-        MEETING_STARTED = 'meeting.started'
-        MEETING_ENDED = 'meeting.ended'
+        EVENT_CREATED = 'event.created'
+        EVENT_STARTED = 'event.started'
+        EVENT_ENDED = 'event.ended'
         RECORDING_READY = 'recording.ready'
         TRANSCRIPT_READY = 'transcript.ready'
 
@@ -129,8 +129,8 @@ class WebhookEndpoint(models.Model):
 class AuditLog(models.Model):
     """Organization audit trail"""
     class Action(models.TextChoices):
-        CREATE_MEETING = 'create_meeting'
-        DELETE_MEETING = 'delete_meeting'
+        CREATE_EVENT = 'create_event'
+        DELETE_EVENT = 'delete_event'
         UPDATE_SETTINGS = 'update_settings'
         ADD_MEMBER = 'add_member'
         REMOVE_MEMBER = 'remove_member'
@@ -141,7 +141,7 @@ class AuditLog(models.Model):
     actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='audit_logs_created')
 
     action = models.CharField(max_length=50, choices=Action.choices)
-    resource_type = models.CharField(max_length=50)  # e.g., 'Meeting', 'User'
+    resource_type = models.CharField(max_length=50)  # e.g., 'Event', 'User'
     resource_id = models.CharField(max_length=255)
 
     changes = models.JSONField(default=dict, help_text="Before/after values")

@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from src.apps.accounts.models import GoogleConnection
-from src.utilities.validators import validate_meeting_code
+from src.utilities.validators import validate_event_code
 
 User = get_user_model()
 

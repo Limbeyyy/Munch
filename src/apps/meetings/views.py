@@ -12,16 +12,16 @@ from django.db import models
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from src.apps.meetings.models import (
-    Meeting, MeetingParticipant, ChatMessage, GuestAttendee, MeetingInvite
+    Event, EventParticipant, ChatMessage, GuestAttendee, EventInvite
 )
 from src.apps.meetings.serializers import (
-    MeetingSerializer, MeetingCreateSerializer, 
-    MeetingJoinSerializer, ParticipantSerializer,
+    EventSerializer, EventCreateSerializer, 
+    EventJoinSerializer, ParticipantSerializer,
     ChatMessageSerializer, ChatSettingsSerializer,
-    GuestAttendeeSerializer, MeetingInviteSerializer, InviteCreateSerializer
+    GuestAttendeeSerializer, EventInviteSerializer, InviteCreateSerializer
 )
-from src.apps.meetings.services.meeting_service import MeetingService
-from src.apps.monitoring.models import MeetingEvent
+from src.apps.meetings.services.event_service import EventService
+from src.apps.monitoring.models import EventLogEntry
 from src.apps.meetings.permissions import IsMeetingHost, IsMeetingParticipant
 from src.apps.artifacts.services.artifact_service import MeetingArtifactService
 from src.utilities.decorators import rate_limit
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 MAX_RESOURCE_UPLOAD_BYTES = 25 * 1024 * 1024
 
 
-def deliver_moderated_message(meeting, message, decision):
+def deliver_moderated_message(event, message, decision):
     """Push the outcome of a host review to the people who need it.
 
     Approved messages are delivered to the recipient as a normal chat message;
@@ -46,7 +46,7 @@ def deliver_moderated_message(meeting, message, decision):
         if layer is None:
             return
 
-        room = f'meeting_{meeting.meeting_code}'
+        room = f'event_{event.code}'
         sender_group = (
             f'{room}_guest_{message.guest_sender_id}'
             if message.guest_sender_id
@@ -100,10 +100,10 @@ def deliver_moderated_message(meeting, message, decision):
 
 # Defined with the rest of the lifecycle rules and re-exported here, which
 # is where the callers already look for it.
-from src.apps.meetings.lifecycle import broadcast_meeting_ended  # noqa: E402
+from src.apps.meetings.lifecycle import broadcast_event_ended  # noqa: E402
 
 
-def broadcast_meeting_started(meeting):
+def broadcast_event_started(event):
     """Tell everyone in the room when the clock started."""
     try:
         from asgiref.sync import async_to_sync
@@ -113,20 +113,20 @@ def broadcast_meeting_started(meeting):
         if layer is None:
             return
         async_to_sync(layer.group_send)(
-            f'meeting_{meeting.meeting_code}',
+            f'event_{event.code}',
             {
-                'type': 'meeting_started',
-                'started_at': meeting.started_at.isoformat(),
-                'status': meeting.status,
+                'type': 'event_started',
+                'started_at': event.started_at.isoformat(),
+                'status': event.status,
             },
         )
     except Exception as e:
         logger.warning(
-            f"Could not broadcast start of {meeting.meeting_code}: {e}"
+            f"Could not broadcast start of {event.code}: {e}"
         )
 
 
-def broadcast_chat_settings(meeting_code, payload):
+def broadcast_chat_settings(code, payload):
     """Push new chat settings to everyone currently in the room.
 
     Best-effort: a channel layer problem must not fail the HTTP request that
@@ -140,13 +140,13 @@ def broadcast_chat_settings(meeting_code, payload):
         if channel_layer is None:
             return
         async_to_sync(channel_layer.group_send)(
-            f'meeting_{meeting_code}',
+            f'event_{code}',
             {'type': 'chat_settings_update', **payload},
         )
     except Exception as e:
-        logger.warning(f"Could not broadcast chat settings for {meeting_code}: {e}")
+        logger.warning(f"Could not broadcast chat settings for {code}: {e}")
 
-def _push(meeting_code, payload, what):
+def _push(code, payload, what):
     """Tell everyone in the room something changed. Best effort.
 
     A channel layer problem must not fail the request that already made
@@ -159,111 +159,114 @@ def _push(meeting_code, payload, what):
         channel_layer = get_channel_layer()
         if channel_layer is None:
             return
-        async_to_sync(channel_layer.group_send)(f'meeting_{meeting_code}', payload)
+        async_to_sync(channel_layer.group_send)(f'event_{code}', payload)
     except Exception as e:
-        logger.warning(f"Could not broadcast {what} for {meeting_code}: {e}")
+        logger.warning(f"Could not broadcast {what} for {code}: {e}")
 
 
-def broadcast_roster_changed(meeting):
+def broadcast_roster_changed(event):
     """Somebody came in or stepped out.
 
     Sent rather than leaving every client to poll: a participant list that
     only changes when you reload is not a list of who is in the room.
     """
     _push(
-        meeting.meeting_code,
+        event.code,
         {
             'type': 'roster_update',
-            'active_count': meeting.participants.filter(is_active=True).count(),
+            'active_count': event.participants.filter(is_active=True).count(),
         },
         'roster',
     )
 
 
-def broadcast_resources_changed(meeting):
+def broadcast_resources_changed(event):
     """A file arrived, or who may read one changed."""
-    _push(meeting.meeting_code, {'type': 'resources_update'}, 'resources')
+    _push(event.code, {'type': 'resources_update'}, 'resources')
 
 
-def broadcast_attendance_changed(meeting):
+def broadcast_attendance_changed(event):
     """The attendance record moved."""
-    _push(meeting.meeting_code, {'type': 'attendance_update'}, 'attendance')
+    _push(event.code, {'type': 'attendance_update'}, 'attendance')
 
 
-class MeetingViewSet(viewsets.ModelViewSet):
+class EventRoomViewSet(viewsets.ModelViewSet):
+    """The room half of an event: joining it, running it, what happens in it.
+
+    Not registered on its own. The one /events/ resource inherits these
+    actions and adds the programme half, because an event is one thing:
+    the code on the invitation and the hall it opens are the same row.
     """
-    ViewSet for meeting operations
-    """
-    queryset = Meeting.objects.all()
-    serializer_class = MeetingSerializer
+    queryset = Event.objects.all()
+    serializer_class = EventSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        """Return meetings the user has access to.
+        """Return events the user has access to.
 
         Joining is how a user gains access in the first place, so that action
-        must be able to find a meeting the user is not yet part of.
+        must be able to find an event the user is not yet part of.
         """
         if self.action == 'join':
-            return Meeting.objects.all()
+            return Event.objects.all()
 
-        from src.apps.meetings.access import meetings_visible_to
+        from src.apps.meetings.access import events_visible_to
 
         return (
-            Meeting.objects.filter(meetings_visible_to(self.request.user))
+            Event.objects.filter(events_visible_to(self.request.user))
             .distinct()
             .order_by('-scheduled_start')
         )
 
-    #: Reading a meeting you hold the code for. A code is handed out to be
-    #: used - it is how somebody is told the meeting exists at all - so
-    #: presenting one is enough to look the meeting up and walk in. Writing
+    #: Reading a event you hold the code for. A code is handed out to be
+    #: used - it is how somebody is told the event exists at all - so
+    #: presenting one is enough to look the event up and walk in. Writing
     #: to it still needs the ordinary membership.
     CODE_IS_ENOUGH = {'retrieve', 'join'}
 
     def get_object(self):
-        """Find the meeting by its code, or failing that by its id."""
+        """Find the event by its code, or failing that by its id."""
         queryset = self.get_queryset()
         lookup_value = self.kwargs.get('pk')
 
         obj = None
         if lookup_value:
             try:
-                obj = queryset.get(meeting_code=lookup_value)
-            except Meeting.DoesNotExist:
+                obj = queryset.get(code=lookup_value)
+            except Event.DoesNotExist:
                 obj = None
 
             # Somebody who was given the code but has not joined yet is in
             # none of the lists the visibility filter checks, so the filter
-            # would turn them away from the very meeting they were invited
+            # would turn them away from the very event they were invited
             # to by code. The code itself is the credential here.
             if obj is None and self.action in self.CODE_IS_ENOUGH:
-                obj = Meeting.objects.filter(meeting_code=lookup_value).first()
+                obj = Event.objects.filter(code=lookup_value).first()
 
         if obj is None:
             # Fall back to default pk lookup
             obj = super().get_object()
 
-        # Reading a meeting does not end it. Its closing time is a plan -
+        # Reading a event does not end it. Its closing time is a plan -
         # printed on a programme, and the timetable corrects itself against
         # what actually happens - and it was being enforced: touch the
-        # meeting after its hour and the room closed, emptying itself of
-        # people who were still in it. A meeting ends when the host ends
+        # event after its hour and the room closed, emptying itself of
+        # people who were still in it. A event ends when the host ends
         # it, and that is the whole of the rule now.
         return obj
 
     @swagger_auto_schema(
-        request_body=MeetingCreateSerializer,
-        responses={201: MeetingSerializer()}
+        request_body=EventCreateSerializer,
+        responses={201: EventSerializer()}
     )
     def create(self, request, *args, **kwargs):
-        """Create a new meeting"""
-        serializer = MeetingCreateSerializer(data=request.data)
+        """Create a new event"""
+        serializer = EventCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
         try:
-            meeting_service = MeetingService()
-            meeting = meeting_service.create_meeting(
+            event_service = EventService()
+            event = event_service.create_event(
                 host_id=request.user.id,
                 title=serializer.validated_data['title'],
                 scheduled_start=serializer.validated_data['scheduled_start'],
@@ -272,19 +275,19 @@ class MeetingViewSet(viewsets.ModelViewSet):
                 max_participants=serializer.validated_data.get('max_participants', 100)
             )
             
-            # Initialize Google Drive folder for the meeting. Drive is optional:
-            # the meeting is usable without it, so don't fail creation here.
+            # Initialize Google Drive folder for the event. Drive is optional:
+            # the event is usable without it, so don't fail creation here.
             drive_warning = None
             try:
-                artifact_service = MeetingArtifactService(meeting.id, request.user.id)
-                artifact_service.initialize_meeting_folder()
+                artifact_service = MeetingArtifactService(event.id, request.user.id)
+                artifact_service.initialize_event_folder()
             except Exception as e:
                 drive_warning = str(e)
                 logger.warning(
-                    f"Drive folder init failed for meeting {meeting.meeting_code}: {e}"
+                    f"Drive folder init failed for event {event.code}: {e}"
                 )
 
-            response_serializer = MeetingSerializer(meeting)
+            response_serializer = EventSerializer(event)
             data = dict(response_serializer.data)
             if drive_warning:
                 data['drive_warning'] = drive_warning
@@ -299,38 +302,38 @@ class MeetingViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     @rate_limit(requests=10, period=60)  # 10 requests per minute
     def join(self, request, pk=None):
-        """Join a meeting"""
-        meeting = self.get_object()
+        """Join a event"""
+        event = self.get_object()
 
         # The room opens a quarter of an hour before its hour, for everyone
         # on the same terms - the host included. Nobody has to be here
         # first, and being late is never the problem.
         from src.apps.meetings.entry import is_open, too_early_response
 
-        if not is_open(meeting):
-            return too_early_response(meeting)
+        if not is_open(event):
+            return too_early_response(event)
 
-        serializer = MeetingJoinSerializer(data=request.data)
+        serializer = EventJoinSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
         try:
-            meeting_service = MeetingService()
-            participant = meeting_service.join_meeting(
-                meeting=meeting,
+            event_service = EventService()
+            participant = event_service.join_event(
+                event=event,
                 user=request.user,
-                role=serializer.validated_data.get('role', MeetingParticipant.Role.ATTENDEE)
+                role=serializer.validated_data.get('role', EventParticipant.Role.ATTENDEE)
             )
             
             # Somebody arriving on an invitation has now accepted it, which
             # is what makes the expected headcount mean anything.
-            meeting.invites.filter(
+            event.invites.filter(
                 email__iexact=request.user.email, joined_at__isnull=True
             ).update(joined_at=participant.joined_at, joined_user=request.user)
 
             # Record attendance to Drive. Optional: joining must not fail if
             # Drive is unavailable.
             try:
-                artifact_service = MeetingArtifactService(meeting.id, request.user.id)
+                artifact_service = MeetingArtifactService(event.id, request.user.id)
                 artifact_service.record_attendance({
                     'name': request.user.display_name,
                     'email': request.user.email,
@@ -339,20 +342,20 @@ class MeetingViewSet(viewsets.ModelViewSet):
                 })
             except Exception as e:
                 logger.warning(
-                    f"Attendance recording failed for meeting {meeting.meeting_code}: {e}"
+                    f"Attendance recording failed for event {event.code}: {e}"
                 )
 
 
-            broadcast_roster_changed(meeting)
+            broadcast_roster_changed(event)
 
-            # Get meeting state for WebSocket connection
-            meeting_state = meeting_service.get_meeting_state(meeting.id)
+            # Get event state for WebSocket connection
+            event_state = event_service.get_event_state(event.id)
             
             return Response({
-                'meeting': MeetingSerializer(meeting).data,
+                'event': EventSerializer(event).data,
                 'participant': ParticipantSerializer(participant).data,
-                'state': meeting_state,
-                'websocket_url': f"/ws/meeting/{meeting.meeting_code}/"
+                'state': event_state,
+                'websocket_url': f"/ws/event/{event.code}/"
             })
             
         except PermissionDeniedException as e:
@@ -368,108 +371,108 @@ class MeetingViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def start(self, request, pk=None):
-        """Start the meeting clock. Host only, and only ever once.
+        """Start the event clock. Host only, and only ever once.
 
         ``started_at`` is the single source of truth for elapsed time: every
         client renders from it, so the count is identical for everyone and
         survives the host - or everyone - leaving and coming back.
         """
-        meeting = self.get_object()
+        event = self.get_object()
 
-        if str(request.user.id) != str(meeting.host_id):
+        if str(request.user.id) != str(event.host_id):
             return Response(
-                {'error': 'Only the host can start the meeting'},
+                {'error': 'Only the host can start the event'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        if meeting.status == Meeting.Status.ENDED:
+        if event.status == Event.Status.ENDED:
             return Response(
-                {'error': 'This meeting has already ended'},
+                {'error': 'This event has already ended'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Starting before its hour is allowed, and means the meeting is
+        # Starting before its hour is allowed, and means the event is
         # happening earlier: ten to one, opened at nine, is nine to twelve.
         # The running order comes forward with it. Half a day early is a
-        # misclick on another day's meeting rather than an early start, and
+        # misclick on another day's event rather than an early start, and
         # dragging a programme about is not something to do quietly.
         from src.apps.meetings.entry import opens_at
-        from src.apps.meetings.scheduling import EARLY_START_LIMIT, begin_meeting_now
+        from src.apps.meetings.scheduling import EARLY_START_LIMIT, begin_event_now
 
         now = timezone.now()
-        if meeting.scheduled_start - now > EARLY_START_LIMIT:
+        if event.scheduled_start - now > EARLY_START_LIMIT:
             return Response(
                 {
                     'error': (
-                        f'This meeting is set for '
-                        f'{timezone.localtime(meeting.scheduled_start):%d %b %H:%M}. '
+                        f'This event is set for '
+                        f'{timezone.localtime(event.scheduled_start):%d %b %H:%M}. '
                         'Give it a new time in the agenda before starting it.'
                     ),
                     'code': 'not_yet',
-                    'scheduled_start': meeting.scheduled_start.isoformat(),
-                    'opens_at': opens_at(meeting).isoformat(),
+                    'scheduled_start': event.scheduled_start.isoformat(),
+                    'opens_at': opens_at(event).isoformat(),
                 },
                 status=status.HTTP_409_CONFLICT,
             )
 
-        # Only ever on the way in. A meeting already under way has a day
+        # Only ever on the way in. A event already under way has a day
         # that the sessions are moving as they run, and pressing start
         # again - a rejoin - must not haul it about underneath them.
-        if meeting.status != Meeting.Status.ACTIVE and begin_meeting_now(meeting, now):
-            meeting.refresh_from_db()
+        if event.status != Event.Status.ACTIVE and begin_event_now(event, now):
+            event.refresh_from_db()
 
-        # Rejoining must not restart the clock, but opening a meeting today
+        # Rejoining must not restart the clock, but opening a event today
         # that was last opened yesterday is a new run, not a rejoin. The
         # thing that tells them apart is whether it is running now - not
         # whether it has ever run, which stays true for ever and left the
         # counter measuring from a sitting that finished a day ago.
-        if meeting.status != Meeting.Status.ACTIVE:
-            meeting.started_at = now
-            meeting.ended_at = None
-            meeting.status = Meeting.Status.ACTIVE
-            meeting.save(
+        if event.status != Event.Status.ACTIVE:
+            event.started_at = now
+            event.ended_at = None
+            event.status = Event.Status.ACTIVE
+            event.save(
                 update_fields=['started_at', 'ended_at', 'status', 'updated_at']
             )
 
-            MeetingEvent.objects.create(
-                meeting=meeting,
-                event_type=MeetingEvent.EventType.MEETING_STARTED,
-                description=f"Meeting started by {request.user.email}",
+            EventLogEntry.objects.create(
+                event=event,
+                event_type=EventLogEntry.EventType.EVENT_STARTED,
+                description=f"Event started by {request.user.email}",
                 user=str(request.user.id),
             )
-            broadcast_meeting_started(meeting)
-            logger.info(f"Meeting {meeting.meeting_code} started")
+            broadcast_event_started(event)
+            logger.info(f"Event {event.code} started")
 
-        return Response(MeetingSerializer(meeting).data)
+        return Response(EventSerializer(event).data)
 
     @action(detail=True, methods=['post'])
     def end(self, request, pk=None):
-        """End the meeting for everyone. Host only.
+        """End the event for everyone. Host only.
 
-        Everyone else leaves via ``leave``; the meeting keeps running without
+        Everyone else leaves via ``leave``; the event keeps running without
         them until the host ends it or its scheduled time runs out.
         """
-        meeting = self.get_object()
+        event = self.get_object()
 
-        if str(request.user.id) != str(meeting.host_id):
+        if str(request.user.id) != str(event.host_id):
             return Response(
-                {'error': 'Only the host can end the meeting. You can leave instead.'},
+                {'error': 'Only the host can end the event. You can leave instead.'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        if meeting.status == Meeting.Status.ENDED:
+        if event.status == Event.Status.ENDED:
             return Response({
-                'message': 'Meeting already ended',
-                'meeting': MeetingSerializer(meeting).data
+                'message': 'Event already ended',
+                'event': EventSerializer(event).data
             })
 
         try:
-            meeting = MeetingService.end_meeting(meeting.id)
-            broadcast_meeting_ended(meeting, reason='host_ended')
+            event = EventService.end_event(event.id)
+            broadcast_event_ended(event, reason='host_ended')
 
             return Response({
-                'message': 'Meeting ended successfully',
-                'meeting': MeetingSerializer(meeting).data
+                'message': 'Event ended successfully',
+                'event': EventSerializer(event).data
             })
 
         except Exception as e:
@@ -480,13 +483,13 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def leave(self, request, pk=None):
-        """Leave the meeting without ending it for anyone else."""
-        meeting = self.get_object()
+        """Leave the event without ending it for anyone else."""
+        event = self.get_object()
 
-        participant = meeting.participants.filter(user=request.user).first()
+        participant = event.participants.filter(user=request.user).first()
         if participant is None:
             return Response(
-                {'error': 'You are not in this meeting'},
+                {'error': 'You are not in this event'},
                 status=status.HTTP_404_NOT_FOUND
             )
 
@@ -494,19 +497,19 @@ class MeetingViewSet(viewsets.ModelViewSet):
         participant.left_at = timezone.now()
         participant.save(update_fields=['is_active', 'left_at'])
 
-        MeetingEvent.objects.create(
-            meeting=meeting,
-            event_type=MeetingEvent.EventType.PARTICIPANT_LEFT,
-            description=f"{request.user.email} left the meeting",
+        EventLogEntry.objects.create(
+            event=event,
+            event_type=EventLogEntry.EventType.PARTICIPANT_LEFT,
+            description=f"{request.user.email} left the event",
             user=str(request.user.id),
         )
 
-        broadcast_roster_changed(meeting)
-        return Response({'message': 'You left the meeting'})
+        broadcast_roster_changed(event)
+        return Response({'message': 'You left the event'})
 
     @action(detail=True, methods=['get'])
     def participants(self, request, pk=None):
-        """Everyone currently in the meeting - account holders and guests.
+        """Everyone currently in the event - account holders and guests.
 
         Guests have no participant row, so they are projected into the same
         shape with ``is_guest`` set; otherwise the headcount would not match
@@ -515,17 +518,17 @@ class MeetingViewSet(viewsets.ModelViewSet):
         ``?everyone=1`` asks a different question: not who is here now but
         who was here at all. The room wants the first - a list of people who
         have left is not a room. A team page wants the second, and asking
-        the room's question there is why a meeting that had finished showed
+        the room's question there is why a event that had finished showed
         no team at all: ending one empties it, so everybody was inactive
         and nobody came back.
         """
-        meeting = self.get_object()
+        event = self.get_object()
 
         everyone = str(request.query_params.get('everyone', '')).lower() in (
             '1', 'true', 'yes'
         )
 
-        roster = meeting.participants.select_related('user')
+        roster = event.participants.select_related('user')
         if not everyone:
             roster = roster.filter(is_active=True)
 
@@ -534,19 +537,19 @@ class MeetingViewSet(viewsets.ModelViewSet):
             for p in roster
         ]
 
-        guests = meeting.guests.filter(status=GuestAttendee.Status.ADMITTED)
+        guests = event.guests.filter(status=GuestAttendee.Status.ADMITTED)
         if everyone:
             # Somebody the host admitted was in the room, whether or not
             # they are still in it - and whether or not their row is, since
-            # guests are forgotten when the meeting ends. The register is
+            # guests are forgotten when the event ends. The register is
             # what answers then, and it holds a name and nothing else.
             from src.apps.meetings.lifecycle import guests_who_attended
 
-            guests = meeting.guests.filter(
+            guests = event.guests.filter(
                 status__in=[GuestAttendee.Status.ADMITTED, GuestAttendee.Status.LEFT]
             )
             if not guests.exists():
-                for entry in guests_who_attended(meeting):
+                for entry in guests_who_attended(event):
                     people.append({
                         'id': f"guest:{entry['name']}",
                         'user': {
@@ -591,7 +594,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get', 'patch'], url_path='chat_settings')
     def chat_settings(self, request, pk=None):
         """Read the chat settings, or change them (host only)."""
-        meeting = self.get_object()
+        event = self.get_object()
 
         # There is no room-wide thread to open or close: everything written
         # in the room goes to one person. So the room reads as open, always,
@@ -599,10 +602,10 @@ class MeetingViewSet(viewsets.ModelViewSet):
         if request.method == 'GET':
             return Response({
                 'chat_enabled': True,
-                'direct_messages_enabled': meeting.direct_messages_enabled,
+                'direct_messages_enabled': event.direct_messages_enabled,
             })
 
-        if str(request.user.id) != str(meeting.host_id):
+        if str(request.user.id) != str(event.host_id):
             return Response(
                 {'error': 'Only the host can change chat settings'},
                 status=status.HTTP_403_FORBIDDEN
@@ -612,20 +615,20 @@ class MeetingViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         for field, value in serializer.validated_data.items():
-            setattr(meeting, field, value)
+            setattr(event, field, value)
 
         # Kept true on the row so an older client, which still asks whether
         # the room is open before showing its composer, is not looking at a
         # closed room that no longer exists as an idea.
-        meeting.chat_enabled = True
+        event.chat_enabled = True
 
-        meeting.save(update_fields=['chat_enabled', 'direct_messages_enabled', 'updated_at'])
+        event.save(update_fields=['chat_enabled', 'direct_messages_enabled', 'updated_at'])
 
         settings_payload = {
             'chat_enabled': True,
-            'direct_messages_enabled': meeting.direct_messages_enabled,
+            'direct_messages_enabled': event.direct_messages_enabled,
         }
-        broadcast_chat_settings(meeting.meeting_code, settings_payload)
+        broadcast_chat_settings(event.code, settings_payload)
         return Response(settings_payload)
 
     @action(detail=True, methods=['get'])
@@ -634,7 +637,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
         Public room messages, plus direct messages they sent or received.
         """
-        meeting = self.get_object()
+        event = self.get_object()
 
         deliverable = models.Q(moderation_status__in=[
             ChatMessage.Moderation.NOT_REQUIRED,
@@ -651,7 +654,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
             (models.Q(recipient=request.user) & deliverable)
         )
 
-        qs = ChatMessage.objects.filter(meeting=meeting).filter(
+        qs = ChatMessage.objects.filter(event=event).filter(
             visible
         ).exclude(
             # A removed message is gone for everyone, sender included.
@@ -664,13 +667,13 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get', 'post'], url_path='invites')
     def invites(self, request, pk=None):
-        """The addresses the meeting link was shared with. Host only.
+        """The addresses the event link was shared with. Host only.
 
         Each invite counts toward the expected headcount.
         """
-        meeting = self.get_object()
+        event = self.get_object()
 
-        if str(request.user.id) != str(meeting.host_id):
+        if str(request.user.id) != str(event.host_id):
             return Response(
                 {'error': 'Only the host manages invitations'},
                 status=status.HTTP_403_FORBIDDEN
@@ -678,7 +681,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
         if request.method == 'GET':
             return Response(
-                MeetingInviteSerializer(meeting.invites.all(), many=True).data
+                EventInviteSerializer(event.invites.all(), many=True).data
             )
 
         serializer = InviteCreateSerializer(data=request.data)
@@ -686,8 +689,8 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
         created, already = [], []
         for email in serializer.validated_data['emails']:
-            invite, was_created = MeetingInvite.objects.get_or_create(
-                meeting=meeting,
+            invite, was_created = EventInvite.objects.get_or_create(
+                event=event,
                 email=email,
                 defaults={'invited_by': request.user},
             )
@@ -695,7 +698,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
         # Someone invited after they already joined still counts as attended.
         for invite in created:
-            participant = meeting.participants.filter(
+            participant = event.participants.filter(
                 user__email__iexact=invite.email
             ).select_related('user').first()
             if participant:
@@ -705,9 +708,9 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
         return Response(
             {
-                'added': MeetingInviteSerializer(created, many=True).data,
-                'already_invited': MeetingInviteSerializer(already, many=True).data,
-                'total_invited': meeting.invites.count(),
+                'added': EventInviteSerializer(created, many=True).data,
+                'already_invited': EventInviteSerializer(already, many=True).data,
+                'total_invited': event.invites.count(),
             },
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK
         )
@@ -716,29 +719,29 @@ class MeetingViewSet(viewsets.ModelViewSet):
     def attendance(self, request, pk=None):
         """Who was expected, who actually came, and who never showed up.
 
-        Attending means having entered the meeting at least once, so people
+        Attending means having entered the event at least once, so people
         who have since left still count - flagged inactive rather than
         dropped. Guests count from the moment the host admitted them.
         """
-        meeting = self.get_object()
+        event = self.get_object()
 
-        invites = list(meeting.invites.select_related('joined_user'))
+        invites = list(event.invites.select_related('joined_user'))
 
         # Every participant row exists because that person entered the room.
         participants = list(
-            meeting.participants.select_related('user').order_by('joined_at')
+            event.participants.select_related('user').order_by('joined_at')
         )
 
         # Admitted guests attended; guests who then left still attended.
         # Pending and denied guests never entered, so they are excluded.
         #
         # Read through the register rather than straight off the rows: a
-        # guest is forgotten when the meeting ends, and this report is
+        # guest is forgotten when the event ends, and this report is
         # mostly read afterwards. The register holds a name and the moment
         # they were let in, which is all attendance ever needed.
         from src.apps.meetings.lifecycle import guests_who_attended
 
-        guests = guests_who_attended(meeting)
+        guests = guests_who_attended(event)
 
         invited_emails = {i.email.lower() for i in invites}
 
@@ -758,7 +761,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
         ]
 
         in_the_room = set(
-            meeting.guests.filter(
+            event.guests.filter(
                 status=GuestAttendee.Status.ADMITTED
             ).values_list('full_name', flat=True)
         )
@@ -786,7 +789,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
             for i in invites if i.joined_at is None
         ]
 
-        # The roll is everybody the meeting had: those invited, the guests
+        # The roll is everybody the event had: those invited, the guests
         # the host admitted, and anybody who walked in with the code
         # without either. A guest was never invited, so counting only
         # invitations makes the turnout look worse than it was - and
@@ -794,13 +797,13 @@ class MeetingViewSet(viewsets.ModelViewSet):
         walked_in = sum(1 for a in attended_users if not a['was_invited'])
         expected_total = len(invites) + len(attended_guests) + walked_in
 
-        # Session by session, since a meeting's own headcount says nothing
+        # Session by session, since a event's own headcount says nothing
         # about which of its talks people actually sat through.
         from src.apps.meetings.models import SessionAttendance
 
         per_session = []
         gross = 0
-        for session in meeting.sessions.order_by('starts_at'):
+        for session in event.sessions.order_by('starts_at'):
             seats = SessionAttendance.objects.filter(session=session).count()
             gross += seats
             per_session.append({
@@ -813,7 +816,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
         return Response({
             'expected_from_invites': len(invites),
-            # What the meeting is measured against: invitations plus the
+            # What the event is measured against: invitations plus the
             # people who came without one.
             'expected_total': expected_total,
             'attended_count': len(attended),
@@ -836,15 +839,15 @@ class MeetingViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='guests')
     def guests(self, request, pk=None):
         """Guests waiting for, or already given, a decision. Host only."""
-        meeting = self.get_object()
+        event = self.get_object()
 
-        if str(request.user.id) != str(meeting.host_id):
+        if str(request.user.id) != str(event.host_id):
             return Response(
                 {'error': 'Only the host can see the waiting room'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        qs = meeting.guests.exclude(
+        qs = event.guests.exclude(
             status=GuestAttendee.Status.LEFT
         ).order_by('created_at')
         return Response(GuestAttendeeSerializer(qs, many=True).data)
@@ -854,9 +857,9 @@ class MeetingViewSet(viewsets.ModelViewSet):
         """Admit or deny a waiting guest. Host only."""
         from src.apps.meetings.guest_views import notify_guest_of_decision
 
-        meeting = self.get_object()
+        event = self.get_object()
 
-        if str(request.user.id) != str(meeting.host_id):
+        if str(request.user.id) != str(event.host_id):
             return Response(
                 {'error': 'Only the host can admit guests'},
                 status=status.HTTP_403_FORBIDDEN
@@ -874,7 +877,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        guest = meeting.guests.filter(id=guest_id).first()
+        guest = event.guests.filter(id=guest_id).first()
         if guest is None:
             return Response(
                 {'error': 'Guest not found'},
@@ -888,8 +891,8 @@ class MeetingViewSet(viewsets.ModelViewSet):
         # is a quarter of an hour before the next session at the earliest.
         from src.apps.meetings.entry import guest_door_open, no_session_response
 
-        if decision == 'admit' and not guest_door_open(meeting):
-            return no_session_response(meeting)
+        if decision == 'admit' and not guest_door_open(event):
+            return no_session_response(event)
 
         guest.status = decisions[decision]
         guest.decided_by = request.user
@@ -902,13 +905,13 @@ class MeetingViewSet(viewsets.ModelViewSet):
             # the host saying this is the same person coming back - so the
             # seat they already had is given up rather than kept beside
             # the new one, where it showed the same face in the room twice.
-            superseded = meeting.guests.filter(
+            superseded = event.guests.filter(
                 status=GuestAttendee.Status.ADMITTED,
                 full_name__iexact=guest.full_name,
             ).exclude(id=guest.id).update(status=GuestAttendee.Status.LEFT)
             if superseded:
                 logger.info(
-                    f"{guest.full_name} came back to {meeting.meeting_code}; "
+                    f"{guest.full_name} came back to {event.code}; "
                     f"{superseded} earlier seat(s) given up"
                 )
 
@@ -916,7 +919,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
             # hall - and because their row will not be here to ask later.
             from src.apps.meetings.lifecycle import record_guest_attendance
 
-            record_guest_attendance(meeting, guest.full_name, guest.decided_at)
+            record_guest_attendance(event, guest.full_name, guest.decided_at)
 
         notify_guest_of_decision(guest)
         return Response(GuestAttendeeSerializer(guest).data)
@@ -924,16 +927,16 @@ class MeetingViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='pending_messages')
     def pending_messages(self, request, pk=None):
         """Messages awaiting the host's review. Host only."""
-        meeting = self.get_object()
+        event = self.get_object()
 
-        if str(request.user.id) != str(meeting.host_id):
+        if str(request.user.id) != str(event.host_id):
             return Response(
                 {'error': 'Only the host reviews messages'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
         qs = ChatMessage.objects.filter(
-            meeting=meeting,
+            event=event,
             moderation_status=ChatMessage.Moderation.PENDING,
         ).select_related(
             'sender', 'recipient', 'guest_sender', 'guest_recipient'
@@ -957,16 +960,16 @@ class MeetingViewSet(viewsets.ModelViewSet):
         the board. The host's own outgoing messages are not a queue of
         anything, so they are left out.
         """
-        meeting = self.get_object()
+        event = self.get_object()
 
-        if str(request.user.id) != str(meeting.host_id):
+        if str(request.user.id) != str(event.host_id):
             return Response(
                 {'error': 'Only the host reviews messages'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
         reviewed = ChatMessage.objects.filter(
-            meeting=meeting,
+            event=event,
             moderation_status__in=[
                 ChatMessage.Moderation.APPROVED,
                 ChatMessage.Moderation.NOT_REQUIRED,
@@ -996,9 +999,9 @@ class MeetingViewSet(viewsets.ModelViewSet):
         Approving forwards it to the intended recipient; declining tells only
         the sender; removing discards it silently.
         """
-        meeting = self.get_object()
+        event = self.get_object()
 
-        if str(request.user.id) != str(meeting.host_id):
+        if str(request.user.id) != str(event.host_id):
             return Response(
                 {'error': 'Only the host reviews messages'},
                 status=status.HTTP_403_FORBIDDEN
@@ -1019,7 +1022,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
             )
 
         message = ChatMessage.objects.filter(
-            meeting=meeting, id=message_id
+            event=event, id=message_id
         ).select_related(
             'sender', 'recipient', 'guest_sender', 'guest_recipient'
         ).first()
@@ -1066,7 +1069,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
         message.save(update_fields=changed)
 
-        deliver_moderated_message(meeting, message, decision)
+        deliver_moderated_message(event, message, decision)
         return Response(ChatMessageSerializer(message).data)
 
     @action(detail=True, methods=['post'], url_path='sort_message')
@@ -1074,13 +1077,13 @@ class MeetingViewSet(viewsets.ModelViewSet):
         """Put a message on the board as a question or a suggestion, or take
         it off again. Host only.
 
-        This publishes. The board is read by everyone in the meeting, so a
+        This publishes. The board is read by everyone in the event, so a
         direct message sorted onto it stops being private - which is why
         only the host can do it, and only deliberately.
         """
-        meeting = self.get_object()
+        event = self.get_object()
 
-        if str(request.user.id) != str(meeting.host_id):
+        if str(request.user.id) != str(event.host_id):
             return Response(
                 {'error': 'Only the host sorts messages'},
                 status=status.HTTP_403_FORBIDDEN
@@ -1094,7 +1097,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
             )
 
         message = ChatMessage.objects.filter(
-            meeting=meeting, id=request.data.get('message_id')
+            event=event, id=request.data.get('message_id')
         ).select_related('sender', 'guest_sender').first()
         if message is None:
             return Response(
@@ -1144,16 +1147,16 @@ class MeetingViewSet(viewsets.ModelViewSet):
         out. Only what is already on the board can be answered: an answer
         the room cannot see would be talking to nobody.
         """
-        meeting = self.get_object()
+        event = self.get_object()
 
-        if str(request.user.id) != str(meeting.host_id):
+        if str(request.user.id) != str(event.host_id):
             return Response(
                 {'error': 'Only the host answers from the board'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
         message = ChatMessage.objects.filter(
-            meeting=meeting, id=request.data.get('message_id')
+            event=event, id=request.data.get('message_id')
         ).select_related('sender', 'guest_sender', 'answered_by').first()
         if message is None:
             return Response(
@@ -1183,12 +1186,12 @@ class MeetingViewSet(viewsets.ModelViewSet):
     def vote_board(self, request, pk=None):
         """Vote a question or suggestion up or down, or take the vote back.
 
-        Everybody in the meeting gets one. The room deciding what most
+        Everybody in the event gets one. The room deciding what most
         wants answering is the point of a board.
         """
         from src.apps.meetings.board import board_for, cast
 
-        meeting = self.get_object()
+        event = self.get_object()
 
         value = request.data.get('value')
         if value not in (1, -1):
@@ -1198,7 +1201,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
             )
 
         message = ChatMessage.objects.filter(
-            meeting=meeting, id=request.data.get('message_id')
+            event=event, id=request.data.get('message_id')
         ).exclude(topic=ChatMessage.Topic.NONE).first()
         if message is None:
             return Response(
@@ -1207,7 +1210,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
             )
 
         cast(message, value, user=request.user)
-        return Response(board_for(meeting, user=request.user))
+        return Response(board_for(event, user=request.user))
 
     @action(detail=True, methods=['get'], url_path='board')
     def board(self, request, pk=None):
@@ -1218,11 +1221,11 @@ class MeetingViewSet(viewsets.ModelViewSet):
         asker is named: who a direct message was addressed to is nobody
         else's business, whatever became of the message.
         """
-        meeting = self.get_object()
+        event = self.get_object()
 
         from src.apps.meetings.board import board_for
 
-        return Response(board_for(meeting, user=request.user))
+        return Response(board_for(event, user=request.user))
 
     @action(detail=True, methods=['get'], url_path='qr', permission_classes=[AllowAny])
     def qr(self, request, pk=None):
@@ -1237,15 +1240,15 @@ class MeetingViewSet(viewsets.ModelViewSet):
         import qrcode.image.svg
         from django.http import HttpResponse
 
-        meeting = Meeting.objects.filter(meeting_code=pk).first()
-        if meeting is None:
+        event = Event.objects.filter(code=pk).first()
+        if event is None:
             try:
-                meeting = Meeting.objects.filter(pk=pk).first()
+                event = Event.objects.filter(pk=pk).first()
             except (ValueError, ValidationError):
-                meeting = None
-        if meeting is None:
+                event = None
+        if event is None:
             return Response(
-                {'error': 'Meeting not found'},
+                {'error': 'Event not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
 
@@ -1255,7 +1258,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
         from django.conf import settings as site
 
         target = request.query_params.get('url') or (
-            f"{site.FRONTEND_URL.rstrip('/')}/login?join={meeting.meeting_code}"
+            f"{site.FRONTEND_URL.rstrip('/')}/login?join={event.code}"
         )
 
         image = qrcode.make(target, image_factory=qrcode.image.svg.SvgPathImage, box_size=12)
@@ -1269,46 +1272,31 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], url_path='with_sessions')
     def with_sessions(self, request):
-        """Create a meeting together with the sessions that make it up.
+        """Create an event together with the sessions that make it up.
 
-        The meeting may belong to a programme or stand on its own - pass an
-        event to attach it, leave it out and it stands alone. Either way it
-        arrives with its running order, because a meeting with nothing in it
-        is not yet a meeting.
+        There is nothing between an event and its running order, so both
+        arrive at once: an event with nothing in it is not yet an event.
         """
         from src.apps.meetings.event_serializers import (
-            MeetingSummarySerializer, MeetingWriteSerializer, build_meeting,
+            EventSummarySerializer, EventWriteSerializer, build_event,
         )
-        from src.apps.meetings.models import Event
+        from src.apps.accounts.plans import (
+            check_can_create_event, check_session_count,
+        )
+        from src.apps.accounts.roles import ensure_host
 
-        serializer = MeetingWriteSerializer(data=request.data)
+        serializer = EventWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        event = None
-        event_id = data.pop('event', None)
-        if event_id:
-            event = Event.objects.filter(id=event_id, organizer=request.user).first()
-            if event is None:
-                return Response(
-                    {'error': 'No such event, or it is not yours'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-
-        from src.apps.accounts.plans import check_can_add_meeting, check_session_count
-        from src.apps.accounts.roles import ensure_host
-
-        check_can_add_meeting(request.user, event)
+        check_can_create_event(request.user)
         check_session_count(request.user, len(data.get('sessions') or []))
         ensure_host(request.user)
 
-        meeting = build_meeting(data, event=event, host=request.user)
-        logger.info(
-            f"Created meeting {meeting.meeting_code} "
-            f"({'in ' + str(event.id) if event else 'standalone'})"
-        )
+        event = build_event(data, host=request.user)
+        logger.info(f"Created event {event.code}")
         return Response(
-            MeetingSummarySerializer(meeting).data,
+            EventSummarySerializer(event).data,
             status=status.HTTP_201_CREATED
         )
 
@@ -1318,15 +1306,15 @@ class MeetingViewSet(viewsets.ModelViewSet):
         parser_classes=[MultiPartParser, FormParser],
     )
     def resources(self, request, pk=None):
-        """List, or upload, shared files for a meeting.
+        """List, or upload, shared files for a event.
 
         Uploads always land in the host's Drive regardless of who sends them,
         and every participant is granted read access.
         """
         from src.apps.artifacts.serializers import ArtifactSerializer
 
-        meeting = self.get_object()
-        artifact_service = MeetingArtifactService(meeting.id, meeting.host_id)
+        event = self.get_object()
+        artifact_service = MeetingArtifactService(event.id, event.host_id)
 
         if request.method == 'GET':
             # Attendees read a session's files once that session is over;
@@ -1334,7 +1322,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
             from src.apps.artifacts.visibility import can_organize
 
             resources = artifact_service.list_resources(
-                include_unreleased=can_organize(meeting, request.user)
+                include_unreleased=can_organize(event, request.user)
             )
             return Response(ArtifactSerializer(resources, many=True).data)
 
@@ -1354,13 +1342,13 @@ class MeetingViewSet(viewsets.ModelViewSet):
         try:
             artifact = artifact_service.upload_resource(uploaded_file, request.user)
         except Exception as e:
-            logger.error(f"Resource upload failed for {meeting.meeting_code}: {e}")
+            logger.error(f"Resource upload failed for {event.code}: {e}")
             return Response(
                 {'error': f'Upload failed: {e}'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        broadcast_resources_changed(meeting)
+        broadcast_resources_changed(event)
         return Response(
             ArtifactSerializer(artifact).data,
             status=status.HTTP_201_CREATED
@@ -1377,19 +1365,19 @@ class MeetingViewSet(viewsets.ModelViewSet):
         from src.apps.artifacts.serializers import ArtifactSerializer
         from src.apps.artifacts.visibility import can_organize
 
-        meeting = self.get_object()
-        if not can_organize(meeting, request.user):
+        event = self.get_object()
+        if not can_organize(event, request.user):
             return Response(
-                {'error': 'Only the people running the meeting can change this'},
+                {'error': 'Only the people running the event can change this'},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
         artifact = Artifact.objects.filter(
-            meeting=meeting, id=request.data.get('resource_id')
+            event=event, id=request.data.get('resource_id')
         ).select_related('session').first()
         if artifact is None:
             return Response(
-                {'error': 'No such file on this meeting'},
+                {'error': 'No such file on this event'},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
@@ -1417,21 +1405,21 @@ class MeetingViewSet(viewsets.ModelViewSet):
             )
 
         artifact.save(update_fields=changed + ['updated_at'])
-        broadcast_resources_changed(meeting)
+        broadcast_resources_changed(event)
         return Response(ArtifactSerializer(artifact).data)
 
     def update_participant(self, request, pk=None, participant_id=None):
-        """Update a meeting participant's status"""
-        meeting = self.get_object()
+        """Update a event participant's status"""
+        event = self.get_object()
         try:
-            participant = meeting.participants.get(id=participant_id)
-        except MeetingParticipant.DoesNotExist:
+            participant = event.participants.get(id=participant_id)
+        except EventParticipant.DoesNotExist:
             return Response(
                 {'error': 'Participant not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        serializer = MeetingParticipantUpdateSerializer(data=request.data)
+        serializer = EventParticipantUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         # Update participant fields
@@ -1443,22 +1431,22 @@ class MeetingViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['get'])
     def artifacts(self, request, pk=None):
-        """Get meeting artifacts"""
-        meeting = self.get_object()
-        artifacts = meeting.artifacts.all()
+        """Get event artifacts"""
+        event = self.get_object()
+        artifacts = event.artifacts.all()
         from src.apps.artifacts.serializers import ArtifactSerializer
         serializer = ArtifactSerializer(artifacts, many=True)
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
     def export(self, request, pk=None):
-        """Export meeting artifacts"""
-        meeting = self.get_object()
+        """Export event artifacts"""
+        event = self.get_object()
         export_format = request.data.get('format', 'pdf')
         
         try:
-            artifact_service = MeetingArtifactService(meeting.id, request.user.id)
-            export_data = artifact_service.export_meeting_data(export_format)
+            artifact_service = MeetingArtifactService(event.id, request.user.id)
+            export_data = artifact_service.export_event_data(export_format)
             
             return Response({
                 'message': 'Export initiated',
@@ -1474,23 +1462,23 @@ class MeetingViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'])
     def active(self, request):
-        """Get active meetings for the user"""
+        """Get active events for the user"""
         user = request.user
         
-        # Meetings where user is host or participant
-        active_meetings = Meeting.objects.filter(
+        # Events where user is host or participant
+        active_meetings = Event.objects.filter(
             models.Q(host=user) | 
             models.Q(participants__user=user, participants__is_active=True),
-            status=Meeting.Status.ACTIVE
+            status=Event.Status.ACTIVE
         ).distinct()
         
-        serializer = MeetingSerializer(active_meetings, many=True)
+        serializer = EventSerializer(active_meetings, many=True)
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
     def update_artifact(self, request, pk=None):
-        """Update a meeting artifact"""
-        meeting = self.get_object()
+        """Update a event artifact"""
+        event = self.get_object()
         artifact_type = request.data.get('artifact_type')
         content = request.data.get('content')
         
@@ -1501,12 +1489,12 @@ class MeetingViewSet(viewsets.ModelViewSet):
             )
         
         try:
-            artifact_service = MeetingArtifactService(meeting.id, request.user.id)
+            artifact_service = MeetingArtifactService(event.id, request.user.id)
             
             if artifact_type == 'transcript':
                 success = artifact_service.save_transcript(content)
             elif artifact_type == 'notes':
-                success = artifact_service.save_meeting_notes(content)
+                success = artifact_service.save_event_notes(content)
             else:
                 return Response(
                     {'error': f'Unsupported artifact type: {artifact_type}'},

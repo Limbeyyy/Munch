@@ -4,7 +4,7 @@ class MeetingsConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'src.apps.meetings'
     label = 'meetings'
-    verbose_name = 'Meetings'
+    verbose_name = 'Events'
 
     def ready(self):
         pass

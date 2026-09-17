@@ -1,5 +1,5 @@
 from django.db import models
-from src.apps.meetings.models import Meeting
+from src.apps.meetings.models import Event
 from django.utils import timezone
 import uuid
 
@@ -11,11 +11,11 @@ class ArtifactType(models.TextChoices):
     NOTES = 'notes', 'Notes'
     RESOURCE = 'resource', 'Shared Resource'
     RECORDING = 'recording', 'Recording'
-    SUMMARY = 'summary', 'Meeting Summary'
+    SUMMARY = 'summary', 'Event summary'
 
 class Artifact(models.Model):
     """
-    Tracks meeting artifacts stored in Google Drive (or other storage)
+    Tracks event artifacts stored in Google Drive (or other storage)
     """
     class SyncStatus(models.TextChoices):
         PENDING = 'pending', 'Pending'
@@ -24,7 +24,7 @@ class Artifact(models.Model):
         FAILED = 'failed', 'Failed'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name='artifacts')
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='artifacts')
     # The part of the running order this file belongs to, when known.
     session = models.ForeignKey(
         'meetings.Session',
@@ -41,10 +41,10 @@ class Artifact(models.Model):
         # Held until the session it belongs to has finished, so the room
         # cannot read ahead of the speaker.
         AFTER_SESSION = 'after_session', 'After the session'
-        # Open to anyone with the meeting, guests included, whatever the
+        # Open to anyone with the event, guests included, whatever the
         # running order is doing.
         PUBLIC = 'public', 'Public to all'
-        # Never leaves the people running the meeting.
+        # Never leaves the people running the event.
         ORGANIZERS = 'organizers', 'Organizers only'
 
     #: Who may read this, and when. Chosen by whoever uploaded it and
@@ -81,10 +81,10 @@ class Artifact(models.Model):
     class Meta:
         db_table = 'artifacts'
         indexes = [
-            models.Index(fields=['meeting', 'artifact_type']),
+            models.Index(fields=['event', 'artifact_type']),
             models.Index(fields=['drive_file_id']),
             models.Index(fields=['sync_status']),
-            models.Index(fields=['meeting', 'sync_status']),
+            models.Index(fields=['event', 'sync_status']),
         ]
 
     def __str__(self):
@@ -97,9 +97,9 @@ class Artifact(models.Model):
         return self.sync_status == self.SyncStatus.FAILED and self.retry_count < 3
 
 class PhotoFolder(models.Model):
-    """A named place for the photographs taken at a meeting.
+    """A named place for the photographs taken at an event.
 
-    Every meeting has one folder whether anybody asked for it or not: the
+    Every event has one folder whether anybody asked for it or not: the
     default. Photographs land there unless the host has made somewhere
     better to put them - a prize distribution, the hall, a seminar - and
     "somewhere better" is the host's judgement, not ours, so the custom
@@ -111,11 +111,11 @@ class PhotoFolder(models.Model):
     set of rules over both.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    meeting = models.ForeignKey(
-        Meeting, on_delete=models.CASCADE, related_name='photo_folders'
+    event = models.ForeignKey(
+        Event, on_delete=models.CASCADE, related_name='photo_folders'
     )
     name = models.CharField(max_length=120)
-    #: The one every meeting has, which cannot be renamed or removed.
+    #: The one every event has, which cannot be renamed or removed.
     is_default = models.BooleanField(default=False)
     created_by = models.ForeignKey(
         'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
@@ -132,29 +132,29 @@ class PhotoFolder(models.Model):
         ordering = ['-is_default', 'created_at']
         constraints = [
             models.UniqueConstraint(
-                fields=['meeting', 'name'], name='one_photo_folder_per_name'
+                fields=['event', 'name'], name='one_photo_folder_per_name'
             ),
             models.UniqueConstraint(
-                fields=['meeting'],
+                fields=['event'],
                 condition=models.Q(is_default=True),
-                name='one_default_photo_folder_per_meeting',
+                name='one_default_photo_folder_per_event',
             ),
         ]
 
     def __str__(self):
-        return f'{self.name} ({self.meeting.meeting_code})'
+        return f'{self.name} ({self.event.code})'
 
 
-class MeetingPhoto(models.Model):
+class EventPhoto(models.Model):
     """One photograph from the day, in the host's own Drive."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     folder = models.ForeignKey(
         PhotoFolder, on_delete=models.CASCADE, related_name='photos'
     )
     # Held here as well as on the folder: almost every question asked of
-    # this table is asked about a meeting.
-    meeting = models.ForeignKey(
-        Meeting, on_delete=models.CASCADE, related_name='photos'
+    # this table is asked about an event.
+    event = models.ForeignKey(
+        Event, on_delete=models.CASCADE, related_name='photos'
     )
     caption = models.CharField(max_length=255, blank=True)
     drive_file_id = models.CharField(max_length=255, blank=True)
@@ -168,10 +168,10 @@ class MeetingPhoto(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = 'meeting_photos'
+        db_table = 'event_photos'
         ordering = ['created_at']
         indexes = [
-            models.Index(fields=['meeting']),
+            models.Index(fields=['event']),
             models.Index(fields=['folder']),
         ]
 

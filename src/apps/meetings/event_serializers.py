@@ -1,17 +1,19 @@
-"""Serializers for the event / meeting / session hierarchy.
+"""Serializers for the event / session hierarchy.
 
-An event is created whole: the organizer describes the day, the meetings
-inside it and the sessions inside those, and the server writes the lot in
-one transaction so a half-built programme never reaches the database.
+An event is created whole: the organizer describes the day and the
+sessions inside it, and the server writes the lot in one transaction so a
+half-built programme never reaches the database.
 """
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
 
+from src.apps.meetings.serializers import EventSerializer as RoomEventSerializer
+
 from src.apps.meetings.models import (
     RoleGrant,
     SessionSummary,
-    ContactRequest, Event, Meeting, Session, SessionAttendance,
+    ContactRequest, Event, Session, SessionAttendance,
 )
 
 
@@ -49,7 +51,7 @@ class SessionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Session
         fields = [
-            'id', 'meeting', 'title', 'description', 'speaker_name', 'hall',
+            'id', 'event', 'title', 'description', 'speaker_name', 'hall',
             'speaker_email', 'speaker_phone', 'speaker_visibility',
             'speaker_contact',
             'starts_at', 'duration_minutes', 'ends_at', 'position',
@@ -71,7 +73,7 @@ class SessionSerializer(serializers.ModelSerializer):
         return obj.attendance.count()
 
     def get_speaker_contact(self, obj):
-        """The speaker's details, for the host of this meeting and nobody else.
+        """The speaker's details, for the host of this event and nobody else.
 
         The organizer needs to see what they typed - it is their own
         programme - and needs it on the card that offers to make it public.
@@ -83,13 +85,13 @@ class SessionSerializer(serializers.ModelSerializer):
         user = getattr(request, 'user', None)
         if user is None or not user.is_authenticated:
             return None
-        if str(obj.meeting.host_id) != str(user.id):
+        if str(obj.event.host_id) != str(user.id):
             return None
         return {'email': obj.speaker_email, 'phone': obj.speaker_phone}
 
 
 class SessionWriteSerializer(serializers.ModelSerializer):
-    """A session as written inside a meeting, where the parent is implied."""
+    """A session as written inside an event, where the parent is implied."""
 
     class Meta:
         model = Session
@@ -103,16 +105,16 @@ class SessionWriteSerializer(serializers.ModelSerializer):
         return _require_speaker_details(attrs)
 
 
-class MeetingSummarySerializer(serializers.ModelSerializer):
-    """A meeting as it appears within its event, with its running order."""
+class EventSummarySerializer(serializers.ModelSerializer):
+    """An event with its running order, as it appears in a list."""
     sessions = SessionSerializer(many=True, read_only=True)
     session_count = serializers.SerializerMethodField()
     participant_count = serializers.SerializerMethodField()
 
     class Meta:
-        model = Meeting
+        model = Event
         fields = [
-            'id', 'meeting_code', 'title', 'description', 'status',
+            'id', 'code', 'title', 'description', 'status',
             'scheduled_start', 'scheduled_end', 'started_at', 'ended_at',
             'participant_count', 'sessions', 'session_count',
         ]
@@ -124,132 +126,121 @@ class MeetingSummarySerializer(serializers.ModelSerializer):
         return obj.participants.filter(is_active=True).count()
 
 
-class MeetingWriteSerializer(serializers.Serializer):
-    """A meeting being added to an event, together with its sessions."""
+class EventWriteSerializer(serializers.Serializer):
+    """An event being created, together with the sessions inside it."""
     title = serializers.CharField(max_length=255)
     description = serializers.CharField(required=False, allow_blank=True, default='')
+    venue = serializers.CharField(required=False, allow_blank=True, default='')
+    event_date = serializers.DateField(required=False)
     scheduled_start = serializers.DateTimeField()
     duration_minutes = serializers.IntegerField(min_value=5, default=60)
-    sessions = SessionWriteSerializer(many=True)
-    # Only set when the meeting belongs to a programme; a standalone
-    # meeting is created the same way, just without one.
-    event = serializers.UUIDField(required=False, allow_null=True)
+    sessions = SessionWriteSerializer(many=True, required=False, default=list)
 
     def validate_sessions(self, sessions):
-        if not sessions:
-            raise serializers.ValidationError(
-                'A meeting needs at least one session - it is what the meeting is for.'
-            )
         if len(sessions) > 50:
-            raise serializers.ValidationError('A meeting can hold at most 50 sessions.')
+            raise serializers.ValidationError('An event can hold at most 50 sessions.')
         return sessions
 
 
-class EventSerializer(serializers.ModelSerializer):
-    meetings = MeetingSummarySerializer(many=True, read_only=True)
-    organizer_email = serializers.EmailField(source='organizer.email', read_only=True)
-    meeting_count = serializers.SerializerMethodField()
+class EventSerializer(RoomEventSerializer):
+    """One event, whole: what it is, when it runs, and what runs in it.
+
+    It is the room serializer with the programme half added, because an
+    event is one thing - the code on the invitation and the running order
+    are the same row, so they are read in one request.
+    """
+    sessions = SessionSerializer(many=True, read_only=True)
+    host_email = serializers.EmailField(source='host.email', read_only=True)
     session_count = serializers.SerializerMethodField()
+
+    class Meta(RoomEventSerializer.Meta):
+        fields = RoomEventSerializer.Meta.fields + [
+            'venue', 'event_date', 'host_email', 'sessions', 'session_count',
+        ]
+
+    def get_session_count(self, obj):
+        return obj.sessions.count()
+
+
+class EventCreateSerializer(serializers.ModelSerializer):
+    """Create a whole event in one request.
+
+    The sessions are optional - an event can be set up first and filled in
+    later - but it arrives with whatever running order was typed.
+    """
+    sessions = SessionWriteSerializer(many=True, required=False, default=list)
+    scheduled_start = serializers.DateTimeField(required=False)
+    duration_minutes = serializers.IntegerField(min_value=5, required=False, default=60)
 
     class Meta:
         model = Event
         fields = [
-            'id', 'title', 'description', 'venue', 'event_date', 'status',
-            'organizer_email', 'meetings', 'meeting_count', 'session_count',
-            'created_at', 'updated_at',
+            'title', 'description', 'venue', 'event_date', 'status',
+            'scheduled_start', 'duration_minutes', 'sessions',
         ]
-        read_only_fields = ['id', 'organizer_email', 'created_at', 'updated_at']
 
-    def get_meeting_count(self, obj):
-        return obj.meetings.count()
-
-    def get_session_count(self, obj):
-        return Session.objects.filter(meeting__event=obj).count()
-
-
-class EventCreateSerializer(serializers.ModelSerializer):
-    """Create a whole programme in one request.
-
-    The meetings are optional here - a programme can be set up first and
-    filled in later - but any meeting given must bring its sessions.
-    """
-    meetings = MeetingWriteSerializer(many=True, required=False, default=list)
-
-    class Meta:
-        model = Event
-        fields = ['title', 'description', 'venue', 'event_date', 'status', 'meetings']
-
-    def validate_meetings(self, meetings):
-        if len(meetings) > 30:
-            raise serializers.ValidationError('An event can hold at most 30 meetings.')
-        return meetings
+    def validate_sessions(self, sessions):
+        if len(sessions) > 50:
+            raise serializers.ValidationError('An event can hold at most 50 sessions.')
+        return sessions
 
     @transaction.atomic
     def create(self, validated_data):
-        meetings_data = validated_data.pop('meetings', [])
-        event = Event.objects.create(
-            organizer=self.context['request'].user, **validated_data
-        )
-
-        for meeting_data in meetings_data:
-            build_meeting(meeting_data, event=event)
-
-        return event
+        return build_event(validated_data, host=self.context['request'].user)
 
 
-def build_meeting(data, *, event=None, host=None):
-    """Create one meeting, along with the sessions that make it up.
+def build_event(data, *, host):
+    """Create one event, along with the sessions that make it up.
 
-    A meeting may sit inside a programme or stand on its own; the only
-    difference is whether an event is passed. Its window is stretched to
-    cover its sessions when they run past the length the organizer typed,
-    so a session can never fall outside the meeting that contains it.
+    Its window is stretched to cover its sessions when they run past the
+    length the organizer typed, so a session can never fall outside the
+    event that contains it.
     """
-    from src.apps.meetings.models import Meeting as MeetingModel
-    from src.apps.meetings.services.meeting_service import MeetingService
+    from src.apps.meetings.models import Event as EventModel
+    from src.apps.meetings.services.event_service import EventService
 
-    owner = host or (event.organizer if event else None)
-    if owner is None:
-        raise ValueError('A meeting needs a host, or an event to take one from.')
+    if host is None:
+        raise ValueError('An event needs a host.')
 
     from src.apps.meetings.scheduling import normalise_running_order
 
     # The order the organizer typed is kept; the times are spaced out so the
-    # mandatory gap holds from the moment the meeting exists rather than
-    # having to be corrected afterwards.
-    # The host's own interval, since the meeting does not exist yet to be
-    # asked for it.
-    account = getattr(owner, 'host_account', None)
+    # mandatory gap holds from the moment the event exists rather than
+    # having to be corrected afterwards. The host's own interval, since the
+    # event does not exist yet to be asked for it.
+    account = getattr(host, 'host_account', None)
     spacing = timezone.timedelta(
         minutes=account.session_gap_minutes if account else 15
     )
+    start = data.get('scheduled_start') or timezone.now()
     sessions_data = normalise_running_order(
         data.get('sessions') or [],
-        first_start=data['scheduled_start'],
+        first_start=start,
         gap=spacing,
     )
-    start = data['scheduled_start']
-    end = start + timezone.timedelta(minutes=data.get('duration_minutes', 60))
+    end = start + timezone.timedelta(minutes=data.get('duration_minutes', 60) or 60)
 
-    for index, session in enumerate(sessions_data):
+    for session in sessions_data:
         session_end = session['starts_at'] + timezone.timedelta(
             minutes=session.get('duration_minutes', 30)
         )
         end = max(end, session_end)
 
-    meeting = MeetingModel.objects.create(
-        event=event,
-        host=owner,
+    event = EventModel.objects.create(
+        host=host,
         title=data['title'],
         description=data.get('description', ''),
+        venue=data.get('venue', ''),
+        event_date=data.get('event_date') or timezone.localdate(start),
+        status=data.get('status', EventModel.Status.SCHEDULED),
         scheduled_start=start,
         scheduled_end=end,
-        meeting_code=MeetingService.generate_meeting_code(),
+        code=EventService.generate_code(),
     )
 
     Session.objects.bulk_create([
         Session(
-            meeting=meeting,
+            event=event,
             title=s['title'],
             description=s.get('description', ''),
             speaker_name=s.get('speaker_name', ''),
@@ -264,16 +255,7 @@ def build_meeting(data, *, event=None, host=None):
         for index, s in enumerate(sessions_data)
     ])
 
-    # A new meeting has to fit the day it joins, not just itself: if it
-    # lands on an existing one, the later meetings give way. Same rule the
-    # agenda applies when a session is dragged about.
-    from src.apps.meetings.scheduling import reschedule
-
-    reschedule(meeting, {})
-    meeting.refresh_from_db()
-    return meeting
-
-
+    return event
 
 
 class SessionAttendanceSerializer(serializers.ModelSerializer):
@@ -311,14 +293,14 @@ class ContactRequestSerializer(serializers.ModelSerializer):
     asker_is_guest = serializers.SerializerMethodField()
     session_title = serializers.CharField(source='session.title', read_only=True)
     speaker_name = serializers.CharField(source='session.speaker_name', read_only=True)
-    meeting_title = serializers.CharField(source='session.meeting.title', read_only=True)
-    meeting_id = serializers.UUIDField(source='session.meeting_id', read_only=True)
+    event_title = serializers.CharField(source='session.event.title', read_only=True)
+    event_id = serializers.UUIDField(source='session.event_id', read_only=True)
 
     class Meta:
         model = ContactRequest
         fields = [
             'id', 'session', 'session_title', 'speaker_name',
-            'meeting_id', 'meeting_title',
+            'event_id', 'event_title',
             'asker_name', 'asker_is_guest', 'reason',
             'status', 'created_at', 'decided_at',
         ]
@@ -350,12 +332,10 @@ class RoleGrantSerializer(serializers.ModelSerializer):
     def get_scope_title(self, obj):
         if obj.event_id:
             return obj.event.title
-        if obj.meeting_id:
-            return obj.meeting.title
-        return f'{obj.session.title} ({obj.session.meeting.title})'
+        return f'{obj.session.title} ({obj.session.event.title})'
 
     def get_scope_id(self, obj):
-        return str(obj.event_id or obj.meeting_id or obj.session_id)
+        return str(obj.event_id or obj.session_id)
 
     def get_accepted(self, obj):
         """Whether the address has turned into a real account yet."""

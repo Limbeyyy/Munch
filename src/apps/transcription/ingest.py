@@ -1,8 +1,8 @@
-"""Transcript ingest for the capture device in the meeting hall.
+"""Transcript ingest for the capture device in the event hall.
 
 The device does the listening and the speech-to-text; the server only accepts
 the resulting text, stores the finalised phrases and fans them out to everyone
-watching the meeting. No audio ever reaches this service.
+watching the event. No audio ever reaches this service.
 
 Devices are not people, so they authenticate with a shared ingest token rather
 than a user session.
@@ -18,7 +18,7 @@ from rest_framework.decorators import (
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from src.apps.meetings.models import Meeting
+from src.apps.meetings.models import Event
 from src.apps.transcription.models import TranscriptionSegment
 
 logger = logging.getLogger(__name__)
@@ -46,8 +46,8 @@ def _device_authorised(request) -> bool:
     return bool(presented) and hmac.compare_digest(presented, expected)
 
 
-def publish_segment(meeting, segment: dict) -> None:
-    """Send a transcript line to every client watching this meeting.
+def publish_segment(event, segment: dict) -> None:
+    """Send a transcript line to every client watching this event.
 
     Best-effort: a channel layer problem must not fail the device's request,
     because the line is already stored.
@@ -60,7 +60,7 @@ def publish_segment(meeting, segment: dict) -> None:
         if layer is None:
             return
         async_to_sync(layer.group_send)(
-            f'meeting_{meeting.meeting_code}',
+            f'event_{event.code}',
             {
                 'type': 'transcription_update',
                 'segment': segment,
@@ -69,7 +69,7 @@ def publish_segment(meeting, segment: dict) -> None:
         )
     except Exception as e:
         logger.warning(
-            f"Could not broadcast transcript for {meeting.meeting_code}: {e}"
+            f"Could not broadcast transcript for {event.code}: {e}"
         )
 
 
@@ -79,7 +79,7 @@ def publish_segment(meeting, segment: dict) -> None:
 # before the view is ever reached.
 @authentication_classes([])
 @permission_classes([AllowAny])
-def ingest_transcription(request, meeting_ref):
+def ingest_transcription(request, event_ref):
     """Accept a transcript line from the room's capture device.
 
     Interim lines are broadcast so the screen keeps up with the speaker, but
@@ -92,18 +92,18 @@ def ingest_transcription(request, meeting_ref):
             status=status.HTTP_401_UNAUTHORIZED
         )
 
-    meeting = Meeting.objects.filter(meeting_code=meeting_ref).first()
-    if meeting is None:
-        meeting = Meeting.objects.filter(pk=meeting_ref).first() \
-            if meeting_ref.count('-') >= 4 else None
-    if meeting is None:
+    event = Event.objects.filter(code=event_ref).first()
+    if event is None:
+        event = Event.objects.filter(pk=event_ref).first() \
+            if event_ref.count('-') >= 4 else None
+    if event is None:
         return Response(
-            {'error': f'No meeting found for {meeting_ref}'},
+            {'error': f'No event found for {event_ref}'},
             status=status.HTTP_404_NOT_FOUND
         )
-    if meeting.status == Meeting.Status.ENDED:
+    if event.status == Event.Status.ENDED:
         return Response(
-            {'error': 'This meeting has ended'},
+            {'error': 'This event has ended'},
             status=status.HTTP_409_CONFLICT
         )
 
@@ -122,7 +122,7 @@ def ingest_transcription(request, meeting_ref):
     is_final = bool(request.data.get('is_final', True))
 
     segment = {
-        'meeting_code': meeting.meeting_code,
+        'code': event.code,
         # The device reports who is speaking when it can; otherwise the room.
         'speaker_id': str(request.data.get('speaker_id') or 'room-device'),
         'speaker_name': request.data.get('speaker_name') or 'Room',
@@ -135,13 +135,13 @@ def ingest_transcription(request, meeting_ref):
     }
 
     # A line belongs to whatever part of the running order is on stage.
-    live_session = meeting.sessions.filter(status='live').first()
+    live_session = event.sessions.filter(status='live').first()
     segment['session_id'] = str(live_session.id) if live_session else None
     segment['session_title'] = live_session.title if live_session else None
 
     if is_final:
         TranscriptionSegment.objects.create(
-            meeting=meeting,
+            event=event,
             session=live_session,
             speaker_id=segment['speaker_id'],
             speaker_name=segment['speaker_name'],
@@ -153,32 +153,32 @@ def ingest_transcription(request, meeting_ref):
             is_final=True,
         )
 
-    publish_segment(meeting, segment)
+    publish_segment(event, segment)
     return Response({'stored': is_final, 'segment': segment},
                     status=status.HTTP_201_CREATED)
 
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
-def meeting_segments(request, meeting_ref):
+def event_segments(request, event_ref):
     """Recent transcript lines, so someone arriving late is not left blank.
 
-    Readable by anyone who can already reach the meeting: participants use
+    Readable by anyone who can already reach the event: participants use
     their JWT, guests their signed token.
     """
     from src.apps.meetings.guest_tokens import resolve_guest
 
-    meeting = Meeting.objects.filter(meeting_code=meeting_ref).first()
-    if meeting is None:
+    event = Event.objects.filter(code=event_ref).first()
+    if event is None:
         return Response(
-            {'error': 'Meeting not found'},
+            {'error': 'Event not found'},
             status=status.HTTP_404_NOT_FOUND
         )
 
     guest_token = request.query_params.get('guest_token')
     if guest_token:
         guest = resolve_guest(guest_token)
-        allowed = bool(guest and guest.is_admitted and guest.meeting_id == meeting.id)
+        allowed = bool(guest and guest.is_admitted and guest.event_id == event.id)
     else:
         from src.apps.meetings.entry import is_open
 
@@ -191,19 +191,19 @@ def meeting_segments(request, meeting_ref):
             user
             and user.is_authenticated
             and (
-                str(user.id) == str(meeting.host_id)
-                or meeting.participants.filter(user=user).exists()
-                or is_open(meeting)
+                str(user.id) == str(event.host_id)
+                or event.participants.filter(user=user).exists()
+                or is_open(event)
             )
         )
 
     if not allowed:
         return Response(
-            {'error': 'You are not in this meeting'},
+            {'error': 'You are not in this event'},
             status=status.HTTP_403_FORBIDDEN
         )
 
-    segments = meeting.transcription_segments.filter(
+    segments = event.transcription_segments.filter(
         is_final=True
     ).select_related('session').order_by('created_at')[:500]
 

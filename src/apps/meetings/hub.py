@@ -20,7 +20,7 @@ from src.apps.meetings.models import HubPost, HubVote
 PUBLIC_KINDS = (HubPost.Kind.QUESTION, HubPost.Kind.IDEA)
 
 
-def visible_to(meeting, *, user=None, guest=None):
+def visible_to(event, *, user=None, guest=None):
     """The posts this person may read.
 
     Everything the organizer has let through, plus their own - including
@@ -36,7 +36,7 @@ def visible_to(meeting, *, user=None, guest=None):
         mine = Q(guest=guest)
 
     return (
-        HubPost.objects.filter(meeting=meeting)
+        HubPost.objects.filter(event=event)
         .filter(published | mine)
         .select_related('session', 'user', 'guest')
         .annotate(
@@ -113,14 +113,14 @@ def _is_mine(post, *, user=None, guest=None) -> bool:
     return False
 
 
-def board_for(meeting, *, user=None, guest=None) -> dict:
+def board_for(event, *, user=None, guest=None) -> dict:
     """Everything the hub shows, in the three lists it shows it in.
 
     Questions come highest-voted first - the room's own sense of what most
     wants answering. Ideas the same. Somebody's own suggestions stay in the
     order they sent them, which is how they remember them.
     """
-    posts = list(visible_to(meeting, user=user, guest=guest))
+    posts = list(visible_to(event, user=user, guest=guest))
     rendered = [as_json(p, user=user, guest=guest) for p in posts]
 
     def of(kind):

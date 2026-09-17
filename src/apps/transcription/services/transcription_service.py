@@ -3,8 +3,8 @@ import logging
 from typing import Optional, Dict, Any
 from django.utils import timezone
 from src.apps.transcription.models import TranscriptionSegment, Transcript, TranscriptSummary
-from src.apps.meetings.models import Meeting
-from src.apps.monitoring.models import MeetingEvent
+from src.apps.meetings.models import Event
+from src.apps.monitoring.models import EventLogEntry
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,7 @@ class TranscriptionService:
 
     @staticmethod
     def add_transcription_segment(
-        meeting_id: str,
+        event_id: str,
         speaker_id: str,
         speaker_name: str,
         text: str,
@@ -26,7 +26,7 @@ class TranscriptionService:
         """Add a transcription segment (real-time chunk)"""
         try:
             segment = TranscriptionSegment.objects.create(
-                meeting_id=meeting_id,
+                event_id=event_id,
                 speaker_id=speaker_id,
                 speaker_name=speaker_name,
                 text=text,
@@ -37,15 +37,15 @@ class TranscriptionService:
             )
 
             if is_final:
-                MeetingEvent.objects.create(
-                    meeting_id=meeting_id,
-                    event_type=MeetingEvent.EventType.TRANSCRIPT_SEGMENT,
+                EventLogEntry.objects.create(
+                    event_id=event_id,
+                    event_type=EventLogEntry.EventType.TRANSCRIPT_SEGMENT,
                     description=f"{speaker_name}: {text[:50]}...",
                     user=speaker_id,
                     data={'confidence': confidence}
                 )
 
-            logger.info(f"Added transcription segment for {meeting_id} from {speaker_name}")
+            logger.info(f"Added transcription segment for {event_id} from {speaker_name}")
             return segment
 
         except Exception as e:
@@ -53,11 +53,11 @@ class TranscriptionService:
             raise
 
     @staticmethod
-    def get_live_transcript(meeting_id: str) -> str:
+    def get_live_transcript(event_id: str) -> str:
         """Get current merged transcript (all final segments)"""
         try:
             segments = TranscriptionSegment.objects.filter(
-                meeting_id=meeting_id,
+                event_id=event_id,
                 is_final=True
             ).order_by('start_time')
 
@@ -78,49 +78,49 @@ class TranscriptionService:
             return ""
 
     @staticmethod
-    def finalize_transcript(meeting_id: str) -> Transcript:
-        """Finalize transcript when meeting ends"""
+    def finalize_transcript(event_id: str) -> Transcript:
+        """Finalize transcript when event ends"""
         try:
-            meeting = Meeting.objects.get(id=meeting_id)
+            event = Event.objects.get(id=event_id)
 
             transcript, created = Transcript.objects.get_or_create(
-                meeting=meeting
+                event=event
             )
 
             # Merge all segments
-            transcript.full_text = TranscriptionService.get_live_transcript(meeting_id)
+            transcript.full_text = TranscriptionService.get_live_transcript(event_id)
             transcript.word_count = len(transcript.full_text.split())
             transcript.is_complete = True
             transcript.completed_at = timezone.now()
             transcript.save()
 
-            MeetingEvent.objects.create(
-                meeting=meeting,
-                event_type=MeetingEvent.EventType.TRANSCRIPTION_STARTED,
+            EventLogEntry.objects.create(
+                event=event,
+                event_type=EventLogEntry.EventType.TRANSCRIPTION_STARTED,
                 description="Transcript finalized",
                 user='system',
                 data={'word_count': transcript.word_count}
             )
 
-            logger.info(f"Finalized transcript for {meeting_id}")
+            logger.info(f"Finalized transcript for {event_id}")
             return transcript
 
-        except Meeting.DoesNotExist:
-            logger.error(f"Meeting {meeting_id} not found")
+        except Event.DoesNotExist:
+            logger.error(f"Event {event_id} not found")
             raise
 
     @staticmethod
-    def create_summary_placeholder(meeting_id: str) -> TranscriptSummary:
+    def create_summary_placeholder(event_id: str) -> TranscriptSummary:
         """Create summary record ready for LLM processing"""
         try:
-            meeting = Meeting.objects.get(id=meeting_id)
+            event = Event.objects.get(id=event_id)
 
             summary, created = TranscriptSummary.objects.get_or_create(
-                meeting=meeting
+                event=event
             )
 
             return summary
 
-        except Meeting.DoesNotExist:
-            logger.error(f"Meeting {meeting_id} not found")
+        except Event.DoesNotExist:
+            logger.error(f"Event {event_id} not found")
             raise

@@ -9,8 +9,8 @@ from django.test import TestCase
 from django.utils import timezone
 
 from src.apps.accounts.models import User
-from src.apps.meetings.models import GuestAttendee, Meeting, Session
-from src.apps.meetings.tests.factories import make_host, make_meeting, make_session
+from src.apps.meetings.models import GuestAttendee, Event, Session
+from src.apps.meetings.tests.factories import make_host, make_event, make_session
 
 API = '/api/v1'
 
@@ -25,17 +25,17 @@ class GuestDoorTests(TestCase):
 
         self.host = make_host('host@example.com')
         start = timezone.now() - timezone.timedelta(minutes=5)
-        self.meeting = make_meeting(self.host, start=start, minutes=120)
-        self.meeting.status = Meeting.Status.ACTIVE
-        self.meeting.started_at = start
-        self.meeting.save()
-        self.session = make_session(self.meeting, start, 60, 'Haldi')
+        self.event = make_event(self.host, start=start, minutes=120)
+        self.event.status = Event.Status.ACTIVE
+        self.event.started_at = start
+        self.event.save()
+        self.session = make_session(self.event, start, 60, 'Haldi')
 
     def knock(self, name, phone='9812345678'):
         return self.client.post(
-            f'{API}/meetings/guest/knock/',
+            f'{API}/events/guest/knock/',
             {
-                'meeting_code': self.meeting.meeting_code,
+                'code': self.event.code,
                 'full_name': name,
                 'phone': phone,
             },
@@ -103,14 +103,14 @@ class GuestDoorTests(TestCase):
 
         self.knock('sabina@example.org')
 
-        self.assertFalse(GuestAttendee.objects.filter(meeting=self.meeting).exists())
+        self.assertFalse(GuestAttendee.objects.filter(event=self.event).exists())
 
     def test_an_admitted_guest_row_is_no_way_around_it(self):
         # The refusal comes before the returning-guest lookup, so a row from
         # before the rule existed cannot be used to walk back in.
         User.objects.create(email='sabina@example.org', username='sabina')
         GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='sabina@example.org',
+            event=self.event, full_name='sabina@example.org',
             phone='9812345678', status=GuestAttendee.Status.ADMITTED,
         )
 
@@ -156,16 +156,16 @@ class GuestRoomStatusTests(TestCase):
         self.addCleanup(cache.clear)
         self.host = make_host('host@example.com')
         start = timezone.now() - timezone.timedelta(minutes=5)
-        self.meeting = make_meeting(self.host, start=start, minutes=120)
-        self.meeting.status = Meeting.Status.ACTIVE
-        self.meeting.started_at = start
-        self.meeting.save()
-        self.first = make_session(self.meeting, start, 60, 'Haldi')
+        self.event = make_event(self.host, start=start, minutes=120)
+        self.event.status = Event.Status.ACTIVE
+        self.event.started_at = start
+        self.event.save()
+        self.first = make_session(self.event, start, 60, 'Haldi')
         self.second = make_session(
-            self.meeting, start + timezone.timedelta(minutes=75), 30, 'Mehendi'
+            self.event, start + timezone.timedelta(minutes=75), 30, 'Mehendi'
         )
         self.guest = GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='Bishnu Prasad', phone='9812345678',
+            event=self.event, full_name='Bishnu Prasad', phone='9812345678',
             status=GuestAttendee.Status.ADMITTED,
         )
 
@@ -173,36 +173,36 @@ class GuestRoomStatusTests(TestCase):
         from src.apps.meetings.guest_tokens import make_guest_token
 
         token = make_guest_token(self.guest)
-        return self.client.get(f'{API}/meetings/guest/status/?token={token}').json()
+        return self.client.get(f'{API}/events/guest/status/?token={token}').json()
 
     def test_the_running_order_comes_with_it(self):
-        meeting = self.status()['meeting']
+        event = self.status()['event']
 
         self.assertEqual(
-            [s['title'] for s in meeting['sessions']], ['Haldi', 'Mehendi']
+            [s['title'] for s in event['sessions']], ['Haldi', 'Mehendi']
         )
 
     def test_with_the_times_the_room_is_working_to(self):
-        meeting = self.status()['meeting']
+        event = self.status()['event']
 
         self.assertEqual(
-            meeting['sessions'][0]['starts_at'], self.first.starts_at.isoformat()
+            event['sessions'][0]['starts_at'], self.first.starts_at.isoformat()
         )
-        self.assertEqual(meeting['sessions'][0]['duration_minutes'], 60)
+        self.assertEqual(event['sessions'][0]['duration_minutes'], 60)
         self.assertEqual(
-            meeting['scheduled_start'], self.meeting.scheduled_start.isoformat()
+            event['scheduled_start'], self.event.scheduled_start.isoformat()
         )
 
     def test_and_the_speakers_address_does_not(self):
-        meeting = self.status()['meeting']
+        event = self.status()['event']
 
-        for session in meeting['sessions']:
+        for session in event['sessions']:
             self.assertNotIn('speaker_email', session)
             self.assertNotIn('speaker_phone', session)
             self.assertNotIn('speaker_contact', session)
 
     def test_somebody_who_is_not_in_the_room_is_told_nothing(self):
-        response = self.client.get(f'{API}/meetings/guest/status/?token=made-up')
+        response = self.client.get(f'{API}/events/guest/status/?token=made-up')
 
         self.assertEqual(response.status_code, 401)
 
@@ -212,7 +212,7 @@ class GuestsAreNotKeptTests(TestCase):
 
     They give a name - not a telephone number, which was collected because
     the form had a box for it and used for nothing - and their row lasts as
-    long as the meeting. What outlives the meeting is the register: the
+    long as the event. What outlives the event is the register: the
     name, against what they attended. Nothing that can be joined to
     anything, because there is no guest to look up.
     """
@@ -222,16 +222,16 @@ class GuestsAreNotKeptTests(TestCase):
         self.addCleanup(cache.clear)
         self.host = make_host('host@example.com')
         start = timezone.now() - timezone.timedelta(minutes=5)
-        self.meeting = make_meeting(self.host, start=start, minutes=120)
-        self.meeting.status = Meeting.Status.ACTIVE
-        self.meeting.started_at = start
-        self.meeting.save()
-        self.session = make_session(self.meeting, start, 60, 'Haldi')
+        self.event = make_event(self.host, start=start, minutes=120)
+        self.event.status = Event.Status.ACTIVE
+        self.event.started_at = start
+        self.event.save()
+        self.session = make_session(self.event, start, 60, 'Haldi')
 
     def knock(self, name, **extra):
         return self.client.post(
-            f'{API}/meetings/guest/knock/',
-            {'meeting_code': self.meeting.meeting_code, 'full_name': name, **extra},
+            f'{API}/events/guest/knock/',
+            {'code': self.event.code, 'full_name': name, **extra},
             content_type='application/json',
         )
 
@@ -241,14 +241,14 @@ class GuestsAreNotKeptTests(TestCase):
         guest.status = GuestAttendee.Status.ADMITTED
         guest.decided_at = timezone.now()
         guest.save()
-        record_guest_attendance(self.meeting, guest.full_name, guest.decided_at)
+        record_guest_attendance(self.event, guest.full_name, guest.decided_at)
         return guest
 
     def end_it(self):
-        from src.apps.meetings.services.meeting_service import MeetingService
+        from src.apps.meetings.services.event_service import EventService
 
-        MeetingService.end_meeting(self.meeting.id)
-        self.meeting.refresh_from_db()
+        EventService.end_event(self.event.id)
+        self.event.refresh_from_db()
 
     # -- what is asked for ------------------------------------------------
 
@@ -256,7 +256,7 @@ class GuestsAreNotKeptTests(TestCase):
         response = self.knock('Bishnu Prasad')
 
         self.assertEqual(response.status_code, 201)
-        guest = GuestAttendee.objects.get(meeting=self.meeting)
+        guest = GuestAttendee.objects.get(event=self.event)
         self.assertEqual(guest.full_name, 'Bishnu Prasad')
         self.assertEqual(guest.phone, '')
 
@@ -274,7 +274,7 @@ class GuestsAreNotKeptTests(TestCase):
         from src.apps.meetings.guest_tokens import make_guest_token
 
         guest = self.admit(GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='Bishnu Prasad',
+            event=self.event, full_name='Bishnu Prasad',
         ))
 
         response = self.knock('Bishnu Prasad', token=make_guest_token(guest))
@@ -287,7 +287,7 @@ class GuestsAreNotKeptTests(TestCase):
         # knew an admitted guest's details was admitted as them. A name is
         # not a credential.
         self.admit(GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='Bishnu Prasad',
+            event=self.event, full_name='Bishnu Prasad',
         ))
 
         response = self.knock('Bishnu Prasad')
@@ -300,15 +300,15 @@ class GuestsAreNotKeptTests(TestCase):
 
     def test_the_rows_are_gone_when_the_meeting_is_over(self):
         self.admit(GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='Bishnu Prasad',
+            event=self.event, full_name='Bishnu Prasad',
         ))
 
         self.end_it()
 
-        self.assertEqual(GuestAttendee.objects.filter(meeting=self.meeting).count(), 0)
+        self.assertEqual(GuestAttendee.objects.filter(event=self.event).count(), 0)
 
     def test_even_the_ones_who_were_never_let_in(self):
-        GuestAttendee.objects.create(meeting=self.meeting, full_name='Never Admitted')
+        GuestAttendee.objects.create(event=self.event, full_name='Never Admitted')
 
         self.end_it()
 
@@ -316,22 +316,22 @@ class GuestsAreNotKeptTests(TestCase):
 
     def test_but_the_register_remembers_who_attended(self):
         self.admit(GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='Bishnu Prasad',
+            event=self.event, full_name='Bishnu Prasad',
         ))
 
         self.end_it()
 
         self.assertEqual(
-            [entry['name'] for entry in self.meeting.guest_attendance],
+            [entry['name'] for entry in self.event.guest_attendance],
             ['Bishnu Prasad'],
         )
 
     def test_and_only_the_ones_who_did(self):
-        GuestAttendee.objects.create(meeting=self.meeting, full_name='Never Admitted')
+        GuestAttendee.objects.create(event=self.event, full_name='Never Admitted')
 
         self.end_it()
 
-        self.assertEqual(self.meeting.guest_attendance, [])
+        self.assertEqual(self.event.guest_attendance, [])
 
     def test_the_session_register_keeps_the_name_too(self):
         from src.apps.meetings.models import Session, SessionAttendance
@@ -340,7 +340,7 @@ class GuestsAreNotKeptTests(TestCase):
         self.session.started_at = timezone.now()
         self.session.save()
         self.admit(GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='Bishnu Prasad',
+            event=self.event, full_name='Bishnu Prasad',
         ))
 
         self.end_it()
@@ -354,12 +354,12 @@ class GuestsAreNotKeptTests(TestCase):
         from rest_framework_simplejwt.tokens import AccessToken
 
         self.admit(GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='Bishnu Prasad',
+            event=self.event, full_name='Bishnu Prasad',
         ))
         self.end_it()
 
         client = Client(HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(self.host)}')
-        report = client.get(f'{API}/meetings/{self.meeting.id}/attendance/').json()
+        report = client.get(f'{API}/events/{self.event.id}/attendance/').json()
 
         self.assertEqual(report['guests_admitted'], 1)
         guest_rows = [a for a in report['attended'] if a['type'] == 'guest']
@@ -371,26 +371,26 @@ class GuestsAreNotKeptTests(TestCase):
         from src.apps.meetings.tasks import forget_guests_of_ended_meetings
 
         GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='Left Behind',
+            event=self.event, full_name='Left Behind',
             status=GuestAttendee.Status.ADMITTED,
         )
-        Meeting.objects.filter(id=self.meeting.id).update(
-            status=Meeting.Status.ENDED
+        Event.objects.filter(id=self.event.id).update(
+            status=Event.Status.ENDED
         )
 
         forget_guests_of_ended_meetings()
 
         self.assertEqual(GuestAttendee.objects.count(), 0)
-        self.meeting.refresh_from_db()
+        self.event.refresh_from_db()
         self.assertEqual(
-            [e['name'] for e in self.meeting.guest_attendance], ['Left Behind']
+            [e['name'] for e in self.event.guest_attendance], ['Left Behind']
         )
 
     def test_a_meeting_still_running_keeps_its_guests(self):
         from src.apps.meetings.tasks import forget_guests_of_ended_meetings
 
         GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='Still Here',
+            event=self.event, full_name='Still Here',
             status=GuestAttendee.Status.ADMITTED,
         )
 
@@ -414,11 +414,11 @@ class OneSeatPerGuestTests(TestCase):
         self.addCleanup(cache.clear)
         self.host = make_host('host@example.com')
         start = timezone.now() - timezone.timedelta(minutes=5)
-        self.meeting = make_meeting(self.host, start=start, minutes=120)
-        self.meeting.status = Meeting.Status.ACTIVE
-        self.meeting.started_at = start
-        self.meeting.save()
-        make_session(self.meeting, start, 60, 'Haldi')
+        self.event = make_event(self.host, start=start, minutes=120)
+        self.event.status = Event.Status.ACTIVE
+        self.event.started_at = start
+        self.event.save()
+        make_session(self.event, start, 60, 'Haldi')
 
     def as_host(self):
         from django.test import Client
@@ -428,13 +428,13 @@ class OneSeatPerGuestTests(TestCase):
 
     def admit(self, guest):
         return self.as_host().post(
-            f'{API}/meetings/{self.meeting.id}/admit_guest/',
+            f'{API}/events/{self.event.id}/admit_guest/',
             {'guest_id': str(guest.id), 'decision': 'admit'},
             content_type='application/json',
         )
 
     def knocking(self, name='Rahul Ingnam'):
-        return GuestAttendee.objects.create(meeting=self.meeting, full_name=name)
+        return GuestAttendee.objects.create(event=self.event, full_name=name)
 
     def test_the_seat_they_had_is_given_up(self):
         first = self.knocking()
@@ -449,16 +449,16 @@ class OneSeatPerGuestTests(TestCase):
         self.admit(self.knocking())
         self.admit(self.knocking())
 
-        seated = self.meeting.guests.filter(status=GuestAttendee.Status.ADMITTED)
+        seated = self.event.guests.filter(status=GuestAttendee.Status.ADMITTED)
         self.assertEqual(seated.count(), 1)
 
     def test_and_the_register_names_them_once(self):
         self.admit(self.knocking())
         self.admit(self.knocking())
 
-        self.meeting.refresh_from_db()
+        self.event.refresh_from_db()
         self.assertEqual(
-            [e['name'] for e in self.meeting.guest_attendance], ['Rahul Ingnam']
+            [e['name'] for e in self.event.guest_attendance], ['Rahul Ingnam']
         )
 
     def test_somebody_else_keeps_their_own_seat(self):
@@ -474,9 +474,9 @@ class OneSeatPerGuestTests(TestCase):
 class WhatAGuestLeavesBehindTests(TestCase):
     """What was written survives the person being forgotten.
 
-    A guest's row goes when the meeting ends - that is the whole point of
+    A guest's row goes when the event ends - that is the whole point of
     them being guests - but a question asked from the floor belongs to the
-    meeting. It used to go with them: the link cascaded, so the host who
+    event. It used to go with them: the link cascaded, so the host who
     went to put a question on the board was told there was no such
     message, and anything already on the board vanished from it.
     """
@@ -486,28 +486,28 @@ class WhatAGuestLeavesBehindTests(TestCase):
         self.addCleanup(cache.clear)
         self.host = make_host('host@example.com')
         start = timezone.now() - timezone.timedelta(minutes=30)
-        self.meeting = make_meeting(self.host, start=start, minutes=120)
-        self.meeting.status = Meeting.Status.ACTIVE
-        self.meeting.started_at = start
-        self.meeting.save()
-        make_session(self.meeting, start, 60, 'Haldi')
+        self.event = make_event(self.host, start=start, minutes=120)
+        self.event.status = Event.Status.ACTIVE
+        self.event.started_at = start
+        self.event.save()
+        make_session(self.event, start, 60, 'Haldi')
 
         self.guest = GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='Rahul Ingnam',
+            event=self.event, full_name='Rahul Ingnam',
             status=GuestAttendee.Status.ADMITTED,
         )
         from src.apps.meetings.models import ChatMessage
 
         self.asked = ChatMessage.objects.create(
-            meeting=self.meeting, guest_sender=self.guest, recipient=self.host,
-            body='What is this meeting about?',
+            event=self.event, guest_sender=self.guest, recipient=self.host,
+            body='What is this event about?',
             moderation_status=ChatMessage.Moderation.PENDING,
         )
 
     def end_it(self):
-        from src.apps.meetings.services.meeting_service import MeetingService
+        from src.apps.meetings.services.event_service import EventService
 
-        MeetingService.end_meeting(self.meeting.id)
+        EventService.end_event(self.event.id)
 
     def reloaded(self):
         from src.apps.meetings.models import ChatMessage
@@ -534,15 +534,15 @@ class WhatAGuestLeavesBehindTests(TestCase):
         client = Client(HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(self.host)}')
 
         approved = client.post(
-            f'{API}/meetings/{self.meeting.id}/moderate_message/',
+            f'{API}/events/{self.event.id}/moderate_message/',
             {'message_id': str(self.asked.id), 'decision': 'approve', 'topic': 'faq'},
             content_type='application/json',
         )
 
         self.assertEqual(approved.status_code, 200)
-        board = client.get(f'{API}/meetings/{self.meeting.id}/board/').json()
+        board = client.get(f'{API}/events/{self.event.id}/board/').json()
         self.assertEqual(
-            [q['body'] for q in board['faq']], ['What is this meeting about?']
+            [q['body'] for q in board['faq']], ['What is this event about?']
         )
 
     def test_and_the_board_still_names_the_asker(self):
@@ -551,21 +551,21 @@ class WhatAGuestLeavesBehindTests(TestCase):
 
         client = Client(HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(self.host)}')
         client.post(
-            f'{API}/meetings/{self.meeting.id}/moderate_message/',
+            f'{API}/events/{self.event.id}/moderate_message/',
             {'message_id': str(self.asked.id), 'decision': 'approve', 'topic': 'faq'},
             content_type='application/json',
         )
 
         self.end_it()
 
-        board = client.get(f'{API}/meetings/{self.meeting.id}/board/').json()
+        board = client.get(f'{API}/events/{self.event.id}/board/').json()
         self.assertEqual([q['asked_by'] for q in board['faq']], ['Rahul Ingnam'])
 
     def test_a_reply_to_them_survives_as_well(self):
         from src.apps.meetings.models import ChatMessage
 
         answered = ChatMessage.objects.create(
-            meeting=self.meeting, sender=self.host, guest_recipient=self.guest,
+            event=self.event, sender=self.host, guest_recipient=self.guest,
             body='It is about the budget.',
         )
 
@@ -577,28 +577,28 @@ class WhatAGuestLeavesBehindTests(TestCase):
 
 
 class TheGuestIsNotShownOutByTheClockTests(TestCase):
-    """A guest stays until they leave or the host ends the meeting.
+    """A guest stays until they leave or the host ends the event.
 
     Two ways they were thrown out, both by a clock. The talk finished and
     the host had not started the next, so the room read as spent. Or the
-    meeting's closing time came round while a talk was still running. In
+    event's closing time came round while a talk was still running. In
     both cases it was the guest's own page, asking how things were, that
-    closed the meeting underneath them.
+    closed the event underneath them.
     """
 
     def setUp(self):
         cache.clear()
         self.addCleanup(cache.clear)
         self.host = make_host('host@example.com')
-        # A meeting whose hour is well past.
+        # A event whose hour is well past.
         start = timezone.now() - timezone.timedelta(hours=3)
-        self.meeting = make_meeting(self.host, start=start, minutes=60)
-        self.meeting.status = Meeting.Status.ACTIVE
-        self.meeting.started_at = start
-        self.meeting.save()
-        self.session = make_session(self.meeting, start, 30, 'Haldi')
+        self.event = make_event(self.host, start=start, minutes=60)
+        self.event.status = Event.Status.ACTIVE
+        self.event.started_at = start
+        self.event.save()
+        self.session = make_session(self.event, start, 30, 'Haldi')
         self.guest = GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='Rahul Ingnam',
+            event=self.event, full_name='Rahul Ingnam',
             status=GuestAttendee.Status.ADMITTED,
         )
 
@@ -606,11 +606,11 @@ class TheGuestIsNotShownOutByTheClockTests(TestCase):
         from src.apps.meetings.guest_tokens import make_guest_token
 
         return self.client.get(
-            f'{API}/meetings/guest/status/?token={make_guest_token(self.guest)}'
+            f'{API}/events/guest/status/?token={make_guest_token(self.guest)}'
         ).json()
 
     def reloaded(self):
-        return Meeting.objects.get(id=self.meeting.id)
+        return Event.objects.get(id=self.event.id)
 
     def test_between_talks_the_room_is_still_theirs(self):
         self.session.status = Session.Status.DONE
@@ -619,9 +619,9 @@ class TheGuestIsNotShownOutByTheClockTests(TestCase):
 
         answer = self.ask()
 
-        self.assertEqual(answer['meeting']['status'], Meeting.Status.ACTIVE)
+        self.assertEqual(answer['event']['status'], Event.Status.ACTIVE)
         self.assertEqual(answer['guest']['status'], 'admitted')
-        self.assertEqual(self.reloaded().status, Meeting.Status.ACTIVE)
+        self.assertEqual(self.reloaded().status, Event.Status.ACTIVE)
 
     def test_and_so_it_is_while_a_talk_runs_past_its_hour(self):
         self.session.status = Session.Status.LIVE
@@ -630,20 +630,20 @@ class TheGuestIsNotShownOutByTheClockTests(TestCase):
 
         answer = self.ask()
 
-        self.assertEqual(answer['meeting']['status'], Meeting.Status.ACTIVE)
-        self.assertEqual(self.reloaded().status, Meeting.Status.ACTIVE)
+        self.assertEqual(answer['event']['status'], Event.Status.ACTIVE)
+        self.assertEqual(self.reloaded().status, Event.Status.ACTIVE)
 
     def test_asking_a_hundred_times_does_not_close_it_either(self):
         for _ in range(5):
             self.ask()
 
-        self.assertEqual(self.reloaded().status, Meeting.Status.ACTIVE)
+        self.assertEqual(self.reloaded().status, Event.Status.ACTIVE)
         self.guest.refresh_from_db()
         self.assertEqual(self.guest.status, GuestAttendee.Status.ADMITTED)
 
     def test_the_host_ending_it_is_what_shows_them_out(self):
-        from src.apps.meetings.services.meeting_service import MeetingService
+        from src.apps.meetings.services.event_service import EventService
 
-        MeetingService.end_meeting(self.meeting.id)
+        EventService.end_event(self.event.id)
 
-        self.assertEqual(self.reloaded().status, Meeting.Status.ENDED)
+        self.assertEqual(self.reloaded().status, Event.Status.ENDED)

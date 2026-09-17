@@ -8,9 +8,9 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from src.apps.accounts.tokens import issue_tokens
-from src.apps.meetings.models import MeetingParticipant, Session, SessionSummary
+from src.apps.meetings.models import EventParticipant, Session, SessionSummary
 from src.apps.meetings.tests.factories import (
-    make_event, make_host, make_meeting, make_session,
+    make_event, make_host, make_session,
 )
 from src.apps.transcription.models import TranscriptionSegment
 
@@ -27,12 +27,11 @@ class SummaryTests(TestCase):
     def setUp(self):
         self.host = make_host('host@example.com')
         self.attendee = make_host('attendee@example.com')
-        self.event = make_event(self.host)
         past = timezone.now() - timezone.timedelta(hours=2)
-        self.meeting = make_meeting(self.host, self.event, start=past)
-        self.session = make_session(self.meeting, past, 60, 'Opening')
-        MeetingParticipant.objects.create(
-            meeting=self.meeting, user=self.attendee, role='attendee'
+        self.event = make_event(self.host, start=past)
+        self.session = make_session(self.event, past, 60, 'Opening')
+        EventParticipant.objects.create(
+            event=self.event, user=self.attendee, role='attendee'
         )
         self.host_client = signed_in(self.host)
         self.attendee_client = signed_in(self.attendee)
@@ -53,7 +52,7 @@ class SummaryTests(TestCase):
     def test_an_unwritten_summary_offers_the_transcript_as_a_draft(self):
         for i, line in enumerate(['We opened at nine.', 'Sixty-nine districts passed.']):
             TranscriptionSegment.objects.create(
-                meeting=self.meeting, session=self.session, speaker_id='device',
+                event=self.event, session=self.session, speaker_id='device',
                 text=line, start_time=i * 10, end_time=i * 10 + 5, is_final=True,
             )
 

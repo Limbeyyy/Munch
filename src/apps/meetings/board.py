@@ -1,7 +1,7 @@
 """The questions and suggestions a host has put up for the room.
 
 Sorting a message here is a publishing decision rather than a label. The
-board is read by everyone in the meeting, so a direct message put on it
+board is read by everyone in the event, so a direct message put on it
 stops being private - which is why only the host can do it.
 
 One definition, read by the account-holder endpoint and the guest one, so
@@ -90,14 +90,14 @@ def _entry(message, *, user=None, guest=None):
     }
 
 
-def board_for(meeting, *, user=None, guest=None) -> dict:
+def board_for(event, *, user=None, guest=None) -> dict:
     """The board, highest-voted first.
 
     The room decides what most wants answering, so what the host sees at
     the top is what people actually care about.
     """
     sorted_messages = (
-        ChatMessage.objects.filter(meeting=meeting, moderation_status__in=LET_THROUGH)
+        ChatMessage.objects.filter(event=event, moderation_status__in=LET_THROUGH)
         .exclude(topic=ChatMessage.Topic.NONE)
         .select_related('sender', 'guest_sender', 'recipient', 'guest_recipient',
                         'answered_by')

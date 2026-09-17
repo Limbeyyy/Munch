@@ -2,9 +2,9 @@
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from src.apps.recordings.models import Recording, Attendance, MeetingAnalytics
+from src.apps.recordings.models import Recording, Attendance, EventAnalytics
 from src.apps.recordings.services.analytics_service import AnalyticsService
-from src.apps.meetings.models import Meeting
+from src.apps.meetings.models import Event
 
 
 class AdminDashboardView(viewsets.GenericViewSet):
@@ -19,34 +19,34 @@ class AdminDashboardView(viewsets.GenericViewSet):
 
     @action(detail=False, methods=['get'])
     def user_stats(self, request):
-        """Get stats for current user's meetings"""
+        """Get stats for current user's events"""
         stats = AnalyticsService.get_user_analytics(request.user.id)
         return Response(stats)
 
     @action(detail=False, methods=['get'])
     def recent_meetings(self, request):
-        """Get recent meetings with analytics"""
-        meetings = Meeting.objects.all().order_by('-created_at')[:10]
+        """Get recent events with analytics"""
+        events = Event.objects.all().order_by('-created_at')[:10]
         data = [{
-            'code': m.meeting_code,
+            'code': m.code,
             'title': m.title,
             'host': m.host.email,
             'participants': m.get_participant_count(),
             'created_at': m.created_at.isoformat(),
             'status': m.status
-        } for m in meetings]
+        } for m in events]
         return Response(data)
 
     @action(detail=True, methods=['get'])
-    def meeting_analytics(self, request, pk=None):
-        """Get detailed analytics for a meeting"""
+    def event_analytics(self, request, pk=None):
+        """Get detailed analytics for a event"""
         try:
-            meeting = Meeting.objects.get(id=pk)
-            analytics = MeetingAnalytics.objects.get(meeting=meeting)
+            event = Event.objects.get(id=pk)
+            analytics = EventAnalytics.objects.get(event=event)
 
             return Response({
-                'meeting_code': meeting.meeting_code,
-                'title': meeting.title,
+                'code': event.code,
+                'title': event.title,
                 'total_participants': analytics.total_participants,
                 'duration_minutes': analytics.total_duration_seconds // 60,
                 'engagement_score': analytics.participant_engagement_score,
@@ -54,17 +54,17 @@ class AdminDashboardView(viewsets.GenericViewSet):
                 'screen_shares': analytics.screen_shares_count,
                 'bandwidth_mb': analytics.bandwidth_used_mb
             })
-        except Meeting.DoesNotExist:
-            return Response({'error': 'Meeting not found'}, status=status.HTTP_404_NOT_FOUND)
-        except MeetingAnalytics.DoesNotExist:
+        except Event.DoesNotExist:
+            return Response({'error': 'Event not found'}, status=status.HTTP_404_NOT_FOUND)
+        except EventAnalytics.DoesNotExist:
             return Response({'error': 'Analytics not found'}, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=True, methods=['get'])
-    def attendance_report(self, request, meeting_id):
-        """Get attendance report for meeting"""
+    def attendance_report(self, request, event_id):
+        """Get attendance report for event"""
         from src.apps.recordings.services.recording_service import RecordingService
         try:
-            report = RecordingService.get_attendance_report(meeting_id)
+            report = RecordingService.get_attendance_report(event_id)
             return Response(report)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -79,7 +79,7 @@ class AdminDashboardView(viewsets.GenericViewSet):
             'processing': processing.count(),
             'failed': failed.count(),
             'queue': [{
-                'meeting': r.meeting.meeting_code,
+                'event': r.event.code,
                 'status': r.status,
                 'started': r.start_time.isoformat()
             } for r in processing[:20]]

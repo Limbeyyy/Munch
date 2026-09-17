@@ -2,79 +2,79 @@ from celery import shared_task
 from django.core.cache import cache
 from django.db import transaction
 import logging
-from src.apps.meetings.lifecycle import broadcast_meeting_ended
-from src.apps.meetings.models import Meeting
+from src.apps.meetings.lifecycle import broadcast_event_ended
+from src.apps.meetings.models import Event
 from src.apps.artifacts.services.artifact_service import MeetingArtifactService
 from src.apps.drive.services.google_drive_adapter import GoogleDriveAdapter
 
 logger = logging.getLogger(__name__)
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def process_transcript_segment(self, meeting_id, user_id, content, segment_id=None):
+def process_transcript_segment(self, event_id, user_id, content, segment_id=None):
     """
     Process and save a transcript segment
     """
     try:
-        service = MeetingArtifactService(meeting_id, user_id)
+        service = MeetingArtifactService(event_id, user_id)
         success = service.save_transcript(content, segment_id)
         
         if not success:
             raise Exception("Failed to save transcript")
         
-        return {'meeting_id': meeting_id, 'segment_id': segment_id, 'status': 'success'}
+        return {'event_id': event_id, 'segment_id': segment_id, 'status': 'success'}
         
     except Exception as e:
         logger.error(f"Failed to process transcript segment: {str(e)}")
         self.retry(exc=e)
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def process_meeting_note(self, meeting_id, user_id, content):
+def process_event_note(self, event_id, user_id, content):
     """
-    Process and save a meeting note
+    Process and save a event note
     """
     try:
-        service = MeetingArtifactService(meeting_id, user_id)
-        success = service.save_meeting_notes(content)
+        service = MeetingArtifactService(event_id, user_id)
+        success = service.save_event_notes(content)
         
         if not success:
-            raise Exception("Failed to save meeting note")
+            raise Exception("Failed to save event note")
         
-        return {'meeting_id': meeting_id, 'status': 'success'}
+        return {'event_id': event_id, 'status': 'success'}
         
     except Exception as e:
-        logger.error(f"Failed to process meeting note: {str(e)}")
+        logger.error(f"Failed to process event note: {str(e)}")
         self.retry(exc=e)
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=300)
-def export_meeting_artifacts(self, meeting_id, user_id, format='pdf'):
+def export_event_artifacts(self, event_id, user_id, format='pdf'):
     """
-    Export all meeting artifacts
+    Export all event artifacts
     """
     try:
-        service = MeetingArtifactService(meeting_id, user_id)
-        result = service.export_meeting_data(format)
+        service = MeetingArtifactService(event_id, user_id)
+        result = service.export_event_data(format)
         
         return {
-            'meeting_id': meeting_id,
+            'event_id': event_id,
             'format': format,
             'result': result
         }
         
     except Exception as e:
-        logger.error(f"Failed to export meeting artifacts: {str(e)}")
+        logger.error(f"Failed to export event artifacts: {str(e)}")
         self.retry(exc=e)
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=30)
-def sync_drive_files(self, meeting_id, user_id):
+def sync_drive_files(self, event_id, user_id):
     """
     Synchronize Drive files with database records
     """
     try:
-        meeting = Meeting.objects.get(id=meeting_id)
+        event = Event.objects.get(id=event_id)
         drive_adapter = GoogleDriveAdapter(user_id)
         
         # Get files from Drive folder
-        files = drive_adapter.list_files(folder_id=meeting.drive_folder_id)
+        files = drive_adapter.list_files(folder_id=event.drive_folder_id)
         
         with transaction.atomic():
             # Update or create artifact records
@@ -82,7 +82,7 @@ def sync_drive_files(self, meeting_id, user_id):
             
             for file in files:
                 Artifact.objects.update_or_create(
-                    meeting=meeting,
+                    event=event,
                     drive_file_id=file['id'],
                     defaults={
                         'display_name': file.get('name', ''),
@@ -95,48 +95,48 @@ def sync_drive_files(self, meeting_id, user_id):
                     }
                 )
         
-        return {'meeting_id': meeting_id, 'synced_files': len(files)}
+        return {'event_id': event_id, 'synced_files': len(files)}
         
     except Exception as e:
         logger.error(f"Failed to sync Drive files: {str(e)}")
         self.retry(exc=e)
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=60)
-def cleanup_meeting_resources(self, meeting_id):
+def cleanup_event_resources(self, event_id):
     """
-    Clean up meeting resources after meeting ends
+    Clean up event resources after event ends
     """
     try:
-        meeting = Meeting.objects.get(id=meeting_id)
+        event = Event.objects.get(id=event_id)
         
-        # Archive or delete meeting resources
+        # Archive or delete event resources
         # This could include moving files to archive folder, removing temporary data, etc.
         
-        # Update meeting status if needed. Through the service, so the room
-        # is emptied and told rather than left sitting in an ended meeting.
-        if meeting.status == Meeting.Status.ACTIVE:
-            from src.apps.meetings.services.meeting_service import MeetingService
+        # Update event status if needed. Through the service, so the room
+        # is emptied and told rather than left sitting in an ended event.
+        if event.status == Event.Status.ACTIVE:
+            from src.apps.meetings.services.event_service import EventService
 
-            meeting = MeetingService.end_meeting(meeting.id)
-            broadcast_meeting_ended(meeting, reason='time_elapsed')
+            event = EventService.end_event(event.id)
+            broadcast_event_ended(event, reason='time_elapsed')
         
         # Clear cache
-        cache.delete_pattern(f'meeting_*_{meeting_id}')
+        cache.delete_pattern(f'event_*_{event_id}')
         
-        return {'meeting_id': meeting_id, 'status': 'cleaned_up'}
+        return {'event_id': event_id, 'status': 'cleaned_up'}
         
     except Exception as e:
-        logger.error(f"Failed to cleanup meeting resources: {str(e)}")
+        logger.error(f"Failed to cleanup event resources: {str(e)}")
         self.retry(exc=e)
 
 @shared_task
-def process_participant_attendance(meeting_id, user_id, action):
+def process_participant_attendance(event_id, user_id, action):
     """
     Process participant attendance events
     """
     try:
-        meeting = Meeting.objects.get(id=meeting_id)
-        service = MeetingArtifactService(meeting_id, user_id)
+        event = Event.objects.get(id=event_id)
+        service = MeetingArtifactService(event_id, user_id)
         
         if action == 'join':
             service.record_attendance({
@@ -149,7 +149,7 @@ def process_participant_attendance(meeting_id, user_id, action):
             # Update attendance record with leave time
             pass
         
-        return {'meeting_id': meeting_id, 'user_id': user_id, 'action': action}
+        return {'event_id': event_id, 'user_id': user_id, 'action': action}
         
     except Exception as e:
         logger.error(f"Failed to process attendance: {str(e)}")

@@ -1,9 +1,9 @@
-"""What a meeting's headcount is measured against, and what the team was.
+"""What a event's headcount is measured against, and what the team was.
 
 Two counts that were being asked of the wrong thing. Turnout was measured
 against invitations alone, so guests - who are never invited - made the
 figures worse the more of them came. And the team page asked the room who
-was in it, which for a meeting that has finished is nobody, because ending
+was in it, which for a event that has finished is nobody, because ending
 one empties it.
 """
 from django.test import TestCase
@@ -11,11 +11,11 @@ from django.utils import timezone
 from rest_framework_simplejwt.tokens import AccessToken
 
 from src.apps.meetings.models import (
-    GuestAttendee, Meeting, MeetingInvite, MeetingParticipant, Session,
+    GuestAttendee, Event, EventInvite, EventParticipant, Session,
     SessionAttendance,
 )
 from src.apps.meetings.tests.factories import (
-    make_event, make_host, make_meeting, make_session,
+    make_event, make_host, make_session,
 )
 
 API = '/api/v1'
@@ -24,9 +24,8 @@ API = '/api/v1'
 class HeadcountTests(TestCase):
     def setUp(self):
         self.host = make_host('host@example.com')
-        self.event = make_event(self.host)
         self.start = timezone.now() - timezone.timedelta(hours=2)
-        self.meeting = make_meeting(self.host, self.event, start=self.start, minutes=180)
+        self.event = make_event(self.host, start=self.start, minutes=180)
         self.client_ = self.as_(self.host)
 
     def as_(self, user):
@@ -35,15 +34,15 @@ class HeadcountTests(TestCase):
         return Client(HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(user)}')
 
     def report(self):
-        return self.client_.get(f'{API}/meetings/{self.meeting.id}/attendance/').json()
+        return self.client_.get(f'{API}/events/{self.event.id}/attendance/').json()
 
     def invite(self, email, came=False):
         person = make_host(email) if came else None
-        invite = MeetingInvite.objects.create(meeting=self.meeting, email=email)
+        invite = EventInvite.objects.create(event=self.event, email=email)
         if came:
-            MeetingParticipant.objects.create(
-                meeting=self.meeting, user=person,
-                role=MeetingParticipant.Role.ATTENDEE, is_active=True,
+            EventParticipant.objects.create(
+                event=self.event, user=person,
+                role=EventParticipant.Role.ATTENDEE, is_active=True,
             )
             invite.joined_at = timezone.now()
             invite.joined_user = person
@@ -52,7 +51,7 @@ class HeadcountTests(TestCase):
 
     def guest(self, name, status=GuestAttendee.Status.ADMITTED):
         return GuestAttendee.objects.create(
-            meeting=self.meeting, full_name=name, phone='9800000000', status=status,
+            event=self.event, full_name=name, phone='9800000000', status=status,
         )
 
     def test_a_guest_counts_towards_the_meetings_roll(self):
@@ -75,9 +74,9 @@ class HeadcountTests(TestCase):
         # negative.
         self.invite('missed@example.com')
         walked_in = make_host('code@example.com')
-        MeetingParticipant.objects.create(
-            meeting=self.meeting, user=walked_in,
-            role=MeetingParticipant.Role.ATTENDEE, is_active=True,
+        EventParticipant.objects.create(
+            event=self.event, user=walked_in,
+            role=EventParticipant.Role.ATTENDEE, is_active=True,
         )
 
         body = self.report()
@@ -118,12 +117,11 @@ class GrossSessionTests(TestCase):
 
     def setUp(self):
         self.host = make_host('host@example.com')
-        self.event = make_event(self.host)
         self.start = timezone.now() - timezone.timedelta(hours=3)
-        self.meeting = make_meeting(self.host, self.event, start=self.start, minutes=240)
-        self.a = make_session(self.meeting, self.start, 60, 'Session A')
+        self.event = make_event(self.host, start=self.start, minutes=240)
+        self.a = make_session(self.event, self.start, 60, 'Session A')
         self.b = make_session(
-            self.meeting, self.start + timezone.timedelta(minutes=90), 60, 'Session B'
+            self.event, self.start + timezone.timedelta(minutes=90), 60, 'Session B'
         )
 
     def sit(self, session, how_many):
@@ -136,7 +134,7 @@ class GrossSessionTests(TestCase):
         from django.test import Client
 
         client = Client(HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(self.host)}')
-        return client.get(f'{API}/meetings/{self.meeting.id}/attendance/').json()
+        return client.get(f'{API}/events/{self.event.id}/attendance/').json()
 
     def test_four_in_one_and_two_in_the_other_is_six(self):
         self.sit(self.a, 4)
@@ -166,30 +164,29 @@ class GrossSessionTests(TestCase):
         self.assertEqual(self.report()['session_attendance_total'], 2)
 
     def test_a_meeting_with_no_sessions_reports_nothing_rather_than_failing(self):
-        bare = make_meeting(self.host, self.event, start=self.start, minutes=60)
+        bare = make_event(self.host, start=self.start, minutes=60)
         from django.test import Client
 
         client = Client(HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(self.host)}')
-        body = client.get(f'{API}/meetings/{bare.id}/attendance/').json()
+        body = client.get(f'{API}/events/{bare.id}/attendance/').json()
 
         self.assertEqual(body['session_attendance_total'], 0)
         self.assertEqual(body['sessions'], [])
 
 
 class TeamAfterTheMeetingTests(TestCase):
-    """Who was on the team, asked of a meeting that has finished."""
+    """Who was on the team, asked of a event that has finished."""
 
     def setUp(self):
         self.host = make_host('host@example.com')
         self.event = make_event(self.host)
-        self.meeting = make_meeting(self.host, self.event)
         self.attendee = make_host('attendee@example.com')
-        MeetingParticipant.objects.create(
-            meeting=self.meeting, user=self.attendee,
-            role=MeetingParticipant.Role.ATTENDEE, is_active=True,
+        EventParticipant.objects.create(
+            event=self.event, user=self.attendee,
+            role=EventParticipant.Role.ATTENDEE, is_active=True,
         )
         GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='Bishnu', phone='9800000000',
+            event=self.event, full_name='Bishnu', phone='9800000000',
             status=GuestAttendee.Status.ADMITTED,
         )
 
@@ -198,14 +195,14 @@ class TeamAfterTheMeetingTests(TestCase):
 
         client = Client(HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(self.host)}')
         tail = '?everyone=1' if everyone else ''
-        return client.get(f'{API}/meetings/{self.meeting.id}/participants/{tail}').json()
+        return client.get(f'{API}/events/{self.event.id}/participants/{tail}').json()
 
     def finish(self):
-        from src.apps.meetings.services.meeting_service import MeetingService
+        from src.apps.meetings.services.event_service import EventService
 
-        self.meeting.status = Meeting.Status.ACTIVE
-        self.meeting.save()
-        MeetingService.end_meeting(self.meeting.id)
+        self.event.status = Event.Status.ACTIVE
+        self.event.save()
+        EventService.end_event(self.event.id)
 
     def test_the_room_shows_who_is_in_it(self):
         self.assertEqual(len(self.roster()), 2)

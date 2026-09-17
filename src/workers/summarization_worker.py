@@ -3,27 +3,27 @@ import logging
 from celery import shared_task
 from django.conf import settings
 from django.utils import timezone
-from src.apps.meetings.models import Meeting
+from src.apps.meetings.models import Event
 from src.apps.transcription.models import Transcript, TranscriptSummary
-from src.apps.monitoring.models import ErrorLog, MeetingEvent
+from src.apps.monitoring.models import ErrorLog, EventLogEntry
 
 logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=120)
-def summarize_transcript(self, meeting_id, llm_provider=None):
+def summarize_transcript(self, event_id, llm_provider=None):
     """
     Summarize transcript using LLM (Claude, OpenAI, etc)
     Generates summary, key points, action items
     """
     try:
-        meeting = Meeting.objects.get(id=meeting_id)
-        transcript = Transcript.objects.get(meeting=meeting)
+        event = Event.objects.get(id=event_id)
+        transcript = Transcript.objects.get(event=event)
 
-        logger.info(f"Summarizing transcript for meeting {meeting_id}")
+        logger.info(f"Summarizing transcript for event {event_id}")
 
         if not transcript.is_complete or not transcript.full_text:
-            logger.warning(f"Transcript not ready for meeting {meeting_id}")
+            logger.warning(f"Transcript not ready for event {event_id}")
             return {'error': 'Transcript not complete'}
 
         # Determine LLM provider
@@ -39,7 +39,7 @@ def summarize_transcript(self, meeting_id, llm_provider=None):
 
         # Save summary
         summary, created = TranscriptSummary.objects.get_or_create(
-            meeting=meeting,
+            event=event,
             defaults={
                 'transcript': transcript,
                 'llm_provider': llm_provider,
@@ -56,12 +56,12 @@ def summarize_transcript(self, meeting_id, llm_provider=None):
         summary.completed_at = timezone.now()
         summary.save()
 
-        logger.info(f"Successfully summarized transcript for {meeting_id}")
+        logger.info(f"Successfully summarized transcript for {event_id}")
 
         # Log event
-        MeetingEvent.objects.create(
-            meeting=meeting,
-            event_type=MeetingEvent.EventType.SUMMARY_GENERATED,
+        EventLogEntry.objects.create(
+            event=event,
+            event_type=EventLogEntry.EventType.SUMMARY_GENERATED,
             description=f"Summary generated with {len(summary.key_points)} key points",
             user='system',
             data={
@@ -72,7 +72,7 @@ def summarize_transcript(self, meeting_id, llm_provider=None):
         )
 
         return {
-            'meeting_id': str(meeting_id),
+            'event_id': str(event_id),
             'status': 'success',
             'provider': llm_provider,
             'key_points': len(summary.key_points),
@@ -80,14 +80,14 @@ def summarize_transcript(self, meeting_id, llm_provider=None):
         }
 
     except Transcript.DoesNotExist:
-        logger.error(f"Transcript not found for meeting {meeting_id}")
+        logger.error(f"Transcript not found for event {event_id}")
         return {'error': 'Transcript not found'}
 
     except Exception as e:
         logger.error(f"Failed to summarize transcript: {str(e)}")
         try:
             ErrorLog.objects.create(
-                meeting_id=meeting_id,
+                event_id=event_id,
                 error_type='llm',
                 severity='error',
                 error_message=str(e),
@@ -106,9 +106,9 @@ def _summarize_with_claude(transcript_text):
 
         client = Anthropic()
 
-        prompt = f"""Please analyze this meeting transcript and provide:
+        prompt = f"""Please analyze this event transcript and provide:
 
-1. A concise 2-3 paragraph summary of the meeting
+1. A concise 2-3 paragraph summary of the event
 2. 5-7 key discussion points (as a bullet list)
 3. 3-5 action items with assigned owners (if mentioned)
 4. Brief summary of each participant's contributions
@@ -154,9 +154,9 @@ def _summarize_with_openai(transcript_text):
 
         openai.api_key = settings.OPENAI_API_KEY
 
-        prompt = f"""Please analyze this meeting transcript and provide:
+        prompt = f"""Please analyze this event transcript and provide:
 
-1. A concise 2-3 paragraph summary of the meeting
+1. A concise 2-3 paragraph summary of the event
 2. 5-7 key discussion points (as a bullet list)
 3. 3-5 action items with assigned owners (if mentioned)
 4. Brief summary of each participant's contributions
@@ -169,7 +169,7 @@ Return the analysis in JSON format with keys: summary, key_points, action_items,
         response = openai.ChatCompletion.create(
             model="gpt-4-turbo",
             messages=[
-                {"role": "system", "content": "You are a meeting analyst. Analyze transcripts and provide structured insights."},
+                {"role": "system", "content": "You are a event analyst. Analyze transcripts and provide structured insights."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,

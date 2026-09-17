@@ -6,13 +6,13 @@ the person the host admitted.
 """
 from django.core import signing
 
-SALT = 'munch.meeting.guest'
+SALT = 'munch.event.guest'
 MAX_AGE_SECONDS = 60 * 60 * 12
 
 
 def make_guest_token(guest) -> str:
     return signing.dumps(
-        {'guest_id': str(guest.id), 'meeting_code': guest.meeting.meeting_code},
+        {'guest_id': str(guest.id), 'code': guest.event.code},
         salt=SALT,
     )
 
@@ -32,6 +32,6 @@ def resolve_guest(token: str):
     payload = read_guest_token(token)
     if not payload:
         return None
-    return GuestAttendee.objects.select_related('meeting').filter(
+    return GuestAttendee.objects.select_related('event').filter(
         id=payload.get('guest_id')
     ).first()

@@ -8,10 +8,10 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from src.apps.meetings.models import Meeting, Session
+from src.apps.meetings.models import Event, Session
 from src.apps.meetings.scheduling import GAP_MINUTES
 from src.apps.meetings.tests.factories import (
-    at, make_event, make_host, make_meeting, make_session,
+    at, make_event, make_host, make_session,
 )
 
 API = '/api/v1'
@@ -24,9 +24,9 @@ def signed_in(user):
     return client
 
 
-def session_body(meeting, starts_at, minutes=60, title='New session'):
+def session_body(event, starts_at, minutes=60, title='New session'):
     return {
-        'meeting': str(meeting.id),
+        'event': str(event.id),
         'title': title,
         'starts_at': starts_at.isoformat(),
         'duration_minutes': minutes,
@@ -39,12 +39,11 @@ def session_body(meeting, starts_at, minutes=60, title='New session'):
 class CreateSessionTests(TestCase):
     def setUp(self):
         self.host = make_host()
-        self.event = make_event(self.host)
         self.nine = (timezone.now() + timezone.timedelta(days=1)).replace(
             hour=9, minute=0, second=0, microsecond=0
         )
-        self.meeting = make_meeting(self.host, self.event, start=self.nine)
-        make_session(self.meeting, self.nine, 60, 'Opening')
+        self.event = make_event(self.host, start=self.nine)
+        make_session(self.event, self.nine, 60, 'Opening')
         self.client = signed_in(self.host)
         # Hosting limits are a separate concern; give this host room to work.
         from src.apps.accounts.models import HostAccount
@@ -56,7 +55,7 @@ class CreateSessionTests(TestCase):
     def test_a_session_after_the_gap_is_created(self):
         response = self.client.post(
             f'{API}/sessions/',
-            session_body(self.meeting, at(self.nine, hours=1, minutes=15)),
+            session_body(self.event, at(self.nine, hours=1, minutes=15)),
             format='json',
         )
         self.assertEqual(response.status_code, 201)
@@ -64,17 +63,17 @@ class CreateSessionTests(TestCase):
     def test_an_overlapping_session_is_refused(self):
         response = self.client.post(
             f'{API}/sessions/',
-            session_body(self.meeting, at(self.nine, minutes=30)),
+            session_body(self.event, at(self.nine, minutes=30)),
             format='json',
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()['code'], 'schedule_conflict')
-        self.assertEqual(Session.objects.filter(meeting=self.meeting).count(), 1)
+        self.assertEqual(Session.objects.filter(event=self.event).count(), 1)
 
     def test_a_session_inside_the_gap_is_refused(self):
         response = self.client.post(
             f'{API}/sessions/',
-            session_body(self.meeting, at(self.nine, hours=1, minutes=5), 30),
+            session_body(self.event, at(self.nine, hours=1, minutes=5), 30),
             format='json',
         )
         self.assertEqual(response.status_code, 400)
@@ -82,29 +81,28 @@ class CreateSessionTests(TestCase):
     def test_the_refusal_offers_the_earliest_legal_time(self):
         response = self.client.post(
             f'{API}/sessions/',
-            session_body(self.meeting, at(self.nine, minutes=30)),
+            session_body(self.event, at(self.nine, minutes=30)),
             format='json',
         )
         offered = response.json()['earliest_start']
         self.assertEqual(offered, at(self.nine, hours=1, minutes=15).isoformat())
 
-    def test_a_meeting_created_with_its_running_order_comes_out_spaced(self):
+    def test_an_event_created_with_its_running_order_comes_out_spaced(self):
         body = {
             'title': 'Afternoon',
             'scheduled_start': at(self.nine, hours=5).isoformat(),
             'duration_minutes': 180,
             'sessions': [
-                {**session_body(self.meeting, at(self.nine, hours=5), 60, 'One')},
-                {**session_body(self.meeting, at(self.nine, hours=5), 60, 'Two')},
-                {**session_body(self.meeting, at(self.nine, hours=5), 60, 'Three')},
+                {**session_body(self.event, at(self.nine, hours=5), 60, 'One')},
+                {**session_body(self.event, at(self.nine, hours=5), 60, 'Two')},
+                {**session_body(self.event, at(self.nine, hours=5), 60, 'Three')},
             ],
         }
-        response = self.client.post(
-            f'{API}/events/{self.event.id}/meetings/', body, format='json'
-        )
+        body['event_date'] = at(self.nine, hours=5).date().isoformat()
+        response = self.client.post(f'{API}/events/', body, format='json')
         self.assertEqual(response.status_code, 201)
 
-        created = Meeting.objects.get(id=response.json()['id'])
+        created = Event.objects.get(id=response.json()['id'])
         times = list(created.sessions.order_by('starts_at').values_list('starts_at', flat=True))
         self.assertEqual(times[0], at(self.nine, hours=5))
         self.assertEqual(times[1], at(self.nine, hours=6, minutes=15))
@@ -116,18 +114,17 @@ class EditSessionTests(TestCase):
 
     def setUp(self):
         self.host = make_host()
-        self.event = make_event(self.host)
         self.nine = (timezone.now() + timezone.timedelta(days=1)).replace(
             hour=9, minute=0, second=0, microsecond=0
         )
-        self.meeting = make_meeting(self.host, self.event, start=self.nine)
-        self.a = make_session(self.meeting, self.nine, 60, 'A')
-        self.b = make_session(self.meeting, at(self.nine, hours=1, minutes=15), 60, 'B')
-        self.c = make_session(self.meeting, at(self.nine, hours=2, minutes=30), 60, 'C')
+        self.event = make_event(self.host, start=self.nine)
+        self.a = make_session(self.event, self.nine, 60, 'A')
+        self.b = make_session(self.event, at(self.nine, hours=1, minutes=15), 60, 'B')
+        self.c = make_session(self.event, at(self.nine, hours=2, minutes=30), 60, 'C')
         self.client = signed_in(self.host)
 
     def times(self):
-        return {s.title: s.starts_at for s in Session.objects.filter(meeting=self.meeting)}
+        return {s.title: s.starts_at for s in Session.objects.filter(event=self.event)}
 
     def test_moving_a_session_shifts_the_ones_after_it(self):
         response = self.client.patch(
@@ -188,7 +185,7 @@ class EditSessionTests(TestCase):
         )
         stored = sorted(
             (s.starts_at, s.duration_minutes)
-            for s in Session.objects.filter(meeting=self.meeting)
+            for s in Session.objects.filter(event=self.event)
         )
         for (start, minutes), (next_start, _) in zip(stored, stored[1:]):
             self.assertGreaterEqual(
@@ -205,14 +202,13 @@ class ConcurrentEditTests(TransactionTestCase):
 
     def setUp(self):
         self.host = make_host()
-        self.event = make_event(self.host)
         self.nine = (timezone.now() + timezone.timedelta(days=1)).replace(
             hour=9, minute=0, second=0, microsecond=0
         )
-        self.meeting = make_meeting(self.host, self.event, start=self.nine)
-        self.a = make_session(self.meeting, self.nine, 60, 'A')
-        self.b = make_session(self.meeting, at(self.nine, hours=1, minutes=15), 60, 'B')
-        self.c = make_session(self.meeting, at(self.nine, hours=2, minutes=30), 60, 'C')
+        self.event = make_event(self.host, start=self.nine)
+        self.a = make_session(self.event, self.nine, 60, 'A')
+        self.b = make_session(self.event, at(self.nine, hours=1, minutes=15), 60, 'B')
+        self.c = make_session(self.event, at(self.nine, hours=2, minutes=30), 60, 'C')
 
     def test_simultaneous_reflows_still_leave_a_legal_day(self):
         from src.apps.meetings.scheduling import reschedule
@@ -220,7 +216,7 @@ class ConcurrentEditTests(TransactionTestCase):
         def move(session, minutes):
             try:
                 reschedule(
-                    self.meeting,
+                    self.event,
                     {session.id: {'duration_minutes': minutes}},
                     anchored_id=session.id,
                 )
@@ -238,7 +234,7 @@ class ConcurrentEditTests(TransactionTestCase):
 
         stored = sorted(
             (s.starts_at, s.duration_minutes)
-            for s in Session.objects.filter(meeting=self.meeting)
+            for s in Session.objects.filter(event=self.event)
         )
         for (start, minutes), (next_start, _) in zip(stored, stored[1:]):
             self.assertGreaterEqual(

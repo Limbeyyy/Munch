@@ -4,10 +4,12 @@ from src.apps.accounts.models import User
 import uuid
 
 class Event(models.Model):
-    """A day's programme, holding the meetings that make it up.
+    """A programme people join, and the running order inside it.
 
-    An event is the thing people are invited to ("the Sunday conference");
-    the meetings inside it are the rooms they actually join.
+    An event is both the thing people are invited to and the room they
+    actually enter: it carries the code on the invitation, the hours it
+    runs between, and the sessions that make up its running order. There
+    is nothing in between - a session belongs to an event directly.
     """
     class Status(models.TextChoices):
         DRAFT = 'draft', 'Draft'
@@ -17,67 +19,30 @@ class Event(models.Model):
         CANCELLED = 'cancelled', 'Cancelled'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # What is on the invitation, and what somebody types to get in.
+    code = models.CharField(max_length=20, unique=True, db_index=True)
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
-    organizer = models.ForeignKey(
-        User, on_delete=models.PROTECT, related_name='organized_events'
-    )
+
+    host = models.ForeignKey(User, on_delete=models.PROTECT, related_name='hosted_events')
+
     venue = models.CharField(max_length=255, blank=True)
-
-    # The day the programme runs. Meetings carry their own times within it.
+    # The day it runs. The hours within it are the two fields below.
     event_date = models.DateField()
-    status = models.CharField(
-        max_length=20, choices=Status.choices, default=Status.SCHEDULED
-    )
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['-event_date', '-created_at']
-        indexes = [models.Index(fields=['organizer', 'event_date'])]
-
-    def __str__(self):
-        return f"{self.title} ({self.event_date})"
-
-
-class Meeting(models.Model):
-    """
-    Core meeting model - source of truth for meeting state
-    """
-    class Status(models.TextChoices):
-        SCHEDULED = 'scheduled', 'Scheduled'
-        ACTIVE = 'active', 'Active'
-        ENDED = 'ended', 'Ended'
-        CANCELLED = 'cancelled', 'Cancelled'
-    
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    event = models.ForeignKey(
-        Event,
-        on_delete=models.CASCADE,
-        related_name='meetings',
-        null=True,
-        blank=True,
-        help_text='The programme this meeting belongs to, if any.',
-    )
-    meeting_code = models.CharField(max_length=20, unique=True, db_index=True)
-    title = models.CharField(max_length=255)
-    description = models.TextField(blank=True)
-    
-    host = models.ForeignKey(User, on_delete=models.PROTECT, related_name='hosted_meetings')
-    
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.SCHEDULED)
-    
+
     # Google Drive resources
     drive_folder_id = models.CharField(max_length=255, null=True, blank=True)
     drive_metadata_file_id = models.CharField(max_length=255, null=True, blank=True)
-    
+
     # Timing
     scheduled_start = models.DateTimeField()
     scheduled_end = models.DateTimeField()
     started_at = models.DateTimeField(null=True, blank=True)
     ended_at = models.DateTimeField(null=True, blank=True)
-    
+
     # Settings
     max_participants = models.PositiveIntegerField(default=100)
     allow_recording = models.BooleanField(default=False)
@@ -87,58 +52,61 @@ class Meeting(models.Model):
     # messages to presenters within it.
     chat_enabled = models.BooleanField(default=False)
     direct_messages_enabled = models.BooleanField(default=False)
-    
+
     # Metadata
-    meeting_metadata = models.JSONField(default=dict, blank=True)
+    event_metadata = models.JSONField(default=dict, blank=True)
 
     # The guests who were admitted, kept as the register rather than as
     # rows about people.
     #
-    # A guest's own row lasts as long as the meeting and is then deleted,
-    # so this is what remains: a list of {"name", "at"} belonging to this
-    # meeting and nothing else. It is attendance - who was in the hall that
+    # A guest's own row lasts as long as the event and is then deleted, so
+    # this is what remains: a list of {"name", "at"} belonging to this
+    # event and nothing else. It is attendance - who was in the hall that
     # afternoon - and it cannot be joined to anything, which is the point.
-    # There is no guest to look up across meetings because there is no
+    # There is no guest to look up across events because there is no
     # guest, only a name on one register.
     guest_attendance = models.JSONField(default=list, blank=True)
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
-        db_table = 'meetings'
+        db_table = 'events'
+        ordering = ['-event_date', '-created_at']
         indexes = [
-            models.Index(fields=['meeting_code']),
+            models.Index(fields=['code']),
             models.Index(fields=['host']),
             models.Index(fields=['status']),
             models.Index(fields=['scheduled_start']),
+            models.Index(fields=['host', 'event_date']),
         ]
-    
+
     def __str__(self):
-        return f"{self.meeting_code} - {self.title}"
-    
+        return f"{self.code} - {self.title}"
+
     @property
     def is_active(self):
-        """Check if meeting is currently active"""
+        """Check if the event is currently under way"""
         return self.status == self.Status.ACTIVE
-    
+
     @property
     def duration_seconds(self):
-        """Calculate meeting duration in seconds"""
+        """Calculate how long it actually ran, in seconds"""
         if self.started_at and self.ended_at:
             return (self.ended_at - self.started_at).total_seconds()
         return 0
-    
+
     def get_participant_count(self):
         """Get current participant count"""
-        return MeetingParticipant.objects.filter(
-            meeting=self,
+        return EventParticipant.objects.filter(
+            event=self,
             is_active=True
         ).count()
 
-class MeetingParticipant(models.Model):
+
+class EventParticipant(models.Model):
     """
-    Tracks meeting participants and their roles
+    Tracks event participants and their roles
     """
     class Role(models.TextChoices):
         HOST = 'host', 'Host'
@@ -147,8 +115,8 @@ class MeetingParticipant(models.Model):
         ATTENDEE = 'attendee', 'Attendee'
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name='participants')
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='meeting_participations')
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='participants')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='event_participations')
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.ATTENDEE)
     
     # Session tracking
@@ -166,68 +134,67 @@ class MeetingParticipant(models.Model):
     participant_metadata = models.JSONField(default=dict, blank=True)
     
     class Meta:
-        db_table = 'meeting_participants'
-        unique_together = [['meeting', 'user']]
+        db_table = 'event_participants'
+        unique_together = [['event', 'user']]
         indexes = [
-            models.Index(fields=['meeting']),
             models.Index(fields=['user']),
             models.Index(fields=['is_active']),
         ]
     
     def __str__(self):
-        return f"{self.user.email} - {self.meeting.meeting_code} ({self.role})"
+        return f"{self.user.email} - {self.event.code} ({self.role})"
     
     @property
     def is_online(self):
         """Check if participant is currently online"""
         return self.is_active and not self.left_at
 
-class MeetingPermission(models.Model):
+class EventPermission(models.Model):
     """
-    Fine-grained meeting access control
+    Fine-grained event access control
     """
     class Permission(models.TextChoices):
-        VIEW_MEETING = 'view', 'View Meeting'
-        JOIN_MEETING = 'join', 'Join Meeting'
-        RECORD_MEETING = 'record', 'Record Meeting'
+        VIEW_EVENT = 'view', 'View event'
+        JOIN_EVENT = 'join', 'Join event'
+        RECORD_EVENT = 'record', 'Record event'
         SHARE_SCREEN = 'share_screen', 'Share Screen'
         MUTE_PARTICIPANTS = 'mute', 'Mute Participants'
         REMOVE_PARTICIPANTS = 'remove', 'Remove Participants'
-        MANAGE_MEETING = 'manage', 'Manage Meeting'
+        MANAGE_EVENT = 'manage', 'Manage event'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name='permissions')
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='meeting_permissions')
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='permissions')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='event_permissions')
     permission = models.CharField(max_length=50, choices=Permission.choices)
     granted_at = models.DateTimeField(auto_now_add=True)
     granted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='permissions_granted')
 
     class Meta:
-        db_table = 'meeting_permissions'
-        unique_together = [['meeting', 'user', 'permission']]
+        db_table = 'event_permissions'
+        unique_together = [['event', 'user', 'permission']]
         indexes = [
-            models.Index(fields=['meeting', 'permission']),
+            models.Index(fields=['event', 'permission']),
             models.Index(fields=['user']),
         ]
 
     def __str__(self):
-        return f"{self.user.email} - {self.permission} on {self.meeting.meeting_code}"
+        return f"{self.user.email} - {self.permission} on {self.event.code}"
 
 class ChatMessage(models.Model):
-    """A message sent inside a meeting.
+    """A message sent inside an event.
 
     A message with no recipient is public to the room; one with a recipient is
     a direct message and is only ever delivered to the sender and recipient.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name='chat_messages')
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='chat_messages')
     # A message comes from either an account holder or a guest, never both.
     sender = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name='sent_chat_messages',
         null=True, blank=True,
     )
-    # The guest's row goes when the meeting ends; what they wrote does
-    # not. A question asked from the floor belongs to the meeting - it may
+    # The guest's row goes when the event ends; what they wrote does
+    # not. A question asked from the floor belongs to the event - it may
     # be on the board already - so the message keeps the name itself
     # rather than only pointing at somebody who will not be there.
     guest_sender = models.ForeignKey(
@@ -283,7 +250,7 @@ class ChatMessage(models.Model):
 
     # What the host decided this message really is. Sorting a message onto
     # the board is a publishing decision, not a label: the board is read by
-    # everyone in the meeting, so a private message put on it stops being
+    # everyone in the event, so a private message put on it stops being
     # private. Nothing lands there without the host putting it there.
     topic = models.CharField(
         max_length=20,
@@ -295,7 +262,7 @@ class ChatMessage(models.Model):
     # The answer given from the front of the room. A question on the board
     # without one is only half of an exchange, and the answer is usually
     # what the rest of the room actually came for. Written whenever it
-    # suits - mid-meeting, or days later.
+    # suits - mid-event, or days later.
     answer = models.TextField(blank=True)
     answered_by = models.ForeignKey(
         User,
@@ -307,14 +274,14 @@ class ChatMessage(models.Model):
     answered_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        db_table = 'meeting_chat_messages'
+        db_table = 'event_chat_messages'
         ordering = ['created_at']
         indexes = [
-            models.Index(fields=['meeting', 'created_at']),
-            models.Index(fields=['meeting', 'recipient']),
-            models.Index(fields=['meeting', 'guest_recipient']),
-            models.Index(fields=['meeting', 'moderation_status']),
-            models.Index(fields=['meeting', 'topic']),
+            models.Index(fields=['event', 'created_at']),
+            models.Index(fields=['event', 'recipient']),
+            models.Index(fields=['event', 'guest_recipient']),
+            models.Index(fields=['event', 'moderation_status']),
+            models.Index(fields=['event', 'topic']),
         ]
         constraints = [
             # One or the other, never both. A message from a guest who has
@@ -371,15 +338,15 @@ class ChatMessage(models.Model):
 
 
 class GuestAttendee(models.Model):
-    """Someone joining by meeting code without an account.
+    """Someone joining by event code without an account.
 
     Guests must be admitted by the host before they can enter. They are not
-    MeetingParticipants, which require a real user account.
+    EventParticipants, which require a real user account.
 
-    These rows last as long as the meeting does and no longer. A guest gave
+    These rows last as long as the event does and no longer. A guest gave
     a name at a door to sit in a hall for an afternoon; that is not a
     relationship with this platform, and keeping a row about them
-    afterwards would make it one. When the meeting ends they are forgotten
+    afterwards would make it one. When the event ends they are forgotten
     - see ``lifecycle.forget_guests`` - and what survives is the register:
     the name, against the sessions they were actually present for.
     """
@@ -390,7 +357,7 @@ class GuestAttendee(models.Model):
         LEFT = 'left', 'Left'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name='guests')
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='guests')
     full_name = models.CharField(max_length=120)
     # Asked for once, and no longer. A name is what the host needs to
     # decide whether to let somebody in, and it is all the register keeps;
@@ -410,10 +377,10 @@ class GuestAttendee(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = 'meeting_guests'
+        db_table = 'event_guests'
         ordering = ['created_at']
         indexes = [
-            models.Index(fields=['meeting', 'status']),
+            models.Index(fields=['event', 'status']),
         ]
 
     @property
@@ -421,38 +388,38 @@ class GuestAttendee(models.Model):
         return self.status == self.Status.ADMITTED
 
     def __str__(self):
-        return f"{self.full_name} ({self.status}) @ {self.meeting.meeting_code}"
+        return f"{self.full_name} ({self.status}) @ {self.event.code}"
 
 
-class MeetingInvite(models.Model):
+class EventInvite(models.Model):
     """An invitation link the host sent to a specific email address.
 
     The number of invites is the expected headcount; matching them against who
     actually turned up is what makes the attendance record meaningful.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name='invites')
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='invites')
     email = models.EmailField()
     invited_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True,
-        related_name='sent_meeting_invites',
+        related_name='sent_event_invites',
     )
 
     # Filled in when the invited address actually joins.
     joined_at = models.DateTimeField(null=True, blank=True)
     joined_user = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
-        related_name='accepted_meeting_invites',
+        related_name='accepted_event_invites',
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = 'meeting_invites'
+        db_table = 'event_invites'
         ordering = ['created_at']
-        unique_together = [['meeting', 'email']]
+        unique_together = [['event', 'email']]
         indexes = [
-            models.Index(fields=['meeting', 'joined_at']),
+            models.Index(fields=['event', 'joined_at']),
         ]
 
     @property
@@ -461,15 +428,15 @@ class MeetingInvite(models.Model):
 
     def __str__(self):
         state = 'joined' if self.has_joined else 'invited'
-        return f"{self.email} ({state}) @ {self.meeting.meeting_code}"
+        return f"{self.email} ({state}) @ {self.event.code}"
 
 
 class Session(models.Model):
-    """A timed segment inside a meeting.
+    """A timed segment inside an event.
 
-    People join the meeting, not the session: a session is a slot in the
+    People join the event, not the session: a session is a slot in the
     running order, so the room's code, chat and transcript stay on the
-    meeting while the session says what is happening at that moment.
+    event while the session says what is happening at that moment.
     """
     class Status(models.TextChoices):
         SCHEDULED = 'scheduled', 'Scheduled'
@@ -478,8 +445,8 @@ class Session(models.Model):
         SKIPPED = 'skipped', 'Skipped'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    meeting = models.ForeignKey(
-        Meeting, on_delete=models.CASCADE, related_name='sessions'
+    event = models.ForeignKey(
+        Event, on_delete=models.CASCADE, related_name='sessions'
     )
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
@@ -527,7 +494,7 @@ class Session(models.Model):
 
     class Meta:
         ordering = ['starts_at', 'position']
-        indexes = [models.Index(fields=['meeting', 'starts_at'])]
+        indexes = [models.Index(fields=['event', 'starts_at'])]
 
     def __str__(self):
         return f"{self.title} @ {self.starts_at:%H:%M}"
@@ -540,7 +507,7 @@ class Session(models.Model):
 class SessionAttendance(models.Model):
     """Who was present for one session.
 
-    Attendance is per session rather than per meeting, so a certificate can
+    Attendance is per session rather than per event, so a certificate can
     be judged on how much of the programme somebody actually sat through.
     A row exists only for people who were present.
     """
@@ -557,7 +524,7 @@ class SessionAttendance(models.Model):
         null=True,
         blank=True,
     )
-    # The guest's row goes when the meeting ends; the register stays, so
+    # The guest's row goes when the event ends; the register stays, so
     # it holds the name itself rather than only pointing at one.
     guest = models.ForeignKey(
         'meetings.GuestAttendee',
@@ -684,21 +651,20 @@ class RoleGrant(models.Model):
     """A role the host has given somebody, over one part of the programme.
 
     Two things make this its own table rather than a column on
-    MeetingParticipant. It is addressed by email, so a co-host can be named
+    EventParticipant. It is addressed by email, so a co-host can be named
     before they have ever signed in; and it is scoped, which a participant
-    row cannot be - that row only ever describes one meeting.
+    row cannot be - that row only ever describes one event.
 
-    The scope is exactly one of event, meeting or session, and it decides
-    how far the role reaches and how long it lasts:
+    The scope is exactly one of event or session, and it decides how far
+    the role reaches and how long it lasts:
 
-    * on an event, for every meeting and session inside that programme;
-    * on a meeting, for that meeting and the sessions it holds;
+    * on an event, for every session inside that programme;
     * on a session, for that session alone.
 
-    Reach stops at the thing named. Somebody made co-host of the morning
-    meeting is not a co-host of the evening one, and nothing about being
-    co-host of one event carries into another. Giving them the role there
-    too is a decision the host makes again.
+    Reach stops at the thing named. Somebody made co-host of one event is
+    not a co-host of the next, and being co-host of an event says nothing
+    about the sessions of another. Giving them the role there too is a
+    decision the host makes again.
 
     Speakers are not stored here. A session already names its speaker, and
     naming them is what makes them its presenter; keeping a second copy
@@ -728,10 +694,6 @@ class RoleGrant(models.Model):
         'meetings.Event', on_delete=models.CASCADE,
         related_name='role_grants', null=True, blank=True,
     )
-    meeting = models.ForeignKey(
-        Meeting, on_delete=models.CASCADE,
-        related_name='role_grants', null=True, blank=True,
-    )
     session = models.ForeignKey(
         'meetings.Session', on_delete=models.CASCADE,
         related_name='role_grants', null=True, blank=True,
@@ -750,9 +712,8 @@ class RoleGrant(models.Model):
             models.CheckConstraint(
                 name='role_grant_has_exactly_one_scope',
                 check=(
-                    models.Q(event__isnull=False, meeting__isnull=True, session__isnull=True)
-                    | models.Q(event__isnull=True, meeting__isnull=False, session__isnull=True)
-                    | models.Q(event__isnull=True, meeting__isnull=True, session__isnull=False)
+                    models.Q(event__isnull=False, session__isnull=True)
+                    | models.Q(event__isnull=True, session__isnull=False)
                 ),
             ),
             # The same person cannot hold the same role twice over the same
@@ -763,11 +724,6 @@ class RoleGrant(models.Model):
                 name='one_role_per_email_per_event',
             ),
             models.UniqueConstraint(
-                fields=['email', 'role', 'meeting'],
-                condition=models.Q(meeting__isnull=False),
-                name='one_role_per_email_per_meeting',
-            ),
-            models.UniqueConstraint(
                 fields=['email', 'role', 'session'],
                 condition=models.Q(session__isnull=False),
                 name='one_role_per_email_per_session',
@@ -776,15 +732,12 @@ class RoleGrant(models.Model):
         indexes = [
             models.Index(fields=['email']),
             models.Index(fields=['event']),
-            models.Index(fields=['meeting']),
             models.Index(fields=['session']),
         ]
 
     @property
     def scope(self) -> str:
-        if self.event_id:
-            return 'event'
-        return 'meeting' if self.meeting_id else 'session'
+        return 'event' if self.event_id else 'session'
 
     def __str__(self):
         return f"{self.email} as {self.role} on this {self.scope}"
@@ -868,8 +821,8 @@ class HubPost(models.Model):
         ADDRESSED = 'addressed', 'Addressed'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    meeting = models.ForeignKey(
-        Meeting, on_delete=models.CASCADE, related_name='hub_posts'
+    event = models.ForeignKey(
+        Event, on_delete=models.CASCADE, related_name='hub_posts'
     )
     # Which part of the running order it was about, where that is known.
     session = models.ForeignKey(
@@ -914,7 +867,7 @@ class HubPost(models.Model):
         db_table = 'hub_posts'
         ordering = ['-created_at']
         indexes = [
-            models.Index(fields=['meeting', 'kind', 'status']),
+            models.Index(fields=['event', 'kind', 'status']),
             models.Index(fields=['session']),
         ]
         constraints = [
@@ -1030,20 +983,20 @@ class Reminder(models.Model):
     which an email already sent can do.
 
     Two lead times, because two different things are being remembered. A
-    meeting is somewhere you have to get to, so an hour's warning helps. A
-    session is a talk inside a meeting you are probably already at, so
+    event is somewhere you have to get to, so an hour's warning helps. A
+    session is a talk inside an event you are probably already at, so
     fifteen minutes is enough - and an hour's warning for each of four
     talks would be noise.
     """
     class Kind(models.TextChoices):
-        MEETING = 'meeting', 'Meeting starting'
+        EVENT = 'event', 'Event starting'
         SESSION = 'session', 'Session starting'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reminders')
 
-    meeting = models.ForeignKey(
-        Meeting, on_delete=models.CASCADE, related_name='reminders'
+    event = models.ForeignKey(
+        Event, on_delete=models.CASCADE, related_name='reminders'
     )
     session = models.ForeignKey(
         'meetings.Session', on_delete=models.CASCADE,
@@ -1069,9 +1022,9 @@ class Reminder(models.Model):
             # One reminder per person per thing. Regenerating after the
             # timetable moves updates the row rather than adding another.
             models.UniqueConstraint(
-                fields=['user', 'meeting', 'kind'],
+                fields=['user', 'event', 'kind'],
                 condition=models.Q(session__isnull=True),
-                name='one_meeting_reminder_per_person',
+                name='one_event_reminder_per_person',
             ),
             models.UniqueConstraint(
                 fields=['user', 'session', 'kind'],

@@ -1,9 +1,9 @@
-"""The photographs from a meeting: where they go, and who may put them there.
+"""The photographs from a event: where they go, and who may put them there.
 
 Two rules shape everything here.
 
 A photograph of the day is worth having once the day has happened, so
-uploading waits until the meeting is over. Before then the folders exist
+uploading waits until the event is over. Before then the folders exist
 and can be arranged, but there is nothing to record yet - and a hall
 photograph taken during the session it is meant to show would be a
 photograph of an empty hall.
@@ -18,7 +18,7 @@ from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
-#: The folder every meeting has, whether or not anybody made one.
+#: The folder every event has, whether or not anybody made one.
 DEFAULT_FOLDER_NAME = 'Default'
 
 #: Big enough for a photograph off a phone, small enough to refuse a video.
@@ -35,75 +35,75 @@ class PhotoRefused(Exception):
         self.code = code
 
 
-def default_folder(meeting):
-    """The meeting's default folder, made on first sight if need be."""
+def default_folder(event):
+    """The event's default folder, made on first sight if need be."""
     from src.apps.artifacts.models import PhotoFolder
 
     folder, _ = PhotoFolder.objects.get_or_create(
-        meeting=meeting, is_default=True,
+        event=event, is_default=True,
         defaults={'name': DEFAULT_FOLDER_NAME},
     )
     return folder
 
 
-def folders_for(meeting):
-    """Every folder this meeting has, the default first."""
-    default_folder(meeting)
-    return meeting.photo_folders.all()
+def folders_for(event):
+    """Every folder this event has, the default first."""
+    default_folder(event)
+    return event.photo_folders.all()
 
 
-def meeting_is_done(meeting) -> bool:
-    """Whether the meeting has finished, which is when photographs make sense."""
-    from src.apps.meetings.models import Meeting
+def event_is_done(event) -> bool:
+    """Whether the event has finished, which is when photographs make sense."""
+    from src.apps.meetings.models import Event
 
-    return meeting.status == Meeting.Status.ENDED
+    return event.status == Event.Status.ENDED
 
 
-def may_arrange(meeting, user) -> bool:
+def may_arrange(event, user) -> bool:
     """Who may make and name folders: the host and their co-hosts."""
     from src.apps.artifacts.visibility import can_organize
 
-    return can_organize(meeting, user)
+    return can_organize(event, user)
 
 
-def may_upload(meeting, user) -> bool:
+def may_upload(event, user) -> bool:
     """Who may add photographs: the host, co-hosts, and the presenters.
 
     Being on the programme is what counts, not having walked into the room:
     a speaker who presented is one of the people who made the day.
     """
-    if may_arrange(meeting, user):
+    if may_arrange(event, user):
         return True
     if not user or not user.is_authenticated:
         return False
 
-    from src.apps.meetings.roles import PRESENTER, roles_in_meeting, speaks_at
+    from src.apps.meetings.roles import PRESENTER, roles_in_event, speaks_at
 
-    return speaks_at(meeting, user=user) or PRESENTER in roles_in_meeting(
-        meeting, user=user
+    return speaks_at(event, user=user) or PRESENTER in roles_in_event(
+        event, user=user
     )
 
 
-def check_can_upload(meeting, user):
-    """Raise unless this person may add a photograph to this meeting now."""
-    if not may_upload(meeting, user):
+def check_can_upload(event, user):
+    """Raise unless this person may add a photograph to this event now."""
+    if not may_upload(event, user):
         raise PhotoRefused(
             'Only the host, a co-host or somebody who presented can add '
             'photographs.',
             code='not_an_organizer',
         )
-    if not meeting_is_done(meeting):
+    if not event_is_done(event):
         raise PhotoRefused(
-            'Photographs can be added once the meeting has finished.',
-            code='meeting_not_finished',
+            'Photographs can be added once the event has finished.',
+            code='event_not_finished',
         )
 
 
-def create_folder(meeting, user, name):
-    """Make a folder for this meeting. Host and co-hosts only."""
+def create_folder(event, user, name):
+    """Make a folder for this event. Host and co-hosts only."""
     from src.apps.artifacts.models import PhotoFolder
 
-    if not may_arrange(meeting, user):
+    if not may_arrange(event, user):
         raise PhotoRefused(
             'Only the host or a co-host can create a folder.',
             code='not_an_organizer',
@@ -113,23 +113,23 @@ def create_folder(meeting, user, name):
     if len(tidy) < 2:
         raise PhotoRefused('Give the folder a name.', code='name_too_short')
 
-    if meeting.photo_folders.filter(name__iexact=tidy).exists():
+    if event.photo_folders.filter(name__iexact=tidy).exists():
         raise PhotoRefused(
             f'There is already a folder called “{tidy}”.', code='name_taken'
         )
 
     # The default has to exist before any custom one, or it sorts after
     # folders that were made before anybody looked at the list.
-    default_folder(meeting)
+    default_folder(event)
 
     return PhotoFolder.objects.create(
-        meeting=meeting, name=tidy, created_by=user, is_default=False
+        event=event, name=tidy, created_by=user, is_default=False
     )
 
 
-def rename_folder(meeting, user, folder, name):
+def rename_folder(event, user, folder, name):
     """Rename a custom folder. The default keeps its name."""
-    if not may_arrange(meeting, user):
+    if not may_arrange(event, user):
         raise PhotoRefused(
             'Only the host or a co-host can rename a folder.',
             code='not_an_organizer',
@@ -142,7 +142,7 @@ def rename_folder(meeting, user, folder, name):
     tidy = ' '.join((name or '').split())[:120]
     if len(tidy) < 2:
         raise PhotoRefused('Give the folder a name.', code='name_too_short')
-    if meeting.photo_folders.filter(name__iexact=tidy).exclude(id=folder.id).exists():
+    if event.photo_folders.filter(name__iexact=tidy).exclude(id=folder.id).exists():
         raise PhotoRefused(
             f'There is already a folder called “{tidy}”.', code='name_taken'
         )
@@ -152,9 +152,9 @@ def rename_folder(meeting, user, folder, name):
     return folder
 
 
-def delete_folder(meeting, user, folder):
+def delete_folder(event, user, folder):
     """Remove a custom folder. What was in it moves to the default."""
-    if not may_arrange(meeting, user):
+    if not may_arrange(event, user):
         raise PhotoRefused(
             'Only the host or a co-host can remove a folder.',
             code='not_an_organizer',
@@ -166,7 +166,7 @@ def delete_folder(meeting, user, folder):
 
     # The photographs are the record of the day; the folder is only where
     # they were filed, so removing the shelf does not burn the album.
-    keep = default_folder(meeting)
+    keep = default_folder(event)
     with transaction.atomic():
         folder.photos.update(folder=keep)
         folder.delete()
@@ -180,8 +180,8 @@ def _drive_folder_id(folder):
     if folder.drive_folder_id:
         return folder.drive_folder_id
 
-    meeting = folder.meeting
-    service = MeetingArtifactService(meeting.id, meeting.host_id)
+    event = folder.event
+    service = MeetingArtifactService(event.id, event.host_id)
     parent = service.get_or_create_photos_folder()
     made = service.drive_adapter.create_folder(folder.name, parent_id=parent)
 
@@ -192,11 +192,11 @@ def _drive_folder_id(folder):
 
 def store_photo(folder, uploaded_file, user, caption=''):
     """Put one photograph in a folder, in the host's own Drive."""
-    from src.apps.artifacts.models import MeetingPhoto
+    from src.apps.artifacts.models import EventPhoto
     from src.apps.artifacts.services.artifact_service import MeetingArtifactService
 
-    meeting = folder.meeting
-    check_can_upload(meeting, user)
+    event = folder.event
+    check_can_upload(event, user)
 
     if uploaded_file.size > MAX_PHOTO_BYTES:
         raise PhotoRefused(
@@ -209,7 +209,7 @@ def store_photo(folder, uploaded_file, user, caption=''):
     if kind and not kind.startswith('image/'):
         raise PhotoRefused('That is not a photograph.', code='not_an_image')
 
-    service = MeetingArtifactService(meeting.id, meeting.host_id)
+    service = MeetingArtifactService(event.id, event.host_id)
     stored = service.drive_adapter.upload_file(
         file_obj=uploaded_file,
         filename=uploaded_file.name,
@@ -217,9 +217,9 @@ def store_photo(folder, uploaded_file, user, caption=''):
         parent_id=_drive_folder_id(folder),
     )
 
-    return MeetingPhoto.objects.create(
+    return EventPhoto.objects.create(
         folder=folder,
-        meeting=meeting,
+        event=event,
         caption=(caption or uploaded_file.name or '')[:255],
         drive_file_id=stored['id'],
         mime_type=stored.get('mimeType', kind),
@@ -233,5 +233,5 @@ def photo_bytes(photo):
     """The photograph itself, fetched on the host's credentials."""
     from src.apps.drive.services.google_drive_adapter import GoogleDriveAdapter
 
-    adapter = GoogleDriveAdapter(str(photo.meeting.host_id))
+    adapter = GoogleDriveAdapter(str(photo.event.host_id))
     return adapter.download_file(photo.drive_file_id)

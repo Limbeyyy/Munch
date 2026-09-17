@@ -1,12 +1,12 @@
 """Recording and analytics models"""
 from django.db import models
-from src.apps.meetings.models import Meeting
+from src.apps.meetings.models import Event
 import uuid
 
 
 class Recording(models.Model):
     """
-    Meeting recordings with metadata and processing status
+    Event recordings with metadata and processing status
     """
     class Status(models.TextChoices):
         RECORDING = 'recording', 'Recording'
@@ -15,7 +15,7 @@ class Recording(models.Model):
         FAILED = 'failed', 'Failed'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    meeting = models.OneToOneField(Meeting, on_delete=models.CASCADE, related_name='recording')
+    event = models.OneToOneField(Event, on_delete=models.CASCADE, related_name='recording')
 
     # Recording metadata
     start_time = models.DateTimeField()
@@ -51,12 +51,12 @@ class Recording(models.Model):
     class Meta:
         db_table = 'recordings'
         indexes = [
-            models.Index(fields=['meeting', 'status']),
+            models.Index(fields=['event', 'status']),
             models.Index(fields=['created_at']),
         ]
 
     def __str__(self):
-        return f"Recording: {self.meeting.meeting_code}"
+        return f"Recording: {self.event.code}"
 
 
 class Attendance(models.Model):
@@ -64,7 +64,7 @@ class Attendance(models.Model):
     Participant attendance tracking
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name='attendance_records')
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='attendance_records')
 
     participant_id = models.CharField(max_length=255)
     participant_name = models.CharField(max_length=255)
@@ -79,19 +79,19 @@ class Attendance(models.Model):
     class Meta:
         db_table = 'attendance'
         indexes = [
-            models.Index(fields=['meeting', 'joined_at']),
+            models.Index(fields=['event', 'joined_at']),
         ]
 
     def __str__(self):
-        return f"{self.participant_name} - {self.meeting.meeting_code}"
+        return f"{self.participant_name} - {self.event.code}"
 
 
-class MeetingAnalytics(models.Model):
+class EventAnalytics(models.Model):
     """
-    Aggregated analytics for meetings
+    Aggregated analytics for events
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    meeting = models.OneToOneField(Meeting, on_delete=models.CASCADE, related_name='analytics')
+    event = models.OneToOneField(Event, on_delete=models.CASCADE, related_name='analytics')
 
     # Participants
     total_participants = models.IntegerField(default=0)
@@ -120,10 +120,10 @@ class MeetingAnalytics(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = 'meeting_analytics'
+        db_table = 'event_analytics'
         indexes = [
             models.Index(fields=['created_at']),
         ]
 
     def __str__(self):
-        return f"Analytics: {self.meeting.meeting_code}"
+        return f"Analytics: {self.event.code}"

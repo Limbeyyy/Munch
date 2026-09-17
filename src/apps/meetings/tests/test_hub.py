@@ -11,10 +11,10 @@ from rest_framework.test import APIClient
 from src.apps.accounts.tokens import issue_tokens
 from src.apps.meetings.guest_tokens import make_guest_token
 from src.apps.meetings.models import (
-    GuestAttendee, HubPost, HubVote, MeetingParticipant,
+    GuestAttendee, HubPost, HubVote, EventParticipant,
 )
 from src.apps.meetings.tests.factories import (
-    make_event, make_host, make_meeting, make_session,
+    make_event, make_host, make_session,
 )
 
 API = '/api/v1'
@@ -31,22 +31,21 @@ class HubTests(TestCase):
         self.host = make_host('host@example.com')
         self.asker = make_host('asker@example.com')
         self.other = make_host('other@example.com')
-        self.event = make_event(self.host)
-        self.meeting = make_meeting(self.host, self.event, start=timezone.now())
-        self.session = make_session(self.meeting, timezone.now(), 60)
+        self.event = make_event(self.host, start=timezone.now())
+        self.session = make_session(self.event, timezone.now(), 60)
         for person in (self.asker, self.other):
-            MeetingParticipant.objects.create(
-                meeting=self.meeting, user=person, role='attendee'
+            EventParticipant.objects.create(
+                event=self.event, user=person, role='attendee'
             )
         self.guest = GuestAttendee.objects.create(
-            meeting=self.meeting, full_name='A Guest', phone='9800000000',
+            event=self.event, full_name='A Guest', phone='9800000000',
             status=GuestAttendee.Status.ADMITTED,
         )
         self.guest_token = make_guest_token(self.guest)
         self.host_client = signed_in(self.host)
         self.asker_client = signed_in(self.asker)
         self.other_client = signed_in(self.other)
-        self.url = f'{API}/meetings/{self.meeting.meeting_code}/hub/'
+        self.url = f'{API}/events/{self.event.code}/hub/'
 
     def post(self, client=None, **body):
         return (client or self.asker_client).post(self.url, body, format='json')
@@ -117,10 +116,10 @@ class HubTests(TestCase):
 
     def test_somebody_outside_the_meeting_cannot_post(self):
         outsider = signed_in(make_host('outsider@example.com'))
-        # They are not in the meeting, but the room being open is what the
+        # They are not in the event, but the room being open is what the
         # door checks - so close it and try again.
-        self.meeting.status = self.meeting.Status.ENDED
-        self.meeting.save(update_fields=['status'])
+        self.event.status = self.event.Status.ENDED
+        self.event.save(update_fields=['status'])
 
         self.assertEqual(
             self.post(client=outsider, kind='question', body='Let me in').status_code, 403

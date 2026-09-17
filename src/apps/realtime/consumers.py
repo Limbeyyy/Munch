@@ -1,11 +1,11 @@
-"""WebSocket consumers for real-time meeting features"""
+"""WebSocket consumers for real-time event features"""
 import json
 import logging
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
-from src.apps.meetings.models import Meeting, MeetingParticipant, ChatMessage
+from src.apps.meetings.models import Event, EventParticipant, ChatMessage
 from src.apps.transcription.models import TranscriptionSegment
-from src.apps.monitoring.models import MeetingEvent
+from src.apps.monitoring.models import EventLogEntry
 
 logger = logging.getLogger(__name__)
 
@@ -14,12 +14,12 @@ CHAT_MAX_LENGTH = 2000
 
 class MeetingConsumer(AsyncWebsocketConsumer):
     """
-    Handles real-time meeting state updates and participant communication
+    Handles real-time event state updates and participant communication
     """
 
     async def connect(self):
-        self.meeting_code = self.scope['url_route']['kwargs']['meeting_code']
-        self.room_group_name = f'meeting_{self.meeting_code}'
+        self.code = self.scope['url_route']['kwargs']['code']
+        self.room_group_name = f'event_{self.code}'
         self.user = self.scope['user']
         self.guest = self.scope.get('guest')
 
@@ -39,7 +39,7 @@ class MeetingConsumer(AsyncWebsocketConsumer):
                 )
             await self.accept()
             logger.info(
-                f"Guest {self.guest['name']} connected to {self.meeting_code} "
+                f"Guest {self.guest['name']} connected to {self.code} "
                 f"({self.guest['status']})"
             )
             return
@@ -72,7 +72,7 @@ class MeetingConsumer(AsyncWebsocketConsumer):
             }
         )
 
-        logger.info(f"User {self.user.email} connected to meeting {self.meeting_code}")
+        logger.info(f"User {self.user.email} connected to event {self.code}")
 
     async def disconnect(self, close_code):
         guest_group = getattr(self, 'guest_group_name', None)
@@ -108,7 +108,7 @@ class MeetingConsumer(AsyncWebsocketConsumer):
             }
         )
 
-        logger.info(f"User {self.user.email} disconnected from meeting {self.meeting_code}")
+        logger.info(f"User {self.user.email} disconnected from event {self.code}")
 
     async def receive(self, text_data):
         """Handle incoming WebSocket messages"""
@@ -267,7 +267,7 @@ class MeetingConsumer(AsyncWebsocketConsumer):
     async def handle_transcription_segment(self, data):
         """Handle transcription segment"""
         segment_data = {
-            'meeting_code': self.meeting_code,
+            'code': self.code,
             'speaker_id': str(self.user.id),
             'speaker_name': self.user.display_name,
             'text': data.get('text', ''),
@@ -296,158 +296,158 @@ class MeetingConsumer(AsyncWebsocketConsumer):
 
     # Group message handlers (called by other consumers)
 
-    async def participant_joined(self, event):
+    async def participant_joined(self, message):
         """Broadcast when participant joins"""
         await self.send(text_data=json.dumps({
             'type': 'participant_joined',
-            'user_id': event['user_id'],
-            'user_name': event['user_name'],
-            'timestamp': event['timestamp']
+            'user_id': message['user_id'],
+            'user_name': message['user_name'],
+            'timestamp': message['timestamp']
         }))
 
-    async def participant_left(self, event):
+    async def participant_left(self, message):
         """Broadcast when participant leaves"""
         await self.send(text_data=json.dumps({
             'type': 'participant_left',
-            'user_id': event['user_id'],
-            'user_name': event['user_name'],
-            'timestamp': event['timestamp']
+            'user_id': message['user_id'],
+            'user_name': message['user_name'],
+            'timestamp': message['timestamp']
         }))
 
-    async def roster_update(self, event):
+    async def roster_update(self, message):
         """Somebody came in or stepped out of the room."""
         await self.send(text_data=json.dumps({
             'type': 'roster_update',
-            'active_count': event.get('active_count'),
+            'active_count': message.get('active_count'),
         }))
 
-    async def resources_update(self, event):
+    async def resources_update(self, message):
         """A file arrived, or who may read one changed."""
         await self.send(text_data=json.dumps({'type': 'resources_update'}))
 
-    async def attendance_update(self, event):
+    async def attendance_update(self, message):
         """The attendance record moved."""
         await self.send(text_data=json.dumps({'type': 'attendance_update'}))
 
-    async def state_update(self, event):
+    async def state_update(self, message):
         """Broadcast participant state update"""
         await self.send(text_data=json.dumps({
             'type': 'state_update',
-            'user_id': event['user_id'],
-            'user_name': event['user_name'],
-            'state': event['state'],
-            'timestamp': event['timestamp']
+            'user_id': message['user_id'],
+            'user_name': message['user_name'],
+            'state': message['state'],
+            'timestamp': message['timestamp']
         }))
 
-    async def chat_message(self, event):
+    async def chat_message(self, message):
         """Broadcast chat message"""
         await self.send(text_data=json.dumps({
             'type': 'chat_message',
-            'message_id': event.get('message_id'),
-            'user_id': event['user_id'],
-            'user_name': event['user_name'],
-            'sender_is_guest': event.get('sender_is_guest', False),
-            'message': event['message'],
-            'recipient_id': event.get('recipient_id'),
-            'recipient_name': event.get('recipient_name'),
-            'recipient_is_guest': event.get('recipient_is_guest', False),
-            'is_direct': event.get('is_direct', False),
-            'moderation_status': event.get('moderation_status'),
-            'timestamp': event['timestamp']
+            'message_id': message.get('message_id'),
+            'user_id': message['user_id'],
+            'user_name': message['user_name'],
+            'sender_is_guest': message.get('sender_is_guest', False),
+            'message': message['message'],
+            'recipient_id': message.get('recipient_id'),
+            'recipient_name': message.get('recipient_name'),
+            'recipient_is_guest': message.get('recipient_is_guest', False),
+            'is_direct': message.get('is_direct', False),
+            'moderation_status': message.get('moderation_status'),
+            'timestamp': message['timestamp']
         }))
 
-    async def chat_pending(self, event):
+    async def chat_pending(self, message):
         """Tell the host a message is waiting for review"""
         await self.send(text_data=json.dumps({
             'type': 'chat_pending',
-            'message_id': event.get('message_id'),
-            'user_id': event['user_id'],
-            'user_name': event['user_name'],
-            'sender_is_guest': event.get('sender_is_guest', False),
-            'message': event['message'],
-            'recipient_id': event.get('recipient_id'),
-            'recipient_name': event.get('recipient_name'),
-            'timestamp': event['timestamp'],
+            'message_id': message.get('message_id'),
+            'user_id': message['user_id'],
+            'user_name': message['user_name'],
+            'sender_is_guest': message.get('sender_is_guest', False),
+            'message': message['message'],
+            'recipient_id': message.get('recipient_id'),
+            'recipient_name': message.get('recipient_name'),
+            'timestamp': message['timestamp'],
         }))
 
-    async def chat_moderated(self, event):
+    async def chat_moderated(self, message):
         """Tell a client the outcome of a host review"""
         await self.send(text_data=json.dumps({
             'type': 'chat_moderated',
-            'message_id': event.get('message_id'),
-            'moderation_status': event.get('moderation_status'),
-            'recipient_name': event.get('recipient_name'),
+            'message_id': message.get('message_id'),
+            'moderation_status': message.get('moderation_status'),
+            'recipient_name': message.get('recipient_name'),
         }))
 
-    async def guest_waiting(self, event):
+    async def guest_waiting(self, message):
         """Tell the host a guest is asking to be let in"""
         await self.send(text_data=json.dumps({
             'type': 'guest_waiting',
-            'guest_id': event['guest_id'],
-            'full_name': event['full_name'],
-            'phone': event['phone'],
-            'created_at': event['created_at'],
+            'guest_id': message['guest_id'],
+            'full_name': message['full_name'],
+            'phone': message['phone'],
+            'created_at': message['created_at'],
         }))
 
-    async def guest_decision(self, event):
+    async def guest_decision(self, message):
         """Tell a waiting guest whether they were let in"""
         await self.send(text_data=json.dumps({
             'type': 'guest_decision',
-            'status': event['status'],
+            'status': message['status'],
         }))
 
-    async def meeting_started(self, event):
+    async def event_started(self, message):
         """Broadcast the authoritative start time"""
         await self.send(text_data=json.dumps({
-            'type': 'meeting_started',
-            'started_at': event['started_at'],
-            'status': event.get('status'),
+            'type': 'event_started',
+            'started_at': message['started_at'],
+            'status': message.get('status'),
         }))
 
-    async def meeting_ended(self, event):
-        """Tell everyone the meeting is over, then hang up.
+    async def event_ended(self, message):
+        """Tell everyone the event is over, then hang up.
 
         Closing the socket here means the room really is shut for everybody at
         the same moment, rather than relying on each client to disconnect.
         """
         await self.send(text_data=json.dumps({
-            'type': 'meeting_ended',
-            'reason': event.get('reason'),
-            'ended_at': event.get('ended_at'),
+            'type': 'event_ended',
+            'reason': message.get('reason'),
+            'ended_at': message.get('ended_at'),
         }))
         await self.close(code=4000)
 
-    async def chat_settings_update(self, event):
+    async def chat_settings_update(self, message):
         """Tell clients the host opened or closed the chat room"""
         await self.send(text_data=json.dumps({
             'type': 'chat_settings_update',
-            'chat_enabled': event.get('chat_enabled', False),
-            'direct_messages_enabled': event.get('direct_messages_enabled', False),
+            'chat_enabled': message.get('chat_enabled', False),
+            'direct_messages_enabled': message.get('direct_messages_enabled', False),
         }))
 
-    async def transcription_update(self, event):
+    async def transcription_update(self, message):
         """Broadcast transcription segment"""
         await self.send(text_data=json.dumps({
             'type': 'transcription_update',
-            'segment': event['segment'],
-            'timestamp': event['timestamp']
+            'segment': message['segment'],
+            'timestamp': message['timestamp']
         }))
 
     # Database operations (sync_to_async)
 
     @database_sync_to_async
     def get_chat_settings(self):
-        """Current host-controlled chat settings for this meeting."""
+        """Current host-controlled chat settings for this event."""
         try:
-            meeting = Meeting.objects.only(
+            event = Event.objects.only(
                 'chat_enabled', 'direct_messages_enabled'
-            ).get(meeting_code=self.meeting_code)
-        except Meeting.DoesNotExist:
+            ).get(code=self.code)
+        except Event.DoesNotExist:
             return {'chat_enabled': False, 'direct_messages_enabled': False}
 
         return {
-            'chat_enabled': meeting.chat_enabled,
-            'direct_messages_enabled': meeting.direct_messages_enabled,
+            'chat_enabled': event.chat_enabled,
+            'direct_messages_enabled': event.direct_messages_enabled,
         }
 
     @database_sync_to_async
@@ -475,10 +475,10 @@ class MeetingConsumer(AsyncWebsocketConsumer):
         from src.apps.meetings.models import GuestAttendee
 
         try:
-            meeting = Meeting.objects.select_related('host').get(
-                meeting_code=self.meeting_code
+            event = Event.objects.select_related('host').get(
+                code=self.code
             )
-        except Meeting.DoesNotExist:
+        except Event.DoesNotExist:
             return None
 
         is_guest_sender = bool(getattr(self, 'guest_group_name', None))
@@ -490,14 +490,14 @@ class MeetingConsumer(AsyncWebsocketConsumer):
         recipient_name = None
 
         if recipient_id:
-            # Anybody in this meeting's roster, whether or not they are
+            # Anybody in this event's roster, whether or not they are
             # connected at this instant. You write to a person, not to a
             # socket: a host who has stepped out for five minutes is still
             # the host, and the message waits for them. Requiring them to
             # be online refused every message to anybody whose tab was
             # shut - with "Could not send message" and no way to tell why.
-            participant = MeetingParticipant.objects.select_related('user').filter(
-                meeting=meeting, user_id=recipient_id
+            participant = EventParticipant.objects.select_related('user').filter(
+                event=event, user_id=recipient_id
             ).first()
             if participant:
                 recipient_user = participant.user
@@ -505,7 +505,7 @@ class MeetingConsumer(AsyncWebsocketConsumer):
                 recipient_name = recipient_user.display_name or recipient_user.email
             else:
                 guest = GuestAttendee.objects.filter(
-                    meeting=meeting,
+                    event=event,
                     id=recipient_id,
                     status__in=[
                         GuestAttendee.Status.ADMITTED,
@@ -515,7 +515,7 @@ class MeetingConsumer(AsyncWebsocketConsumer):
                 if guest is None:
                     logger.warning(
                         f"Direct message to unknown recipient {recipient_id} "
-                        f"in {self.meeting_code}"
+                        f"in {self.code}"
                     )
                     return None
                 recipient_guest = guest
@@ -528,16 +528,16 @@ class MeetingConsumer(AsyncWebsocketConsumer):
                 # A guest has no role; treat them as an attendee.
                 sender_is_attendee = True
             else:
-                sender_role = MeetingParticipant.objects.filter(
-                    meeting=meeting, user=self.user
+                sender_role = EventParticipant.objects.filter(
+                    event=event, user=self.user
                 ).values_list('role', flat=True).first()
-                sender_is_attendee = sender_role == MeetingParticipant.Role.ATTENDEE
+                sender_is_attendee = sender_role == EventParticipant.Role.ATTENDEE
 
             if sender_is_attendee:
                 moderation = ChatMessage.Moderation.PENDING
 
         message = ChatMessage.objects.create(
-            meeting=meeting,
+            event=event,
             sender=None if is_guest_sender else self.user,
             guest_sender_id=self.guest['id'] if is_guest_sender else None,
             recipient=recipient_user,
@@ -552,16 +552,16 @@ class MeetingConsumer(AsyncWebsocketConsumer):
             'recipient_is_guest': recipient_guest is not None,
             'recipient_group': recipient_group,
             'moderation_status': moderation,
-            'host_id': str(meeting.host_id),
+            'host_id': str(event.host_id),
         }
 
     @database_sync_to_async
     def update_participant_state(self, updates):
         """Update participant state in database"""
         try:
-            meeting = Meeting.objects.get(meeting_code=self.meeting_code)
-            participant = MeetingParticipant.objects.get(
-                meeting=meeting,
+            event = Event.objects.get(code=self.code)
+            participant = EventParticipant.objects.get(
+                event=event,
                 user=self.user,
                 is_active=True
             )
@@ -572,9 +572,9 @@ class MeetingConsumer(AsyncWebsocketConsumer):
             participant.save()
 
             # Log event
-            MeetingEvent.objects.create(
-                meeting=meeting,
-                event_type=MeetingEvent.EventType.PARTICIPANT_MUTED if updates.get('is_muted') else None,
+            EventLogEntry.objects.create(
+                event=event,
+                event_type=EventLogEntry.EventType.PARTICIPANT_MUTED if updates.get('is_muted') else None,
                 description=f"Participant state updated: {updates}",
                 user=str(self.user.id),
                 data=updates
@@ -587,10 +587,10 @@ class MeetingConsumer(AsyncWebsocketConsumer):
     def save_transcription_segment(self, segment_data):
         """Save transcription segment to database"""
         try:
-            meeting = Meeting.objects.get(meeting_code=self.meeting_code)
+            event = Event.objects.get(code=self.code)
 
             TranscriptionSegment.objects.create(
-                meeting=meeting,
+                event=event,
                 speaker_id=segment_data['speaker_id'],
                 speaker_name=segment_data['speaker_name'],
                 text=segment_data['text'],
@@ -626,11 +626,11 @@ class SignalingConsumer(AsyncWebsocketConsumer):
 
     @property
     def _roster_key(self):
-        return f'signaling_peers_{self.meeting_code}'
+        return f'signaling_peers_{self.code}'
 
     async def connect(self):
-        self.meeting_code = self.scope['url_route']['kwargs']['meeting_code']
-        self.room_group_name = f'signaling_{self.meeting_code}'
+        self.code = self.scope['url_route']['kwargs']['code']
+        self.room_group_name = f'signaling_{self.code}'
         self.user = self.scope['user']
         self.guest = self.scope.get('guest')
 
@@ -669,7 +669,7 @@ class SignalingConsumer(AsyncWebsocketConsumer):
         )
 
         logger.info(
-            f"{self.peer_name} connected to signalling for {self.meeting_code}"
+            f"{self.peer_name} connected to signalling for {self.code}"
         )
 
     async def disconnect(self, close_code):
@@ -771,50 +771,50 @@ class SignalingConsumer(AsyncWebsocketConsumer):
 
     # Group message handlers
 
-    async def peer_joined(self, event):
+    async def peer_joined(self, message):
         """Announce a peer that just arrived"""
-        if event['peer_id'] == self.peer_id:
+        if message['peer_id'] == self.peer_id:
             return
         await self.send(text_data=json.dumps({
             'type': 'peer_joined',
-            'peer_id': event['peer_id'],
-            'name': event.get('name'),
-            'is_guest': event.get('is_guest', False),
+            'peer_id': message['peer_id'],
+            'name': message.get('name'),
+            'is_guest': message.get('is_guest', False),
         }))
 
-    async def peer_left(self, event):
+    async def peer_left(self, message):
         """Announce a peer that disconnected"""
-        if event['peer_id'] == self.peer_id:
+        if message['peer_id'] == self.peer_id:
             return
         await self.send(text_data=json.dumps({
             'type': 'peer_left',
-            'peer_id': event['peer_id'],
+            'peer_id': message['peer_id'],
         }))
 
-    async def webrtc_offer(self, event):
+    async def webrtc_offer(self, message):
         """Forward WebRTC offer"""
-        if event['to_user_id'] == self.peer_id:
+        if message['to_user_id'] == self.peer_id:
             await self.send(text_data=json.dumps({
                 'type': 'offer',
-                'from_user_id': event['from_user_id'],
-                'from_name': event.get('from_name'),
-                'offer': event['offer']
+                'from_user_id': message['from_user_id'],
+                'from_name': message.get('from_name'),
+                'offer': message['offer']
             }))
 
-    async def webrtc_answer(self, event):
+    async def webrtc_answer(self, message):
         """Forward WebRTC answer"""
-        if event['to_user_id'] == self.peer_id:
+        if message['to_user_id'] == self.peer_id:
             await self.send(text_data=json.dumps({
                 'type': 'answer',
-                'from_user_id': event['from_user_id'],
-                'answer': event['answer']
+                'from_user_id': message['from_user_id'],
+                'answer': message['answer']
             }))
 
-    async def ice_candidate(self, event):
+    async def ice_candidate(self, message):
         """Forward ICE candidate"""
-        if event['to_user_id'] == self.peer_id:
+        if message['to_user_id'] == self.peer_id:
             await self.send(text_data=json.dumps({
                 'type': 'ice_candidate',
-                'from_user_id': event['from_user_id'],
-                'candidate': event['candidate']
+                'from_user_id': message['from_user_id'],
+                'candidate': message['candidate']
             }))

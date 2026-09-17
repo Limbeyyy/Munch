@@ -1,7 +1,7 @@
 """How far a role reaches, and where it stops.
 
 The rule being protected is that a role reaches exactly what it was given
-over. A co-host of one meeting is nobody in the next one, and being asked
+over. A co-host of one event is nobody in the next one, and being asked
 to present a single talk does not put somebody in charge of the morning.
 """
 from django.db import IntegrityError, transaction
@@ -10,13 +10,13 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from src.apps.accounts.tokens import issue_tokens
-from src.apps.meetings.models import MeetingParticipant, RoleGrant, Session
+from src.apps.meetings.models import EventParticipant, RoleGrant, Session
 from src.apps.meetings.roles import (
     CO_HOST, PRESENTER, claim_grants, is_co_host, participant_role_for,
-    roles_in_meeting, roles_in_session,
+    roles_in_event, roles_in_session,
 )
 from src.apps.meetings.tests.factories import (
-    make_event, make_host, make_meeting, make_session,
+    make_event, make_host, make_session,
 )
 
 API = '/api/v1'
@@ -29,17 +29,15 @@ def signed_in(user):
 
 
 class ScopeTests(TestCase):
-    """A programme with two meetings, two sessions each."""
+    """Two events, with sessions inside them."""
 
     def setUp(self):
         self.host = make_host('host@example.com')
         self.helper = make_host('helper@example.com')
-        self.event = make_event(self.host)
         start = timezone.now() + timezone.timedelta(days=1)
 
-        self.morning = make_meeting(self.host, self.event, start=start, title='Morning')
-        self.evening = make_meeting(
-            self.host, self.event, start=start + timezone.timedelta(hours=6),
+        self.morning = make_event(self.host, start=start, title='Morning')
+        self.evening = make_event(self.host, start=start + timezone.timedelta(hours=6),
             title='Evening',
         )
         self.opening = make_session(self.morning, start, 60, 'Opening')
@@ -52,45 +50,35 @@ class ScopeTests(TestCase):
 
     # --- an event-scoped role covers everything inside it ------------------
 
-    def test_an_event_co_host_covers_every_meeting(self):
+    def test_an_event_co_host_covers_every_session_in_it(self):
         RoleGrant.objects.create(
-            email=self.helper.email, role=CO_HOST, event=self.event
+            email=self.helper.email, role=CO_HOST, event=self.morning
         )
 
-        self.assertTrue(is_co_host(self.morning, self.helper))
-        self.assertTrue(is_co_host(self.evening, self.helper))
-
-    def test_an_event_co_host_covers_every_session(self):
-        RoleGrant.objects.create(
-            email=self.helper.email, role=CO_HOST, event=self.event
-        )
-
-        for session in (self.opening, self.second, self.keynote):
+        for session in (self.opening, self.second):
             self.assertIn(CO_HOST, roles_in_session(session, user=self.helper))
 
-    def test_it_stops_at_the_edge_of_that_programme(self):
+    def test_it_stops_at_the_edge_of_that_event(self):
         RoleGrant.objects.create(
-            email=self.helper.email, role=CO_HOST, event=self.event
+            email=self.helper.email, role=CO_HOST, event=self.morning
         )
-        elsewhere = make_meeting(self.host, make_event(self.host), title='Another day')
+        elsewhere = make_event(self.host, title='Another day')
 
         self.assertFalse(is_co_host(elsewhere, self.helper))
 
-    # --- a meeting-scoped role covers that meeting only --------------------
-
-    def test_a_meeting_co_host_covers_its_own_sessions(self):
+    def test_an_event_co_host_covers_its_own_sessions(self):
         RoleGrant.objects.create(
-            email=self.helper.email, role=CO_HOST, meeting=self.morning
+            email=self.helper.email, role=CO_HOST, event=self.morning
         )
 
         self.assertTrue(is_co_host(self.morning, self.helper))
         self.assertIn(CO_HOST, roles_in_session(self.opening, user=self.helper))
         self.assertIn(CO_HOST, roles_in_session(self.second, user=self.helper))
 
-    def test_a_meeting_co_host_is_nobody_in_the_next_meeting(self):
+    def test_an_event_co_host_is_nobody_at_the_next_event(self):
         # The rule this whole model exists for.
         RoleGrant.objects.create(
-            email=self.helper.email, role=CO_HOST, meeting=self.morning
+            email=self.helper.email, role=CO_HOST, event=self.morning
         )
 
         self.assertFalse(is_co_host(self.evening, self.helper))
@@ -98,10 +86,10 @@ class ScopeTests(TestCase):
 
     def test_being_named_again_is_what_extends_it(self):
         RoleGrant.objects.create(
-            email=self.helper.email, role=CO_HOST, meeting=self.morning
+            email=self.helper.email, role=CO_HOST, event=self.morning
         )
         RoleGrant.objects.create(
-            email=self.helper.email, role=CO_HOST, meeting=self.evening
+            email=self.helper.email, role=CO_HOST, event=self.evening
         )
 
         self.assertTrue(is_co_host(self.evening, self.helper))
@@ -122,7 +110,7 @@ class ScopeTests(TestCase):
 
         self.assertEqual(roles_in_session(self.second, user=self.helper), set())
 
-    def test_a_session_co_host_does_not_run_the_meeting(self):
+    def test_a_session_co_host_does_not_run_the_event(self):
         # Helping with one talk is not the same as helping run the morning.
         RoleGrant.objects.create(
             email=self.helper.email, role=CO_HOST, session=self.opening
@@ -147,24 +135,24 @@ class ScopeTests(TestCase):
         self.assertEqual(roles_in_session(self.second, user=self.helper), set())
 
     def test_the_host_is_the_host_everywhere_in_their_programme(self):
-        self.assertEqual(roles_in_meeting(self.morning, user=self.host), {'host'})
+        self.assertEqual(roles_in_event(self.morning, user=self.host), {'host'})
         self.assertEqual(roles_in_session(self.keynote, user=self.host), {'host'})
 
     # --- addresses and accounts -------------------------------------------
 
     def test_a_role_can_be_given_before_they_have_an_account(self):
         RoleGrant.objects.create(
-            email='stranger@example.com', role=CO_HOST, meeting=self.morning
+            email='stranger@example.com', role=CO_HOST, event=self.morning
         )
 
         self.assertTrue(is_co_host(self.morning, None) is False)
         self.assertIn(
-            CO_HOST, roles_in_meeting(self.morning, email='stranger@example.com')
+            CO_HOST, roles_in_event(self.morning, email='stranger@example.com')
         )
 
     def test_signing_in_ties_the_account_to_the_grant(self):
         grant = RoleGrant.objects.create(
-            email='LATER@example.com', role=CO_HOST, meeting=self.morning
+            email='LATER@example.com', role=CO_HOST, event=self.morning
         )
         arriving = make_host('later@example.com')
 
@@ -176,19 +164,19 @@ class ScopeTests(TestCase):
 
     def test_the_same_role_cannot_be_given_twice_over_one_thing(self):
         RoleGrant.objects.create(
-            email=self.helper.email, role=CO_HOST, meeting=self.morning
+            email=self.helper.email, role=CO_HOST, event=self.morning
         )
 
         with self.assertRaises(IntegrityError), transaction.atomic():
             RoleGrant.objects.create(
-                email=self.helper.email, role=CO_HOST, meeting=self.morning
+                email=self.helper.email, role=CO_HOST, event=self.morning
             )
 
     def test_a_grant_must_name_exactly_one_scope(self):
         with self.assertRaises(IntegrityError), transaction.atomic():
             RoleGrant.objects.create(
                 email=self.helper.email, role=CO_HOST,
-                meeting=self.morning, session=self.opening,
+                event=self.morning, session=self.opening,
             )
 
 
@@ -199,55 +187,53 @@ class JoiningTests(TestCase):
         self.host = make_host('host@example.com')
         self.helper = make_host('helper@example.com')
         self.stranger = make_host('stranger@example.com')
-        self.event = make_event(self.host)
-        self.meeting = make_meeting(self.host, self.event, start=timezone.now())
-        make_session(self.meeting, timezone.now(), 60)
+        self.event = make_event(self.host, start=timezone.now())
+        make_session(self.event, timezone.now(), 60)
 
     def test_a_named_co_host_arrives_as_one(self):
         RoleGrant.objects.create(
-            email=self.helper.email, role=CO_HOST, meeting=self.meeting
+            email=self.helper.email, role=CO_HOST, event=self.event
         )
 
-        signed_in(self.helper).post(f'{API}/meetings/{self.meeting.id}/join/')
+        signed_in(self.helper).post(f'{API}/events/{self.event.id}/join/')
 
         self.assertEqual(
-            MeetingParticipant.objects.get(meeting=self.meeting, user=self.helper).role,
-            MeetingParticipant.Role.CO_HOST,
+            EventParticipant.objects.get(event=self.event, user=self.helper).role,
+            EventParticipant.Role.CO_HOST,
         )
 
     def test_everybody_else_still_arrives_as_an_attendee(self):
-        signed_in(self.stranger).post(f'{API}/meetings/{self.meeting.id}/join/')
+        signed_in(self.stranger).post(f'{API}/events/{self.event.id}/join/')
 
         self.assertEqual(
-            MeetingParticipant.objects.get(meeting=self.meeting, user=self.stranger).role,
-            MeetingParticipant.Role.ATTENDEE,
+            EventParticipant.objects.get(event=self.event, user=self.stranger).role,
+            EventParticipant.Role.ATTENDEE,
         )
 
     def test_the_owner_still_arrives_as_the_host(self):
         self.assertEqual(
-            participant_role_for(self.meeting, self.host), MeetingParticipant.Role.HOST
+            participant_role_for(self.event, self.host), EventParticipant.Role.HOST
         )
 
     def test_a_co_host_may_see_what_organizers_see(self):
         from src.apps.artifacts.visibility import can_organize
 
         RoleGrant.objects.create(
-            email=self.helper.email, role=CO_HOST, meeting=self.meeting
+            email=self.helper.email, role=CO_HOST, event=self.event
         )
 
         # Without having walked into the room: being named is enough.
-        self.assertTrue(can_organize(self.meeting, self.helper))
-        self.assertFalse(can_organize(self.meeting, self.stranger))
+        self.assertTrue(can_organize(self.event, self.helper))
+        self.assertFalse(can_organize(self.event, self.stranger))
 
 
 class RolesEndpointTests(TestCase):
     def setUp(self):
         self.host = make_host('host@example.com')
         self.other = make_host('other@example.com')
-        self.event = make_event(self.host)
         start = timezone.now() + timezone.timedelta(days=1)
-        self.meeting = make_meeting(self.host, self.event, start=start, title='Morning')
-        self.session = make_session(self.meeting, start, 60, 'Opening')
+        self.event = make_event(self.host, start=start, title='Morning')
+        self.session = make_session(self.event, start, 60, 'Opening')
         self.client = signed_in(self.host)
 
     def give(self, **body):
@@ -262,7 +248,7 @@ class RolesEndpointTests(TestCase):
     def test_a_co_host_can_be_named_for_one_meeting(self):
         response = self.give(
             email='helper@example.com', role='co_host',
-            scope='meeting', scope_id=str(self.meeting.id),
+            scope='event', scope_id=str(self.event.id),
         )
 
         self.assertEqual(response.status_code, 201)
@@ -284,12 +270,15 @@ class RolesEndpointTests(TestCase):
         self.assertEqual(again.status_code, 200)
         self.assertEqual(RoleGrant.objects.filter(event=self.event).count(), 1)
 
-    def test_a_meeting_from_another_programme_is_refused(self):
-        elsewhere = make_meeting(self.host, make_event(self.host))
+    def test_a_session_from_another_event_is_refused(self):
+        # The scope has to sit inside the event being edited, or a session
+        # id from somebody else's day could be smuggled through.
+        elsewhere = make_event(self.host)
+        theirs = make_session(elsewhere, timezone.now(), 30, 'Not yours')
 
         response = self.give(
-            email='helper@example.com', role='co_host',
-            scope='meeting', scope_id=str(elsewhere.id),
+            email='helper@example.com', role='presenter',
+            scope='session', scope_id=str(theirs.id),
         )
 
         self.assertEqual(response.status_code, 400)

@@ -11,9 +11,9 @@ from rest_framework.test import APIClient
 from src.apps.accounts.tokens import issue_tokens
 from src.apps.artifacts.models import Artifact, ArtifactType
 from src.apps.artifacts.visibility import is_public, is_released, resources_for
-from src.apps.meetings.models import MeetingParticipant, Session
+from src.apps.meetings.models import EventParticipant, Session
 from src.apps.meetings.tests.factories import (
-    make_event, make_host, make_meeting, make_session,
+    make_event, make_host, make_session,
 )
 
 API = '/api/v1'
@@ -29,17 +29,16 @@ class VisibilityChoiceTests(TestCase):
     def setUp(self):
         self.host = make_host('host@example.com')
         self.attendee = make_host('attendee@example.com')
-        self.event = make_event(self.host)
         start = timezone.now()
-        self.meeting = make_meeting(self.host, self.event, start=start)
-        self.session = make_session(self.meeting, start, 30, 'Haldi')
-        MeetingParticipant.objects.create(
-            meeting=self.meeting, user=self.attendee, role='attendee'
+        self.event = make_event(self.host, start=start)
+        self.session = make_session(self.event, start, 30, 'Haldi')
+        EventParticipant.objects.create(
+            event=self.event, user=self.attendee, role='attendee'
         )
 
     def file(self, visibility, session=None):
         return Artifact.objects.create(
-            meeting=self.meeting,
+            event=self.event,
             session=session,
             artifact_type=ArtifactType.RESOURCE,
             display_name='slides.pdf',
@@ -87,8 +86,8 @@ class VisibilityChoiceTests(TestCase):
         self.file(Artifact.Visibility.ORGANIZERS)
         self.file(Artifact.Visibility.AFTER_SESSION, session=self.session)
 
-        for_room = resources_for(self.meeting, include_unreleased=False)
-        for_host = resources_for(self.meeting, include_unreleased=True)
+        for_room = resources_for(self.event, include_unreleased=False)
+        for_host = resources_for(self.event, include_unreleased=True)
 
         self.assertEqual(len(for_room), 1)
         self.assertEqual(len(for_host), 3)
@@ -98,21 +97,20 @@ class ChangingVisibilityTests(TestCase):
     def setUp(self):
         self.host = make_host('host@example.com')
         self.attendee = make_host('attendee@example.com')
-        self.event = make_event(self.host)
         start = timezone.now()
-        self.meeting = make_meeting(self.host, self.event, start=start)
-        MeetingParticipant.objects.create(
-            meeting=self.meeting, user=self.attendee, role='attendee'
+        self.event = make_event(self.host, start=start)
+        EventParticipant.objects.create(
+            event=self.event, user=self.attendee, role='attendee'
         )
         self.shared = Artifact.objects.create(
-            meeting=self.meeting, artifact_type=ArtifactType.RESOURCE,
+            event=self.event, artifact_type=ArtifactType.RESOURCE,
             display_name='slides.pdf',
             visibility=Artifact.Visibility.ORGANIZERS,
         )
 
     def change(self, client=None, **body):
         return (client or signed_in(self.host)).post(
-            f'{API}/meetings/{self.meeting.id}/resource_settings/',
+            f'{API}/events/{self.event.id}/resource_settings/',
             {'resource_id': str(self.shared.id), **body},
             format='json',
         )
@@ -143,14 +141,14 @@ class ChangingVisibilityTests(TestCase):
         self.assertEqual(self.shared.visibility, Artifact.Visibility.ORGANIZERS)
 
     def test_a_file_from_another_meeting_is_refused(self):
-        elsewhere = make_meeting(self.host, make_event(self.host))
+        elsewhere = make_event(self.host)
         theirs = Artifact.objects.create(
-            meeting=elsewhere, artifact_type=ArtifactType.RESOURCE,
+            event=elsewhere, artifact_type=ArtifactType.RESOURCE,
             display_name='not mine.pdf',
         )
 
         response = signed_in(self.host).post(
-            f'{API}/meetings/{self.meeting.id}/resource_settings/',
+            f'{API}/events/{self.event.id}/resource_settings/',
             {'resource_id': str(theirs.id), 'visibility': 'public'},
             format='json',
         )
@@ -159,12 +157,12 @@ class ChangingVisibilityTests(TestCase):
 
     def test_the_order_is_what_the_organizer_set(self):
         second = Artifact.objects.create(
-            meeting=self.meeting, artifact_type=ArtifactType.RESOURCE,
+            event=self.event, artifact_type=ArtifactType.RESOURCE,
             display_name='second.pdf', position=0,
         )
         self.shared.position = 1
         self.shared.save(update_fields=['position'])
 
-        listed = resources_for(self.meeting, include_unreleased=True)
+        listed = resources_for(self.event, include_unreleased=True)
 
         self.assertEqual([a.id for a in listed], [second.id, self.shared.id])

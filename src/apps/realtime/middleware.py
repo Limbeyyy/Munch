@@ -42,7 +42,7 @@ def _resolve_user(raw_token: str):
 def _resolve_guest(raw_token: str):
     """Return a lightweight description of the guest a token names.
 
-    Only admitted guests are treated as present in the meeting; everyone else
+    Only admitted guests are treated as present in the event; everyone else
     is still in the waiting room.
     """
     from src.apps.meetings.guest_tokens import resolve_guest
@@ -53,7 +53,7 @@ def _resolve_guest(raw_token: str):
     return {
         'id': str(guest.id),
         'name': guest.full_name,
-        'meeting_code': guest.meeting.meeting_code,
+        'code': guest.event.code,
         'status': guest.status,
     }
 

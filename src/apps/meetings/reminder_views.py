@@ -10,7 +10,7 @@ from rest_framework.response import Response
 
 from src.apps.meetings.models import Reminder
 from src.apps.meetings.reminders import (
-    MEETING_LEAD_MINUTES, SESSION_LEAD_MINUTES, calendar_link, leads_for,
+    EVENT_LEAD_MINUTES, SESSION_LEAD_MINUTES, calendar_link, leads_for,
 )
 
 logger = logging.getLogger(__name__)
@@ -26,32 +26,32 @@ def _as_json(reminder):
     The link is built here rather than in the browser so the times and the
     wording match what the reminder itself says.
     """
-    meeting = reminder.meeting
+    event = reminder.event
     session = reminder.session
-    leads = leads_for(meeting)
+    leads = leads_for(event)
 
     if session is not None:
-        title = f'{session.title} — {meeting.title}'
+        title = f'{session.title} — {event.title}'
         ends = session.starts_at + timezone.timedelta(minutes=session.duration_minutes)
         where = session.hall or ''
         details = (
-            f'Session in {meeting.title}. '
-            f'Meeting code {meeting.meeting_code}.'
+            f'Session in {event.title}. '
+            f'Event code {event.code}.'
         )
         if session.speaker_name:
             details = f'{session.speaker_name} — ' + details
     else:
-        title = meeting.title
-        ends = meeting.scheduled_end
+        title = event.title
+        ends = event.scheduled_end
         where = ''
-        details = f'Meeting code {meeting.meeting_code}.'
+        details = f'Event code {event.code}.'
 
     return {
         'id': str(reminder.id),
         'kind': reminder.kind,
-        'meeting_id': str(meeting.id),
-        'meeting_code': meeting.meeting_code,
-        'meeting_title': meeting.title,
+        'event_id': str(event.id),
+        'code': event.code,
+        'event_title': event.title,
         'session_id': str(session.id) if session else None,
         'session_title': session.title if session else None,
         'speaker_name': session.speaker_name if session else '',
@@ -61,10 +61,10 @@ def _as_json(reminder):
         'due_at': reminder.due_at,
         'is_due': reminder.is_due,
         'read': reminder.read_at is not None,
-        # What this one was written with, which is the meeting's programme
+        # What this one was written with, which is the event's programme
         # rather than the platform's old constant.
         'lead_minutes': (
-            leads['session'] if session is not None else leads['meeting']
+            leads['session'] if session is not None else leads['event']
         ),
         'calendar_url': calendar_link(
             title=title,
@@ -84,17 +84,17 @@ def my_reminders(request):
     Generated on read as well as on a timer, so somebody who has just been
     added to a programme sees it without waiting for the next sweep.
     """
-    from src.apps.meetings.access import meetings_visible_to
-    from src.apps.meetings.models import Meeting
+    from src.apps.meetings.access import events_visible_to
+    from src.apps.meetings.models import Event
     from src.apps.meetings.reminders import generate_for_meeting
 
-    upcoming = Meeting.objects.filter(
-        meetings_visible_to(request.user),
+    upcoming = Event.objects.filter(
+        events_visible_to(request.user),
         scheduled_end__gte=timezone.now(),
-    ).exclude(status=Meeting.Status.ENDED).distinct()
+    ).exclude(status=Event.Status.ENDED).distinct()
 
-    for meeting in upcoming:
-        generate_for_meeting(meeting)
+    for event in upcoming:
+        generate_for_meeting(event)
 
     # Today's earlier nudges stay in the list rather than vanishing the
     # moment a session begins: somebody opening the page at noon wants to
@@ -104,7 +104,7 @@ def my_reminders(request):
             user=request.user,
             starts_at__gte=timezone.now() - timedelta(hours=LOOKBACK_HOURS),
         )
-        .select_related('meeting', 'session')
+        .select_related('event', 'session')
         .order_by('starts_at')
     )
     rows = [_as_json(r) for r in mine]
@@ -125,7 +125,7 @@ def my_reminders(request):
     return Response({
         'reminders': rows,
         'unread': sum(1 for r in rows if r['is_due'] and not r['read']),
-        'meeting_lead_minutes': commonest('meeting', MEETING_LEAD_MINUTES),
+        'event_lead_minutes': commonest('event', EVENT_LEAD_MINUTES),
         'session_lead_minutes': commonest('session', SESSION_LEAD_MINUTES),
     })
 

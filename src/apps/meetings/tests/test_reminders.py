@@ -1,7 +1,7 @@
 """Who is reminded of what, and how long before.
 
-A meeting is somewhere you have to get to, so an hour's warning helps. A
-session is a talk inside a meeting you are probably already at, so fifteen
+A event is somewhere you have to get to, so an hour's warning helps. A
+session is a talk inside a event you are probably already at, so fifteen
 minutes is enough - and an hour's warning for each of four talks would be
 noise rather than help.
 """
@@ -10,13 +10,13 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from src.apps.accounts.tokens import issue_tokens
-from src.apps.meetings.models import MeetingInvite, Reminder
+from src.apps.meetings.models import EventInvite, Reminder
 from src.apps.meetings.reminders import (
-    MEETING_LEAD_MINUTES, SESSION_LEAD_MINUTES, calendar_link,
+    EVENT_LEAD_MINUTES, SESSION_LEAD_MINUTES, calendar_link,
     generate_for_meeting,
 )
 from src.apps.meetings.tests.factories import (
-    make_event, make_host, make_meeting, make_session,
+    make_event, make_host, make_session,
 )
 
 API = '/api/v1'
@@ -31,13 +31,12 @@ def signed_in(user):
 class LeadTimeTests(TestCase):
     def setUp(self):
         self.host = make_host('host@example.com')
-        self.event = make_event(self.host)
         self.start = timezone.now() + timezone.timedelta(days=1)
-        self.meeting = make_meeting(self.host, self.event, start=self.start, minutes=240)
-        # One meeting, four sessions - the shape from the brief.
+        self.event = make_event(self.host, start=self.start, minutes=240)
+        # One event, four sessions - the shape from the brief.
         self.sessions = [
             make_session(
-                self.meeting,
+                self.event,
                 self.start + timezone.timedelta(minutes=45 * i),
                 30,
                 f'Session {i + 1}',
@@ -50,22 +49,22 @@ class LeadTimeTests(TestCase):
         return rows.filter(kind=kind) if kind else rows
 
     def test_one_meeting_reminder_and_one_per_session(self):
-        generate_for_meeting(self.meeting)
+        generate_for_meeting(self.event)
 
-        self.assertEqual(self.mine(Reminder.Kind.MEETING).count(), 1)
+        self.assertEqual(self.mine(Reminder.Kind.EVENT).count(), 1)
         self.assertEqual(self.mine(Reminder.Kind.SESSION).count(), 4)
 
     def test_the_meeting_is_remembered_an_hour_before(self):
-        generate_for_meeting(self.meeting)
+        generate_for_meeting(self.event)
 
-        reminder = self.mine(Reminder.Kind.MEETING).get()
+        reminder = self.mine(Reminder.Kind.EVENT).get()
         self.assertEqual(
             reminder.due_at,
-            self.start - timezone.timedelta(minutes=MEETING_LEAD_MINUTES),
+            self.start - timezone.timedelta(minutes=EVENT_LEAD_MINUTES),
         )
 
     def test_each_session_a_quarter_of_an_hour_before_its_own_start(self):
-        generate_for_meeting(self.meeting)
+        generate_for_meeting(self.event)
 
         for session in self.sessions:
             reminder = Reminder.objects.get(user=self.host, session=session)
@@ -77,7 +76,7 @@ class LeadTimeTests(TestCase):
     def test_sessions_are_not_each_given_an_hour(self):
         # The point of two lead times: four hour-early nudges for one
         # morning would be noise.
-        generate_for_meeting(self.meeting)
+        generate_for_meeting(self.event)
 
         hours_early = [
             r for r in self.mine(Reminder.Kind.SESSION)
@@ -86,18 +85,18 @@ class LeadTimeTests(TestCase):
         self.assertEqual(hours_early, [])
 
     def test_writing_them_again_does_not_double_them(self):
-        generate_for_meeting(self.meeting)
-        generate_for_meeting(self.meeting)
+        generate_for_meeting(self.event)
+        generate_for_meeting(self.event)
 
         self.assertEqual(self.mine().count(), 5)
 
     def test_moving_the_timetable_moves_the_reminder(self):
-        generate_for_meeting(self.meeting)
+        generate_for_meeting(self.event)
         moved = self.sessions[0]
         moved.starts_at = moved.starts_at + timezone.timedelta(hours=2)
         moved.save(update_fields=['starts_at'])
 
-        generate_for_meeting(self.meeting)
+        generate_for_meeting(self.event)
 
         reminder = Reminder.objects.get(user=self.host, session=moved)
         self.assertEqual(
@@ -107,8 +106,7 @@ class LeadTimeTests(TestCase):
         self.assertEqual(self.mine().count(), 5)
 
     def test_nothing_is_written_for_a_meeting_already_over(self):
-        past = make_meeting(
-            self.host, self.event, start=timezone.now() - timezone.timedelta(days=1)
+        past = make_event(self.host, start=timezone.now() - timezone.timedelta(days=1)
         )
         make_session(past, past.scheduled_start, 30, 'Long gone')
 
@@ -119,7 +117,7 @@ class LeadTimeTests(TestCase):
         ran.status = ran.Status.DONE
         ran.save(update_fields=['status'])
 
-        generate_for_meeting(self.meeting)
+        generate_for_meeting(self.event)
 
         self.assertFalse(Reminder.objects.filter(session=ran).exists())
 
@@ -127,22 +125,21 @@ class LeadTimeTests(TestCase):
 class WhoIsRemindedTests(TestCase):
     def setUp(self):
         self.host = make_host('host@example.com')
-        self.event = make_event(self.host)
         self.start = timezone.now() + timezone.timedelta(days=1)
-        self.meeting = make_meeting(self.host, self.event, start=self.start)
-        self.session = make_session(self.meeting, self.start, 30, 'Haldi')
+        self.event = make_event(self.host, start=self.start)
+        self.session = make_session(self.event, self.start, 30, 'Haldi')
 
     def test_the_host_is_reminded(self):
-        generate_for_meeting(self.meeting)
+        generate_for_meeting(self.event)
         self.assertTrue(Reminder.objects.filter(user=self.host).exists())
 
     def test_somebody_invited_is_reminded(self):
         asked = make_host('asked@example.com')
-        MeetingInvite.objects.create(
-            meeting=self.meeting, email=asked.email, invited_by=self.host
+        EventInvite.objects.create(
+            event=self.event, email=asked.email, invited_by=self.host
         )
 
-        generate_for_meeting(self.meeting)
+        generate_for_meeting(self.event)
 
         self.assertTrue(Reminder.objects.filter(user=asked).exists())
 
@@ -151,14 +148,14 @@ class WhoIsRemindedTests(TestCase):
         self.session.speaker_email = speaker.email
         self.session.save(update_fields=['speaker_email'])
 
-        generate_for_meeting(self.meeting)
+        generate_for_meeting(self.event)
 
         self.assertTrue(Reminder.objects.filter(user=speaker).exists())
 
     def test_a_stranger_is_not(self):
         stranger = make_host('stranger@example.com')
 
-        generate_for_meeting(self.meeting)
+        generate_for_meeting(self.event)
 
         self.assertFalse(Reminder.objects.filter(user=stranger).exists())
 
@@ -166,10 +163,9 @@ class WhoIsRemindedTests(TestCase):
 class ReminderPageTests(TestCase):
     def setUp(self):
         self.host = make_host('host@example.com')
-        self.event = make_event(self.host)
         self.start = timezone.now() + timezone.timedelta(hours=3)
-        self.meeting = make_meeting(self.host, self.event, start=self.start, minutes=120)
-        self.session = make_session(self.meeting, self.start, 30, 'Haldi')
+        self.event = make_event(self.host, start=self.start, minutes=120)
+        self.session = make_session(self.event, self.start, 30, 'Haldi')
         self.client = signed_in(self.host)
 
     def page(self):
@@ -181,7 +177,7 @@ class ReminderPageTests(TestCase):
         body = self.page()
 
         self.assertEqual(len(body['reminders']), 2)
-        self.assertEqual(body['meeting_lead_minutes'], MEETING_LEAD_MINUTES)
+        self.assertEqual(body['event_lead_minutes'], EVENT_LEAD_MINUTES)
         self.assertEqual(body['session_lead_minutes'], SESSION_LEAD_MINUTES)
 
     def test_each_carries_a_link_to_put_it_in_a_diary(self):
@@ -199,27 +195,26 @@ class ReminderPageTests(TestCase):
         self.assertEqual(session_row['session_title'], 'Haldi')
 
     def test_nothing_already_past_is_listed(self):
-        gone = make_meeting(
-            self.host, self.event,
+        gone = make_event(self.host,
             start=timezone.now() - timezone.timedelta(hours=2),
             title='Yesterday',
         )
         make_session(gone, gone.scheduled_start, 30, 'Over')
 
-        titles = [r['meeting_title'] for r in self.page()['reminders']]
+        titles = [r['event_title'] for r in self.page()['reminders']]
         self.assertNotIn('Yesterday', titles)
 
     def ran(self, hours_ago):
         """Put the whole thing that far into the past.
 
-        The timetable moves as well as the reminder rows: a meeting still
+        The timetable moves as well as the reminder rows: a event still
         ahead would be regenerated on the next read, which would quietly
         put the times back.
         """
         then = timezone.now() - timezone.timedelta(hours=hours_ago)
-        self.meeting.scheduled_start = then
-        self.meeting.scheduled_end = then + timezone.timedelta(minutes=120)
-        self.meeting.save()
+        self.event.scheduled_start = then
+        self.event.scheduled_end = then + timezone.timedelta(minutes=120)
+        self.event.save()
         self.session.starts_at = then
         self.session.save(update_fields=['starts_at'])
         Reminder.objects.update(starts_at=then)
@@ -251,9 +246,9 @@ class ReminderPageTests(TestCase):
         a nudge is owed.
         """
         soon = timezone.now() + timezone.timedelta(minutes=5)
-        self.meeting.scheduled_start = soon
-        self.meeting.scheduled_end = soon + timezone.timedelta(minutes=120)
-        self.meeting.save()
+        self.event.scheduled_start = soon
+        self.event.scheduled_end = soon + timezone.timedelta(minutes=120)
+        self.event.save()
         self.session.starts_at = soon
         self.session.save(update_fields=['starts_at'])
 
