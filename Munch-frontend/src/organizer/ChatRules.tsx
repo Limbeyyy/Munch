@@ -15,10 +15,10 @@ import { Switch } from './ui';
  * matters while something is on stage belongs where the stage is.
  */
 export const ChatRules: React.FC<{
-  meetingId: string;
-  /** The meeting room is dark; the dashboards are not. */
+  eventId: string;
+  /** The event room is dark; the dashboards are not. */
   tone?: 'light' | 'dark';
-}> = ({ meetingId, tone = 'light' }) => {
+}> = ({ eventId, tone = 'light' }) => {
   const { t } = useOrganizer();
   const dark = tone === 'dark';
   const [settings, setSettings] = useState<ChatSettings>({
@@ -30,20 +30,20 @@ export const ChatRules: React.FC<{
 
   const load = useCallback(async () => {
     try {
-      setSettings(await apiClient.getChatSettings(meetingId));
+      setSettings(await apiClient.getChatSettings(eventId));
     } catch {
       // The switches simply stay as they were.
     } finally {
       setLoaded(true);
     }
-  }, [meetingId]);
+  }, [eventId]);
 
   useEffect(() => { load(); }, [load]);
 
   const toggle = async (patch: Partial<ChatSettings>) => {
     try {
       setSaving(true);
-      setSettings(await apiClient.updateChatSettings(meetingId, patch));
+      setSettings(await apiClient.updateChatSettings(eventId, patch));
       toast.success(t({ ne: 'सेभ भयो', en: 'Saved' }));
     } catch {
       toast.error(t({ ne: 'सेभ हुन सकेन', en: 'Could not save' }));

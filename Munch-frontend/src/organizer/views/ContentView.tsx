@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { Artifact, Meeting, TranscriptionSegment } from '../../types';
-import { MeetingOverview } from '../MeetingOverview';
+import { Artifact, Event, TranscriptionSegment } from '../../types';
+import { EventOverview } from '../EventOverview';
 import { SummaryApprovals } from '../SummaryApprovals';
 import { ResourceControls } from '../ResourceVisibility';
-import { MEETING_STATE_LABEL, MEETING_STATE_TONE, meetingState } from '../sessionState';
+import { EVENT_STATE_LABEL, EVENT_STATE_TONE, eventState } from '../sessionState';
 import { useOrganizer } from '../i18n';
 import { Btn, Chip, Empty, Head, Panel, Tabs } from '../ui';
 
-interface Props { meetings: Meeting[]; }
+interface Props { events: Event[]; }
 
 const formatSize = (bytes?: number | null) => {
   if (!bytes) return '—';
@@ -35,22 +35,22 @@ const KIND_COLOR: Record<string, string> = {
 };
 
 /** Files people shared, and the transcript each session produced. */
-export const ContentView: React.FC<Props> = ({ meetings }) => {
+export const ContentView: React.FC<Props> = ({ events }) => {
   const { t, num } = useOrganizer();
   const [tab, setTab] = useState('files');
   const [resources, setResources] = useState<Record<string, Artifact[]>>({});
   const [transcripts, setTranscripts] = useState<Record<string, TranscriptionSegment[]>>({});
   const [uploading, setUploading] = useState<string | null>(null);
-  const [opened, setOpened] = useState<Meeting | null>(null);
+  const [opened, setOpened] = useState<Event | null>(null);
 
   const loadResources = React.useCallback(async () => {
     const results = await Promise.allSettled(
-      meetings.map((m) => apiClient.getResources(m.id).then((r) => [m.id, r] as const))
+      events.map((m) => apiClient.getResources(m.id).then((r) => [m.id, r] as const))
     );
     const next: Record<string, Artifact[]> = {};
     results.forEach((r) => { if (r.status === 'fulfilled') next[r.value[0]] = r.value[1]; });
     setResources(next);
-  }, [meetings]);
+  }, [events]);
 
   useEffect(() => { loadResources(); }, [loadResources]);
 
@@ -58,8 +58,8 @@ export const ContentView: React.FC<Props> = ({ meetings }) => {
     if (tab !== 'transcripts') return;
     let cancelled = false;
     Promise.allSettled(
-      meetings.map((m) =>
-        apiClient.getMeetingSegments(m.meeting_code).then((s) => [m.id, s] as const)
+      events.map((m) =>
+        apiClient.getEventSegments(m.code).then((s) => [m.id, s] as const)
       )
     ).then((results) => {
       if (cancelled) return;
@@ -68,12 +68,12 @@ export const ContentView: React.FC<Props> = ({ meetings }) => {
       setTranscripts(next);
     });
     return () => { cancelled = true; };
-  }, [tab, meetings]);
+  }, [tab, events]);
 
-  const upload = async (meeting: Meeting, file: File) => {
+  const upload = async (event: Event, file: File) => {
     try {
-      setUploading(meeting.id);
-      await apiClient.uploadResource(meeting.id, file);
+      setUploading(event.id);
+      await apiClient.uploadResource(event.id, file);
       toast.success(t({ ne: 'फाइल थपियो', en: 'File added' }));
       await loadResources();
     } catch (e: any) {
@@ -81,16 +81,16 @@ export const ContentView: React.FC<Props> = ({ meetings }) => {
     } finally { setUploading(null); }
   };
 
-  const downloadTranscript = (meeting: Meeting) => {
-    const segments = transcripts[meeting.id] ?? [];
+  const downloadTranscript = (event: Event) => {
+    const segments = transcripts[event.id] ?? [];
     if (segments.length === 0) return;
-    const header = `${meeting.title}\n${new Date().toLocaleString()}\n${'='.repeat(50)}\n\n`;
+    const header = `${event.title}\n${new Date().toLocaleString()}\n${'='.repeat(50)}\n\n`;
     const body = segments
       .map((s) => `[${s.speaker_name ?? 'Room'}] ${s.text}`)
       .join('\n');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([header + body], { type: 'text/plain;charset=utf-8' }));
-    a.download = `${meeting.meeting_code}-transcript.txt`;
+    a.download = `${event.code}-transcript.txt`;
     a.click();
     toast.success(t({ ne: 'ट्रान्सक्रिप्ट डाउनलोड भयो', en: 'Transcript downloaded' }));
   };
@@ -124,42 +124,42 @@ export const ContentView: React.FC<Props> = ({ meetings }) => {
       )}
 
       <div className="flex flex-col gap-3.5">
-        {meetings.length === 0 && (
+        {events.length === 0 && (
           <Panel><Empty>{t({ ne: 'कुनै सत्र छैन।', en: 'No sessions yet.' })}</Empty></Panel>
         )}
 
-        {meetings.map((meeting) => {
-          const files = resources[meeting.id] ?? [];
-          const segments = transcripts[meeting.id] ?? [];
+        {events.map((event) => {
+          const files = resources[event.id] ?? [];
+          const segments = transcripts[event.id] ?? [];
 
           return (
             <Panel
-              key={meeting.id}
-              title={<span className="text-[14.5px]">{meeting.title}</span>}
+              key={event.id}
+              title={<span className="text-[14.5px]">{event.title}</span>}
               aside={
-                <Chip tone={MEETING_STATE_TONE[meetingState(meeting)]}>
-                  {t(MEETING_STATE_LABEL[meetingState(meeting)])}
+                <Chip tone={EVENT_STATE_TONE[eventState(event)]}>
+                  {t(EVENT_STATE_LABEL[eventState(event)])}
                 </Chip>
               }
               actions={
                 tab === 'files' ? (
                 <>
-                {/* Everything about this meeting, gathered to read rather
+                {/* Everything about this event, gathered to read rather
                     than to edit. The tabs here own the editing. */}
-                <Btn sm onClick={() => setOpened(meeting)}>
+                <Btn sm onClick={() => setOpened(event)}>
                   {t({ ne: 'खोल्नुहोस्', en: 'Open' })}
                 </Btn>
                   <label className="inline-flex items-center gap-2 rounded-[7px] border border-navy-800/15 bg-white px-2.5 py-1 text-[12.5px] font-medium cursor-pointer hover:border-navy-500">
-                    {uploading === meeting.id
+                    {uploading === event.id
                       ? t({ ne: 'थप्दै…', en: 'Adding…' })
                       : t({ ne: '+ फाइल', en: '+ File' })}
                     <input
                       type="file"
                       className="hidden"
-                      disabled={uploading === meeting.id}
+                      disabled={uploading === event.id}
                       onChange={(e) => {
                         const file = e.target.files?.[0];
-                        if (file) upload(meeting, file);
+                        if (file) upload(event, file);
                         e.target.value = '';
                       }}
                     />
@@ -169,7 +169,7 @@ export const ContentView: React.FC<Props> = ({ meetings }) => {
                   // Summaries are approved one at a time, so the actions
                   // belong beside each summary rather than up here.
                   <Btn sm disabled={segments.length === 0}
-                       onClick={() => downloadTranscript(meeting)}>
+                       onClick={() => downloadTranscript(event)}>
                     {t({ ne: 'ट्रान्सक्रिप्ट डाउनलोड', en: 'Download transcript' })}
                   </Btn>
                 )
@@ -217,7 +217,7 @@ export const ContentView: React.FC<Props> = ({ meetings }) => {
                             {/* Who may read it, and where it sits in the
                                 order attendees see. */}
                             <ResourceControls
-                              meetingId={meeting.id}
+                              eventId={event.id}
                               resource={f}
                               index={i}
                               total={files.length}
@@ -240,7 +240,7 @@ export const ContentView: React.FC<Props> = ({ meetings }) => {
                   )
                 )}
 
-                {tab === 'transcripts' && <SummaryApprovals meeting={meeting} />}
+                {tab === 'transcripts' && <SummaryApprovals event={event} />}
               </div>
             </Panel>
           );
@@ -248,7 +248,7 @@ export const ContentView: React.FC<Props> = ({ meetings }) => {
       </div>
 
       {opened && (
-        <MeetingOverview meeting={opened} onClose={() => setOpened(null)} />
+        <EventOverview event={opened} onClose={() => setOpened(null)} />
       )}
     </>
   );

@@ -1,4 +1,4 @@
-import { EventMeeting, Session } from '../types';
+import { Event, Session } from '../types';
 
 /**
  * The least breathing room left between one slot and the next, where the
@@ -16,7 +16,7 @@ const MS = 60000;
 
 export interface PlannedSession {
   id: string;
-  meetingId: string;
+  eventId: string;
   title: string;
   speaker_name: string;
   hall: string;
@@ -30,11 +30,11 @@ export interface PlannedSession {
   moved: boolean;
 }
 
-export interface PlannedMeeting {
+export interface PlannedEvent {
   id: string;
   title: string;
-  meetingCode: string;
-  status: EventMeeting['status'];
+  eventCode: string;
+  status: Event['status'];
   startsAt: number;
   endsAt: number;
   baseStartsAt: number;
@@ -45,10 +45,10 @@ export interface PlannedMeeting {
 
 /** A session that has run, or is running, has a real time and keeps it. */
 const isSettled = (s: PlannedSession) => s.status !== 'scheduled';
-/** A meeting already under way keeps its own window where it is. */
-const isUnderway = (m: PlannedMeeting) => m.status === 'active' || m.status === 'ended';
-/** A finished meeting is a record, and records do not move. */
-const isFinished = (m: PlannedMeeting) => m.status === 'ended';
+/** A event already under way keeps its own window where it is. */
+const isUnderway = (m: PlannedEvent) => m.status === 'active' || m.status === 'ended';
+/** A finished event is a record, and records do not move. */
+const isFinished = (m: PlannedEvent) => m.status === 'ended';
 
 const endOf = (s: PlannedSession) => s.startsAt + s.durationMinutes * MS;
 
@@ -58,24 +58,24 @@ const hasChanged = (s: PlannedSession) =>
   s.durationMinutes !== s.baseDurationMinutes ||
   s.hall !== s.baseHall;
 
-export const toPlan = (meetings: EventMeeting[]): PlannedMeeting[] =>
-  [...meetings]
+export const toPlan = (events: Event[]): PlannedEvent[] =>
+  [...events]
     .sort((a, b) => +new Date(a.scheduled_start) - +new Date(b.scheduled_start))
-    .map((meeting) => ({
-      id: meeting.id,
-      title: meeting.title,
-      meetingCode: meeting.meeting_code,
-      status: meeting.status,
-      startsAt: +new Date(meeting.scheduled_start),
-      endsAt: +new Date(meeting.scheduled_end),
-      baseStartsAt: +new Date(meeting.scheduled_start),
-      baseEndsAt: +new Date(meeting.scheduled_end),
+    .map((event) => ({
+      id: event.id,
+      title: event.title,
+      eventCode: event.code,
+      status: event.status,
+      startsAt: +new Date(event.scheduled_start),
+      endsAt: +new Date(event.scheduled_end),
+      baseStartsAt: +new Date(event.scheduled_start),
+      baseEndsAt: +new Date(event.scheduled_end),
       moved: false,
-      sessions: [...meeting.sessions]
+      sessions: [...(event.sessions ?? [])]
         .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at))
         .map((session) => ({
           id: session.id,
-          meetingId: meeting.id,
+          eventId: event.id,
           title: session.title,
           speaker_name: session.speaker_name,
           hall: session.hall ?? '',
@@ -89,48 +89,48 @@ export const toPlan = (meetings: EventMeeting[]): PlannedMeeting[] =>
         })),
     }));
 
-/** Every session in the day, earliest first, whichever meeting holds it. */
+/** Every session in the day, earliest first, whichever event holds it. */
 /**
- * Meetings whose sessions hold their times, whatever else moves.
+ * Events whose sessions hold their times, whatever else moves.
  *
- * A finished one always. A meeting under way as well - its day should not
+ * A finished one always. A event under way as well - its day should not
  * shift under a room full of people - *unless the edit is coming from
  * inside it*, which is the case the room's own running order is: the host
- * rearranges what is left of the meeting they are standing in, between one
+ * rearranges what is left of the event they are standing in, between one
  * talk and the next, and that is the point of it. What has already run, or
  * is running, stays put either way; those are settled on their own account.
  */
-const fixedMeetings = (plan: PlannedMeeting[], editing?: string) =>
+const fixedEvents = (plan: PlannedEvent[], editing?: string) =>
   new Set(
     plan
       .filter((m) => isFinished(m) || (isUnderway(m) && m.id !== editing))
       .map((m) => m.id)
   );
 
-const allSessions = (plan: PlannedMeeting[]): PlannedSession[] =>
+const allSessions = (plan: PlannedEvent[]): PlannedSession[] =>
   plan.flatMap((m) => m.sessions).sort((a, b) => a.startsAt - b.startsAt);
 
-/** Put the day's sessions back into the meetings that own them. */
-const regroup = (plan: PlannedMeeting[], sessions: PlannedSession[]): PlannedMeeting[] => {
-  const byMeeting: Record<string, PlannedSession[]> = {};
+/** Put the day's sessions back into the events that own them. */
+const regroup = (plan: PlannedEvent[], sessions: PlannedSession[]): PlannedEvent[] => {
+  const byEvent: Record<string, PlannedSession[]> = {};
   sessions.forEach((s) => {
-    (byMeeting[s.meetingId] ||= []).push(s);
+    (byEvent[s.eventId] ||= []).push(s);
   });
 
   return plan
-    .map((meeting) => {
-      const own = (byMeeting[meeting.id] ?? []).sort((a, b) => a.startsAt - b.startsAt);
-      if (own.length === 0) return { ...meeting, sessions: own };
+    .map((event) => {
+      const own = (byEvent[event.id] ?? []).sort((a, b) => a.startsAt - b.startsAt);
+      if (own.length === 0) return { ...event, sessions: own };
 
-      // A meeting exists to hold its running order, so its window is that span.
+      // A event exists to hold its running order, so its window is that span.
       const startsAt = Math.min(...own.map((s) => s.startsAt));
       const endsAt = Math.max(...own.map(endOf));
       return {
-        ...meeting,
+        ...event,
         sessions: own,
         startsAt,
         endsAt,
-        moved: startsAt !== meeting.baseStartsAt || endsAt !== meeting.baseEndsAt,
+        moved: startsAt !== event.baseStartsAt || endsAt !== event.baseEndsAt,
       };
     })
     .sort((a, b) => a.startsAt - b.startsAt);
@@ -140,7 +140,7 @@ const regroup = (plan: PlannedMeeting[], sessions: PlannedSession[]): PlannedMee
  * Settle collisions by moving things later, never earlier.
  *
  * Anything already settled - a session that has run, or any session inside
- * a meeting that is under way - is an obstacle rather than a participant:
+ * a event that is under way - is an obstacle rather than a participant:
  * it holds its time and the movable sessions go round it.
  *
  * A session forced to move goes to the earliest point it legally can, which
@@ -154,7 +154,7 @@ const resolve = (
   anchoredId?: string,
   gapMinutes: number = GAP_MINUTES
 ): PlannedSession[] => {
-  const fixedBy = (s: PlannedSession) => isSettled(s) || underway.has(s.meetingId);
+  const fixedBy = (s: PlannedSession) => isSettled(s) || underway.has(s.eventId);
 
   const fixed = sessions.filter(fixedBy).sort((a, b) => a.startsAt - b.startsAt);
   const movable = sessions.filter((s) => !fixedBy(s)).sort((a, b) => {
@@ -205,11 +205,11 @@ const resolve = (
     }));
 };
 
-/** Push meetings apart if a reflow left them touching. */
+/** Push events apart if a reflow left them touching. */
 const separate = (
-  plan: PlannedMeeting[],
+  plan: PlannedEvent[],
   gapMinutes: number = GAP_MINUTES
-): PlannedMeeting[] => {
+): PlannedEvent[] => {
   const out = [...plan];
   for (let i = 1; i < out.length; i += 1) {
     const earliest = out[i - 1].endsAt + gapMinutes * MS;
@@ -239,11 +239,11 @@ const separate = (
  * time places the session there and lets whatever it lands on give way.
  */
 export const applyEdit = (
-  plan: PlannedMeeting[],
+  plan: PlannedEvent[],
   sessionId: string,
   change: { startsAt?: number; durationMinutes?: number },
   gapMinutes: number = GAP_MINUTES
-): PlannedMeeting[] => {
+): PlannedEvent[] => {
   const sessions = allSessions(plan);
   const target = sessions.find((s) => s.id === sessionId);
   if (!target || isSettled(target)) return plan;
@@ -259,7 +259,7 @@ export const applyEdit = (
         )
       : undefined;
 
-  const held = fixedMeetings(plan, target.meetingId);
+  const held = fixedEvents(plan, target.eventId);
 
   if (occupant) {
     const swapped = sessions.map((s) => {
@@ -286,10 +286,10 @@ export const applyEdit = (
 export const reflow = applyEdit;
 
 /** Why two sessions cannot change places, or null if they can. */
-export type SwapRefusal = 'same' | 'other-meeting' | 'settled' | null;
+export type SwapRefusal = 'same' | 'other-event' | 'settled' | null;
 
 export const whyNotSwap = (
-  plan: PlannedMeeting[],
+  plan: PlannedEvent[],
   aId: string,
   bId: string
 ): SwapRefusal => {
@@ -297,11 +297,11 @@ export const whyNotSwap = (
   const a = sessions.find((s) => s.id === aId);
   const b = sessions.find((s) => s.id === bId);
   if (!a || !b || a.id === b.id) return 'same';
-  if (a.meetingId !== b.meetingId) return 'other-meeting';
+  if (a.eventId !== b.eventId) return 'other-event';
   // A session that has run, or is running, has a real time and keeps it.
   if (isSettled(a) || isSettled(b)) return 'settled';
-  const meeting = plan.find((m) => m.id === a.meetingId);
-  if (meeting && isFinished(meeting)) return 'settled';
+  const event = plan.find((m) => m.id === a.eventId);
+  if (event && isFinished(event)) return 'settled';
   return null;
 };
 
@@ -316,11 +316,11 @@ export const whyNotSwap = (
  * of rules to disagree with the first.
  */
 export const swapSessions = (
-  plan: PlannedMeeting[],
+  plan: PlannedEvent[],
   aId: string,
   bId: string,
   gapMinutes: number = GAP_MINUTES
-): PlannedMeeting[] => {
+): PlannedEvent[] => {
   if (whyNotSwap(plan, aId, bId) !== null) return plan;
   const target = allSessions(plan).find((s) => s.id === bId)!;
   return applyEdit(plan, aId, { startsAt: target.startsAt }, gapMinutes);
@@ -328,19 +328,19 @@ export const swapSessions = (
 
 /** Put a session in a different hall. Nothing else about the day changes. */
 export const setHall = (
-  plan: PlannedMeeting[],
+  plan: PlannedEvent[],
   sessionId: string,
   hall: string
-): PlannedMeeting[] =>
-  plan.map((meeting) => ({
-    ...meeting,
-    sessions: meeting.sessions.map((s) =>
+): PlannedEvent[] =>
+  plan.map((event) => ({
+    ...event,
+    sessions: event.sessions.map((s) =>
       s.id === sessionId ? { ...s, hall, moved: hasChanged({ ...s, hall }) } : s
     ),
   }));
 
 /** Every hall already in use, for suggesting one rather than retyping it. */
-export const hallsInUse = (plan: PlannedMeeting[]): string[] => {
+export const hallsInUse = (plan: PlannedEvent[]): string[] => {
   const seen: string[] = [];
   plan.forEach((m) =>
     m.sessions.forEach((s) => {
@@ -351,34 +351,34 @@ export const hallsInUse = (plan: PlannedMeeting[]): string[] => {
   return seen.sort();
 };
 
-/** Move a whole meeting, running order and all. */
-export const reflowMeeting = (
-  plan: PlannedMeeting[],
-  meetingId: string,
+/** Move a whole event, running order and all. */
+export const reflowEvent = (
+  plan: PlannedEvent[],
+  eventId: string,
   startsAt: number,
   gapMinutes: number = GAP_MINUTES
-): PlannedMeeting[] => {
-  const meeting = plan.find((m) => m.id === meetingId);
-  if (!meeting || isUnderway(meeting)) return plan;
+): PlannedEvent[] => {
+  const event = plan.find((m) => m.id === eventId);
+  if (!event || isUnderway(event)) return plan;
 
-  const shift = startsAt - meeting.startsAt;
+  const shift = startsAt - event.startsAt;
   if (shift === 0) return plan;
 
   const sessions = allSessions(plan).map((s) =>
-    s.meetingId === meetingId && !isSettled(s) ? { ...s, startsAt: s.startsAt + shift } : s
+    s.eventId === eventId && !isSettled(s) ? { ...s, startsAt: s.startsAt + shift } : s
   );
   return separate(
-    regroup(plan, resolve(sessions, fixedMeetings(plan, meetingId), undefined, gapMinutes)),
+    regroup(plan, resolve(sessions, fixedEvents(plan, eventId), undefined, gapMinutes)),
     gapMinutes
   );
 };
 
-export const pendingChanges = (plan: PlannedMeeting[]) => ({
+export const pendingChanges = (plan: PlannedEvent[]) => ({
   sessions: plan.flatMap((m) => m.sessions.filter((s) => s.moved)),
-  meetings: plan.filter((m) => m.moved),
+  events: plan.filter((m) => m.moved),
 });
 
-export const countChanges = (plan: PlannedMeeting[]) => {
-  const { sessions, meetings } = pendingChanges(plan);
-  return sessions.length + meetings.length;
+export const countChanges = (plan: PlannedEvent[]) => {
+  const { sessions, events } = pendingChanges(plan);
+  return sessions.length + events.length;
 };

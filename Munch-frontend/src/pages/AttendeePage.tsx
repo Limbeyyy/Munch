@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
 import { LIST_POLL_MS } from '../services/polling';
 import { useAuthStore } from '../store/authStore';
-import { EventMeeting, EventProgramme } from '../types';
+import { Event } from '../types';
 import { OrganizerProvider, useOrganizer } from '../organizer/i18n';
 import { Card, Tabs } from '../organizer/ui';
 import { AttendeeShell } from '../attendee/AttendeeShell';
@@ -18,7 +18,7 @@ import { ProfileView } from '../organizer/ProfileView';
 import { SubscriptionView } from '../organizer/SubscriptionView';
 import { RemindersView } from '../organizer/RemindersView';
 import { useNudges } from '../organizer/nudges';
-import { useMeetingPulse } from '../organizer/meetingPulse';
+import { useEventPulse } from '../organizer/eventPulse';
 import { useSeen } from '../organizer/seen';
 
 const dayKey = (iso: string) => new Date(iso).toISOString().slice(0, 10);
@@ -36,7 +36,7 @@ const AttendeeInner: React.FC = () => {
   const { user, logout } = useAuthStore();
 
   const [view, setView] = useState('dash');
-  const [events, setEvents] = useState<EventProgramme[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [eventId, setEventId] = useState('');
   const [attended, setAttended] = useState<Set<string>>(new Set());
@@ -82,8 +82,8 @@ const AttendeeInner: React.FC = () => {
   const items = useMemo<SpineItem[]>(() => {
     if (!event) return [];
     const out: SpineItem[] = [];
-    event.meetings.forEach((meeting) =>
-      meeting.sessions.forEach((session) => out.push({ session, meeting }))
+    [event].forEach((event) =>
+      (event.sessions ?? []).forEach((session) => out.push({ session, event }))
     );
     return out.sort((a, b) => +new Date(a.session.starts_at) - +new Date(b.session.starts_at));
   }, [event]);
@@ -92,7 +92,7 @@ const AttendeeInner: React.FC = () => {
 
   // The same courtesy the room gets: when the host ends a session, this
   // screen stops saying it is running without waiting for the next poll.
-  useMeetingPulse(live?.meeting.meeting_code, load);
+  useEventPulse(live?.event.code, load);
 
   // Which sessions this person was recorded at. Read per finished session,
   // because attendance is only settled once a session closes.
@@ -142,15 +142,15 @@ const AttendeeInner: React.FC = () => {
 
   const activeDay = days.includes(day) ? day : days[0] ?? '';
 
-  const enterRoom = (meeting: EventMeeting) => navigate(`/meeting/${meeting.meeting_code}`);
+  const enterRoom = (event: Event) => navigate(`/event/${event.code}`);
 
   /** Go straight to a room whose code somebody was given. */
   const joinByCode = () => {
     const code = window.prompt(
-      t({ ne: 'बैठकको कोड लेख्नुहोस्', en: 'Enter the meeting code' })
+      t({ ne: 'बैठकको कोड लेख्नुहोस्', en: 'Enter the event code' })
     );
     const trimmed = code?.trim().toUpperCase();
-    if (trimmed) navigate(`/meeting/${trimmed}`);
+    if (trimmed) navigate(`/event/${trimmed}`);
   };
 
   return (
@@ -173,7 +173,7 @@ const AttendeeInner: React.FC = () => {
         eventDetail={
           event
             ? [
-                new Date(event.event_date).toLocaleDateString(undefined, {
+                new Date(event.event_date ?? event.scheduled_start).toLocaleDateString(undefined, {
                   weekday: 'long', day: 'numeric', month: 'long',
                 }),
                 event.venue,
@@ -192,7 +192,7 @@ const AttendeeInner: React.FC = () => {
             <p className="text-[#6E7C8E] mt-2 max-w-md mx-auto">
               {t({
                 ne: 'आयोजकले निम्तो पठाएपछि वा बैठकको कोड हालेपछि कार्यक्रम यहाँ देखिन्छ।',
-                en: 'Once an organizer invites you, or you join with a meeting code, the day appears here.',
+                en: 'Once an organizer invites you, or you join with a event code, the day appears here.',
               })}
             </p>
             <button
@@ -216,7 +216,7 @@ const AttendeeInner: React.FC = () => {
               >
                 {events.map((e) => (
                   <option key={e.id} value={e.id}>
-                    {e.title} · {new Date(e.event_date).toLocaleDateString()}
+                    {e.title} · {new Date(e.event_date ?? e.scheduled_start).toLocaleDateString()}
                   </option>
                 ))}
               </select>
@@ -275,7 +275,7 @@ const AttendeeInner: React.FC = () => {
 
             {view === 'hub' && (
               <HubView
-                meetings={event?.meetings ?? []}
+                events={event ? [event] : []}
                 myName={nameOf(user)}
               />
             )}

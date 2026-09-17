@@ -29,7 +29,7 @@ interface Props {
  */
 export const SessionDrawer: React.FC<Props> = ({ item, onClose, guestToken }) => {
   const { t, num } = useOrganizer();
-  const { session, meeting } = item;
+  const { session, event } = item;
 
   const [tab, setTab] = useState('transcript');
   const [segments, setSegments] = useState<TranscriptionSegment[]>([]);
@@ -44,18 +44,18 @@ export const SessionDrawer: React.FC<Props> = ({ item, onClose, guestToken }) =>
       setLoading(true);
       const [segs, arts, att] = await Promise.allSettled([
         guestToken
-          ? apiClient.getGuestSegments(meeting.meeting_code, guestToken)
-          : apiClient.getMeetingSegments(meeting.meeting_code),
+          ? apiClient.getGuestSegments(event.code, guestToken)
+          : apiClient.getEventSegments(event.code),
         guestToken
           ? Promise.resolve([] as Artifact[])
-          : apiClient.getResources(meeting.id),
+          : apiClient.getResources(event.id),
         guestToken
           ? Promise.resolve([])
           : apiClient.getSessionAttendance(session.id),
       ]);
       if (cancelled) return;
 
-      // The meeting's transcript covers the whole room; keep this session's.
+      // The event's transcript covers the whole room; keep this session's.
       if (segs.status === 'fulfilled') {
         setSegments(
           (segs.value as any[]).filter((s) => !s.session_id || s.session_id === session.id)
@@ -69,7 +69,7 @@ export const SessionDrawer: React.FC<Props> = ({ item, onClose, guestToken }) =>
     };
     load();
     return () => { cancelled = true; };
-  }, [session.id, meeting.id, meeting.meeting_code, guestToken]);
+  }, [session.id, event.id, event.code, guestToken]);
 
   const shown = query
     ? segments.filter((s) => s.text.toLowerCase().includes(query.toLowerCase()))
@@ -77,7 +77,7 @@ export const SessionDrawer: React.FC<Props> = ({ item, onClose, guestToken }) =>
 
   const download = () => {
     if (segments.length === 0) return;
-    const header = `${session.title}\n${meeting.title}\n${'='.repeat(48)}\n\n`;
+    const header = `${session.title}\n${event.title}\n${'='.repeat(48)}\n\n`;
     const body = segments.map((s) => `[${s.speaker_name}] ${s.text}`).join('\n');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([header + body], { type: 'text/plain;charset=utf-8' }));
@@ -105,7 +105,7 @@ export const SessionDrawer: React.FC<Props> = ({ item, onClose, guestToken }) =>
           <p className="text-[12.5px] text-[#AFC6E6]">
             {clock(session.starts_at)}–{clock(session.ends_at)}
             {session.hall && ` · ${session.hall}`}
-            {` · ${meeting.title} · ${meeting.meeting_code}`}
+            {` · ${event.title} · ${event.code}`}
           </p>
           <h2 className="text-[21px] font-semibold pr-9 mt-1">{session.title}</h2>
 
@@ -118,7 +118,7 @@ export const SessionDrawer: React.FC<Props> = ({ item, onClose, guestToken }) =>
                 {session.speaker_name || t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' })}
               </div>
               <div className="text-xs text-[#AFC6E6]">
-                {t(SESSION_STATE_LABEL[sessionState(session, Date.now(), meeting)])}
+                {t(SESSION_STATE_LABEL[sessionState(session, Date.now(), event)])}
               </div>
             </div>
 
@@ -148,12 +148,12 @@ export const SessionDrawer: React.FC<Props> = ({ item, onClose, guestToken }) =>
           ) : tab === 'transcript' ? (
             segments.length === 0 ? (
               <p className="text-[#6E7C8E] text-[13.5px]">
-                {sessionState(session, Date.now(), meeting) === 'upcoming'
+                {sessionState(session, Date.now(), event) === 'upcoming'
                   ? t({
                       ne: 'सत्र सुरु भएपछि हलको यन्त्रबाट पाठ आउन थाल्छ।',
                       en: 'Text starts arriving from the hall device once the session begins.',
                     })
-                  : sessionState(session, Date.now(), meeting) === 'never-started'
+                  : sessionState(session, Date.now(), event) === 'never-started'
                   ? t({
                       ne: 'यो सत्र सुरु नै भएन, त्यसैले केही रेकर्ड भएन।',
                       en: 'This session never started, so nothing was recorded.',
@@ -239,7 +239,7 @@ export const SessionDrawer: React.FC<Props> = ({ item, onClose, guestToken }) =>
           ) : (
             present.length === 0 ? (
               <p className="text-[#6E7C8E] text-[13.5px]">
-                {sessionState(session, Date.now(), meeting) === 'never-started'
+                {sessionState(session, Date.now(), event) === 'never-started'
                   ? t({
                       ne: 'यो सत्र सुरु नै नभएकाले कसैको उपस्थिति दर्ता भएन।',
                       en: 'This session never started, so nobody was recorded at it.',

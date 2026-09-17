@@ -9,8 +9,8 @@ import { OrganizerPage } from './pages/OrganizerPage';
 import { AttendeePage } from './pages/AttendeePage';
 import { HomeRedirect } from './pages/HomeRedirect';
 import { GuestWaitingPage } from './pages/GuestWaitingPage';
-import { GuestMeetingPage } from './pages/GuestMeetingPage';
-import { MeetingRoomPage } from './pages/MeetingRoomPage';
+import { GuestEventPage } from './pages/GuestEventPage';
+import { EventRoomPage } from './pages/EventRoomPage';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { OrganizationsPage } from './pages/OrganizationsPage';
 import { MembersPage } from './pages/MembersPage';
@@ -95,7 +95,7 @@ function App() {
 
           {/* Guests: no account, no dashboard */}
           <Route path="/guest/waiting" element={<GuestWaitingPage />} />
-          <Route path="/guest/meeting" element={<GuestMeetingPage />} />
+          <Route path="/guest/event" element={<GuestEventPage />} />
           <Route
             path="/organizer"
             element={
@@ -115,10 +115,10 @@ function App() {
             }
           />
           <Route
-            path="/meeting/:meetingCode"
+            path="/event/:eventCode"
             element={
               <ProtectedRoute>
-                <MeetingRoomPage />
+                <EventRoomPage />
               </ProtectedRoute>
             }
           />
@@ -147,7 +147,7 @@ function App() {
             }
           />
           <Route
-            path="/artifacts/:meetingId"
+            path="/artifacts/:eventId"
             element={
               <ProtectedRoute>
                 <ArtifactsPage />
@@ -163,7 +163,7 @@ function App() {
             }
           />
           <Route
-            path="/transcript/:meetingId"
+            path="/transcript/:eventId"
             element={
               <ProtectedRoute>
                 <TranscriptEditorPage />

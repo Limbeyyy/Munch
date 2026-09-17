@@ -13,7 +13,7 @@ const formatClock = (iso?: string) => {
 };
 
 /**
- * The meeting stage: a running transcript rather than video.
+ * The event stage: a running transcript rather than video.
  *
  * The text arrives from the capture device in the hall, which does the
  * listening; this view only renders what the server broadcasts, so every

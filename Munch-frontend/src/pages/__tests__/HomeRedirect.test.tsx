@@ -9,7 +9,7 @@ import { UserRoles } from '../../types';
 // still the source language, and a stored choice still wins.
 const HOST_CARD = 'Sign in as host';
 const ATTENDEE_CARD = 'Sign in as attendee';
-const FREE_TRIAL = 'Free trial: 2 events, 2 meetings each, 2 sessions each.';
+const FREE_TRIAL = 'Free trial: 2 events, 2 events each, 2 sessions each.';
 
 jest.mock('../../services/api', () => ({
   apiClient: { getMyRoles: jest.fn(), startHosting: jest.fn() },
@@ -21,9 +21,9 @@ const roles = (over: Partial<UserRoles> = {}): UserRoles => ({
   can_start_hosting: false,
   portals: ['host'],
   plan: { id: 'free', name: 'Free', paid: false, limits: {
-    events: 2, meetings: 4, meetings_per_event: 2, sessions_per_meeting: 2, attendees: 100,
+    events: 2, sessions_per_event: 2, attendees: 100,
   } },
-  usage: { events: 0, meetings: 0, sessions: 0 },
+  usage: { events: 0, sessions: 0 },
   subscription: null,
   ...over,
 });

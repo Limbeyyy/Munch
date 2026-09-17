@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
-import { BoardEntry, ChatMessage, MeetingBoard } from '../types';
+import { BoardEntry, ChatMessage, EventBoard } from '../types';
 import { FigmaIcon } from '../assets/icons';
 import { errorText } from './errors';
 import { useOrganizer } from './i18n';
@@ -10,10 +10,10 @@ type Tab = 'faq' | 'suggestions' | 'requests';
 
 interface Props {
   /** Read as an account holder. */
-  meetingId?: string;
+  eventId?: string;
   /** Read as a guest, with the token they hold. */
   guestToken?: string;
-  /** Poll, since this is watched while a meeting runs. */
+  /** Poll, since this is watched while a event runs. */
   refreshMs?: number;
   /**
    * Whether this pair of hands sorts what comes in. The host's, and their
@@ -54,14 +54,14 @@ interface Props {
  * speaker - and somebody has to decide which of them are questions the
  * room should see, which are suggestions, and which are neither. That
  * could only be done from the moderation screen, which means leaving the
- * room in the middle of the meeting the queue belongs to. It is the same
+ * room in the middle of the event the queue belongs to. It is the same
  * decision, taken where it happens.
  */
 export const RoomQuestions: React.FC<Props> = ({
-  meetingId, guestToken, refreshMs, canSort, waiting: alsoWaiting, onNews,
+  eventId, guestToken, refreshMs, canSort, waiting: alsoWaiting, onNews,
 }) => {
   const { t, num } = useOrganizer();
-  const [board, setBoard] = useState<MeetingBoard | null>(null);
+  const [board, setBoard] = useState<EventBoard | null>(null);
   const [fetched, setFetched] = useState<ChatMessage[]>([]);
   /** What has been dealt with here, so a poll cannot bring it back. */
   const [settled, setSettled] = useState<string[]>([]);
@@ -73,9 +73,9 @@ export const RoomQuestions: React.FC<Props> = ({
 
   const load = useCallback(async () => {
     try {
-      let read: MeetingBoard | null = null;
+      let read: EventBoard | null = null;
       if (guestToken) read = await apiClient.getGuestBoard(guestToken);
-      else if (meetingId) read = await apiClient.getMeetingBoard(meetingId);
+      else if (eventId) read = await apiClient.getEventBoard(eventId);
       setBoard(read);
 
       const now = read ? read.faq.length + read.suggestions.length : 0;
@@ -87,7 +87,7 @@ export const RoomQuestions: React.FC<Props> = ({
       setBoard({ faq: [], suggestions: [] });
     }
 
-    if (!canSort || !meetingId) { setFetched([]); return; }
+    if (!canSort || !eventId) { setFetched([]); return; }
     try {
       /*
        * Two kinds of thing are waiting to be given a place.
@@ -100,8 +100,8 @@ export const RoomQuestions: React.FC<Props> = ({
        * lands. Both are unanswered questions, so both are here.
        */
       const [held, seen] = await Promise.all([
-        apiClient.getPendingMessages(meetingId),
-        apiClient.getReviewedMessages(meetingId),
+        apiClient.getPendingMessages(eventId),
+        apiClient.getReviewedMessages(eventId),
       ]);
       const unfiled = [...seen.from_users, ...seen.from_guests].filter(
         (m) => !m.topic || m.topic === 'none'
@@ -109,9 +109,9 @@ export const RoomQuestions: React.FC<Props> = ({
       setFetched([...held, ...unfiled]);
     } catch {
       // The queue is the host's own view; a dropped refresh is not worth
-      // interrupting a meeting for.
+      // interrupting a event for.
     }
-  }, [meetingId, guestToken, canSort, onNews]);
+  }, [eventId, guestToken, canSort, onNews]);
 
   useEffect(() => {
     load();
@@ -126,8 +126,8 @@ export const RoomQuestions: React.FC<Props> = ({
       setBusy(entry.id);
       const updated = guestToken
         ? await apiClient.guestVoteOnBoard(guestToken, entry.id, value)
-        : meetingId
-        ? await apiClient.voteOnBoard(meetingId, entry.id, value)
+        : eventId
+        ? await apiClient.voteOnBoard(eventId, entry.id, value)
         : null;
       if (updated) setBoard(updated);
     } catch (e: any) {
@@ -147,15 +147,15 @@ export const RoomQuestions: React.FC<Props> = ({
     decision: 'approve' | 'decline',
     topic?: 'faq' | 'suggestion'
   ) => {
-    if (!meetingId) return;
+    if (!eventId) return;
     try {
       setBusy(message.id);
       // One that has already been let through is not approved again; it
       // is simply given the place it never got.
       if (message.moderation_status !== 'pending' && topic) {
-        await apiClient.sortMessage(meetingId, message.id, topic);
+        await apiClient.sortMessage(eventId, message.id, topic);
       } else {
-        await apiClient.moderateMessage(meetingId, message.id, decision, topic);
+        await apiClient.moderateMessage(eventId, message.id, decision, topic);
       }
       setSettled((done) => [...done, message.id]);
       toast.success(

@@ -8,16 +8,13 @@ import { ChatRules } from '../ChatRules';
 import { RequestButton, RequestCard, RequestRow } from '../RequestCard';
 import { DashboardView } from '../../attendee/views/DashboardView';
 import { SpineItem } from '../../attendee/Spine';
-import {
-  ChatMessage, GuestAttendee, Meeting,
-  Session,
-} from '../../types';
+import { ChatMessage, GuestAttendee, Event, Session } from '../../types';
 import { useOrganizer } from '../i18n';
 import { Btn, Card, Head, Panel } from '../ui';
 
 
 interface Props {
-  meetings: Meeting[];
+  events: Event[];
   onChanged: () => void;
   onNavigate: (view: string) => void;
 }
@@ -26,14 +23,14 @@ interface Props {
  * The desk you run the event from: what is on stage now, who is in the room,
  * and the queue waiting on a decision.
  */
-export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) => {
+export const LiveView: React.FC<Props> = ({ events, onChanged, onNavigate }) => {
   const { t } = useOrganizer();
   const navigate = useNavigate();
 
   // Which part of the day we are in. The desk itself is about the session
   // inside it - that is what runs, and what is started and ended.
-  const live = meetings.find((m) => m.status === 'active');
-  const next = meetings
+  const live = events.find((m) => m.status === 'active');
+  const next = events
     .filter((m) => m.status === 'scheduled')
     .sort((a, b) => +new Date(a.scheduled_start) - +new Date(b.scheduled_start))[0];
   const current = live ?? next;
@@ -43,7 +40,7 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
   /**
    * The desk follows the clock, so the running order moves on by itself.
    *
-   * A meeting is a morning; a session is the thing that starts, runs and
+   * A event is a morning; a session is the thing that starts, runs and
    * ends. Which one the desk holds is worked out in one place and shared
    * with the attendee's panel, so the two cannot disagree about what is
    * happening.
@@ -111,7 +108,7 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
     } finally { setDeciding(null); }
   };
 
-  // Everything on this screen belongs to the meeting that is running.
+  // Everything on this screen belongs to the event that is running.
   const load = React.useCallback(async () => {
     if (!current) return;
       const [q, g, x] = await Promise.allSettled([
@@ -242,7 +239,7 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
    */
   const items: SpineItem[] = sessions.map((one) => ({
     session: one,
-    meeting: current as any,
+    event: current as any,
   }));
   const liveItem = onStage
     ? items.find((i) => i.session.id === onStage.id) ?? null
@@ -256,7 +253,7 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
       attendedIds={new Set()}
       onOpen={() => onNavigate('agenda')}
       onNavigate={onNavigate}
-      onJoinRoom={(m) => navigate(`/meeting/${m.meeting_code}`)}
+      onJoinRoom={(m) => navigate(`/event/${m.code}`)}
       elapsed={elapsed}
       heading={{
         title: { ne: 'लाइभ नियन्त्रण', en: 'Live control' },
@@ -305,7 +302,7 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
           count={knocking.length}
           empty={{
             ne: 'पाहुनाले बैठक कोडबाट अनुरोध पठाएपछि यहाँ देखिन्छ।',
-            en: 'A guest who used the meeting code appears here.',
+            en: 'A guest who used the event code appears here.',
           }}
         >
           {knocking.map((guest) => (
@@ -374,7 +371,7 @@ export const LiveView: React.FC<Props> = ({ meetings, onChanged, onNavigate }) =
           {isLive && (
             <Panel title={t({ ne: 'च्याट नियम', en: 'Chat rules' })}>
               <div className="px-4 py-3.5">
-                <ChatRules meetingId={current.id} />
+                <ChatRules eventId={current.id} />
               </div>
             </Panel>
           )}

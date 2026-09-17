@@ -22,15 +22,11 @@ jest.mock('react-hot-toast', () => ({
 
 const api = apiClient as jest.Mocked<typeof apiClient>;
 
-const meeting = {
-  id: 'm1', title: 'Wedding Preparation', meeting_code: 'IRL-NH7', status: 'ended',
+const event = {
+  id: 'm1', title: 'Wedding Preparation', code: 'IRL-NH7', status: 'ended',
+  event_date: '2026-09-08', venue: '',
   scheduled_start: '2026-09-08T03:30:00Z', scheduled_end: '2026-09-08T09:00:00Z',
   sessions: [],
-} as any;
-
-const event = {
-  id: 'e1', title: 'Kalika Wedding Events', event_date: '2026-09-08',
-  venue: '', status: 'done', meetings: [meeting],
 } as any;
 
 /** A signed-in attendee, as the roster reports one. */
@@ -63,7 +59,7 @@ const guest = (over: any = {}) => person({
 const show = () =>
   render(
     <OrganizerProvider>
-      <PeopleView meetings={[meeting]} currentUserId="host-1" />
+      <PeopleView events={[event]} currentUserId="host-1" />
     </OrganizerProvider>
   );
 
@@ -137,7 +133,7 @@ describe('a guest in the roster', () => {
   });
 
   it('still asks for everyone who was there, not just who is', async () => {
-    // A finished meeting has an empty room; its team is not empty.
+    // A finished event has an empty room; its team is not empty.
     await openTeam();
 
     await waitFor(() => expect(api.getParticipants).toHaveBeenCalled());

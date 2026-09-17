@@ -32,13 +32,13 @@ const FREE = {
   id: 'free',
   name: 'Free trial',
   paid: false,
-  limits: { events: 2, meetings: 2, sessions_per_meeting: 2, attendees: 100 },
+  limits: { events: 2, sessions_per_event: 2, attendees: 100 },
 };
 const BIG = {
   id: 'enterprise',
   name: 'Enterprise',
   paid: true,
-  limits: { events: null, meetings: null, sessions_per_meeting: null, attendees: null },
+  limits: { events: null, sessions_per_event: null, attendees: null },
 };
 
 const profile = (over: any = {}) => ({
@@ -58,9 +58,9 @@ const profile = (over: any = {}) => ({
   can_start_hosting: false,
   portals: ['host'],
   plan: FREE,
-  usage: { events: 1, meetings: 3, sessions: 6 },
+  usage: { events: 1, sessions: 6 },
   subscription: { status: 'trialing', current_period_end: null },
-  remaining: { events: 1, meetings: null, sessions_per_meeting: 2, attendees: 100 },
+  remaining: { events: 1, sessions_per_event: 2, attendees: 100 },
   plans: [FREE, BIG],
   ...over,
 });
@@ -68,9 +68,9 @@ const profile = (over: any = {}) => ({
 const reminder = (over: any = {}) => ({
   id: 'r1',
   kind: 'session' as const,
-  meeting_id: 'm1',
-  meeting_code: 'ABC123',
-  meeting_title: 'Opening day',
+  event_id: 'm1',
+  code: 'ABC123',
+  event_title: 'Opening day',
   session_id: 's1',
   session_title: 'Mehendi',
   speaker_name: 'Surya Adhikari',
@@ -113,7 +113,7 @@ describe('the profile page', () => {
 
   it('calls an uncapped allowance unlimited rather than showing a full bar', async () => {
     api.getProfileSummary.mockResolvedValue(
-      profile({ plan: BIG, remaining: { events: null, meetings: null, sessions_per_meeting: null, attendees: null } }) as any
+      profile({ plan: BIG, remaining: { events: null, sessions_per_event: null, attendees: null } }) as any
     );
 
     show(<ProfileView />);
@@ -202,7 +202,7 @@ const Reminders: React.FC = () => {
 describe('the reminders page', () => {
   it('states the two lead times it works to', async () => {
     api.getReminders.mockResolvedValue({
-      reminders: [], unread: 0, meeting_lead_minutes: 60, session_lead_minutes: 15,
+      reminders: [], unread: 0, event_lead_minutes: 60, session_lead_minutes: 15,
     } as any);
 
     show(<Reminders />);
@@ -214,7 +214,7 @@ describe('the reminders page', () => {
 
   it('gives every nudge a diary link that needs no sign-in', async () => {
     api.getReminders.mockResolvedValue({
-      reminders: [reminder()], unread: 1, meeting_lead_minutes: 60, session_lead_minutes: 15,
+      reminders: [reminder()], unread: 1, event_lead_minutes: 60, session_lead_minutes: 15,
     } as any);
 
     show(<Reminders />);
@@ -223,14 +223,14 @@ describe('the reminders page', () => {
     expect(link).toHaveAttribute('href', expect.stringContaining('action=TEMPLATE'));
   });
 
-  it('shows the meeting and its sessions apart, with their own lead times', async () => {
+  it('shows the event and its sessions apart, with their own lead times', async () => {
     api.getReminders.mockResolvedValue({
       reminders: [
-        reminder({ id: 'meet', kind: 'meeting', session_id: null, session_title: null, lead_minutes: 60 }),
+        reminder({ id: 'meet', kind: 'event', session_id: null, session_title: null, lead_minutes: 60 }),
         reminder({ id: 's1', session_title: 'Mehendi' }),
         reminder({ id: 's2', session_title: 'Sagun' }),
       ],
-      unread: 3, meeting_lead_minutes: 60, session_lead_minutes: 15,
+      unread: 3, event_lead_minutes: 60, session_lead_minutes: 15,
     } as any);
 
     show(<Reminders />);
@@ -239,7 +239,7 @@ describe('the reminders page', () => {
     expect(screen.getByText('Sagun')).toBeInTheDocument();
     expect(screen.getByText('Opening day')).toBeInTheDocument();
     expect(screen.getAllByText('Session')).toHaveLength(2);
-    expect(screen.getAllByText('Meeting')).toHaveLength(1);
+    expect(screen.getAllByText('Event')).toHaveLength(1);
     expect(screen.getByText(/Reminds 60 min before/)).toBeInTheDocument();
     expect(screen.getAllByText(/Reminds 15 min before/)).toHaveLength(2);
   });
@@ -253,7 +253,7 @@ describe('the reminders page', () => {
           due_at: new Date(Date.now() - 27 * 3600_000).toISOString(), read: true }),
         reminder({ id: 'new', session_title: 'Mehendi' }),
       ],
-      unread: 1, meeting_lead_minutes: 60, session_lead_minutes: 15,
+      unread: 1, event_lead_minutes: 60, session_lead_minutes: 15,
     } as any);
 
     show(<Reminders />);
@@ -267,7 +267,7 @@ describe('the reminders page', () => {
 
   it('ticks a nudge off without waiting for the round trip', async () => {
     api.getReminders.mockResolvedValue({
-      reminders: [reminder()], unread: 1, meeting_lead_minutes: 60, session_lead_minutes: 15,
+      reminders: [reminder()], unread: 1, event_lead_minutes: 60, session_lead_minutes: 15,
     } as any);
     let settle: () => void = () => {};
     api.markRemindersRead.mockReturnValue(
@@ -312,7 +312,7 @@ describe('a nudge that has come due announces itself', () => {
   it('tells the browser once a session is a quarter of an hour off', async () => {
     const made = withNotification('granted');
     api.getReminders.mockResolvedValue({
-      reminders: [due()], unread: 1, meeting_lead_minutes: 60, session_lead_minutes: 15,
+      reminders: [due()], unread: 1, event_lead_minutes: 60, session_lead_minutes: 15,
     } as any);
 
     show(<Reminders />);
@@ -325,7 +325,7 @@ describe('a nudge that has come due announces itself', () => {
   it('does not say the same thing twice', async () => {
     const made = withNotification('granted');
     api.getReminders.mockResolvedValue({
-      reminders: [due()], unread: 1, meeting_lead_minutes: 60, session_lead_minutes: 15,
+      reminders: [due()], unread: 1, event_lead_minutes: 60, session_lead_minutes: 15,
     } as any);
 
     const first = show(<Reminders />);
@@ -346,7 +346,7 @@ describe('a nudge that has come due announces itself', () => {
   it('says nothing at all until it has been allowed', async () => {
     const made = withNotification('default');
     api.getReminders.mockResolvedValue({
-      reminders: [due()], unread: 1, meeting_lead_minutes: 60, session_lead_minutes: 15,
+      reminders: [due()], unread: 1, event_lead_minutes: 60, session_lead_minutes: 15,
     } as any);
 
     show(<Reminders />);
@@ -360,7 +360,7 @@ describe('a nudge that has come due announces itself', () => {
   it('says so plainly when the browser has refused', async () => {
     withNotification('denied');
     api.getReminders.mockResolvedValue({
-      reminders: [due()], unread: 1, meeting_lead_minutes: 60, session_lead_minutes: 15,
+      reminders: [due()], unread: 1, event_lead_minutes: 60, session_lead_minutes: 15,
     } as any);
 
     show(<Reminders />);
@@ -372,7 +372,7 @@ describe('a nudge that has come due announces itself', () => {
   it('leaves a nudge that is not due yet alone', async () => {
     const made = withNotification('granted');
     api.getReminders.mockResolvedValue({
-      reminders: [reminder()], unread: 0, meeting_lead_minutes: 60, session_lead_minutes: 15,
+      reminders: [reminder()], unread: 0, event_lead_minutes: 60, session_lead_minutes: 15,
     } as any);
 
     show(<Reminders />);

@@ -38,7 +38,7 @@ export const SettingsPage: React.FC = () => {
               <div>
                 <p className="font-medium text-gray-900">Email Notifications</p>
                 <p className="text-sm text-gray-600">
-                  Receive email updates about your meetings
+                  Receive email updates about your events
                 </p>
               </div>
               <button
@@ -82,17 +82,17 @@ export const SettingsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Meeting Preferences */}
+        {/* Event Preferences */}
         <div className="bg-white rounded-lg shadow p-8 mb-8">
           <h2 className="text-2xl font-semibold text-gray-900 mb-6">
-            Meeting Preferences
+            Event Preferences
           </h2>
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <div>
                 <p className="font-medium text-gray-900">Auto Transcription</p>
                 <p className="text-sm text-gray-600">
-                  Automatically transcribe meetings
+                  Automatically transcribe events
                 </p>
               </div>
               <button
@@ -115,7 +115,7 @@ export const SettingsPage: React.FC = () => {
               <div>
                 <p className="font-medium text-gray-900">Auto Recording</p>
                 <p className="text-sm text-gray-600">
-                  Automatically record all meetings
+                  Automatically record all events
                 </p>
               </div>
               <button

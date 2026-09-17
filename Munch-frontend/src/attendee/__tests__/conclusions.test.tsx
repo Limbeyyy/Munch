@@ -21,8 +21,6 @@ const entry = (over: any = {}) => ({
   session_starts_at: '2026-10-02T09:00:00Z',
   speaker_name: 'Dr Sarita Poudel',
   hall: 'Hall A',
-  meeting_id: 'm1',
-  meeting_title: 'Opening day',
   event_id: 'e1',
   event_title: 'Health Conference',
   findings: ['Conditional grant released', 'Joint committee formed'],
@@ -145,7 +143,7 @@ describe('the conclusions page', () => {
 
     show();
 
-    expect(await screen.findByText(/Opening day/)).toBeInTheDocument();
+    expect(await screen.findByText(/Health Conference/)).toBeInTheDocument();
     expect(screen.getByText(/Dr Sarita Poudel/)).toBeInTheDocument();
   });
 });

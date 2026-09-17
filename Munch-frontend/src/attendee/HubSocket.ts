@@ -1,7 +1,7 @@
-/** Opens the meeting's own websocket so the hub can speak into the room.
+/** Opens the event's own websocket so the hub can speak into the room.
 
-The chat path is the meeting socket; the hub is simply another client of
-it, exactly as the meeting room is. History is read over HTTP; only
+The chat path is the event socket; the hub is simply another client of
+it, exactly as the event room is. History is read over HTTP; only
 sending needs the socket.
 */
 export interface HubSocket {
@@ -10,7 +10,7 @@ export interface HubSocket {
 }
 
 export const openHubSocket = (
-  meetingCode: string,
+  eventCode: string,
   onMessage: () => void,
   guestToken?: string
 ): HubSocket => {
@@ -27,12 +27,12 @@ export const openHubSocket = (
       })();
 
   const socket = new WebSocket(
-    `${protocol}//${apiUrl.host}/ws/meeting/${meetingCode}/${credential}`
+    `${protocol}//${apiUrl.host}/ws/event/${eventCode}/${credential}`
   );
 
-  socket.onmessage = (event) => {
+  socket.onmessage = (message) => {
     try {
-      const data = JSON.parse(event.data);
+      const data = JSON.parse(message.data);
       if (data.type === 'chat_message' || data.type === 'chat_pending') onMessage();
     } catch {
       // Not a frame this view cares about.

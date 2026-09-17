@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useTranscriptionStore } from '../store/transcriptionStore';
 
 export const TranscriptEditorPage: React.FC = () => {
-  const { meetingId } = useParams<{ meetingId: string }>();
+  const { eventId } = useParams<{ eventId: string }>();
   const {
     summary,
     segments,
@@ -23,11 +23,11 @@ export const TranscriptEditorPage: React.FC = () => {
   const [searchResults, setSearchResults] = useState<number[]>([]);
 
   useEffect(() => {
-    if (meetingId) {
-      fetchTranscript(meetingId);
-      fetchSummary(meetingId);
+    if (eventId) {
+      fetchTranscript(eventId);
+      fetchSummary(eventId);
     }
-  }, [meetingId, fetchTranscript, fetchSummary]);
+  }, [eventId, fetchTranscript, fetchSummary]);
 
   const handleEditClick = (index: number, text: string) => {
     setEditingSegmentId(index);

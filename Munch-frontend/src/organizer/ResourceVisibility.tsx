@@ -24,20 +24,20 @@ const ORDER: Choice[] = ['now', 'after_session', 'public', 'organizers'];
  * offering the choice rather than inferring it.
  */
 export const ResourceControls: React.FC<{
-  meetingId: string;
+  eventId: string;
   resource: Artifact;
   /** Where it sits, and how far it can move. */
   index: number;
   total: number;
   onChanged: () => void;
-}> = ({ meetingId, resource, index, total, onChanged }) => {
+}> = ({ eventId, resource, index, total, onChanged }) => {
   const { t } = useOrganizer();
   const [busy, setBusy] = useState(false);
 
   const change = async (patch: { visibility?: Choice; position?: number }) => {
     try {
       setBusy(true);
-      await apiClient.setResourceSettings(meetingId, resource.id, patch);
+      await apiClient.setResourceSettings(eventId, resource.id, patch);
       onChanged();
     } catch (e: any) {
       toast.error(errorText(e, t({ ne: 'बदल्न सकिएन', en: 'Could not change it' })));

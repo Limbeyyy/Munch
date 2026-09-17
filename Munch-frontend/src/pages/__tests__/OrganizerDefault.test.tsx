@@ -39,9 +39,9 @@ jest.mock('react-hot-toast', () => ({
 
 const api = apiClient as jest.Mocked<typeof apiClient>;
 
-const meeting = {
+const event = {
   id: 'm1',
-  meeting_code: 'ABC123',
+  code: 'ABC123',
   title: 'Opening day',
   status: 'active',
   scheduled_start: new Date(Date.now() - 600000).toISOString(),
@@ -62,9 +62,9 @@ beforeEach(() => {
     close() {}
     send() {}
   };
-  api.listMeetings.mockResolvedValue([meeting]);
+  api.listEventRooms.mockResolvedValue([event]);
   api.getReminders.mockResolvedValue({
-    reminders: [], unread: 0, meeting_lead_minutes: 60, session_lead_minutes: 15,
+    reminders: [], unread: 0, event_lead_minutes: 60, session_lead_minutes: 15,
   } as any);
   api.listSessions.mockResolvedValue([] as any);
 });
@@ -80,7 +80,7 @@ describe('opening the organizer', () => {
   it('lands on the live desk', async () => {
     showOrganizer();
 
-    await waitFor(() => expect(api.listMeetings).toHaveBeenCalled());
+    await waitFor(() => expect(api.listEventRooms).toHaveBeenCalled());
     expect(
       await screen.findByRole('heading', { name: 'Live control' })
     ).toBeInTheDocument();
@@ -103,7 +103,7 @@ describe('opening the organizer', () => {
   it('says plainly when there is nothing to run', async () => {
     // A host with an empty programme still lands here, so it has to read
     // sensibly rather than looking broken.
-    api.listMeetings.mockResolvedValue([] as any);
+    api.listEventRooms.mockResolvedValue([] as any);
 
     showOrganizer();
 

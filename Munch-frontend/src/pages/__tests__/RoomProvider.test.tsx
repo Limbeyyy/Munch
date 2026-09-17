@@ -1,14 +1,14 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { MeetingRoomPage } from '../MeetingRoomPage';
+import { EventRoomPage } from '../EventRoomPage';
 import { apiClient } from '../../services/api';
 
 /**
  * The room shares components with the dashboards, and those speak both
  * languages - which means they read the organizer context. When the room
  * did not provide one they threw on first render and took the whole room
- * down with them, which is how a photo section brought down a meeting.
+ * down with them, which is how a photo section brought down a event.
  */
 // Every call the room makes answers with something harmless unless this
 // test says otherwise. The question here is whether the page mounts, not
@@ -41,9 +41,9 @@ jest.mock('react-hot-toast', () => ({
 
 const api = apiClient as jest.Mocked<typeof apiClient>;
 
-const meeting = {
+const event = {
   id: 'm1',
-  meeting_code: 'ABC123',
+  code: 'ABC123',
   title: 'Opening day',
   status: 'active',
   scheduled_start: new Date(Date.now() - 600000).toISOString(),
@@ -84,39 +84,39 @@ beforeEach(() => {
     close() {}
     send() {}
   };
-  api.getMeeting.mockResolvedValue(meeting as any);
+  api.getEvent.mockResolvedValue(event as any);
   api.getChatSettings.mockResolvedValue(
     { chat_enabled: true, direct_messages_enabled: true } as any
   );
   // The board answers with two lists, not the bare array the tolerant
   // default hands back for everything else.
-  api.getMeetingBoard.mockResolvedValue({ faq: [], suggestions: [] } as any);
+  api.getEventBoard.mockResolvedValue({ faq: [], suggestions: [] } as any);
   api.getReviewedMessages.mockResolvedValue(
     { from_users: [], from_guests: [] } as any
   );
   api.getPhotos.mockResolvedValue({
-    meeting_id: 'm1', meeting_code: 'ABC123', meeting_title: 'Opening day',
-    meeting_is_finished: false, can_upload: false, is_a_photographer: true,
+    event_id: 'm1', code: 'ABC123', event_title: 'Opening day',
+    event_is_finished: false, can_upload: false, is_a_photographer: true,
     can_arrange: true, folders: [], photos: [],
   } as any);
 });
 
 const showRoom = () =>
   render(
-    <MemoryRouter initialEntries={['/meeting/ABC123']}>
+    <MemoryRouter initialEntries={['/event/ABC123']}>
       <Routes>
-        <Route path="/meeting/:meetingCode" element={<MeetingRoomPage />} />
+        <Route path="/event/:eventCode" element={<EventRoomPage />} />
       </Routes>
     </MemoryRouter>
   );
 
 /** Press one of the bar's controls. */
 const openSide = async (label: string) => {
-  const bar = await screen.findByRole('navigation', { name: 'Meeting controls' });
+  const bar = await screen.findByRole('navigation', { name: 'Event controls' });
   fireEvent.click(within(bar).getByRole('button', { name: new RegExp(label) }));
 };
 
-describe('the meeting room', () => {
+describe('the event room', () => {
   it('renders without the shared components asking for a context it has not got', async () => {
     // React reports a render failure across several arguments and in a
     // second "the above error occurred" line, so the whole of each
@@ -129,8 +129,8 @@ describe('the meeting room', () => {
 
     try {
       showRoom();
-      await waitFor(() => expect(api.getMeeting).toHaveBeenCalled());
-      // The parts that read the context are drawn once the meeting has
+      await waitFor(() => expect(api.getEvent).toHaveBeenCalled());
+      // The parts that read the context are drawn once the event has
       // arrived, so the failure would come after that first paint.
       await screen.findByRole('heading', { name: 'Agenda Summary' });
     } finally {
@@ -169,7 +169,7 @@ describe('the room as the design lays it out', () => {
   it('carries the controls along its foot', async () => {
     showRoom();
 
-    const bar = await screen.findByRole('navigation', { name: 'Meeting controls' });
+    const bar = await screen.findByRole('navigation', { name: 'Event controls' });
     for (const label of ['Chat', 'Questions', 'Resources', 'Share', 'Leave']) {
       expect(
         within(bar).getByRole('button', { name: new RegExp(label) })
@@ -179,7 +179,7 @@ describe('the room as the design lays it out', () => {
 
   it('opens the people beside the room, like everything else', async () => {
     // It used to open over the room. Nothing does now: a roster is
-    // something you consult while the meeting carries on, not a door you
+    // something you consult while the event carries on, not a door you
     // shut behind you.
     showRoom();
 
@@ -246,11 +246,11 @@ describe('the room as the design lays it out', () => {
   it('opens sharing from the share control', async () => {
     showRoom();
 
-    const bar = await screen.findByRole('navigation', { name: 'Meeting controls' });
+    const bar = await screen.findByRole('navigation', { name: 'Event controls' });
     fireEvent.click(within(bar).getByRole('button', { name: /Share/ }));
 
     expect(
-      await screen.findByRole('dialog', { name: 'Share this meeting' })
+      await screen.findByRole('dialog', { name: 'Share this event' })
     ).toBeInTheDocument();
   });
 
@@ -358,7 +358,7 @@ describe('the room as the design lays it out', () => {
     // thing you do and finish, not one you keep beside you.
     showRoom();
 
-    const bar = await screen.findByRole('navigation', { name: 'Meeting controls' });
+    const bar = await screen.findByRole('navigation', { name: 'Event controls' });
     fireEvent.click(within(bar).getByRole('button', { name: /Share/ }));
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
@@ -369,7 +369,7 @@ describe('the room as the design lays it out', () => {
     // centre, which is what it had been doing.
     showRoom();
 
-    const bar = await screen.findByRole('navigation', { name: 'Meeting controls' });
+    const bar = await screen.findByRole('navigation', { name: 'Event controls' });
     const leave = within(bar).getByRole('button', { name: /Leave/ });
     const group = within(bar).getByRole('button', { name: /Chat/ }).parentElement!;
 
@@ -389,16 +389,16 @@ describe('the room as the design lays it out', () => {
 });
 
 /**
- * The room is the meeting's, and it outlives every talk inside it.
+ * The room is the event's, and it outlives every talk inside it.
  *
- * A meeting of ten sessions is one room that all ten happen in: a session
+ * A event of ten sessions is one room that all ten happen in: a session
  * ending closes off that session - its transcript, its chat, its resources
  * - and the room goes on, offering the host the next speaker. It used to
  * show everybody the door the moment a talk's clock ran out.
  */
 describe('the room between two sessions', () => {
   const waiting = {
-    ...meeting,
+    ...event,
     current_session: {
       id: null, title: '', starts_at: undefined,
       started_at: null, ends_at: null,
@@ -410,7 +410,7 @@ describe('the room between two sessions', () => {
   };
 
   it('stays open and says what is coming', async () => {
-    api.getMeeting.mockResolvedValue(waiting as any);
+    api.getEvent.mockResolvedValue(waiting as any);
 
     showRoom();
 
@@ -421,10 +421,10 @@ describe('the room between two sessions', () => {
   it('does not show anybody out because a talk finished', async () => {
     // The shape the room used to be given when a session closed: over,
     // with its hour behind it. That navigated everybody home.
-    api.getMeeting.mockResolvedValue({
-      ...meeting,
+    api.getEvent.mockResolvedValue({
+      ...event,
       current_session: {
-        ...meeting.current_session,
+        ...event.current_session,
         ends_at: new Date(Date.now() - 60000).toISOString(),
         status: 'done',
         is_over: true,
@@ -435,14 +435,14 @@ describe('the room between two sessions', () => {
 
     // Still the room, not the page it navigated to on the way out.
     expect(
-      await screen.findByRole('navigation', { name: 'Meeting controls' })
+      await screen.findByRole('navigation', { name: 'Event controls' })
     ).toBeInTheDocument();
   });
 
   it('offers the host the next speaker, and starts them', async () => {
     const { useAuthStore } = require('../../store/authStore');
     useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
-    api.getMeeting.mockResolvedValue(waiting as any);
+    api.getEvent.mockResolvedValue(waiting as any);
     api.startSession.mockResolvedValue({ id: 's2' } as any);
 
     showRoom();
@@ -457,8 +457,8 @@ describe('the room between two sessions', () => {
   it('says nothing about starting one when the running order is spent', async () => {
     const { useAuthStore } = require('../../store/authStore');
     useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
-    api.getMeeting.mockResolvedValue({
-      ...meeting,
+    api.getEvent.mockResolvedValue({
+      ...event,
       current_session: {
         ...waiting.current_session,
         awaiting_next: false, next_id: null, next_title: '',
@@ -479,7 +479,7 @@ describe('the room between two sessions', () => {
   it('shows only the lines said during the talk on stage', async () => {
     // A transcript belongs to its session: the next speaker should not
     // start underneath the last one's words.
-    api.getMeetingSegments.mockResolvedValue([
+    api.getEventSegments.mockResolvedValue([
       { text: 'From the first talk', session_id: 's0', created_at: new Date().toISOString(),
         start_time: 0, end_time: 1, speaker_name: 'Asha', is_final: true },
       { text: 'From the one on stage', session_id: 's1', created_at: new Date().toISOString(),
@@ -496,7 +496,7 @@ describe('the room between two sessions', () => {
 /**
  * The running order, live, inside the room.
  *
- * The host rearranges what is left of the meeting they are standing in and
+ * The host rearranges what is left of the event they are standing in and
  * everybody else's copy follows. The times are on show for both, because
  * the whole point is watching them move when a talk runs long.
  */
@@ -506,17 +506,17 @@ describe('the running order inside the room', () => {
   const running = [
     {
       id: 's1', title: 'Haldi', speaker_name: 'Asha', hall: '', status: 'live',
-      starts_at: start, duration_minutes: 40, meeting: 'm1', position: 0,
+      starts_at: start, duration_minutes: 40, event: 'm1', position: 0,
     },
     {
       id: 's2', title: 'Mehendi', speaker_name: 'Bina', hall: '', status: 'scheduled',
       starts_at: new Date(Date.now() + hour).toISOString(),
-      duration_minutes: 60, meeting: 'm1', position: 1,
+      duration_minutes: 60, event: 'm1', position: 1,
     },
     {
       id: 's3', title: 'Sangeet', speaker_name: 'Chandra', hall: '', status: 'scheduled',
       starts_at: new Date(Date.now() + 3 * hour).toISOString(),
-      duration_minutes: 60, meeting: 'm1', position: 2,
+      duration_minutes: 60, event: 'm1', position: 2,
     },
   ];
 
@@ -640,7 +640,7 @@ describe('the room chat', () => {
     await openChat();
 
     expect(screen.queryByRole('tab', { name: /Room/ })).toBeNull();
-    expect(screen.queryByText(/Everyone in the meeting can see these/)).toBeNull();
+    expect(screen.queryByText(/Everyone in the event can see these/)).toBeNull();
   });
 
   it('offers the people there are to write to, by name', async () => {
@@ -767,7 +767,7 @@ describe('the one chat switch', () => {
 /**
  * The running order, live, inside the room.
  *
- * The host rearranges what is left of the meeting they are standing in and
+ * The host rearranges what is left of the event they are standing in and
  * everybody else's copy follows. The times are on show for both, because
  * the whole point is watching them move when a talk runs long.
  */
@@ -777,17 +777,17 @@ describe('the running order inside the room', () => {
   const running = [
     {
       id: 's1', title: 'Haldi', speaker_name: 'Asha', hall: '', status: 'live',
-      starts_at: start, duration_minutes: 40, meeting: 'm1', position: 0,
+      starts_at: start, duration_minutes: 40, event: 'm1', position: 0,
     },
     {
       id: 's2', title: 'Mehendi', speaker_name: 'Bina', hall: '', status: 'scheduled',
       starts_at: new Date(Date.now() + hour).toISOString(),
-      duration_minutes: 60, meeting: 'm1', position: 1,
+      duration_minutes: 60, event: 'm1', position: 1,
     },
     {
       id: 's3', title: 'Sangeet', speaker_name: 'Chandra', hall: '', status: 'scheduled',
       starts_at: new Date(Date.now() + 3 * hour).toISOString(),
-      duration_minutes: 60, meeting: 'm1', position: 2,
+      duration_minutes: 60, event: 'm1', position: 2,
     },
   ];
 
@@ -889,7 +889,7 @@ describe('the running order inside the room', () => {
 /**
  * What the host is asked when they press Leave.
  *
- * Ending a session and ending the meeting are different things - one
+ * Ending a session and ending the event are different things - one
  * closes off a talk and leaves the room standing, the other closes the
  * room for everybody - and so is simply stepping out. The button asks
  * rather than guessing.
@@ -908,14 +908,14 @@ describe('the end choice', () => {
   const openIt = async () => {
     asHost();
     showRoom();
-    const bar = await screen.findByRole('navigation', { name: 'Meeting controls' });
+    const bar = await screen.findByRole('navigation', { name: 'Event controls' });
     fireEvent.click(within(bar).getByRole('button', { name: /Leave/ }));
   };
 
-  it('offers ending the meeting, or simply leaving', async () => {
+  it('offers ending the event, or simply leaving', async () => {
     await openIt();
 
-    expect(await screen.findByRole('button', { name: /End the meeting/ }))
+    expect(await screen.findByRole('button', { name: /End the event/ }))
       .toBeInTheDocument();
     // Stepping out is still there: the host has to be able to leave.
     expect(screen.getByRole('button', { name: /Just leave/ })).toBeInTheDocument();
@@ -924,7 +924,7 @@ describe('the end choice', () => {
   it('and says nothing about the session, which is ended on its own card', async () => {
     await openIt();
 
-    await screen.findByRole('button', { name: /End the meeting/ });
+    await screen.findByRole('button', { name: /End the event/ });
     expect(screen.queryByRole('button', { name: /End the session/ })).toBeNull();
   });
 
@@ -936,24 +936,24 @@ describe('the end choice', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'End Session' }));
 
     await waitFor(() => expect(api.endSession).toHaveBeenCalledWith('s1'));
-    expect(api.endMeeting).not.toHaveBeenCalled();
+    expect(api.endEvent).not.toHaveBeenCalled();
     // Still the room, not the page it navigates to on the way out.
     expect(
-      await screen.findByRole('navigation', { name: 'Meeting controls' })
+      await screen.findByRole('navigation', { name: 'Event controls' })
     ).toBeInTheDocument();
   });
 
   it('offers it to nobody else', async () => {
     showRoom();
 
-    await screen.findByRole('navigation', { name: 'Meeting controls' });
+    await screen.findByRole('navigation', { name: 'Event controls' });
     expect(screen.queryByRole('button', { name: 'End Session' })).toBeNull();
   });
 
   it('nor when nothing is on stage', async () => {
     asHost();
-    api.getMeeting.mockResolvedValue({
-      ...meeting,
+    api.getEvent.mockResolvedValue({
+      ...event,
       current_session: {
         id: null, title: '', started_at: null, ends_at: null, is_over: false,
         between_sessions: true, awaiting_next: false,
@@ -962,13 +962,13 @@ describe('the end choice', () => {
 
     showRoom();
 
-    await screen.findByRole('navigation', { name: 'Meeting controls' });
+    await screen.findByRole('navigation', { name: 'Event controls' });
     expect(screen.queryByRole('button', { name: 'End Session' })).toBeNull();
   });
 
-  it('and the meeting can still be ended between two talks', async () => {
-    api.getMeeting.mockResolvedValue({
-      ...meeting,
+  it('and the event can still be ended between two talks', async () => {
+    api.getEvent.mockResolvedValue({
+      ...event,
       current_session: {
         id: null, title: '', started_at: null, ends_at: null, is_over: false,
         between_sessions: true, awaiting_next: false,
@@ -976,7 +976,7 @@ describe('the end choice', () => {
     } as any);
     await openIt();
 
-    expect(await screen.findByRole('button', { name: /End the meeting/ }))
+    expect(await screen.findByRole('button', { name: /End the event/ }))
       .toBeInTheDocument();
   });
 });
@@ -996,12 +996,12 @@ describe('the agenda cards', () => {
     {
       id: 's1', title: 'Haldi', speaker_name: 'Asha', hall: '', status: 'live',
       starts_at: new Date(Date.now() - hour).toISOString(),
-      duration_minutes: 40, meeting: 'm1', position: 0,
+      duration_minutes: 40, event: 'm1', position: 0,
     },
     {
       id: 's2', title: 'Mehendi', speaker_name: 'Bina', hall: '', status: 'scheduled',
       starts_at: new Date(Date.now() + hour).toISOString(),
-      duration_minutes: 60, meeting: 'm1', position: 1,
+      duration_minutes: 60, event: 'm1', position: 1,
     },
   ];
 
@@ -1084,15 +1084,14 @@ describe('a summary on the agenda', () => {
   const finished = [{
     id: 's0', title: 'Kataho', speaker_name: 'Sumin', hall: '', status: 'done',
     starts_at: new Date(Date.now() - 7200000).toISOString(),
-    duration_minutes: 60, meeting: 'm1', position: 0,
+    duration_minutes: 60, event: 'm1', position: 0,
   }];
 
   const published = {
     conclusions: [{
       session_id: 's0', session_title: 'Kataho',
       session_starts_at: new Date().toISOString(),
-      speaker_name: 'Sumin', hall: '', meeting_id: 'm1', meeting_title: 'Opening day',
-      event_id: 'e1', event_title: 'NEA',
+      speaker_name: 'Sumin', hall: '', event_id: 'm1', event_title: 'NEA',
       findings: ['The grant is released in two parts.'],
       actions: [{ task: 'Send the letter', owner: 'Bina', due: 'Friday' }],
       published_at: new Date().toISOString(),
@@ -1157,9 +1156,9 @@ describe('a summary on the agenda', () => {
     expect(screen.queryByText('Summary ready')).toBeNull();
   });
 
-  it('and nothing about another meeting', async () => {
+  it('and nothing about another event', async () => {
     api.getConclusions.mockResolvedValue({
-      conclusions: [{ ...published.conclusions[0], meeting_id: 'somewhere-else' }],
+      conclusions: [{ ...published.conclusions[0], event_id: 'somewhere-else' }],
       mine: [],
     } as any);
     showRoom();
@@ -1226,7 +1225,7 @@ describe('who there is to write to', () => {
 /**
  * What arrived while you were reading something else.
  *
- * A meeting carries on behind whichever panel is open: a question is asked
+ * A event carries on behind whichever panel is open: a question is asked
  * while the files are up, a file is shared while you are in the chat. Each
  * control carries the count of what has piled up behind it, and opening
  * that panel is what clears it - not a timer, and not the next thing to
@@ -1244,7 +1243,7 @@ describe('the count on a closed panel', () => {
   });
 
   const barButton = async (name: RegExp) => {
-    const bar = await screen.findByRole('navigation', { name: 'Meeting controls' });
+    const bar = await screen.findByRole('navigation', { name: 'Event controls' });
     return within(bar).getByRole('button', { name });
   };
 
@@ -1259,7 +1258,7 @@ describe('the count on a closed panel', () => {
   it('counts a question waiting to be sorted', async () => {
     asHost();
     showRoom();
-    await screen.findByRole('navigation', { name: 'Meeting controls' });
+    await screen.findByRole('navigation', { name: 'Event controls' });
 
     arrive({
       type: 'chat_pending', message_id: 'm1', message: 'Why this budget?',
@@ -1272,7 +1271,7 @@ describe('the count on a closed panel', () => {
   it('adds them up while nobody looks', async () => {
     asHost();
     showRoom();
-    await screen.findByRole('navigation', { name: 'Meeting controls' });
+    await screen.findByRole('navigation', { name: 'Event controls' });
 
     arrive({ type: 'chat_pending', message_id: 'm1', message: 'One',
              user_id: 'g1', user_name: 'Rahul', timestamp: new Date().toISOString() });
@@ -1284,7 +1283,7 @@ describe('the count on a closed panel', () => {
 
   it('counts a file somebody shared', async () => {
     showRoom();
-    await screen.findByRole('navigation', { name: 'Meeting controls' });
+    await screen.findByRole('navigation', { name: 'Event controls' });
 
     arrive({ type: 'resources_update' });
 
@@ -1294,7 +1293,7 @@ describe('the count on a closed panel', () => {
   it('clears the moment that panel is opened', async () => {
     asHost();
     showRoom();
-    await screen.findByRole('navigation', { name: 'Meeting controls' });
+    await screen.findByRole('navigation', { name: 'Event controls' });
     arrive({ type: 'chat_pending', message_id: 'm1', message: 'One',
              user_id: 'g1', user_name: 'Rahul', timestamp: new Date().toISOString() });
     await badgeOn(/Questions/, '1');
@@ -1318,7 +1317,7 @@ describe('the count on a closed panel', () => {
   it('keeps each count to its own panel', async () => {
     asHost();
     showRoom();
-    await screen.findByRole('navigation', { name: 'Meeting controls' });
+    await screen.findByRole('navigation', { name: 'Event controls' });
 
     arrive({ type: 'resources_update' });
 
@@ -1328,14 +1327,14 @@ describe('the count on a closed panel', () => {
 });
 
 /**
- * Nothing in the room starts the meeting.
+ * Nothing in the room starts the event.
  *
  * Putting a talk on stage does that, and it is the same decision. Asking
- * for it twice only made it possible to be half-started: a meeting under
+ * for it twice only made it possible to be half-started: a event under
  * way with nobody speaking, and a button that did nothing anybody could
  * see.
  */
-describe('starting the meeting', () => {
+describe('starting the event', () => {
   const asHost = () => {
     const { useAuthStore } = require('../../store/authStore');
     useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
@@ -1348,8 +1347,8 @@ describe('starting the meeting', () => {
 
   it('is not something the room offers separately', async () => {
     asHost();
-    api.getMeeting.mockResolvedValue({
-      ...meeting,
+    api.getEvent.mockResolvedValue({
+      ...event,
       started_at: null,
       current_session: {
         id: null, title: '', started_at: null, ends_at: null, is_over: false,
@@ -1360,8 +1359,8 @@ describe('starting the meeting', () => {
 
     showRoom();
 
-    await screen.findByRole('navigation', { name: 'Meeting controls' });
-    expect(screen.queryByRole('button', { name: 'Start meeting' })).toBeNull();
+    await screen.findByRole('navigation', { name: 'Event controls' });
+    expect(screen.queryByRole('button', { name: 'Start event' })).toBeNull();
     // What is offered instead is the thing that actually opens it.
     expect(screen.getByRole('button', { name: 'Start Mehendi' })).toBeInTheDocument();
   });
@@ -1369,8 +1368,8 @@ describe('starting the meeting', () => {
   it('happens by putting somebody on stage', async () => {
     asHost();
     api.startSession.mockResolvedValue({} as any);
-    api.getMeeting.mockResolvedValue({
-      ...meeting,
+    api.getEvent.mockResolvedValue({
+      ...event,
       started_at: null,
       current_session: {
         id: null, title: '', started_at: null, ends_at: null, is_over: false,
@@ -1383,6 +1382,6 @@ describe('starting the meeting', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Start Mehendi' }));
 
     await waitFor(() => expect(api.startSession).toHaveBeenCalledWith('s2'));
-    expect(api.startMeeting).not.toHaveBeenCalled();
+    expect(api.startEvent).not.toHaveBeenCalled();
   });
 });

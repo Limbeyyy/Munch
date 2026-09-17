@@ -12,7 +12,7 @@ interface RecordingState {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 
-  fetchRecordings: (meetingId?: string) => Promise<void>;
+  fetchRecordings: (eventId?: string) => Promise<void>;
   fetchRecording: (id: string) => Promise<void>;
   deleteRecording: (id: string) => Promise<void>;
   downloadRecording: (id: string) => Promise<void>;
@@ -31,7 +31,7 @@ export const useRecordingStore = create<RecordingState>((set) => ({
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
 
-  fetchRecordings: async (meetingId) => {
+  fetchRecordings: async (eventId) => {
     set({ loading: true, error: null });
     try {
       // API call here

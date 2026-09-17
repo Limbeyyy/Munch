@@ -1,16 +1,16 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { EventProgramme, MeetingDraft, RoleGrantRow } from '../../types';
-import { ShareMeetingDialog } from '../../components/ShareMeetingDialog';
+import { Event, EventDraft, RoleGrantRow } from '../../types';
+import { ShareEventDialog } from '../../components/ShareEventDialog';
 import { confirmSpacing } from '../confirmSpacing';
 import { useSessionGap } from '../sessionGap';
 import { errorText } from '../errors';
 import { Pair, useOrganizer } from '../i18n';
 import { Btn, Chip } from '../ui';
 import {
-  MeetingDraftFields, emptyMeeting, missingSpeakerDetails, toApiMeeting, toLocalInput,
-} from '../MeetingDraftFields';
+  EventDraftFields, emptyEvent, missingSpeakerDetails, toApiEvent, toLocalInput,
+} from '../EventDraftFields';
 import { BackLink, Block, EventHeading, PlusGlyph, Sheet, Stepper } from './chrome';
 import { CoHostDialog, Field, inputClass } from './CoHostDialog';
 import { whenLine } from './EventsDashboard';
@@ -23,7 +23,7 @@ const STEPS: Pair[] = [
 
 interface Props {
   /** Absent when building a new one; present when changing one that exists. */
-  event?: EventProgramme;
+  event?: Event;
   onClose: () => void;
   onSaved: () => Promise<void> | void;
 }
@@ -42,7 +42,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
   const today = toLocalInput(new Date()).slice(0, 10);
 
   const [step, setStep] = useState(0);
-  const [saved, setSaved] = useState<EventProgramme | null>(event ?? null);
+  const [saved, setSaved] = useState<Event | null>(event ?? null);
 
   const [title, setTitle] = useState(event?.title ?? '');
   const [venue, setVenue] = useState(event?.venue ?? '');
@@ -50,13 +50,13 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
   const [date, setDate] = useState(event?.event_date ?? today);
   const [busy, setBusy] = useState(false);
 
-  const [meetings, setMeetings] = useState<MeetingDraft[]>([]);
+  const [events, setEventRooms] = useState<EventDraft[]>([]);
   const [drafting, setDrafting] = useState(false);
 
   const [roles, setRoles] = useState<RoleGrantRow[]>([]);
   const [invited, setInvited] = useState<{ email: string; joined: boolean }[]>([]);
   const [addCoHost, setAddCoHost] = useState(false);
-  const [sharing, setSharing] = useState<{ id: string; meeting_code: string } | null>(null);
+  const [sharing, setSharing] = useState<{ id: string; code: string } | null>(null);
 
   const loadPeople = useCallback(async (eventId: string) => {
     try {
@@ -90,7 +90,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
         setSaved(next);
       } else {
         const next = await apiClient.createEvent({
-          title: title.trim(), venue: venue.trim(), event_date: date, meetings: [],
+          title: title.trim(), venue: venue.trim(), event_date: date, sessions: [],
         });
         setSaved(next);
         toast.success(t({ ne: `${next.title} बन्यो`, en: `${next.title} created` }));
@@ -104,12 +104,12 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
     }
   };
 
-  /** Step two: one meeting's worth of running order at a time. */
+  /** Step two: one event's worth of running order at a time. */
   const saveSessions = async () => {
     if (!saved) return;
-    const named = meetings.filter((m) => m.title.trim());
-    if (named.length !== meetings.length) {
-      toast.error(t({ ne: 'हरेक बैठकको नाम चाहिन्छ', en: 'Every meeting needs a name' }));
+    const named = events.filter((m) => m.title.trim());
+    if (named.length !== events.length) {
+      toast.error(t({ ne: 'हरेक बैठकको नाम चाहिन्छ', en: 'Every event needs a name' }));
       return;
     }
     const incomplete = named.flatMap(missingSpeakerDetails);
@@ -128,12 +128,12 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
 
     try {
       setBusy(true);
-      for (const meeting of plan) {
-        await apiClient.addMeetingToEvent(saved.id, toApiMeeting(meeting));
+      for (const event of plan) {
+        await apiClient.addSessionsToEvent(saved.id, toApiEvent(event));
       }
       const fresh = await apiClient.getEvent(saved.id);
       setSaved(fresh);
-      setMeetings([]);
+      setEventRooms([]);
       setDrafting(false);
       toast.success(t({ ne: 'सत्रहरू थपिए', en: 'Sessions added' }));
       await onSaved();
@@ -144,8 +144,8 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
     }
   };
 
-  const existing = saved?.meetings ?? [];
-  const sessionCount = existing.reduce((n, m) => n + m.sessions.length, 0);
+  const existing = saved ? [saved] : [];
+  const sessionCount = existing.reduce((n, m) => n + (m.sessions?.length ?? 0), 0);
   const coHosts = roles.filter((r) => r.role === 'co_host');
   const opener = [...existing].sort(
     (a, b) => +new Date(a.scheduled_start) - +new Date(b.scheduled_start)
@@ -199,7 +199,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder={t({ ne: 'आपतकालीन सेवा बैठक', en: 'Emergency Service Meeting' })}
+              placeholder={t({ ne: 'आपतकालीन सेवा बैठक', en: 'Emergency Service Event' })}
               className={inputClass}
             />
           </Field>
@@ -261,7 +261,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
               <Btn
                 tone="solid"
                 className="px-5 py-3 text-[16px]"
-                onClick={() => { setDrafting(true); setMeetings([emptyMeeting(date, 9)]); }}
+                onClick={() => { setDrafting(true); setEventRooms([emptyEvent(date, 9)]); }}
               >
                 <PlusGlyph />
                 {t({ ne: 'नयाँ सत्र बनाउनुहोस्', en: 'Create New Sessions' })}
@@ -275,18 +275,18 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
               ne: `एजेन्डा · ${num(sessionCount)} सत्र`,
               en: `Agenda · ${sessionCount} sessions`,
             }}>
-              {existing.map((meeting) => (
-                <div key={meeting.id} className="py-3 border-b border-line last:border-0">
+              {existing.map((event) => (
+                <div key={event.id} className="py-3 border-b border-line last:border-0">
                   <div className="flex items-center gap-3 flex-wrap">
-                    <b className="text-[14px] font-medium text-head">{meeting.title}</b>
+                    <b className="text-[14px] font-medium text-head">{event.title}</b>
                     <span className="text-[12.5px] font-mono text-navy-800">
-                      {meeting.meeting_code}
+                      {event.code}
                     </span>
                     <Chip tone="draft">
-                      {num(meeting.sessions.length)} {t({ ne: 'सत्र', en: 'sessions' })}
+                      {num(event.sessions?.length ?? 0)} {t({ ne: 'सत्र', en: 'sessions' })}
                     </Chip>
                   </div>
-                  {meeting.sessions.map((s) => (
+                  {(event.sessions ?? []).map((s) => (
                     <p key={s.id} className="text-[13px] text-subtle mt-1.5">
                       <span className="font-mono tabular-nums">
                         {new Date(s.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -302,29 +302,29 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
 
           {drafting && (
             <div className="flex flex-col gap-4">
-              {meetings.map((meeting, i) => (
-                <MeetingDraftFields
+              {events.map((event, i) => (
+                <EventDraftFields
                   key={i}
                   index={i}
-                  meeting={meeting}
-                  onChange={(next) => setMeetings((v) => v.map((m, j) => (j === i ? next : m)))}
+                  event={event}
+                  onChange={(next) => setEventRooms((v) => v.map((m, j) => (j === i ? next : m)))}
                   onRemove={
-                    meetings.length > 1
-                      ? () => setMeetings((v) => v.filter((_, j) => j !== i))
+                    events.length > 1
+                      ? () => setEventRooms((v) => v.filter((_, j) => j !== i))
                       : undefined
                   }
                 />
               ))}
               <Btn
                 className="self-start"
-                onClick={() => setMeetings((v) => [...v, emptyMeeting(date, 14)])}
+                onClick={() => setEventRooms((v) => [...v, emptyEvent(date, 14)])}
               >
                 <PlusGlyph />
-                {t({ ne: 'अर्को बैठक', en: 'Another meeting' })}
+                {t({ ne: 'अर्को बैठक', en: 'Another event' })}
               </Btn>
 
               <div className="flex gap-3 justify-end">
-                <Btn onClick={() => { setDrafting(false); setMeetings([]); }}>
+                <Btn onClick={() => { setDrafting(false); setEventRooms([]); }}>
                   {t({ ne: 'रद्द', en: 'Cancel' })}
                 </Btn>
                 <Btn tone="solid" onClick={saveSessions} disabled={busy}>
@@ -411,7 +411,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
                         })
                       : t({
                           ne: 'निम्तो दिन पहिले एउटा बैठक चाहिन्छ।',
-                          en: 'There has to be a meeting before anyone can be invited to one.',
+                          en: 'There has to be a event before anyone can be invited to one.',
                         })}
                   </p>
                   {opener && (
@@ -449,9 +449,9 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
       )}
 
       {sharing && (
-        <ShareMeetingDialog
-          meetingId={sharing.id}
-          meetingCode={sharing.meeting_code}
+        <ShareEventDialog
+          eventId={sharing.id}
+          eventCode={sharing.code}
           onClose={() => setSharing(null)}
           onInvited={() => { if (saved) loadPeople(saved.id); }}
         />

@@ -19,8 +19,8 @@ describe('errorText', () => {
       .toBe('Only the host can do that');
   });
 
-  it('flattens validation errors buried inside meetings and sessions', () => {
-    const e = rejected({ meetings: [{ sessions: [{ speaker_email: ['Enter a valid email address.'] }] }] });
+  it('flattens validation errors buried inside events and sessions', () => {
+    const e = rejected({ events: [{ sessions: [{ speaker_email: ['Enter a valid email address.'] }] }] });
     expect(errorText(e, 'fallback')).toBe('Enter a valid email address.');
   });
 

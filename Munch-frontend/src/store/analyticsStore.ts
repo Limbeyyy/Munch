@@ -1,34 +1,34 @@
 import { create } from 'zustand';
-import { OrganizationAnalytics, MeetingAnalytics } from '../types';
+import { OrganizationAnalytics, EventAnalytics } from '../types';
 
 interface AnalyticsState {
   orgAnalytics: OrganizationAnalytics | null;
-  meetingAnalytics: MeetingAnalytics | null;
+  eventAnalytics: EventAnalytics | null;
   dateRange: { from: string; to: string };
   loading: boolean;
   error: string | null;
 
   setOrgAnalytics: (analytics: OrganizationAnalytics | null) => void;
-  setMeetingAnalytics: (analytics: MeetingAnalytics | null) => void;
+  setEventAnalytics: (analytics: EventAnalytics | null) => void;
   setDateRange: (from: string, to: string) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 
   fetchOrgAnalytics: (orgId: string, from?: string, to?: string) => Promise<void>;
-  fetchMeetingAnalytics: (meetingId: string) => Promise<void>;
+  fetchEventAnalytics: (eventId: string) => Promise<void>;
   exportAnalytics: (format: 'csv' | 'pdf') => Promise<void>;
   resetError: () => void;
 }
 
 export const useAnalyticsStore = create<AnalyticsState>((set) => ({
   orgAnalytics: null,
-  meetingAnalytics: null,
+  eventAnalytics: null,
   dateRange: { from: '', to: '' },
   loading: false,
   error: null,
 
   setOrgAnalytics: (analytics) => set({ orgAnalytics: analytics }),
-  setMeetingAnalytics: (analytics) => set({ meetingAnalytics: analytics }),
+  setEventAnalytics: (analytics) => set({ eventAnalytics: analytics }),
   setDateRange: (from, to) => set({ dateRange: { from, to } }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
@@ -43,7 +43,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set) => ({
     }
   },
 
-  fetchMeetingAnalytics: async (meetingId) => {
+  fetchEventAnalytics: async (eventId) => {
     set({ loading: true, error: null });
     try {
       // API call here

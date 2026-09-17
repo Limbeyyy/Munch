@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { EventProgramme } from '../../types';
+import { Event } from '../../types';
 import { useOrganizer } from '../i18n';
 import { Btn } from '../ui';
 import { DeckTabs, PenGlyph, PlusGlyph, Sheet } from './chrome';
 
 /** Which of the three decks an event belongs on. */
-export const deckOf = (event: EventProgramme): 'upcoming' | 'draft' | 'done' =>
+export const deckOf = (event: Event): 'upcoming' | 'draft' | 'done' =>
   event.status === 'draft'
     ? 'draft'
     : event.status === 'ended' || event.status === 'cancelled'
@@ -21,19 +21,14 @@ const DECK_TAG = {
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-/** "15 September 2026 · 10:00 AM – 12:00 PM", from the day's meetings. */
-export const whenLine = (event: EventProgramme): string => {
-  const day = new Date(event.event_date).toLocaleDateString(undefined, {
-    day: 'numeric', month: 'long', year: 'numeric',
-  });
-  const times = [...event.meetings].sort(
-    (a, b) => +new Date(a.scheduled_start) - +new Date(b.scheduled_start)
-  );
-  if (times.length === 0) return day;
-  const last = times.reduce((far, m) =>
-    +new Date(m.scheduled_end) > +new Date(far.scheduled_end) ? m : far
-  );
-  return `${day} · ${clock(times[0].scheduled_start)} – ${clock(last.scheduled_end)}`;
+/** "15 September 2026 · 10:00 AM – 12:00 PM", from the day's events. */
+export const whenLine = (event: Event): string => {
+  const day = new Date(event.event_date ?? event.scheduled_start)
+    .toLocaleDateString(undefined, {
+      day: 'numeric', month: 'long', year: 'numeric',
+    });
+  if (!event.scheduled_start) return day;
+  return `${day} · ${clock(event.scheduled_start)} – ${clock(event.scheduled_end)}`;
 };
 
 /** How many people stand beside the host, and how many were asked along. */
@@ -43,11 +38,11 @@ export interface EventHeadcount {
 }
 
 interface Props {
-  events: EventProgramme[];
+  events: Event[];
   counts: Record<string, EventHeadcount>;
   loading: boolean;
-  onOpen: (event: EventProgramme) => void;
-  onEdit: (event: EventProgramme) => void;
+  onOpen: (event: Event) => void;
+  onEdit: (event: Event) => void;
   onCreate: () => void;
   /** Kept from the old screen: a whole programme out of a spreadsheet. */
   onImport: () => void;
@@ -90,7 +85,7 @@ export const EventsDashboard: React.FC<Props> = ({
             {t({ ne: 'कार्यक्रम', en: 'Events' })}
           </h1>
           <p className="text-[14px] text-body leading-[1.5] mt-2">
-            {t({ ne: 'बैठकका लागि कार्यक्रम तयार गर्नुहोस्', en: 'setup event for meetings' })}
+            {t({ ne: 'बैठकका लागि कार्यक्रम तयार गर्नुहोस्', en: 'setup event for events' })}
           </p>
         </div>
         <div className="flex gap-3 flex-none">
@@ -148,7 +143,7 @@ export const EventsDashboard: React.FC<Props> = ({
                     )}
                     <div className="flex gap-4 items-center pt-3 text-[12px] text-faint leading-4 flex-wrap">
                       <span>
-                        {num(event.session_count)} {t({ ne: 'सत्र', en: 'sessions' })}
+                        {num(event.session_count ?? 0)} {t({ ne: 'सत्र', en: 'sessions' })}
                       </span>
                       <span>
                         {num(head?.coHosts ?? 0)} {t({ ne: 'सह-आयोजक', en: 'co-hosts' })}

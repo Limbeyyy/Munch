@@ -57,10 +57,6 @@ export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = ({
             label: { ne: 'कार्यक्रम', en: 'Events' },
             used: usage.events, cap: plan.limits.events, left: remaining.events,
           },
-          {
-            label: { ne: 'बैठक', en: 'Meetings' },
-            used: usage.meetings, cap: plan.limits.meetings, left: remaining.meetings,
-          },
         ]
       : [];
 
@@ -168,13 +164,13 @@ export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = ({
                 )}
 
                 <div className="flex justify-between text-[13px] pt-1">
-                  <span>{t({ ne: 'प्रति बैठक सत्र', en: 'Sessions per meeting' })}</span>
+                  <span>{t({ ne: 'प्रति बैठक सत्र', en: 'Sessions per event' })}</span>
                   <span className="text-[#6E7C8E]">
-                    {plan.limits.sessions_per_meeting === null
+                    {plan.limits.sessions_per_event === null
                       ? t({ ne: 'असीमित', en: 'Unlimited' })
                       : t({
-                          ne: `${num(plan.limits.sessions_per_meeting)} सम्म`,
-                          en: `up to ${plan.limits.sessions_per_meeting}`,
+                          ne: `${num(plan.limits.sessions_per_event)} सम्म`,
+                          en: `up to ${plan.limits.sessions_per_event}`,
                         })}
                   </span>
                 </div>
@@ -199,7 +195,7 @@ export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = ({
               <p className="text-[13px] text-[#6E7C8E] mt-1">
                 {t({
                   ne: 'कार्यक्रम खोल्नु भए निःशुल्क परीक्षण सुरु हुन्छ — २ कार्यक्रम, प्रत्येकमा २ बैठक, प्रत्येकमा २ सत्र।',
-                  en: 'Opening a programme starts the free trial: 2 events, 2 meetings each, 2 sessions each.',
+                  en: 'Opening a programme starts the free trial: 2 events, 2 events each, 2 sessions each.',
                 })}
               </p>
               <Btn tone="amber" className="mt-3" onClick={() => onNavigate?.('subscription')}>

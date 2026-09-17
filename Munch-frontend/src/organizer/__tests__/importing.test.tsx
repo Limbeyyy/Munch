@@ -44,7 +44,7 @@ const show = () =>
  * The template is three tables joined by id, and comes in two shapes.
  *
  * The CSV opens anywhere. The workbook carries the one thing a CSV cannot:
- * the sessions table picking its event and meeting from the ids typed
+ * the sessions table picking its event and event from the ids typed
  * above, rather than having them typed again.
  */
 describe('the programme template', () => {
@@ -104,7 +104,7 @@ describe('the programme template', () => {
  * What the preview shows has to be what the sheet says.
  *
  * The preview printed clock times only, so a session dated a fortnight
- * after its meeting - a date left over from the example, usually - read as
+ * after its event - a date left over from the example, usually - read as
  * simply the next talk that afternoon. The one thing that would have shown
  * the mistake was the one thing left out.
  */
@@ -113,16 +113,13 @@ describe('the day the preview shows', () => {
     title: 'National Addressing Concept',
     event_date: '2026-09-14',
     venue: 'National Assembly Hall',
-    meetings: [{
-      title: 'Breaking News',
-      scheduled_start: '2026-09-14T15:00:00+05:45',
-      sessions: [
-        { title: 'Kataho', starts_at: '2026-09-14T15:00:00+05:45',
-          speaker_name: 'Dr Sumin Maharjan', hall: 'Hall A' },
-        { title: 'Digipin', starts_at: sessionStart,
-          speaker_name: 'Dr Darpan Pandey', hall: 'Hall A' },
-      ],
-    }],
+    scheduled_start: '2026-09-14T15:00:00+05:45',
+    sessions: [
+      { title: 'Kataho', starts_at: '2026-09-14T15:00:00+05:45',
+        speaker_name: 'Dr Sumin Maharjan', hall: 'Hall A' },
+      { title: 'Digipin', starts_at: sessionStart,
+        speaker_name: 'Dr Darpan Pandey', hall: 'Hall A' },
+    ],
   }]);
 
   const preview = async (sessionStart: string) => {
@@ -145,7 +142,7 @@ describe('the day the preview shows', () => {
     expect(screen.getByText(/Digipin/).textContent).toMatch(/Oct/);
   });
 
-  it("leaves the day out when everything is on the meeting's own day", async () => {
+  it("leaves the day out when everything is on the event's own day", async () => {
     await preview('2026-09-14T15:15:00+05:45');
 
     expect(screen.getByText(/Digipin/).textContent).not.toMatch(/Sep/);

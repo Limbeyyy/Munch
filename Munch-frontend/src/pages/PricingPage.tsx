@@ -31,7 +31,7 @@ const PLANS: Plan[] = [
     usd: 0,
     sub: { en: 'Forever free', np: 'सधैं निःशुल्क' },
     features: [
-      { en: '2 meetings / month', np: 'महिनामा २ वटा बैठक' },
+      { en: '2 events / month', np: 'महिनामा २ वटा बैठक' },
       { en: 'Up to 100 attendees', np: '१०० जनासम्म सहभागी' },
       { en: 'Live transcription', np: 'प्रत्यक्ष ट्रान्सक्रिप्सन' },
       { en: 'Attendance tracking', np: 'उपस्थिति ट्र्याकिङ' },
@@ -46,7 +46,7 @@ const PLANS: Plan[] = [
     usd: 49,
     sub: { en: 'per month', np: 'प्रति महिना' },
     features: [
-      { en: '5 meetings / month', np: 'महिनामा ५ वटा बैठक' },
+      { en: '5 events / month', np: 'महिनामा ५ वटा बैठक' },
       { en: 'Up to 30 attendees', np: '३० जनासम्म सहभागी' },
       { en: 'Everything in Free', np: 'फ्रीमा भएका सबै सुविधा' },
       { en: 'Unlimited duration', np: 'असीमित समय' },
@@ -62,7 +62,7 @@ const PLANS: Plan[] = [
     usd: 129,
     sub: { en: 'per month', np: 'प्रति महिना' },
     features: [
-      { en: '10 meetings / month', np: 'महिनामा १० वटा बैठक' },
+      { en: '10 events / month', np: 'महिनामा १० वटा बैठक' },
       { en: 'Up to 100 attendees', np: '१०० जनासम्म सहभागी' },
       { en: 'Everything in Starter', np: 'स्टार्टरमा भएका सबै' },
       { en: 'Nepali + English transcription', np: 'नेपाली + अंग्रेजी ट्रान्सक्रिप्सन' },
@@ -77,7 +77,7 @@ const PLANS: Plan[] = [
     usd: 299,
     sub: { en: 'per month', np: 'प्रति महिना' },
     features: [
-      { en: '20 meetings / month', np: 'महिनामा २० वटा बैठक' },
+      { en: '20 events / month', np: 'महिनामा २० वटा बैठक' },
       { en: 'Up to 300 attendees', np: '३०० जनासम्म सहभागी' },
       { en: 'Everything in Growth', np: 'ग्रोथमा भएका सबै' },
       { en: 'Multi-language support', np: 'बहुभाषी समर्थन' },
@@ -93,7 +93,7 @@ const PLANS: Plan[] = [
     usd: null,
     sub: { en: 'Contact us', np: 'हामीलाई सम्पर्क गर्नुहोस्' },
     features: [
-      { en: 'Unlimited meetings', np: 'असीमित बैठक' },
+      { en: 'Unlimited events', np: 'असीमित बैठक' },
       { en: 'Unlimited attendees', np: 'असीमित सहभागी' },
       { en: 'Dedicated support', np: 'समर्पित सहयोग' },
       { en: 'Custom security & SLA', np: 'अनुकूल सुरक्षा र SLA' },
@@ -106,13 +106,13 @@ const PLANS: Plan[] = [
 const PACKS = [
   {
     id: 'pack10',
-    name: { en: '10 Meetings Pack', np: '१० मिटिङ प्याक' },
+    name: { en: '10 Events Pack', np: '१० मिटिङ प्याक' },
     desc: { en: 'Valid for 6 months', np: '६ महिनासम्म मान्य' },
     usd: 79,
   },
   {
     id: 'pack100',
-    name: { en: '100 Meetings Pack', np: '१०० मिटिङ प्याक' },
+    name: { en: '100 Events Pack', np: '१०० मिटिङ प्याक' },
     desc: { en: 'Valid for 12 months', np: '१२ महिनासम्म मान्य' },
     usd: 599,
   },
@@ -159,7 +159,7 @@ export const PricingPage: React.FC = () => {
     <div className="min-h-screen bg-page py-10 px-4">
       <div className="max-w-6xl mx-auto">
         <h1 className="text-center text-3xl font-bold text-slate-900">
-          {t({ en: 'Meeting Management System', np: 'बैठक व्यवस्थापन प्रणाली' })}
+          {t({ en: 'Event Management System', np: 'बैठक व्यवस्थापन प्रणाली' })}
         </h1>
         <p className="text-center text-slate-600 mt-2 mb-8 text-sm">
           {t({
@@ -252,7 +252,7 @@ export const PricingPage: React.FC = () => {
         {/* Packs */}
         <h2 className="text-center text-2xl font-bold text-slate-900 mt-14 mb-5">
           {t({
-            en: 'Or buy Meeting Packs (no monthly subscription)',
+            en: 'Or buy Event Packs (no monthly subscription)',
             np: 'वा मिटिङ प्याक किन्नुहोस् (मासिक सदस्यता बिना)',
           })}
         </h2>
@@ -281,7 +281,7 @@ export const PricingPage: React.FC = () => {
 
           <div className="bg-white rounded-2xl p-6 text-center border border-slate-200 shadow-sm">
             <h3 className="text-lg font-bold text-slate-900">
-              {t({ en: 'Pay Per Meeting', np: 'प्रति बैठक भुक्तानी' })}
+              {t({ en: 'Pay Per Event', np: 'प्रति बैठक भुक्तानी' })}
             </h3>
             <p className="text-slate-500 text-sm mt-1 mb-3">
               {t({
@@ -308,7 +308,7 @@ export const PricingPage: React.FC = () => {
           })}
           <br />
           {t({
-            en: 'You fully own your meeting content.',
+            en: 'You fully own your event content.',
             np: 'तपाईंको बैठक सामग्री पूर्ण रूपमा तपाईंको हो।',
           })}
         </p>

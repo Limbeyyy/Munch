@@ -73,13 +73,13 @@ export const LoginPage: React.FC = () => {
     const code = guestCode.trim().toUpperCase();
     const name = typedName.trim();
 
-    if (!code) return toast.error('Enter the meeting code');
+    if (!code) return toast.error('Enter the event code');
     if (name.length < 2) return toast.error('Enter your name');
 
     try {
       setIsKnocking(true);
       const session = await apiClient.guestKnock({
-        meeting_code: code,
+        code: code,
         full_name: name,
         // What a guest already inside holds, if this is a reload rather
         // than a new arrival: it puts them back in their seat without the
@@ -88,15 +88,15 @@ export const LoginPage: React.FC = () => {
       });
 
       sessionStorage.setItem('guest_token', session.guest_token);
-      sessionStorage.setItem('guest_meeting_code', session.meeting.meeting_code);
-      sessionStorage.setItem('guest_meeting_title', session.meeting.title);
+      sessionStorage.setItem('guest_event_code', session.event.code);
+      sessionStorage.setItem('guest_event_title', session.event.title);
       sessionStorage.setItem('guest_name', session.guest.full_name);
 
       // Already approved earlier - go straight in rather than showing a
       // waiting screen for a decision that has already been made.
       if (session.guest.status === 'admitted') {
         toast.success('Welcome back');
-        navigate('/guest/meeting');
+        navigate('/guest/event');
       } else {
         navigate('/guest/waiting');
       }
@@ -164,7 +164,7 @@ export const LoginPage: React.FC = () => {
 
         <h1 className="text-4xl font-bold text-white mt-3">मञ्च</h1>
         <p className="font-read text-sm text-[#BFD1EC] mb-7">
-          Meeting &amp; Agenda Network for Collaboration Hub
+          Event &amp; Agenda Network for Collaboration Hub
         </p>
 
         <div className="bg-white/[.07] border border-white/20 rounded-[22px] p-6 text-left backdrop-blur">
@@ -188,13 +188,13 @@ export const LoginPage: React.FC = () => {
             onClick={() => setShowGuest(true)}
             className="w-full border border-white/30 hover:bg-white/10 text-white font-semibold py-3 px-4 rounded-lg"
           >
-            Join with a meeting code
+            Join with a event code
           </button>
         ) : (
           <div className="space-y-3">
             <p className="text-sm text-[#BFD1EC]">
               {arrivedByLink
-                ? 'The meeting code came with your link. Press below to go in as a guest — you give a name at the door and the host decides.'
+                ? 'The event code came with your link. Press below to go in as a guest — you give a name at the door and the host decides.'
                 : 'Joining as a guest. You give a name at the door and the host decides; nothing else is asked for, and nothing is kept afterwards but your name on the attendance.'}
             </p>
 
@@ -205,8 +205,8 @@ export const LoginPage: React.FC = () => {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && guestCode.trim()) setAskingName(true);
               }}
-              placeholder="Meeting code"
-              aria-label="Meeting code"
+              placeholder="Event code"
+              aria-label="Event code"
               className="w-full px-4 py-3 rounded-lg uppercase tracking-wide bg-navy-900/50 border border-white/25 text-white placeholder-[#8FA6C6] focus:outline-none focus:ring-2 focus:ring-amber"
             />
 
@@ -214,11 +214,11 @@ export const LoginPage: React.FC = () => {
               onClick={() =>
                 guestCode.trim()
                   ? setAskingName(true)
-                  : toast.error('Enter the meeting code')
+                  : toast.error('Enter the event code')
               }
               className="w-full bg-ok hover:bg-[#166F4C] text-white font-semibold py-3 px-4 rounded-lg disabled:opacity-50"
             >
-              Enter meeting room
+              Enter event room
             </button>
             <button
               onClick={() => setShowGuest(false)}
@@ -240,7 +240,7 @@ export const LoginPage: React.FC = () => {
 
         {askingName && (
           <GuestJoinDialog
-            meetingCode={guestCode.trim().toUpperCase()}
+            eventCode={guestCode.trim().toUpperCase()}
             busy={isKnocking}
             onCancel={() => setAskingName(false)}
             onJoin={handleGuestJoin}

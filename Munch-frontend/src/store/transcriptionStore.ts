@@ -18,12 +18,12 @@ interface TranscriptionState {
   setError: (error: string | null) => void;
   setEditMode: (editMode: boolean) => void;
 
-  fetchTranscript: (meetingId: string) => Promise<void>;
-  fetchSummary: (meetingId: string) => Promise<void>;
+  fetchTranscript: (eventId: string) => Promise<void>;
+  fetchSummary: (eventId: string) => Promise<void>;
   editSegment: (index: number, newText: string) => Promise<void>;
   exportTranscript: (format: 'pdf' | 'docx' | 'txt') => Promise<void>;
   searchTranscript: (query: string) => Promise<TranscriptionSegment[]>;
-  generateSummary: (meetingId: string) => Promise<void>;
+  generateSummary: (eventId: string) => Promise<void>;
   resetError: () => void;
 }
 
@@ -44,7 +44,7 @@ export const useTranscriptionStore = create<TranscriptionState>((set) => ({
   setError: (error) => set({ error }),
   setEditMode: (editMode) => set({ editMode }),
 
-  fetchTranscript: async (meetingId) => {
+  fetchTranscript: async (eventId) => {
     set({ loading: true, error: null });
     try {
       // API call here
@@ -54,7 +54,7 @@ export const useTranscriptionStore = create<TranscriptionState>((set) => ({
     }
   },
 
-  fetchSummary: async (meetingId) => {
+  fetchSummary: async (eventId) => {
     set({ loading: true, error: null });
     try {
       // API call here
@@ -96,7 +96,7 @@ export const useTranscriptionStore = create<TranscriptionState>((set) => ({
     }
   },
 
-  generateSummary: async (meetingId) => {
+  generateSummary: async (eventId) => {
     set({ loading: true, error: null });
     try {
       // API call here

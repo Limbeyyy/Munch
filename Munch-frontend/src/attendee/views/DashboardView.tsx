@@ -1,8 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../../services/api';
-import {
-  Artifact, Conclusion, EventMeeting, EventProgramme, TranscriptionSegment,
-} from '../../types';
+import { Artifact, Conclusion, Event, TranscriptionSegment } from '../../types';
 import { Pair, useOrganizer } from '../../organizer/i18n';
 import { Empty } from '../../organizer/ui';
 import { RoomQuestions } from '../../organizer/RoomQuestions';
@@ -12,13 +10,13 @@ import { deskSession, doorway } from '../../organizer/sessionState';
 import { SpineItem, clock } from '../Spine';
 
 interface Props {
-  event: EventProgramme | null;
+  event: Event | null;
   items: SpineItem[];
   live: SpineItem | null;
   attendedIds: Set<string>;
   onOpen: (item: SpineItem) => void;
   onNavigate: (view: string) => void;
-  onJoinRoom: (meeting: EventMeeting) => void;
+  onJoinRoom: (event: Event) => void;
   /** Seconds the live session has been running, from the server's clock. */
   elapsed: number;
   /**
@@ -122,16 +120,16 @@ export const DashboardView: React.FC<Props> = ({
   /*
    * When the room may be entered.
    *
-   * The room belongs to the meeting, not to one talk in it: a meeting of
+   * The room belongs to the event, not to one talk in it: a event of
    * ten sessions is one room that all ten happen in, and it stays open
    * across the gaps between them. Keyed to the session, this button went
    * dead every time a talk finished - locking people out of a room they
    * were sitting in.
    */
-  const door = doorway(current?.meeting.scheduled_start, Date.now());
+  const door = doorway(current?.event.scheduled_start, Date.now());
   const canEnter =
-    (current?.meeting as any)?.entry?.is_open ??
-    (current?.meeting.status === 'active' || door.canEnter);
+    (current?.event as any)?.entry?.is_open ??
+    (current?.event.status === 'active' || door.canEnter);
 
   const [tab, setTab] = useState<PanelTab>('questions');
   const [segments, setSegments] = useState<TranscriptionSegment[]>([]);
@@ -139,28 +137,28 @@ export const DashboardView: React.FC<Props> = ({
   const [conclusions, setConclusions] = useState<Conclusion[]>([]);
   const [opened, setOpened] = useState<string>('');
 
-  const meetingId = current?.meeting.id ?? '';
-  const meetingCode = current?.meeting.meeting_code ?? '';
+  const eventId = current?.event.id ?? '';
+  const eventCode = current?.event.code ?? '';
 
   /** The transcript of whatever the day has reached. */
   useEffect(() => {
-    if (!meetingCode) { setSegments([]); return; }
+    if (!eventCode) { setSegments([]); return; }
     let gone = false;
     const read = () => {
       apiClient
-        .getMeetingSegments(meetingCode)
+        .getEventSegments(eventCode)
         .then((lines) => { if (!gone) setSegments(lines); })
         .catch(() => undefined);
     };
     read();
     const timer = window.setInterval(read, 20000);
     return () => { gone = true; window.clearInterval(timer); };
-  }, [meetingCode]);
+  }, [eventCode]);
 
   useEffect(() => {
-    if (!meetingId) { setSlides([]); return; }
-    apiClient.getResources(meetingId).then(setSlides).catch(() => setSlides([]));
-  }, [meetingId]);
+    if (!eventId) { setSlides([]); return; }
+    apiClient.getResources(eventId).then(setSlides).catch(() => setSlides([]));
+  }, [eventId]);
 
   /** What each session came to, for the agenda underneath. */
   const loadConclusions = useCallback(() => {
@@ -319,13 +317,13 @@ export const DashboardView: React.FC<Props> = ({
           </p>
         </div>
         <button
-          onClick={() => current && onJoinRoom(current.meeting)}
+          onClick={() => current && onJoinRoom(current.event)}
           disabled={!current || !canEnter}
           title={
             current && !canEnter
               ? t({
                   ne: 'बैठक सुरु हुनु १५ मिनेट अघि कोठा खुल्छ',
-                  en: 'The room opens a quarter of an hour before the meeting',
+                  en: 'The room opens a quarter of an hour before the event',
                 })
               : undefined
           }
@@ -353,7 +351,7 @@ export const DashboardView: React.FC<Props> = ({
                 ) : null
               }
             >
-              {current?.meeting.title ?? t({ ne: 'कुनै बैठक छैन', en: 'No meeting' })}
+              {current?.event.title ?? t({ ne: 'कुनै बैठक छैन', en: 'No event' })}
             </CardTitle>
 
             {current ? (
@@ -430,14 +428,14 @@ export const DashboardView: React.FC<Props> = ({
               {!current ? (
                 <Empty>{t({ ne: 'कुनै सत्र छैन।', en: 'No session yet.' })}</Empty>
               ) : tab === 'photos' ? (
-                <PhotoAlbums meetingRef={meetingCode} canManage={false} />
+                <PhotoAlbums eventRef={eventCode} canManage={false} />
               ) : tab === 'questions' ? (
-                <RoomQuestions meetingId={meetingId} refreshMs={30000} />
+                <RoomQuestions eventId={eventId} refreshMs={30000} />
               ) : slides.length === 0 ? (
                 <Empty>
                   {t({
                     ne: 'यो बैठकमा अझै कुनै फाइल राखिएको छैन।',
-                    en: 'Nothing has been shared for this meeting yet.',
+                    en: 'Nothing has been shared for this event yet.',
                   })}
                 </Empty>
               ) : (

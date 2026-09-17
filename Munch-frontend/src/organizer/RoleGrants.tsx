@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
-import { EventProgramme, ProgrammeRoles, RoleScope } from '../types';
+import { Event, ProgrammeRoles, RoleScope } from '../types';
 import { Pair, useOrganizer } from './i18n';
 import { Btn, Chip, Empty, Panel } from './ui';
 import { errorText } from './errors';
@@ -13,18 +13,13 @@ const ROLE_LABEL: Record<'co_host' | 'presenter', Pair> = {
 
 const SCOPE_LABEL: Record<RoleScope, Pair> = {
   event: { ne: 'पूरै कार्यक्रम', en: 'Whole event' },
-  meeting: { ne: 'एउटा बैठक', en: 'One meeting' },
   session: { ne: 'एउटा सत्र', en: 'One session' },
 };
 
 const SCOPE_HINT: Record<RoleScope, Pair> = {
   event: {
-    ne: 'यो कार्यक्रमका सबै बैठक र सत्रभर — कार्यक्रम चलेसम्म।',
-    en: 'Every meeting and session in this programme, for as long as it runs.',
-  },
-  meeting: {
-    ne: 'त्यही बैठक र त्यसभित्रका सत्रमा मात्र। अर्को बैठकमा लागू हुँदैन।',
-    en: 'That meeting and the sessions inside it. Not the next meeting.',
+    ne: 'यो कार्यक्रमका सबै सत्रभर — कार्यक्रम चलेसम्म।',
+    en: 'Every session in this event, for as long as it runs.',
   },
   session: {
     ne: 'त्यही एउटा सत्रमा मात्र।',
@@ -42,7 +37,7 @@ const SCOPE_HINT: Record<RoleScope, Pair> = {
  * Speakers are shown alongside but are not granted here - a session names
  * its own speaker, and naming them is what makes them its presenter.
  */
-export const RoleGrants: React.FC<{ event: EventProgramme | null }> = ({ event }) => {
+export const RoleGrants: React.FC<{ event: Event | null }> = ({ event }) => {
   const { t, num } = useOrganizer();
   const [roles, setRoles] = useState<ProgrammeRoles | null>(null);
   const [email, setEmail] = useState('');
@@ -62,12 +57,10 @@ export const RoleGrants: React.FC<{ event: EventProgramme | null }> = ({ event }
 
   useEffect(() => { load(); }, [load]);
 
-  const sessions = (event?.meetings ?? []).flatMap((m) =>
-    m.sessions.map((s) => ({ id: s.id, label: `${s.title} — ${m.title}` }))
+  const sessions = (event?.sessions ?? []).map(
+    (s) => ({ id: s.id, label: s.title })
   );
-  const targets = scope === 'meeting'
-    ? (event?.meetings ?? []).map((m) => ({ id: m.id, label: m.title }))
-    : scope === 'session' ? sessions : [];
+  const targets = scope === 'session' ? sessions : [];
 
   const give = async () => {
     if (!event) return;
@@ -76,11 +69,7 @@ export const RoleGrants: React.FC<{ event: EventProgramme | null }> = ({ event }
       return;
     }
     if (scope !== 'event' && !scopeId) {
-      toast.error(
-        scope === 'meeting'
-          ? t({ ne: 'कुन बैठक भन्नुहोस्', en: 'Say which meeting' })
-          : t({ ne: 'कुन सत्र भन्नुहोस्', en: 'Say which session' })
-      );
+      toast.error(t({ ne: 'कुन सत्र भन्नुहोस्', en: 'Say which session' }));
       return;
     }
     try {
@@ -178,7 +167,7 @@ export const RoleGrants: React.FC<{ event: EventProgramme | null }> = ({ event }
                 onChange={(e) => { setScope(e.target.value as RoleScope); setScopeId(''); }}
                 className={field}
               >
-                {(['event', 'meeting', 'session'] as const).map((s) => (
+                {(['event', 'session'] as const).map((s) => (
                   <option key={s} value={s}>{t(SCOPE_LABEL[s])}</option>
                 ))}
               </select>
@@ -188,9 +177,7 @@ export const RoleGrants: React.FC<{ event: EventProgramme | null }> = ({ event }
           {scope !== 'event' && (
             <div className="mt-2.5">
               <label className="block text-[12px] text-[#6E7C8E] mb-1">
-                {scope === 'meeting'
-                  ? t({ ne: 'कुन बैठक', en: 'Which meeting' })
-                  : t({ ne: 'कुन सत्र', en: 'Which session' })}
+                {t({ ne: 'कुन सत्र', en: 'Which session' })}
               </label>
               <select
                 value={scopeId}
@@ -296,7 +283,7 @@ export const RoleGrants: React.FC<{ event: EventProgramme | null }> = ({ event }
                     {speaker.email || t({ ne: 'इमेल छैन', en: 'no email on file' })}
                   </p>
                   <p className="text-[12px] text-[#6E7C8E] mt-1">
-                    {speaker.sessions.map((s) => `${s.title} (${s.meeting})`).join(' · ')}
+                    {speaker.sessions.map((s) => `${s.title} (${s.event})`).join(' · ')}
                   </p>
                 </div>
                 <span className="ml-auto flex-none">

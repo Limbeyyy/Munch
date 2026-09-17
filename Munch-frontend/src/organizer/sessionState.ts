@@ -17,7 +17,7 @@ interface Timed {
   duration_minutes: number;
 }
 
-/** Just enough of the meeting to know whether the day is done with it. */
+/** Just enough of the event to know whether the day is done with it. */
 interface Holder {
   status: string;
 }
@@ -30,64 +30,64 @@ interface Holder {
  * calling that "upcoming" a week later is simply wrong.
  *
  * But "never started" is a final judgement, and it cannot be made while
- * the meeting is still going: a session whose slot has slipped can still
+ * the event is still going: a session whose slot has slipped can still
  * be put on stage, and saying otherwise while the host is in the room
- * contradicts the meeting's own state. Pass the meeting and an overrun
- * session reads as overdue until the meeting itself is over.
+ * contradicts the event's own state. Pass the event and an overrun
+ * session reads as overdue until the event itself is over.
  */
 export const sessionState = (
   session: Timed,
   now: number = Date.now(),
-  meeting?: Holder
+  event?: Holder
 ): SessionState => {
   if (session.status === 'live') return 'live';
   if (session.status === 'done') return 'finished';
   if (session.status === 'skipped') return 'skipped';
 
-  // The meeting is over and this was never put on stage, so it never
+  // The event is over and this was never put on stage, so it never
   // happened - whatever its own slot says. Its slot may well still be
   // ahead: the running order slides forward as the day runs late, so a
   // talk nobody reached is often left sitting in the future, and reading
-  // that as "upcoming" after the meeting has ended promises a talk that
+  // that as "upcoming" after the event has ended promises a talk that
   // is not going to happen.
-  if (meeting && meeting.status === 'ended') return 'never-started';
+  if (event && event.status === 'ended') return 'never-started';
 
 
   const endsAt = +new Date(session.starts_at) + session.duration_minutes * 60000;
   if (now <= endsAt) return 'upcoming';
 
   // Its slot has passed. Whether that is the end of the story depends on
-  // whether the meeting holding it has finished.
-  if (meeting) return 'overdue';
+  // whether the event holding it has finished.
+  if (event) return 'overdue';
   return 'never-started';
 };
 
-export type MeetingState = 'upcoming' | 'live' | 'finished' | 'never-started';
+export type EventState = 'upcoming' | 'live' | 'finished' | 'never-started';
 
-interface TimedMeeting {
+interface TimedEvent {
   status: string;
   scheduled_end: string;
   started_at?: string | null;
 }
 
 /**
- * What a meeting's state reads as.
+ * What a event's state reads as.
  *
  * Six screens worked this out for themselves and none of them knew that a
- * meeting can end without ever having run - closed automatically when its
+ * event can end without ever having run - closed automatically when its
  * time ran out, with nobody having opened it. That reads as "Finished",
  * which claims something happened. It did not.
  */
-export const meetingState = (
-  meeting: TimedMeeting,
+export const eventState = (
+  event: TimedEvent,
   now: number = Date.now()
-): MeetingState => {
-  if (meeting.status === 'active') return 'live';
-  if (meeting.status === 'ended') {
-    return meeting.started_at ? 'finished' : 'never-started';
+): EventState => {
+  if (event.status === 'active') return 'live';
+  if (event.status === 'ended') {
+    return event.started_at ? 'finished' : 'never-started';
   }
   // Still scheduled: yet to come, or its window went by without it.
-  return now > +new Date(meeting.scheduled_end) ? 'never-started' : 'upcoming';
+  return now > +new Date(event.scheduled_end) ? 'never-started' : 'upcoming';
 };
 
 export const SESSION_STATE_LABEL: Record<SessionState, Pair> = {
@@ -116,15 +116,15 @@ export const SESSION_STATE_TONE: Record<
 export const isPast = (state: SessionState) =>
   state === 'finished' || state === 'never-started' || state === 'skipped';
 
-export const MEETING_STATE_LABEL: Record<MeetingState, Pair> = {
+export const EVENT_STATE_LABEL: Record<EventState, Pair> = {
   upcoming: { ne: 'आउँदै', en: 'Upcoming' },
   live: { ne: 'चलिरहेको', en: 'Live' },
   finished: { ne: 'सकियो', en: 'Finished' },
   'never-started': { ne: 'सुरु नै भएन', en: 'Never started' },
 };
 
-export const MEETING_STATE_TONE: Record<
-  MeetingState,
+export const EVENT_STATE_TONE: Record<
+  EventState,
   'default' | 'ok' | 'live' | 'warn' | 'draft' | 'lock'
 > = {
   upcoming: 'draft',
@@ -147,7 +147,7 @@ export const ENTRY_WINDOW_MINUTES = 15;
  *
  * Starting early is not refused any more: it brings the talk, and the rest
  * of the day, forward to now, which is what the host means by pressing it.
- * Half a day early they do not mean it - that is next week's meeting being
+ * Half a day early they do not mean it - that is next week's event being
  * opened by mistake - and the server says the same, so the button is off
  * rather than producing a refusal.
  */

@@ -22,8 +22,8 @@ export const DriveIntegrationPage: React.FC = () => {
     }
   };
 
-  const handleToggleSync = async (meetingId: string, enabled: boolean) => {
-    await setSyncEnabled(meetingId, !enabled);
+  const handleToggleSync = async (eventId: string, enabled: boolean) => {
+    await setSyncEnabled(eventId, !enabled);
   };
 
   return (
@@ -72,10 +72,10 @@ export const DriveIntegrationPage: React.FC = () => {
             <div className="space-y-6">
               <div className="border-l-4 border-blue-500 pl-4">
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  Auto-sync Meeting Artifacts
+                  Auto-sync Event Artifacts
                 </h3>
                 <p className="text-gray-600 mb-4">
-                  Automatically sync meeting documents, recordings, and transcripts to Google Drive.
+                  Automatically sync event documents, recordings, and transcripts to Google Drive.
                 </p>
 
                 <label className="flex items-center gap-3">
@@ -84,7 +84,7 @@ export const DriveIntegrationPage: React.FC = () => {
                     defaultChecked={syncStatus?.sync_enabled}
                     onChange={(e) =>
                       syncStatus &&
-                      handleToggleSync(syncStatus.meeting_id, !syncStatus.sync_enabled)
+                      handleToggleSync(syncStatus.event_id, !syncStatus.sync_enabled)
                     }
                     className="w-4 h-4 rounded border-gray-300"
                   />
@@ -125,10 +125,10 @@ export const DriveIntegrationPage: React.FC = () => {
             Why integrate with Google Drive?
           </h3>
           <ul className="space-y-2 text-gray-700">
-            <li>✓ Automatically backup all meeting artifacts</li>
+            <li>✓ Automatically backup all event artifacts</li>
             <li>✓ Easy access to documents from any device</li>
             <li>✓ Collaborative editing with team members</li>
-            <li>✓ Centralized storage for all meetings</li>
+            <li>✓ Centralized storage for all events</li>
             <li>✓ Version history and recovery options</li>
           </ul>
         </div>

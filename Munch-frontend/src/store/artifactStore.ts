@@ -12,7 +12,7 @@ interface ArtifactState {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 
-  fetchArtifacts: (meetingId: string) => Promise<void>;
+  fetchArtifacts: (eventId: string) => Promise<void>;
   fetchArtifact: (id: string) => Promise<void>;
   createArtifact: (data: Partial<Artifact>) => Promise<void>;
   deleteArtifact: (id: string) => Promise<void>;
@@ -31,7 +31,7 @@ export const useArtifactStore = create<ArtifactState>((set) => ({
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
 
-  fetchArtifacts: async (meetingId) => {
+  fetchArtifacts: async (eventId) => {
     set({ loading: true, error: null });
     try {
       // API call here

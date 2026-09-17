@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { EventProgramme, MeetingDraft, SessionDraft } from '../../types';
+import { Event, EventDraft, SessionDraft } from '../../types';
 import { confirmSpacing } from '../confirmSpacing';
 import { sessionGap, useSessionGap } from '../sessionGap';
 import { errorText } from '../errors';
@@ -10,12 +10,12 @@ import { Btn, Card, Chip, Empty, Head, Panel } from '../ui';
 import { SESSION_STATE_LABEL, SESSION_STATE_TONE, sessionState } from '../sessionState';
 import { Modal } from '../OrganizerShell';
 import {
-  MeetingDraftFields, emptyMeeting, missingSpeakerDetails,
-  toApiMeeting, toLocalInput as toLocalDay,
-} from '../MeetingDraftFields';
+  EventDraftFields, emptyEvent, missingSpeakerDetails,
+  toApiEvent, toLocalInput as toLocalDay,
+} from '../EventDraftFields';
 import {
-  PlannedMeeting, PlannedSession,
-  applyEdit, countChanges, hallsInUse, pendingChanges, reflowMeeting, setHall,
+  PlannedEvent, PlannedSession,
+  applyEdit, countChanges, hallsInUse, pendingChanges, reflowEvent, setHall,
   swapSessions, toPlan, whyNotSwap,
 } from '../schedule';
 
@@ -33,7 +33,7 @@ const COLUMNS = '28px minmax(200px,1fr) 150px 200px 84px 124px 112px 36px';
 /** Narrower than this the columns would be squashed, so the table scrolls. */
 const TABLE_MIN_WIDTH = 1004;
 
-const gapBefore = (plan: PlannedMeeting[], index: number) =>
+const gapBefore = (plan: PlannedEvent[], index: number) =>
   index === 0 ? null : Math.round((plan[index].startsAt - plan[index - 1].endsAt) / 60000);
 
 interface Props {
@@ -50,16 +50,16 @@ interface Props {
 export const AgendaView: React.FC<Props> = ({ onChanged }) => {
   const { t, num } = useOrganizer();
 
-  const [events, setEvents] = useState<EventProgramme[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [eventId, setEventId] = useState('');
-  const [plan, setPlan] = useState<PlannedMeeting[]>([]);
+  const [plan, setPlan] = useState<PlannedEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   /** The session currently being removed, so only its own control locks. */
   const [removing, setRemoving] = useState<string | null>(null);
-  const [newMeeting, setNewMeeting] = useState(false);
-  /** The meeting a session is being added to, if any. */
-  const [addingTo, setAddingTo] = useState<PlannedMeeting | null>(null);
+  const [newEvent, setNewEvent] = useState(false);
+  /** The event a session is being added to, if any. */
+  const [addingTo, setAddingTo] = useState<PlannedEvent | null>(null);
   /** The session being dragged, and the row it is hovering over. */
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
@@ -75,7 +75,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
       setEvents(list);
       const chosen = list.find((e) => e.id === eventId) ?? list[0];
       setEventId(chosen?.id ?? '');
-      setPlan(chosen ? toPlan(chosen.meetings) : []);
+      setPlan(chosen ? toPlan([chosen]) : []);
     } catch {
       toast.error(t({ ne: 'कार्यक्रम ल्याउन सकिएन', en: 'Could not load the programme' }));
     } finally {
@@ -94,21 +94,21 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
     )) return;
     setEventId(id);
     const chosen = events.find((e) => e.id === id);
-    setPlan(chosen ? toPlan(chosen.meetings) : []);
+    setPlan(chosen ? toPlan([chosen]) : []);
   };
 
   const revert = () => {
-    setPlan(event ? toPlan(event.meetings) : []);
+    setPlan(event ? toPlan([event]) : []);
   };
 
   /** Write every row the reflow touched, then reload from the server. */
   const save = async () => {
-    const { sessions, meetings } = pendingChanges(plan);
-    if (sessions.length === 0 && meetings.length === 0) return;
+    const { sessions, events } = pendingChanges(plan);
+    if (sessions.length === 0 && events.length === 0) return;
 
     try {
       setSaving(true);
-      // The whole rearrangement goes in one transaction. Meeting windows
+      // The whole rearrangement goes in one transaction. Event windows
       // follow their running order on the server, so they are not sent
       // separately - and cannot end up disagreeing with it.
       if (sessions.length > 0) {
@@ -122,7 +122,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
         );
       }
 
-      const changed = sessions.length + meetings.length;
+      const changed = sessions.length + events.length;
       toast.success(
         t({
           ne: `${num(changed)} परिवर्तन सेभ भयो`,
@@ -133,7 +133,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
       const list = await apiClient.listEvents();
       setEvents(list);
       const chosen = list.find((e) => e.id === eventId);
-      setPlan(chosen ? toPlan(chosen.meetings) : []);
+      setPlan(chosen ? toPlan([chosen]) : []);
       onChanged();
     } catch (e: any) {
       toast.error(errorText(e, t({ ne: 'सेभ गर्न सकिएन', en: 'Could not save' })));
@@ -178,10 +178,10 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
    */
   const swap = (fromId: string, toId: string) => {
     const refusal = whyNotSwap(plan, fromId, toId);
-    if (refusal === 'other-meeting') {
+    if (refusal === 'other-event') {
       toast.error(t({
         ne: 'सत्रहरू एउटै बैठकभित्र मात्र ठाउँ साट्न सक्छन्।',
-        en: 'Sessions can only change places within the same meeting.',
+        en: 'Sessions can only change places within the same event.',
       }));
       return;
     }
@@ -207,14 +207,14 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
   };
 
   /** Alt with an arrow moves a row, for anybody not using a mouse. */
-  const nudge = (meeting: PlannedMeeting, session: PlannedSession, by: -1 | 1) => {
-    const order = meeting.sessions;
+  const nudge = (event: PlannedEvent, session: PlannedSession, by: -1 | 1) => {
+    const order = event.sessions;
     const at = order.findIndex((s) => s.id === session.id);
     const neighbour = order[at + by];
     if (neighbour) swap(session.id, neighbour.id);
   };
 
-  const sessionRow = (meeting: PlannedMeeting, session: PlannedSession) => {
+  const sessionRow = (event: PlannedEvent, session: PlannedSession) => {
     const locked = session.status === 'done';
     const fixed = locked || session.status === 'live';
     return (
@@ -251,8 +251,8 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
           onDragEnd={() => { setDragging(null); setOver(null); }}
           onKeyDown={(e) => {
             if (!e.altKey) return;
-            if (e.key === 'ArrowUp') { e.preventDefault(); nudge(meeting, session, -1); }
-            if (e.key === 'ArrowDown') { e.preventDefault(); nudge(meeting, session, 1); }
+            if (e.key === 'ArrowUp') { e.preventDefault(); nudge(event, session, -1); }
+            if (e.key === 'ArrowDown') { e.preventDefault(); nudge(event, session, 1); }
           }}
           disabled={fixed}
           aria-label={t({
@@ -356,8 +356,8 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
                 </Btn>
               </>
             )}
-            <Btn tone="amber" onClick={() => setNewMeeting(true)}>
-              {t({ ne: '+ बैठक बनाउनुहोस्', en: '+ Create meeting' })}
+            <Btn tone="amber" onClick={() => setNewEvent(true)}>
+              {t({ ne: '+ बैठक बनाउनुहोस्', en: '+ Create event' })}
             </Btn>
           </>
         }
@@ -391,7 +391,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
             >
               {events.map((e) => (
                 <option key={e.id} value={e.id}>
-                  {e.title} · {new Date(e.event_date).toLocaleDateString()}
+                  {e.title} · {new Date(e.event_date ?? e.scheduled_start).toLocaleDateString()}
                 </option>
               ))}
             </select>
@@ -408,13 +408,13 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
 
           <div className="flex flex-col gap-3.5">
             {plan.length === 0 && (
-              <Panel><Empty>{t({ ne: 'यो कार्यक्रममा बैठक छैन।', en: 'This event has no meetings.' })}</Empty></Panel>
+              <Panel><Empty>{t({ ne: 'यो कार्यक्रममा बैठक छैन।', en: 'This event has no events.' })}</Empty></Panel>
             )}
 
-            {plan.map((meeting, index) => {
+            {plan.map((event, index) => {
               const gap = gapBefore(plan, index);
               return (
-                <div key={meeting.id}>
+                <div key={event.id}>
                   {gap !== null && (
                     <p
                       className={`text-[12px] mb-1.5 ps-1 ${
@@ -431,39 +431,39 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
                   <Panel
                     title={
                       <span className="flex items-center gap-2 min-w-0">
-                        <span className="text-[15.5px] font-semibold truncate">{meeting.title}</span>
-                        <span className="text-[12px] font-mono text-navy-700">{meeting.meetingCode}</span>
+                        <span className="text-[15.5px] font-semibold truncate">{event.title}</span>
+                        <span className="text-[12px] font-mono text-navy-700">{event.eventCode}</span>
                       </span>
                     }
                     aside={
                       <span className="flex items-center gap-2 text-[12.5px] text-[#6E7C8E]">
                         <span className="tabular-nums">
-                          {clock(meeting.startsAt)}–{clock(meeting.endsAt)}
+                          {clock(event.startsAt)}–{clock(event.endsAt)}
                         </span>
-                        {meeting.moved && <Chip tone="warn">{t({ ne: 'सर्‍यो', en: 'Moved' })}</Chip>}
-                        <Chip>{num(meeting.sessions.length)} {t({ ne: 'सत्र', en: 'sessions' })}</Chip>
+                        {event.moved && <Chip tone="warn">{t({ ne: 'सर्‍यो', en: 'Moved' })}</Chip>}
+                        <Chip>{num(event.sessions.length)} {t({ ne: 'सत्र', en: 'sessions' })}</Chip>
                       </span>
                     }
                     actions={
                       <>
-                      <Btn sm onClick={() => setAddingTo(meeting)}>
+                      <Btn sm onClick={() => setAddingTo(event)}>
                         {t({ ne: '+ सत्र', en: '+ Session' })}
                       </Btn>
                       <input
                         type="datetime-local"
-                        value={toLocalInput(meeting.startsAt)}
-                        title={t({ ne: 'पूरा बैठक सार्नुहोस्', en: 'Move the whole meeting' })}
+                        value={toLocalInput(event.startsAt)}
+                        title={t({ ne: 'पूरा बैठक सार्नुहोस्', en: 'Move the whole event' })}
                         onChange={(e) => {
                           const next = new Date(e.target.value).getTime();
-                          if (!Number.isNaN(next)) setPlan((p) => reflowMeeting(p, meeting.id, next, gapMinutes));
+                          if (!Number.isNaN(next)) setPlan((p) => reflowEvent(p, event.id, next, gapMinutes));
                         }}
                         className="border border-navy-800/15 rounded-md px-2 py-1 text-[12.5px] bg-white"
                       />
                       </>
                     }
                   >
-                    {meeting.sessions.length === 0 ? (
-                      <Empty>{t({ ne: 'यो बैठकमा सत्र छैन।', en: 'No sessions in this meeting.' })}</Empty>
+                    {event.sessions.length === 0 ? (
+                      <Empty>{t({ ne: 'यो बैठकमा सत्र छैन।', en: 'No sessions in this event.' })}</Empty>
                     ) : (
                       <div className="overflow-x-auto">
                         <div
@@ -479,7 +479,7 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
                           <span className="text-end">{t({ ne: 'अवस्था', en: 'Status' })}</span>
                           <span />
                         </div>
-                        {meeting.sessions.map((s) => sessionRow(meeting, s))}
+                        {event.sessions.map((s) => sessionRow(event, s))}
                       </div>
                     )}
                   </Panel>
@@ -490,18 +490,18 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
         </>
       )}
 
-      {newMeeting && (
-        <NewMeetingModal
+      {newEvent && (
+        <NewEventModal
           events={events}
           defaultEventId={eventId}
-          onClose={() => setNewMeeting(false)}
-          onCreated={async () => { setNewMeeting(false); await load(); onChanged(); }}
+          onClose={() => setNewEvent(false)}
+          onCreated={async () => { setNewEvent(false); await load(); onChanged(); }}
         />
       )}
 
       {addingTo && (
         <NewSessionModal
-          meeting={addingTo}
+          event={addingTo}
           onClose={() => setAddingTo(null)}
           onCreated={async () => { setAddingTo(null); await load(); onChanged(); }}
         />
@@ -511,13 +511,13 @@ export const AgendaView: React.FC<Props> = ({ onChanged }) => {
 };
 
 /**
- * Create a meeting, inside a programme or on its own.
+ * Create a event, inside a programme or on its own.
  *
  * The event is a choice rather than a requirement: a one-off briefing is a
- * meeting too, and does not need a day built around it.
+ * event too, and does not need a day built around it.
  */
-const NewMeetingModal: React.FC<{
-  events: EventProgramme[];
+const NewEventModal: React.FC<{
+  events: Event[];
   defaultEventId: string;
   onClose: () => void;
   onCreated: () => void;
@@ -527,25 +527,25 @@ const NewMeetingModal: React.FC<{
   const [eventId, setEventId] = useState<string>(defaultEventId ?? '');
   const day =
     events.find((e) => e.id === eventId)?.event_date ?? toLocalDay(new Date()).slice(0, 10);
-  const [meeting, setMeeting] = useState<MeetingDraft>(() => emptyMeeting(day, 9));
+  const [event, setCurrentEvent] = useState<EventDraft>(() => emptyEvent(day, 9));
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
-    if (!meeting.title.trim()) {
-      toast.error(t({ ne: 'बैठकको नाम लेख्नुहोस्', en: 'Give the meeting a name' }));
+    if (!event.title.trim()) {
+      toast.error(t({ ne: 'बैठकको नाम लेख्नुहोस्', en: 'Give the event a name' }));
       return;
     }
-    const named = meeting.sessions.filter((x) => x.title.trim());
+    const named = event.sessions.filter((x) => x.title.trim());
     if (named.length === 0) {
       toast.error(
         t({
           ne: 'कम्तीमा एउटा सत्र चाहिन्छ',
-          en: 'A meeting needs at least one session',
+          en: 'A event needs at least one session',
         })
       );
       return;
     }
-    const incomplete = missingSpeakerDetails(meeting);
+    const incomplete = missingSpeakerDetails(event);
     if (incomplete.length > 0) {
       toast.error(
         t({
@@ -559,19 +559,19 @@ const NewMeetingModal: React.FC<{
     // The gap is mandatory, so a running order typed too tight is put right
     // here - with the organizer agreeing to the new times - rather than
     // being bounced back by the server.
-    const plan = confirmSpacing([meeting], window.confirm, gapMinutes);
+    const plan = confirmSpacing([event], window.confirm, gapMinutes);
     if (!plan) return;
 
     try {
       setBusy(true);
-      const created = await apiClient.createMeetingWithSessions(
-        toApiMeeting(plan[0]),
+      const created = await apiClient.createEventWithSessions(
+        toApiEvent(plan[0]),
         eventId || null
       );
       toast.success(
         t({
-          ne: `${created.title} बन्यो (${created.meeting_code})`,
-          en: `${created.title} created (${created.meeting_code})`,
+          ne: `${created.title} बन्यो (${created.code})`,
+          en: `${created.title} created (${created.code})`,
         })
       );
       onCreated();
@@ -585,10 +585,10 @@ const NewMeetingModal: React.FC<{
       open
       wide
       onClose={onClose}
-      title={t({ ne: 'नयाँ बैठक', en: 'New meeting' })}
+      title={t({ ne: 'नयाँ बैठक', en: 'New event' })}
       lede={t({
         ne: 'बैठक कुनै कार्यक्रमभित्र राख्न सकिन्छ, वा एक्लै। सत्रचाहिँ कम्तीमा एउटा चाहिन्छ।',
-        en: 'A meeting can sit inside a programme or stand on its own. Either way it needs at least one session.',
+        en: 'A event can sit inside a programme or stand on its own. Either way it needs at least one session.',
       })}
       footer={
         <>
@@ -608,31 +608,31 @@ const NewMeetingModal: React.FC<{
         className="w-full border border-navy-800/15 rounded-lg px-2.5 py-2 text-[14px] bg-white mb-3.5"
       >
         <option value="">
-          {t({ ne: 'कुनै पनि होइन — एक्लै बैठक', en: 'None — a meeting on its own' })}
+          {t({ ne: 'कुनै पनि होइन — एक्लै बैठक', en: 'None — a event on its own' })}
         </option>
         {events.map((e) => (
           <option key={e.id} value={e.id}>
-            {e.title} · {new Date(e.event_date).toLocaleDateString()}
+            {e.title} · {new Date(e.event_date ?? e.scheduled_start).toLocaleDateString()}
           </option>
         ))}
       </select>
 
-      <MeetingDraftFields meeting={meeting} onChange={setMeeting} />
+      <EventDraftFields event={event} onChange={setCurrentEvent} />
     </Modal>
   );
 };
 
-/** Add one more session to a meeting that already exists. */
+/** Add one more session to a event that already exists. */
 const NewSessionModal: React.FC<{
-  meeting: PlannedMeeting;
+  event: PlannedEvent;
   onClose: () => void;
   onCreated: () => void;
-}> = ({ meeting, onClose, onCreated }) => {
+}> = ({ event, onClose, onCreated }) => {
   const { t } = useOrganizer();
 
   // A new session picks up after the last one has finished and the
   // mandatory gap has passed, in the same hall.
-  const last = meeting.sessions[meeting.sessions.length - 1];
+  const last = event.sessions[event.sessions.length - 1];
   const [draft, setDraft] = useState<SessionDraft>(() => ({
     title: '',
     speaker_name: '',
@@ -644,7 +644,7 @@ const NewSessionModal: React.FC<{
       new Date(
         last
           ? last.startsAt + (last.durationMinutes + sessionGap()) * 60000
-          : meeting.startsAt
+          : event.startsAt
       )
     ),
     duration_minutes: 30,
@@ -668,7 +668,7 @@ const NewSessionModal: React.FC<{
     try {
       setBusy(true);
       await apiClient.createSession({
-        meeting: meeting.id,
+        event: event.id,
         title: draft.title.trim(),
         speaker_name: draft.speaker_name,
         speaker_email: draft.speaker_email,
@@ -690,7 +690,7 @@ const NewSessionModal: React.FC<{
       open
       onClose={onClose}
       title={t({ ne: 'सत्र थप्नुहोस्', en: 'Add a session' })}
-      lede={meeting.title}
+      lede={event.title}
       footer={
         <>
           <Btn onClick={onClose}>{t({ ne: 'रद्द', en: 'Cancel' })}</Btn>

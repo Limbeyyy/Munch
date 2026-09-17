@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../../services/api';
-import { AttendanceReport, Meeting } from '../../types';
+import { AttendanceReport, Event } from '../../types';
 import { useOrganizer } from '../i18n';
 import { openAsSheet } from '../sheets';
 import { BarRow, Btn, Empty, Head, Kpi, Panel } from '../ui';
 
-interface Props { meetings: Meeting[]; }
+interface Props { events: Event[]; }
 
 /** What the event actually produced, drawn from real attendance figures. */
-export const ReportsView: React.FC<Props> = ({ meetings }) => {
+export const ReportsView: React.FC<Props> = ({ events }) => {
   const { t, num } = useOrganizer();
   const [reports, setReports] = useState<Record<string, AttendanceReport>>({});
   const [segmentCounts, setSegmentCounts] = useState<Record<string, number>>({});
@@ -18,9 +18,9 @@ export const ReportsView: React.FC<Props> = ({ meetings }) => {
     let cancelled = false;
     const gather = async () => {
       const [att, segs, res] = await Promise.all([
-        Promise.allSettled(meetings.map((m) => apiClient.getAttendance(m.id).then((r) => [m.id, r] as const))),
-        Promise.allSettled(meetings.map((m) => apiClient.getMeetingSegments(m.meeting_code).then((s) => [m.id, s.length] as const))),
-        Promise.allSettled(meetings.map((m) => apiClient.getResources(m.id).then((r) => [m.id, r.length] as const))),
+        Promise.allSettled(events.map((m) => apiClient.getAttendance(m.id).then((r) => [m.id, r] as const))),
+        Promise.allSettled(events.map((m) => apiClient.getEventSegments(m.code).then((s) => [m.id, s.length] as const))),
+        Promise.allSettled(events.map((m) => apiClient.getResources(m.id).then((r) => [m.id, r.length] as const))),
       ]);
       if (cancelled) return;
 
@@ -35,7 +35,7 @@ export const ReportsView: React.FC<Props> = ({ meetings }) => {
     };
     gather();
     return () => { cancelled = true; };
-  }, [meetings]);
+  }, [events]);
 
   const totals = useMemo(() => {
     const list = Object.values(reports);
@@ -56,10 +56,10 @@ export const ReportsView: React.FC<Props> = ({ meetings }) => {
 
   const exportReport = () => {
     const head = ['session', 'code', 'status', 'invited', 'attended', 'guests', 'transcript_lines', 'files'];
-    const rows = meetings.map((m) => {
+    const rows = events.map((m) => {
       const r = reports[m.id];
       return [
-        m.title, m.meeting_code, m.status,
+        m.title, m.code, m.status,
         r?.expected_from_invites ?? 0, r?.attended_count ?? 0, r?.guests_admitted ?? 0,
         segmentCounts[m.id] ?? 0, resourceCounts[m.id] ?? 0,
       ];
@@ -76,7 +76,7 @@ export const ReportsView: React.FC<Props> = ({ meetings }) => {
           en: 'The evidence donors, boards and ministries ask for, built from real attendance.',
         }}
         actions={
-          <Btn tone="solid" onClick={exportReport} disabled={meetings.length === 0}>
+          <Btn tone="solid" onClick={exportReport} disabled={events.length === 0}>
             {t({ ne: 'गुगल शीटमा निकाल्नुहोस्', en: 'Export to Sheets' })}
           </Btn>
         }
@@ -97,10 +97,10 @@ export const ReportsView: React.FC<Props> = ({ meetings }) => {
       <div className="grid gap-4 lg:grid-cols-2 items-start">
         <Panel title={t({ ne: 'सत्रगत उपस्थिति', en: 'Turnout by session' })}>
           <div className="px-4 py-3">
-            {meetings.length === 0 ? (
+            {events.length === 0 ? (
               <Empty>{t({ ne: 'कुनै सत्र छैन।', en: 'No sessions yet.' })}</Empty>
             ) : (
-              meetings.map((m) => {
+              events.map((m) => {
                 const r = reports[m.id];
                 const expected = r?.expected_total || r?.attended_count || 0;
                 const pct = expected ? Math.round(((r?.attended_count ?? 0) / expected) * 100) : 0;
@@ -112,7 +112,7 @@ export const ReportsView: React.FC<Props> = ({ meetings }) => {
 
         <Panel title={t({ ne: 'सत्रले के छोड्यो', en: 'What each session produced' })}>
           <div className="px-4 py-3">
-            {meetings.length === 0 ? (
+            {events.length === 0 ? (
               <Empty>{t({ ne: 'कुनै सत्र छैन।', en: 'No sessions yet.' })}</Empty>
             ) : (
               <div className="overflow-x-auto">
@@ -131,7 +131,7 @@ export const ReportsView: React.FC<Props> = ({ meetings }) => {
                     </tr>
                   </thead>
                   <tbody>
-                    {meetings.map((m) => (
+                    {events.map((m) => (
                       <tr key={m.id}>
                         <td className="px-3 py-2 border-b border-navy-800/[.08] text-[13px] truncate max-w-[200px]">{m.title}</td>
                         <td className="px-3 py-2 border-b border-navy-800/[.08] text-[13px] tabular-nums">{num(segmentCounts[m.id] ?? 0)}</td>

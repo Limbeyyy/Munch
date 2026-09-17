@@ -1,5 +1,5 @@
-import { GAP_MINUTES, applyEdit, reflowMeeting, toPlan, countChanges } from '../schedule';
-import { EventMeeting } from '../../types';
+import { GAP_MINUTES, applyEdit, reflowEvent, toPlan, countChanges } from '../schedule';
+import { Event } from '../../types';
 
 const at = (h: number, m = 0) => new Date(Date.UTC(2026, 8, 6, h, m)).toISOString();
 const ms = (h: number, m = 0) => Date.UTC(2026, 8, 6, h, m);
@@ -9,7 +9,7 @@ const hhmm = (v: number) => {
 };
 
 const mkSession = (id: string, h: number, m: number, mins: number, status: any = 'scheduled') => ({
-  id, meeting: 'day', title: id, description: '', speaker_name: '', hall: '',
+  id, event: 'day', title: id, description: '', speaker_name: '', hall: '',
   speaker_visibility: 'private' as const,
   starts_at: at(h, m), duration_minutes: mins, ends_at: at(h, m), position: 0,
   status, started_at: null, ended_at: null, attendance_count: 0,
@@ -17,10 +17,11 @@ const mkSession = (id: string, h: number, m: number, mins: number, status: any =
 });
 
 /** The organizer's own day: A 10:00, B 11:15, C 13:00, D 14:15 — all an hour. */
-const day = (): EventMeeting[] => [{
-  id: 'day', meeting_code: 'DAY', title: 'Day', description: '',
+const day = (): Event[] => [{
+  id: 'day', code: 'DAY', title: 'Day', description: '',
   status: 'scheduled', scheduled_start: at(10), scheduled_end: at(15, 15),
   participant_count: 0, session_count: 4,
+  created_at: at(0), updated_at: at(0),
   sessions: [
     mkSession('A', 10, 0, 60),
     mkSession('B', 11, 15, 60),
@@ -106,14 +107,14 @@ describe('durations', () => {
 describe('what has already happened', () => {
   it('never moves a finished session', () => {
     const data = day();
-    data[0].sessions[1] = mkSession('B', 11, 15, 60, 'done');
+    data[0].sessions![1] = mkSession('B', 11, 15, 60, 'done');
     const plan = applyEdit(toPlan(data), 'A', { durationMinutes: 240 });
     expect(times(plan).B).toBe('11:15');
   });
 
   it('will not place a session onto a finished one', () => {
     const data = day();
-    data[0].sessions[2] = mkSession('C', 13, 0, 60, 'done');
+    data[0].sessions![2] = mkSession('C', 13, 0, 60, 'done');
     const plan = applyEdit(toPlan(data), 'A', { startsAt: ms(13, 0) });
     // 13:00 is taken by something that already ran, so A goes after it.
     expect(times(plan).C).toBe('13:00');
@@ -121,42 +122,44 @@ describe('what has already happened', () => {
   });
 });
 
-describe('meetings', () => {
-  const twoMeetings = (): EventMeeting[] => [
+describe('events', () => {
+  const twoEvents = (): Event[] => [
     {
-      id: 'morning', meeting_code: 'MRN', title: 'Morning', description: '',
+      id: 'morning', code: 'MRN', title: 'Morning', description: '',
       status: 'scheduled', scheduled_start: at(9), scheduled_end: at(12),
       participant_count: 0, session_count: 2,
+      created_at: at(0), updated_at: at(0),
       sessions: [mkSession('opening', 9, 0, 60), mkSession('budget', 11, 0, 60)],
     },
     {
-      id: 'evening', meeting_code: 'EVE', title: 'Evening', description: '',
+      id: 'evening', code: 'EVE', title: 'Evening', description: '',
       status: 'scheduled', scheduled_start: at(14), scheduled_end: at(16),
       participant_count: 0, session_count: 1,
+      created_at: at(0), updated_at: at(0),
       sessions: [mkSession('closing', 14, 0, 120)],
     },
   ];
 
   it('keeps a deliberate lunch break rather than closing it', () => {
-    const plan = applyEdit(toPlan(twoMeetings()), 'opening', { durationMinutes: 90 });
+    const plan = applyEdit(toPlan(twoEvents()), 'opening', { durationMinutes: 90 });
     expect(hhmm(plan[1].startsAt)).toBe('14:00');
     expect(plan[1].moved).toBe(false);
   });
 
-  it('opens the minimum gap when one meeting overruns the next', () => {
-    const plan = applyEdit(toPlan(twoMeetings()), 'budget', { durationMinutes: 240 });
+  it('opens the minimum gap when one event overruns the next', () => {
+    const plan = applyEdit(toPlan(twoEvents()), 'budget', { durationMinutes: 240 });
     expect(hhmm(plan[0].endsAt)).toBe('15:00');
     expect(hhmm(plan[1].startsAt)).toBe('15:15');
   });
 
-  it('moves a whole meeting with its running order', () => {
-    const plan = reflowMeeting(toPlan(twoMeetings()), 'morning', ms(10, 0));
+  it('moves a whole event with its running order', () => {
+    const plan = reflowEvent(toPlan(twoEvents()), 'morning', ms(10, 0));
     expect(hhmm(plan[0].sessions[0].startsAt)).toBe('10:00');
     expect(hhmm(plan[0].sessions[1].startsAt)).toBe('12:00');
   });
 
-  it('will not move a meeting that is already running', () => {
-    const data = twoMeetings();
+  it('will not move a event that is already running', () => {
+    const data = twoEvents();
     data[1] = { ...data[1], status: 'active' };
     const plan = applyEdit(toPlan(data), 'budget', { durationMinutes: 240 });
     expect(hhmm(plan[1].startsAt)).toBe('14:00');

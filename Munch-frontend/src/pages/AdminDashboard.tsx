@@ -3,10 +3,10 @@ import { apiClient } from '../services/api';
 import toast from 'react-hot-toast';
 
 interface PlatformStats {
-  total_meetings: number;
-  active_meetings: number;
+  total_events: number;
+  active_events: number;
   total_participants: number;
-  meetings_last_30_days: number;
+  events_last_30_days: number;
   avg_engagement_score: number;
   platform_health: string;
 }
@@ -44,16 +44,16 @@ export const AdminDashboard: React.FC = () => {
           <p className="text-gray-600">Loading...</p>
         ) : stats ? (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {/* Total Meetings */}
+            {/* Total Events */}
             <div className="bg-white rounded-lg shadow p-6">
-              <h3 className="text-gray-600 text-sm font-medium mb-2">Total Meetings</h3>
-              <p className="text-3xl font-bold text-gray-800">{stats.total_meetings}</p>
+              <h3 className="text-gray-600 text-sm font-medium mb-2">Total Events</h3>
+              <p className="text-3xl font-bold text-gray-800">{stats.total_events}</p>
             </div>
 
-            {/* Active Meetings */}
+            {/* Active Events */}
             <div className="bg-white rounded-lg shadow p-6">
-              <h3 className="text-gray-600 text-sm font-medium mb-2">Active Meetings</h3>
-              <p className="text-3xl font-bold text-green-600">{stats.active_meetings}</p>
+              <h3 className="text-gray-600 text-sm font-medium mb-2">Active Events</h3>
+              <p className="text-3xl font-bold text-green-600">{stats.active_events}</p>
             </div>
 
             {/* Total Participants */}
@@ -64,8 +64,8 @@ export const AdminDashboard: React.FC = () => {
 
             {/* Last 30 Days */}
             <div className="bg-white rounded-lg shadow p-6">
-              <h3 className="text-gray-600 text-sm font-medium mb-2">Meetings (Last 30 Days)</h3>
-              <p className="text-3xl font-bold text-purple-600">{stats.meetings_last_30_days}</p>
+              <h3 className="text-gray-600 text-sm font-medium mb-2">Events (Last 30 Days)</h3>
+              <p className="text-3xl font-bold text-purple-600">{stats.events_last_30_days}</p>
             </div>
 
             {/* Avg Engagement */}

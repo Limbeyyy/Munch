@@ -23,8 +23,8 @@ const api = apiClient as jest.Mocked<typeof apiClient>;
 
 beforeEach(() => {
   window.sessionStorage.clear();
-  window.sessionStorage.setItem('guest_token', 'a-pass-for-a-meeting-that-ended');
-  window.sessionStorage.setItem('guest_meeting_code', 'RY0-SDV');
+  window.sessionStorage.setItem('guest_token', 'a-pass-for-a-event-that-ended');
+  window.sessionStorage.setItem('guest_event_code', 'RY0-SDV');
   window.sessionStorage.setItem('guest_name', 'Rahul Ingnam');
   (window as any).WebSocket = class {
     onmessage: any; onopen: any; onerror: any; onclose: any;
@@ -48,8 +48,8 @@ const show = () =>
 /**
  * A pass that no longer names anybody.
  *
- * A guest's pass belongs to one meeting and lasts as long as it does: when
- * the meeting ends everybody in it is forgotten, and the pass stops
+ * A guest's pass belongs to one event and lasts as long as it does: when
+ * the event ends everybody in it is forgotten, and the pass stops
  * resolving. A browser still holding one sat on this screen retrying a
  * socket that would never open, saying nothing at all - which is how a
  * guest ends up staring at a page that is never going to change.

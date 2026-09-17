@@ -403,7 +403,7 @@ class AMessageThatCannotBeSavedSaysSoTests(TransactionTestCase):
         comm = await self.a_guest_socket()
 
         with patch(
-            'src.apps.realtime.consumers.MeetingConsumer.save_chat_message',
+            'src.apps.realtime.consumers.EventConsumer.save_chat_message',
             side_effect=Exception('the database is a migration behind'),
         ):
             await comm.send_json_to({
@@ -428,7 +428,7 @@ class AMessageThatCannotBeSavedSaysSoTests(TransactionTestCase):
         await comm.receive_json_from()  # their own arrival
 
         with patch(
-            'src.apps.realtime.consumers.MeetingConsumer.save_chat_message',
+            'src.apps.realtime.consumers.EventConsumer.save_chat_message',
             side_effect=Exception('anything at all'),
         ):
             await comm.send_json_to({

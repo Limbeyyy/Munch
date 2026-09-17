@@ -6,7 +6,7 @@ import { FigmaIcon, FigmaIconName } from '../assets/icons';
  *
  * There are two rooms - the one account holders sit in and the one guests
  * are let into - and they are the same room to look at, because they are
- * the same meeting. What differs is what each person may do in it, not
+ * the same event. What differs is what each person may do in it, not
  * what it is made of. These lived inside the account holders' page until
  * the guests' one needed them too; nothing about them changed on the way
  * out, only where they live.

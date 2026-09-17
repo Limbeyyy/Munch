@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
-import { MeetingPhoto, PhotoFolder, PhotoPage } from '../types';
+import { EventPhoto, PhotoFolder, PhotoPage } from '../types';
 import { Pair, useOrganizer } from './i18n';
 import { Btn, Chip, Empty, Panel } from './ui';
 
@@ -31,7 +31,7 @@ const tintFor = (id: string) => {
  * revoked when the tile goes away.
  */
 export const PhotoImage: React.FC<{
-  photo: MeetingPhoto;
+  photo: EventPhoto;
   className?: string;
 }> = ({ photo, className = '' }) => {
   const { t } = useOrganizer();
@@ -79,15 +79,15 @@ export const PhotoImage: React.FC<{
 };
 
 /** Everything the two views need, fetched once. */
-const usePhotos = (meetingRef: string) => {
+const usePhotos = (eventRef: string) => {
   const { t } = useOrganizer();
   const [page, setPage] = useState<PhotoPage | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async (quiet = false) => {
-    if (!meetingRef) { setPage(null); setLoading(false); return; }
+    if (!eventRef) { setPage(null); setLoading(false); return; }
     try {
-      setPage(await apiClient.getPhotos(meetingRef));
+      setPage(await apiClient.getPhotos(eventRef));
     } catch {
       if (!quiet) {
         toast.error(t({ ne: 'तस्बिर ल्याउन सकिएन', en: 'Could not load the photographs' }));
@@ -95,7 +95,7 @@ const usePhotos = (meetingRef: string) => {
     } finally {
       setLoading(false);
     }
-  }, [meetingRef, t]);
+  }, [eventRef, t]);
 
   useEffect(() => { setLoading(true); load(); }, [load]);
 
@@ -107,7 +107,7 @@ const refusalText = (error: any, fallback: string) =>
   error?.response?.data?.error || fallback;
 
 const useUploader = (
-  meetingRef: string,
+  eventRef: string,
   onDone: () => void
 ): {
   pick: (folderId: string) => void;
@@ -133,7 +133,7 @@ const useUploader = (
     let added = 0;
     for (const file of chosen) {
       try {
-        await apiClient.uploadPhoto(meetingRef, folderId, file);
+        await apiClient.uploadPhoto(eventRef, folderId, file);
         added += 1;
       } catch (error) {
         toast.error(
@@ -184,20 +184,20 @@ const askForName = (t: (p: Pair) => string) =>
  * count rather than a preview.
  */
 export const PhotoUploads: React.FC<{
-  meetingRef: string;
-  /** The meeting room is dark; the dashboards are not. */
+  eventRef: string;
+  /** The event room is dark; the dashboards are not. */
   tone?: 'light' | 'dark';
-}> = ({ meetingRef, tone = 'light' }) => {
+}> = ({ eventRef, tone = 'light' }) => {
   const { t, num } = useOrganizer();
   const dark = tone === 'dark';
-  const { page, loading, reload } = usePhotos(meetingRef);
-  const { pick, busy, input } = useUploader(meetingRef, () => reload(true));
+  const { page, loading, reload } = usePhotos(eventRef);
+  const { pick, busy, input } = useUploader(eventRef, () => reload(true));
 
   const addFolder = async () => {
     const name = askForName(t);
     if (!name) return;
     try {
-      await apiClient.createPhotoFolder(meetingRef, name);
+      await apiClient.createPhotoFolder(eventRef, name);
       await reload(true);
       toast.success(t({ ne: 'फोल्डर बन्यो', en: 'Folder created' }));
     } catch (error) {
@@ -227,14 +227,14 @@ export const PhotoUploads: React.FC<{
 
       <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
         <p className={`text-[12px] ${dark ? 'text-gray-400' : 'text-[#6E7C8E]'}`}>
-          {page.meeting_is_finished
+          {page.event_is_finished
             ? t({
                 ne: 'कुन फोल्डरमा राख्ने, त्यहीँको अपलोड थिच्नुहोस्।',
                 en: 'Press upload on the folder it belongs in.',
               })
             : t({
                 ne: 'बैठक सकिएपछि तस्बिर थप्न मिल्छ।',
-                en: 'Photographs can be added once the meeting has finished.',
+                en: 'Photographs can be added once the event has finished.',
               })}
         </p>
         {page.can_arrange && (
@@ -295,7 +295,7 @@ export const PhotoUploads: React.FC<{
                     ? undefined
                     : t({
                         ne: 'बैठक सकिएपछि खुल्छ',
-                        en: 'Opens once the meeting has finished',
+                        en: 'Opens once the event has finished',
                       })
                 }
                 className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50 flex-none"
@@ -314,7 +314,7 @@ export const PhotoUploads: React.FC<{
                     ? undefined
                     : t({
                         ne: 'बैठक सकिएपछि खुल्छ',
-                        en: 'Opens once the meeting has finished',
+                        en: 'Opens once the event has finished',
                       })
                 }
               >
@@ -339,23 +339,23 @@ type Filter = 'all' | 'mine';
  * anybody having to click a photograph to find out what it is.
  */
 export const PhotoAlbums: React.FC<{
-  meetingRef: string;
+  eventRef: string;
   /** Set where the reader may add photographs as well as look at them. */
   canManage?: boolean;
-}> = ({ meetingRef, canManage = true }) => {
+}> = ({ eventRef, canManage = true }) => {
   const { t, num } = useOrganizer();
-  const { page, loading, reload } = usePhotos(meetingRef);
-  const { pick, busy, input } = useUploader(meetingRef, () => reload(true));
+  const { page, loading, reload } = usePhotos(eventRef);
+  const { pick, busy, input } = useUploader(eventRef, () => reload(true));
   const [openFolder, setOpenFolder] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
 
-  useEffect(() => { setOpenFolder(null); }, [meetingRef]);
+  useEffect(() => { setOpenFolder(null); }, [eventRef]);
 
   const addFolder = async () => {
     const name = askForName(t);
     if (!name) return;
     try {
-      await apiClient.createPhotoFolder(meetingRef, name);
+      await apiClient.createPhotoFolder(eventRef, name);
       await reload(true);
     } catch (error) {
       toast.error(refusalText(error, t({
@@ -371,7 +371,7 @@ export const PhotoAlbums: React.FC<{
     }));
     if (!ok) return;
     try {
-      await apiClient.deletePhotoFolder(meetingRef, folder.id);
+      await apiClient.deletePhotoFolder(eventRef, folder.id);
       setOpenFolder(null);
       await reload(true);
     } catch (error) {
@@ -381,7 +381,7 @@ export const PhotoAlbums: React.FC<{
     }
   };
 
-  const removePhoto = async (photo: MeetingPhoto) => {
+  const removePhoto = async (photo: EventPhoto) => {
     if (!window.confirm(t({ ne: 'यो तस्बिर हटाउने?', en: 'Remove this photograph?' }))) return;
     try {
       await apiClient.deletePhoto(photo.id);
@@ -397,7 +397,7 @@ export const PhotoAlbums: React.FC<{
     return <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>;
   }
   if (!page) {
-    return <Empty>{t({ ne: 'कुनै बैठक छानिएको छैन।', en: 'No meeting chosen.' })}</Empty>;
+    return <Empty>{t({ ne: 'कुनै बैठक छानिएको छैन।', en: 'No event chosen.' })}</Empty>;
   }
 
   const mayAdd = canManage && page.is_a_photographer;
@@ -437,9 +437,9 @@ export const PhotoAlbums: React.FC<{
         ))}
 
         <span className="ms-auto flex items-center gap-2">
-          {!page.meeting_is_finished && mayAdd && (
+          {!page.event_is_finished && mayAdd && (
             <Chip tone="warn">
-              {t({ ne: 'बैठक सकिएपछि', en: 'Once the meeting ends' })}
+              {t({ ne: 'बैठक सकिएपछि', en: 'Once the event ends' })}
             </Chip>
           )}
           {mayAdd && page.can_arrange && (
@@ -535,7 +535,7 @@ export const PhotoAlbums: React.FC<{
                       ? undefined
                       : t({
                           ne: 'बैठक सकिएपछि खुल्छ',
-                          en: 'Opens once the meeting has finished',
+                          en: 'Opens once the event has finished',
                         })
                   }
                 >

@@ -1,5 +1,5 @@
 import React from 'react';
-import { MeetingDraft, SessionDraft } from '../types';
+import { EventDraft, SessionDraft } from '../types';
 import { useOrganizer } from './i18n';
 import { GAP_MINUTES } from './schedule';
 import { useSessionGap } from './sessionGap';
@@ -9,47 +9,47 @@ import { Btn } from './ui';
 export const toLocalInput = (d: Date) =>
   new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
-export const emptyMeeting = (date: string, hour = 9): MeetingDraft => {
+export const emptyEvent = (date: string, hour = 9): EventDraft => {
   const start = new Date(`${date}T00:00:00`);
   start.setHours(hour, 0, 0, 0);
-  const draft: MeetingDraft = {
+  const draft: EventDraft = {
     title: '',
     scheduled_start: toLocalInput(start),
     duration_minutes: 120,
     sessions: [],
   };
   // Its one session opens it: same start, no hole at the front.
-  // A meeting is its running order, so it starts with a session to fill in.
+  // A event is its running order, so it starts with a session to fill in.
   return { ...draft, sessions: [emptySession(draft)] };
 };
 
 /**
- * Move a meeting, and take its opening session with it.
+ * Move a event, and take its opening session with it.
  *
- * The first session begins exactly when the meeting does. A meeting that
- * opens at nine with nothing happening until half past is not a meeting
+ * The first session begins exactly when the event does. A event that
+ * opens at nine with nothing happening until half past is not a event
  * that opens at nine - either the start time is wrong or the gap is, and
  * making them agree is the only reading that is not a mistake.
  */
-export const openingAt = (meeting: MeetingDraft, scheduled_start: string): MeetingDraft => {
-  const inOrder = [...meeting.sessions].sort(
+export const openingAt = (event: EventDraft, scheduled_start: string): EventDraft => {
+  const inOrder = [...event.sessions].sort(
     (a, b) => +new Date(a.starts_at) - +new Date(b.starts_at)
   );
   const opener = inOrder[0];
   return {
-    ...meeting,
+    ...event,
     scheduled_start,
-    sessions: meeting.sessions.map((session) =>
+    sessions: event.sessions.map((session) =>
       session === opener ? { ...session, starts_at: scheduled_start } : session
     ),
   };
 };
 
-/** Whether this is the session that opens the meeting. */
-export const opensTheMeeting = (meeting: MeetingDraft, index: number): boolean => {
-  const earliest = meeting.sessions.reduce(
+/** Whether this is the session that opens the event. */
+export const opensTheEvent = (event: EventDraft, index: number): boolean => {
+  const earliest = event.sessions.reduce(
     (soonest, s, i) =>
-      +new Date(s.starts_at) < +new Date(meeting.sessions[soonest].starts_at) ? i : soonest,
+      +new Date(s.starts_at) < +new Date(event.sessions[soonest].starts_at) ? i : soonest,
     0
   );
   return index === earliest;
@@ -62,11 +62,11 @@ export const opensTheMeeting = (meeting: MeetingDraft, index: number): boolean =
  * mandatory gap. Returns null when nothing runs before it.
  */
 export const earliestStart = (
-  meeting: MeetingDraft,
+  event: EventDraft,
   index: number,
   gapMinutes: number = GAP_MINUTES
 ): Date | null => {
-  const before = meeting.sessions.slice(0, index);
+  const before = event.sessions.slice(0, index);
   if (before.length === 0) return null;
 
   const lastEnd = Math.max(
@@ -78,18 +78,18 @@ export const earliestStart = (
 };
 
 export const emptySession = (
-  meeting: MeetingDraft,
+  event: EventDraft,
   gapMinutes: number = GAP_MINUTES
 ): SessionDraft => {
   // A new session starts once the last one has finished and the mandatory
   // gap has passed, so the running order builds forward already legal.
-  const last = meeting.sessions[meeting.sessions.length - 1];
+  const last = event.sessions[event.sessions.length - 1];
   const from = last
     ? new Date(
         new Date(last.starts_at).getTime() +
           (last.duration_minutes + gapMinutes) * 60000
       )
-    : new Date(meeting.scheduled_start);
+    : new Date(event.scheduled_start);
   return {
     title: '',
     speaker_name: '',
@@ -106,44 +106,44 @@ export const emptySession = (
 };
 
 interface Props {
-  meeting: MeetingDraft;
-  onChange: (next: MeetingDraft) => void;
+  event: EventDraft;
+  onChange: (next: EventDraft) => void;
   onRemove?: () => void;
-  /** Shown when several meetings are being typed at once. */
+  /** Shown when several events are being typed at once. */
   index?: number;
 }
 
 /**
- * The fields for one meeting and the sessions inside it.
+ * The fields for one event and the sessions inside it.
  *
- * The same block builds a meeting whether it is going into a brand new
+ * The same block builds a event whether it is going into a brand new
  * event or being added to one that already exists.
  */
-export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemove, index }) => {
+export const EventDraftFields: React.FC<Props> = ({ event, onChange, onRemove, index }) => {
   const gapMinutes = useSessionGap();
   const { t, num } = useOrganizer();
 
   /**
-   * Whether the opening session has drifted off the meeting's start.
+   * Whether the opening session has drifted off the event's start.
    *
    * Leaving a hole at the front is not a way to run a different talk
    * first: that is a matter of reordering them.
    */
   const late = (i: number) =>
-    opensTheMeeting(meeting, i) &&
-    +new Date(meeting.sessions[i].starts_at) > +new Date(meeting.scheduled_start);
+    opensTheEvent(event, i) &&
+    +new Date(event.sessions[i].starts_at) > +new Date(event.scheduled_start);
 
   /** Whether this session would start before the gap after the one above it. */
   const tooEarly = (i: number) => {
-    const soonest = earliestStart(meeting, i, gapMinutes);
+    const soonest = earliestStart(event, i, gapMinutes);
     if (!soonest) return false;
-    return new Date(meeting.sessions[i].starts_at) < soonest;
+    return new Date(event.sessions[i].starts_at) < soonest;
   };
 
   const setSession = (i: number, patch: Partial<SessionDraft>) =>
     onChange({
-      ...meeting,
-      sessions: meeting.sessions.map((s, j) => (j === i ? { ...s, ...patch } : s)),
+      ...event,
+      sessions: event.sessions.map((s, j) => (j === i ? { ...s, ...patch } : s)),
     });
 
   return (
@@ -154,7 +154,7 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
             {num(index + 1)}
           </span>
         )}
-        <b className="text-[13.5px]">{t({ ne: 'बैठक', en: 'Meeting' })}</b>
+        <b className="text-[13.5px]">{t({ ne: 'बैठक', en: 'Event' })}</b>
         {onRemove && (
           <button
             onClick={onRemove}
@@ -171,8 +171,8 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
             {t({ ne: 'नाम', en: 'Name' })}
           </label>
           <input
-            value={meeting.title}
-            onChange={(e) => onChange({ ...meeting, title: e.target.value })}
+            value={event.title}
+            onChange={(e) => onChange({ ...event, title: e.target.value })}
             placeholder={t({ ne: 'बिहान', en: 'Morning' })}
             className="w-full border border-navy-800/15 rounded-lg px-2.5 py-1.5 text-[13.5px]"
           />
@@ -183,8 +183,8 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
           </label>
           <input
             type="datetime-local"
-            value={meeting.scheduled_start}
-            onChange={(e) => onChange(openingAt(meeting, e.target.value))}
+            value={event.scheduled_start}
+            onChange={(e) => onChange(openingAt(event, e.target.value))}
             className="w-full border border-navy-800/15 rounded-lg px-2.5 py-1.5 text-[13px]"
           />
         </div>
@@ -196,9 +196,9 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
             type="number"
             min={5}
             step={5}
-            value={meeting.duration_minutes}
+            value={event.duration_minutes}
             onChange={(e) =>
-              onChange({ ...meeting, duration_minutes: Number(e.target.value) || 60 })
+              onChange({ ...event, duration_minutes: Number(e.target.value) || 60 })
             }
             className="w-full border border-navy-800/15 rounded-lg px-2.5 py-1.5 text-[13.5px] text-center"
           />
@@ -210,13 +210,13 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
         <div className="flex items-center gap-2 mb-2">
           <span className="text-[12.5px] text-[#6E7C8E]">
             {t({ ne: 'यसभित्रका सत्र', en: 'Sessions inside it' })}
-            {meeting.sessions.length > 0 && ` · ${num(meeting.sessions.length)}`}
+            {event.sessions.length > 0 && ` · ${num(event.sessions.length)}`}
           </span>
           <Btn
             sm
             className="ml-auto"
             onClick={() =>
-              onChange({ ...meeting, sessions: [...meeting.sessions, emptySession(meeting, gapMinutes)] })
+              onChange({ ...event, sessions: [...event.sessions, emptySession(event, gapMinutes)] })
             }
           >
             {t({ ne: '+ सत्र', en: '+ Session' })}
@@ -230,16 +230,16 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
           })}
         </p>
 
-        {meeting.sessions.length === 0 ? (
+        {event.sessions.length === 0 ? (
           <p className="text-[12.5px] text-live">
             {t({
               ne: 'कम्तीमा एउटा सत्र चाहिन्छ — बैठक भनेकै यही हो।',
-              en: 'At least one session is needed — that is what the meeting is.',
+              en: 'At least one session is needed — that is what the event is.',
             })}
           </p>
         ) : (
           <div className="flex flex-col gap-2">
-            {meeting.sessions.map((session, i) => (
+            {event.sessions.map((session, i) => (
               <div key={i} className="bg-cream rounded-lg p-2">
               <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_130px_120px_150px_78px_auto] items-end">
                 <div>
@@ -282,7 +282,7 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
                     type="datetime-local"
                     value={session.starts_at}
                     min={(() => {
-                      const soonest = earliestStart(meeting, i, gapMinutes);
+                      const soonest = earliestStart(event, i, gapMinutes);
                       return soonest ? toLocalInput(soonest) : undefined;
                     })()}
                     onChange={(e) => setSession(i, { starts_at: e.target.value })}
@@ -294,11 +294,11 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
                     <p className="mt-1 text-[11.5px] text-live">
                       {t({
                         ne: 'पहिलो सत्र बैठक सुरु हुँदै सुरु हुनुपर्छ।',
-                        en: 'The first session starts when the meeting starts.',
+                        en: 'The first session starts when the event starts.',
                       })}{' '}
                       <button
                         type="button"
-                        onClick={() => setSession(i, { starts_at: meeting.scheduled_start })}
+                        onClick={() => setSession(i, { starts_at: event.scheduled_start })}
                         className="underline underline-offset-2"
                       >
                         {t({ ne: 'मिलाउनुहोस्', en: 'Move it to the start' })}
@@ -314,7 +314,7 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
                       <button
                         type="button"
                         onClick={() => {
-                          const soonest = earliestStart(meeting, i, gapMinutes);
+                          const soonest = earliestStart(event, i, gapMinutes);
                           if (soonest) setSession(i, { starts_at: toLocalInput(soonest) });
                         }}
                         className="underline underline-offset-2"
@@ -342,8 +342,8 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
                 <button
                   onClick={() =>
                     onChange({
-                      ...meeting,
-                      sessions: meeting.sessions.filter((_, j) => j !== i),
+                      ...event,
+                      sessions: event.sessions.filter((_, j) => j !== i),
                     })
                   }
                   aria-label={t({ ne: 'सत्र हटाउने', en: 'Remove session' })}
@@ -404,8 +404,8 @@ export const MeetingDraftFields: React.FC<Props> = ({ meeting, onChange, onRemov
 };
 
 /** Turn the typed drafts into the shape the server expects. */
-/** What is still missing before this meeting can be created. */
-export const missingSpeakerDetails = (draft: MeetingDraft): string[] =>
+/** What is still missing before this event can be created. */
+export const missingSpeakerDetails = (draft: EventDraft): string[] =>
   draft.sessions
     .filter((s) => s.title.trim())
     .filter((s) => !s.speaker_name?.trim() || !s.speaker_email?.trim() || !s.speaker_phone?.trim())
@@ -418,14 +418,14 @@ export const missingSpeakerDetails = (draft: MeetingDraft): string[] =>
  * for anyone who got past the field guard.
  */
 export const tooCloseTogether = (
-  draft: MeetingDraft,
+  draft: EventDraft,
   gapMinutes: number = GAP_MINUTES
 ): string[] =>
   draft.sessions
     .map((session, i) => {
       if (!session.title.trim()) return null;
       // The opening session is wrong when it is late, not when it is early.
-      if (opensTheMeeting(draft, i)) {
+      if (opensTheEvent(draft, i)) {
         return +new Date(session.starts_at) !== +new Date(draft.scheduled_start)
           ? session.title.trim()
           : null;
@@ -439,19 +439,19 @@ export const tooCloseTogether = (
 /**
  * Push a running order forward until it obeys the gap.
  *
- * The same forward-only spacing the server applies when a meeting arrives
+ * The same forward-only spacing the server applies when a event arrives
  * with its sessions, so confirming the offered times gives exactly what
  * would have been stored anyway.
  */
 export const spaceOut = (
-  draft: MeetingDraft,
+  draft: EventDraft,
   gapMinutes: number = GAP_MINUTES
-): MeetingDraft => {
+): EventDraft => {
   let previousEnd: number | null = null;
   const sessions = [...draft.sessions]
     .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at))
     .map((session) => {
-      // The first one opens the meeting; the rest step back from it.
+      // The first one opens the event; the rest step back from it.
       let startsAt =
         previousEnd === null
           ? +new Date(draft.scheduled_start)
@@ -462,7 +462,7 @@ export const spaceOut = (
   return { ...draft, sessions };
 };
 
-export const toApiMeeting = (draft: MeetingDraft): MeetingDraft => ({
+export const toApiEvent = (draft: EventDraft): EventDraft => ({
   ...draft,
   title: draft.title.trim(),
   scheduled_start: new Date(draft.scheduled_start).toISOString(),

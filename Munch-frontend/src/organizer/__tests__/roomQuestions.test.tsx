@@ -6,7 +6,7 @@ import { apiClient } from '../../services/api';
 
 jest.mock('../../services/api', () => ({
   apiClient: {
-    getMeetingBoard: jest.fn(),
+    getEventBoard: jest.fn(),
     getGuestBoard: jest.fn(),
     getPendingMessages: jest.fn(),
     getReviewedMessages: jest.fn(),
@@ -62,7 +62,7 @@ beforeEach(() => {
   window.localStorage.setItem(
     'manch.organizer.prefs', JSON.stringify({ lang: 'en', a11y: {} })
   );
-  api.getMeetingBoard.mockResolvedValue({ faq: [entry()], suggestions: [] } as any);
+  api.getEventBoard.mockResolvedValue({ faq: [entry()], suggestions: [] } as any);
   api.getPendingMessages.mockResolvedValue([held()] as any);
   api.getReviewedMessages.mockResolvedValue({ from_users: [], from_guests: [] } as any);
 });
@@ -70,7 +70,7 @@ beforeEach(() => {
 const show = (props: any = {}) =>
   render(
     <OrganizerProvider>
-      <RoomQuestions meetingId="m1" {...props} />
+      <RoomQuestions eventId="m1" {...props} />
     </OrganizerProvider>
   );
 
@@ -110,7 +110,7 @@ describe('the questions panel', () => {
   });
 
   it('marks the arrow the reader has already used', async () => {
-    api.getMeetingBoard.mockResolvedValue(
+    api.getEventBoard.mockResolvedValue(
       { faq: [entry({ my_vote: 1 })], suggestions: [] } as any
     );
     show();
@@ -126,7 +126,7 @@ describe('the questions panel', () => {
  * Every message in the room is written to the host or to the speaker, and
  * somebody has to say which are questions the room should see and which
  * are suggestions. That could only be done from the moderation screen -
- * which means leaving the meeting the queue belongs to.
+ * which means leaving the event the queue belongs to.
  */
 describe('sorting what people write, from inside the room', () => {
   it("is the host's tab, and nobody else's", async () => {
@@ -219,7 +219,7 @@ describe('a guest reading the same board', () => {
  * The queue is watched while a talk runs, so it has to be live.
  *
  * It is fetched on a timer, which suits a list that changes every few
- * minutes and not one somebody is looking at during a meeting. The room's
+ * minutes and not one somebody is looking at during a event. The room's
  * socket already hears each message arrive; this is the room passing that
  * on, so a question asked at the front is sortable now rather than in
  * twenty seconds.
@@ -273,7 +273,7 @@ describe('what the socket heard arrive', () => {
 describe('what was let through but never filed', () => {
   const seen = (over: any = {}) => held({
     id: 'seen1',
-    body: 'What is this meeting agendas?',
+    body: 'What is this event agendas?',
     moderation_status: 'approved',
     topic: 'none',
     ...over,
@@ -288,7 +288,7 @@ describe('what was let through but never filed', () => {
 
     fireEvent.click(await screen.findByRole('tab', { name: /Requests \(1\)/ }));
 
-    expect(await screen.findByText('What is this meeting agendas?')).toBeInTheDocument();
+    expect(await screen.findByText('What is this event agendas?')).toBeInTheDocument();
   });
 
   it('is given its place without being approved a second time', async () => {
@@ -315,7 +315,7 @@ describe('what was let through but never filed', () => {
     );
     show({ canSort: true });
     fireEvent.click(await screen.findByRole('tab', { name: /Requests/ }));
-    await screen.findByText('What is this meeting agendas?');
+    await screen.findByText('What is this event agendas?');
 
     expect(screen.queryByRole('button', { name: 'Decline' })).toBeNull();
   });

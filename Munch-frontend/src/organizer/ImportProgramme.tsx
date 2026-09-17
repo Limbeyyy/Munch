@@ -109,7 +109,7 @@ export const ImportProgramme: React.FC<{ onImported: () => void }> = ({
   };
 
   const sessions = (reading ?? []).reduce(
-    (n, event) => n + event.meetings.reduce((m, meeting) => m + meeting.sessions.length, 0),
+    (n, event) => n + event.sessions.length,
     0
   );
 
@@ -147,15 +147,15 @@ export const ImportProgramme: React.FC<{ onImported: () => void }> = ({
         <p className="text-[13px] text-ink-2 leading-relaxed">
           {t({
             ne: 'टेम्प्लेटमा तीन तालिका छन् — कार्यक्रम, बैठक, सत्र — र तिनीहरू id ले जोडिन्छन्। भरेर यहीँ फर्काउनुहोस् (.xlsx वा CSV UTF-8)। बनाउनुअघि पूरा दिन देखाइन्छ।',
-            en: 'The template is three tables — the programmes, the meetings inside them, the sessions inside those — joined by id. Fill it in and choose it here, as .xlsx or CSV UTF-8. The whole day is shown back before anything is created.',
+            en: 'The template is three tables — the programmes, the events inside them, the sessions inside those — joined by id. Fill it in and choose it here, as .xlsx or CSV UTF-8. The whole day is shown back before anything is created.',
           })}
         </p>
 
         {reading === null ? (
           <p className="text-[12.5px] text-[#6E7C8E] mt-2.5">
             {t({
-              ne: 'एक्सेल टेम्प्लेटमा सत्रको event_id र meeting_id माथिका तालिकाबाट छानिन्छ, टाइप गर्नुपर्दैन। फारमका सबै नियम यहाँ पनि लागू हुन्छन् — वक्ताको विवरण, पहिलो सत्रको समय, र सत्रबीचको अन्तराल।',
-              en: 'In the Excel one a session picks its event_id and meeting_id from the tables above rather than repeating them by hand. Every rule the form applies applies here too: the speaker details, the first session pinned to the meeting, and the interval between sessions.',
+              ne: 'एक्सेल टेम्प्लेटमा सत्रको event_id र event_id माथिका तालिकाबाट छानिन्छ, टाइप गर्नुपर्दैन। फारमका सबै नियम यहाँ पनि लागू हुन्छन् — वक्ताको विवरण, पहिलो सत्रको समय, र सत्रबीचको अन्तराल।',
+              en: 'In the Excel one a session picks its event_id and event_id from the tables above rather than repeating them by hand. Every rule the form applies applies here too: the speaker details, the first session pinned to the event, and the interval between sessions.',
             })}
           </p>
         ) : reading.length === 0 ? (
@@ -179,33 +179,32 @@ export const ImportProgramme: React.FC<{ onImported: () => void }> = ({
                 <p className="text-[13.5px] font-semibold">
                   {event.title}
                   <span className="ms-2 text-[12px] text-[#6E7C8E] font-normal">
-                    {new Date(event.event_date).toLocaleDateString(undefined, {
+                    {new Date(event.event_date ?? event.scheduled_start).toLocaleDateString(undefined, {
                       day: 'numeric', month: 'long', year: 'numeric',
                     })}
                     {event.venue ? ` · ${event.venue}` : ''}
                   </span>
                 </p>
-                {event.meetings.map((meeting) => {
-                  const meetingDay = dayOf(meeting.scheduled_start);
-                  const elsewhere = meetingDay !== event.event_date.slice(0, 10);
+                {(() => {
+                  const eventDay = dayOf(event.scheduled_start);
+                  const elsewhere = eventDay !== event.event_date.slice(0, 10);
                   return (
-                  <div key={meeting.title} className="mt-1.5 ps-3 border-s-2 border-navy-800/15">
+                  <div className="mt-1.5 ps-3 border-s-2 border-navy-800/15">
                     <p className="text-[13px] font-medium">
-                      {meeting.title}
-                      <span className={`ms-2 text-[12px] font-normal ${
+                      <span className={`text-[12px] font-normal ${
                         elsewhere ? 'text-amber-700' : 'text-[#6E7C8E]'
                       }`}>
                         {elsewhere
-                          ? dayAndClock(meeting.scheduled_start)
-                          : clock(meeting.scheduled_start)}
+                          ? dayAndClock(event.scheduled_start)
+                          : clock(event.scheduled_start)}
                       </span>
                     </p>
                     <ul className="mt-0.5">
-                      {meeting.sessions.map((session, i) => {
-                        // A session on another day than its meeting is
+                      {event.sessions.map((session, i) => {
+                        // A session on another day than its event is
                         // almost always a typed date nobody re-read. The
                         // clock alone hid it: it read as the next talk.
-                        const otherDay = dayOf(session.starts_at) !== meetingDay;
+                        const otherDay = dayOf(session.starts_at) !== eventDay;
                         return (
                         <li key={`${session.title}-${i}`} className="text-[12.5px] text-[#6E7C8E]">
                           <span className={otherDay ? 'text-amber-700 font-medium' : ''}>
@@ -220,7 +219,7 @@ export const ImportProgramme: React.FC<{ onImported: () => void }> = ({
                     </ul>
                   </div>
                   );
-                })}
+                })()}
               </div>
             ))}
 

@@ -46,18 +46,18 @@ const showLogin = () =>
 describe('the guest door', () => {
   const reachTheDialog = async () => {
     showLogin();
-    fireEvent.click(screen.getByRole('button', { name: /Join with a meeting code/ }));
-    fireEvent.change(screen.getByPlaceholderText('Meeting code'), {
+    fireEvent.click(screen.getByRole('button', { name: /Join with a event code/ }));
+    fireEvent.change(screen.getByPlaceholderText('Event code'), {
       target: { value: 'abc123' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Enter meeting room' }));
-    return screen.findByRole('dialog', { name: 'Enter meeting info' });
+    fireEvent.click(screen.getByRole('button', { name: 'Enter event room' }));
+    return screen.findByRole('dialog', { name: 'Enter event info' });
   };
 
   it('asks for the code first, and then for the name', async () => {
     const dialog = await reachTheDialog();
 
-    expect(dialog).toHaveTextContent('Enter Meeting Info');
+    expect(dialog).toHaveTextContent('Enter Event Info');
     expect(dialog).toHaveTextContent('ABC123');
     expect(screen.getByLabelText(/Your Name/)).toBeInTheDocument();
   });
@@ -79,7 +79,7 @@ describe('the guest door', () => {
     window.sessionStorage.setItem('guest_token', 'held-token');
     api.guestKnock.mockResolvedValue({
       guest_token: 't', guest: { status: 'pending', full_name: 'Bishnu' },
-      meeting: { meeting_code: 'ABC123', title: 'Opening day' },
+      event: { code: 'ABC123', title: 'Opening day' },
     } as any);
 
     await reachTheDialog();
@@ -89,7 +89,7 @@ describe('the guest door', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Join' }));
 
     await waitFor(() => expect(api.guestKnock).toHaveBeenCalledWith({
-      meeting_code: 'ABC123',
+      code: 'ABC123',
       full_name: 'Bishnu Prasad',
       token: 'held-token',
     }));
@@ -98,7 +98,7 @@ describe('the guest door', () => {
   it('says what becomes of the name, because that is the question', async () => {
     const dialog = await reachTheDialog();
 
-    expect(dialog).toHaveTextContent(/kept for this meeting only/);
+    expect(dialog).toHaveTextContent(/kept for this event only/);
   });
 });
 
@@ -108,7 +108,7 @@ describe('remembering a name', () => {
   const showDialog = () =>
     render(
       <GuestJoinDialog
-        meetingCode="ABC123"
+        eventCode="ABC123"
         onCancel={jest.fn()}
         onJoin={join}
       />
@@ -173,8 +173,8 @@ describe('arriving with the code already', () => {
   it('opens the guest door and fills the code in', async () => {
     showWithLink();
 
-    expect(await screen.findByLabelText('Meeting code')).toHaveValue('ABC123');
-    expect(screen.getByRole('button', { name: 'Enter meeting room' }))
+    expect(await screen.findByLabelText('Event code')).toHaveValue('ABC123');
+    expect(screen.getByRole('button', { name: 'Enter event room' }))
       .toBeInTheDocument();
   });
 
@@ -187,17 +187,17 @@ describe('arriving with the code already', () => {
   it('waits to be pressed rather than going in by itself', async () => {
     showWithLink();
 
-    await screen.findByLabelText('Meeting code');
-    expect(screen.queryByRole('dialog', { name: 'Enter meeting info' })).toBeNull();
+    await screen.findByLabelText('Event code');
+    expect(screen.queryByRole('dialog', { name: 'Enter event info' })).toBeNull();
     expect(api.guestKnock).not.toHaveBeenCalled();
   });
 
   it('asks for the name once it is pressed', async () => {
     showWithLink();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Enter meeting room' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Enter event room' }));
 
-    expect(await screen.findByRole('dialog', { name: 'Enter meeting info' }))
+    expect(await screen.findByRole('dialog', { name: 'Enter event info' }))
       .toBeInTheDocument();
   });
 
@@ -210,7 +210,7 @@ describe('arriving with the code already', () => {
       .toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Go back and sign in/ }));
 
-    expect(screen.queryByLabelText('Meeting code')).toBeNull();
+    expect(screen.queryByLabelText('Event code')).toBeNull();
     expect(screen.getByRole('button', { name: /Sign in with Google/ }))
       .toBeInTheDocument();
   });

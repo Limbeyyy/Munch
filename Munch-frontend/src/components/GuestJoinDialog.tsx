@@ -5,7 +5,7 @@ const REMEMBERED = 'manch.guest.name';
 
 interface Props {
   /** The code they typed, shown back so they can see it is the right one. */
-  meetingCode: string;
+  eventCode: string;
   /** Whether the request is with the host already. */
   busy?: boolean;
   onCancel: () => void;
@@ -21,13 +21,13 @@ interface Props {
  * data for its own sake.
  *
  * The name reaches the host as a request to come in, and is kept for as
- * long as the meeting lasts. Afterwards nothing about the person remains
- * except their name on that meeting's attendance, which is what attendance
+ * long as the event lasts. Afterwards nothing about the person remains
+ * except their name on that event's attendance, which is what attendance
  * is. "Remember my name" keeps it in this browser and nowhere else, so the
- * next meeting does not ask again.
+ * next event does not ask again.
  */
 export const GuestJoinDialog: React.FC<Props> = ({
-  meetingCode, busy, onCancel, onJoin,
+  eventCode, busy, onCancel, onJoin,
 }) => {
   const [name, setName] = useState(() => {
     try {
@@ -68,7 +68,7 @@ export const GuestJoinDialog: React.FC<Props> = ({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Enter meeting info"
+        aria-label="Enter event info"
         onClick={(e) => e.stopPropagation()}
         className="bg-white border border-[#e3e8ef] rounded-[16px] w-full max-w-[576px]
           overflow-hidden text-[#0a090b]"
@@ -78,10 +78,10 @@ export const GuestJoinDialog: React.FC<Props> = ({
           <div className="flex-1 min-w-0">
             <h2 className="text-[24px] font-bold text-black text-center tracking-[-0.12px]
               leading-[1.4]">
-              Enter Meeting Info
+              Enter Event Info
             </h2>
             <p className="text-[16px] text-black tracking-[-0.08px] leading-[1.4]">
-              Meeting {meetingCode}. The host will be asked to let you in.
+              Event {eventCode}. The host will be asked to let you in.
             </p>
           </div>
           <button
@@ -119,7 +119,7 @@ export const GuestJoinDialog: React.FC<Props> = ({
               className="w-5 h-5 rounded-[5px] border-2 border-[#dcdcde] accent-navy-800"
             />
             <span className="text-[16px] leading-[22px]">
-              Remember my name for future meetings
+              Remember my name for future events
             </span>
           </label>
 
@@ -146,7 +146,7 @@ export const GuestJoinDialog: React.FC<Props> = ({
           </p>
 
           <p className="text-[13px] text-[#6E7C8E] leading-[18px]">
-            Your name is kept for this meeting only. When it ends, all that
+            Your name is kept for this event only. When it ends, all that
             remains is your name on its attendance.
           </p>
         </div>

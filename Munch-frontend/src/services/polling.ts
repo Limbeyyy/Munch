@@ -2,17 +2,17 @@
  * How often the screens refetch when nothing has told them to.
  *
  * Most of these are a safety net rather than the way news arrives: the
- * meeting room and the hub both have sockets, and the dashboards are
+ * event room and the hub both have sockets, and the dashboards are
  * showing counts that can be a few seconds stale without anybody minding.
  * They used to run every eight or ten seconds, which added up to thousands
  * of requests an hour from a single open tab.
  *
  * Anything a person is actually waiting on - a guest at the door, a
- * meeting about to start - is deliberately not in here. Those stay quick,
+ * event about to start - is deliberately not in here. Those stay quick,
  * and live where they are used.
  */
 
-/** Dashboard lists: meetings, events, the attendee's programme. */
+/** Dashboard lists: events, events, the attendee's programme. */
 export const LIST_POLL_MS = 25000;
 
 /** Queues and counts the organizer glances at rather than watches. */

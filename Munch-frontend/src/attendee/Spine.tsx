@@ -1,5 +1,5 @@
 import React from 'react';
-import { EventMeeting, Session } from '../types';
+import { Event, Session } from '../types';
 import { useOrganizer } from '../organizer/i18n';
 import { Chip } from '../organizer/ui';
 import {
@@ -11,7 +11,7 @@ export const clock = (iso: string) =>
 
 export interface SpineItem {
   session: Session;
-  meeting: EventMeeting;
+  event: Event;
   /** True when this person was recorded present for it. */
   attended?: boolean;
 }
@@ -19,7 +19,7 @@ export interface SpineItem {
 interface Props {
   items: SpineItem[];
   onOpen: (item: SpineItem) => void;
-  /** Hide the meeting name when the whole list is one meeting. */
+  /** Hide the event name when the whole list is one event. */
   compact?: boolean;
 }
 
@@ -47,10 +47,10 @@ export const Spine: React.FC<Props> = ({ items, onOpen, compact }) => {
         aria-hidden="true"
       />
       {items.map((item) => {
-        const { session, meeting } = item;
-        // The meeting matters: an overrun session inside one still
+        const { session, event } = item;
+        // The event matters: an overrun session inside one still
         // running is overdue, not never started.
-        const state = sessionState(session, Date.now(), meeting);
+        const state = sessionState(session, Date.now(), event);
         const shape = state === 'live' ? 'live' : isPast(state) ? 'past' : 'next';
 
         return (
@@ -88,7 +88,7 @@ export const Spine: React.FC<Props> = ({ items, onOpen, compact }) => {
               <p className="text-[13px] text-[#6E7C8E] mt-0.5">
                 {session.speaker_name || t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker named' })}
                 {session.hall && ` · ${session.hall}`}
-                {!compact && ` · ${item.meeting.title}`}
+                {!compact && ` · ${item.event.title}`}
                 {` · ${num(session.duration_minutes)}′`}
               </p>
 

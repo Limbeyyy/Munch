@@ -132,7 +132,7 @@ export const ContactRequests: React.FC<Props> = ({ eventId, pendingOnly, refresh
                   <p className="text-[13px] text-ink-2 font-read mt-1">“{item.reason}”</p>
                 )}
                 <p className="text-[12.5px] text-[#6E7C8E] mt-0.5">
-                  {item.session_title} · <span className="text-navy-700">{item.meeting_title}</span>
+                  {item.session_title} · <span className="text-navy-700">{item.event_title}</span>
                   {' · '}
                   <span className="tabular-nums">
                     {new Date(item.created_at).toLocaleString(undefined, {
