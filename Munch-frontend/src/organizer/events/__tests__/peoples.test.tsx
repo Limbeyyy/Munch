@@ -13,6 +13,7 @@ jest.mock('../../../services/api', () => ({
     withdrawEventInvite: jest.fn(),
     revokeRole: jest.fn(),
     getEvent: jest.fn(),
+    updateEvent: jest.fn(),
     getResources: jest.fn(),
     getEventSegments: jest.fn(),
     getConclusions: jest.fn(),
@@ -78,6 +79,7 @@ beforeEach(() => {
     added: 0, invited: [], total_invited: 0, total_joined: 0,
   } as any);
   api.getSchedulingPrefs.mockResolvedValue({ session_gap_minutes: 15 } as any);
+  api.updateEvent.mockResolvedValue(event);
 });
 
 /** Open the wizard and walk it to the last step. */
