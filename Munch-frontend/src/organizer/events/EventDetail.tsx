@@ -55,6 +55,23 @@ export const EventDetail: React.FC<Props> = ({
 
   const sessions = event.sessions ?? [];
   const withoutSpeaker = sessions.filter((s) => !s.speaker_name).length;
+  /**
+   * A speaker who is named but cannot be reached afterwards.
+   *
+   * The server asks for an address and a number when a session is first
+   * written and leaves them alone on a patch, so a talk edited later, or
+   * one that arrived by another road, can carry a name and nothing else -
+   * and nothing said so. Either one missing is the same problem: there is
+   * no way back to the speaker once the day is over.
+   *
+   * Only the host is sent these details at all, so for anybody else there
+   * is nothing to judge here and nothing is claimed.
+   */
+  const withoutContact = sessions.filter((s) => {
+    if (!s.speaker_name || !s.speaker_contact) return false;
+    const { email, phone } = s.speaker_contact;
+    return !email?.trim() || !phone?.trim();
+  }).length;
   const coHosts = roles.filter((r) => r.role === 'co_host');
 
   /**
@@ -179,6 +196,17 @@ export const EventDetail: React.FC<Props> = ({
             {t({
               ne: `${num(withoutSpeaker)} सत्रमा वक्ता तोकिएको छैन`,
               en: `${withoutSpeaker} session${withoutSpeaker === 1 ? '' : 's'} has no speaker assigned`,
+            })}
+          </Caution>
+        </div>
+      )}
+      {withoutContact > 0 && (
+        <div className="pt-3">
+          <Caution>
+            {t({
+              ne: `${num(withoutContact)} सत्रमा वक्ताको सम्पर्क जानकारी तोकिएको छैन वा खाली छ`,
+              en: `Speaker contact information is not assigned or empty in `
+                + `${withoutContact} session${withoutContact === 1 ? '' : 's'}`,
             })}
           </Caution>
         </div>
