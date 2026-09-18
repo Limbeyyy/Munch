@@ -16,7 +16,26 @@ interface Ctx {
   num: (n: number | string) => string;
   a11y: { big: boolean; contrast: boolean; calm: boolean };
   setA11y: React.Dispatch<React.SetStateAction<{ big: boolean; contrast: boolean; calm: boolean }>>;
+  /** How the place looks, and how a transcript reads inside it. */
+  look: Look;
+  setLook: React.Dispatch<React.SetStateAction<Look>>;
 }
+
+export type Theme = 'light' | 'dark' | 'system';
+export type TextSize = 'small' | 'medium' | 'large';
+export type LineSpacing = 'comfortable' | 'relaxed';
+
+export interface Look {
+  theme: Theme;
+  transcriptSize: TextSize;
+  transcriptSpacing: LineSpacing;
+}
+
+const DEFAULT_LOOK: Look = {
+  theme: 'light',
+  transcriptSize: 'medium',
+  transcriptSpacing: 'comfortable',
+};
 
 const OrganizerCtx = createContext<Ctx | null>(null);
 
@@ -40,6 +59,7 @@ export const OrganizerProvider: React.FC<{ children: React.ReactNode }> = ({ chi
    */
   const [lang, setLang] = useState<Lang>('en');
   const [a11y, setA11y] = useState({ big: false, contrast: false, calm: false });
+  const [look, setLook] = useState<Look>(DEFAULT_LOOK);
 
   // Language and accessibility are per-person conveniences, so they live in
   // this browser rather than on the account.
@@ -50,6 +70,7 @@ export const OrganizerProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const saved = JSON.parse(raw);
         if (saved.lang === 'ne' || saved.lang === 'en') setLang(saved.lang);
         if (saved.a11y) setA11y({ big: false, contrast: false, calm: false, ...saved.a11y });
+        if (saved.look) setLook({ ...DEFAULT_LOOK, ...saved.look });
       }
     } catch {
       // No stored preference, or storage is blocked; defaults are fine.
@@ -58,7 +79,7 @@ export const OrganizerProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ lang, a11y }));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ lang, a11y, look }));
     } catch {
       // Preferences simply will not persist.
     }
@@ -73,7 +94,32 @@ export const OrganizerProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     root.toggleAttribute('data-a11y-big', a11y.big);
     root.toggleAttribute('data-a11y-contrast', a11y.contrast);
     root.toggleAttribute('data-a11y-calm', a11y.calm);
-  }, [lang, a11y]);
+
+    // The look goes on the root for the same reasons: it has to reach
+    // dialogs, and it has to outrank the explicit colours and sizes the
+    // design sets on individual elements. The rules live in index.css.
+    // "system" is resolved here rather than stored, so a machine that
+    // changes its mind at dusk is followed without anybody choosing again.
+    const dark = look.theme === 'dark'
+      || (look.theme === 'system'
+          && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
+    root.setAttribute('data-theme', dark ? 'dark' : 'light');
+    root.setAttribute('data-transcript-size', look.transcriptSize);
+    root.setAttribute('data-transcript-spacing', look.transcriptSpacing);
+  }, [lang, a11y, look]);
+
+  // A machine set to follow the hour changes its mind without being asked.
+  useEffect(() => {
+    if (look.theme !== 'system' || !window.matchMedia) return;
+    const watch = window.matchMedia('(prefers-color-scheme: dark)');
+    const follow = () => {
+      document.documentElement.setAttribute(
+        'data-theme', watch.matches ? 'dark' : 'light'
+      );
+    };
+    watch.addEventListener?.('change', follow);
+    return () => watch.removeEventListener?.('change', follow);
+  }, [look.theme]);
 
   const value = useMemo<Ctx>(
     () => ({
@@ -83,8 +129,10 @@ export const OrganizerProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       num: (n) => (lang === 'ne' ? NEP(n) : String(n)),
       a11y,
       setA11y,
+      look,
+      setLook,
     }),
-    [lang, a11y]
+    [lang, a11y, look]
   );
 
   return <OrganizerCtx.Provider value={value}>{children}</OrganizerCtx.Provider>;

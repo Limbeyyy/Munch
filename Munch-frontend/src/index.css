@@ -133,3 +133,74 @@ html[data-a11y-calm] {
     content: '';
   }
 }
+
+/* How the place looks, and how a transcript reads inside it.
+
+   Set on the root by the organizer's preferences, for the same reasons
+   the accessibility settings are: the styling has to reach dialogs, and
+   it has to outrank the explicit colours the design puts on individual
+   elements. */
+
+/* A transcript is read for an hour at a stretch, so its size and its
+   spacing are the reader's to set. The rules are scoped to the marked
+   lines rather than to text at large: making the whole interface bigger
+   is what the accessibility panel is for. */
+html[data-transcript-size='small'] [data-transcript-line] {
+  font-size: 12px;
+}
+html[data-transcript-size='large'] [data-transcript-line] {
+  font-size: 16px;
+}
+html[data-transcript-spacing='relaxed'] [data-transcript-line] {
+  line-height: 2;
+}
+
+/* Dark.
+
+   The surfaces and the ink, rather than every screen one at a time: the
+   design paints on a handful of colours and this repaints those. */
+html[data-theme='dark'] body {
+  background-color: #0d1420;
+  color: #e5e7eb;
+}
+html[data-theme='dark'] .bg-white,
+html[data-theme='dark'] .bg-sheet,
+html[data-theme='dark'] .bg-page,
+html[data-theme='dark'] .bg-\[\#F9FAFB\],
+html[data-theme='dark'] .bg-\[\#f9fafb\],
+html[data-theme='dark'] .bg-\[\#fcfcfc\] {
+  background-color: #141c2b;
+}
+html[data-theme='dark'] .bg-wash {
+  background-color: #16203200;
+}
+html[data-theme='dark'] .text-head,
+html[data-theme='dark'] .text-\[\#030712\],
+html[data-theme='dark'] .text-\[\#101828\],
+html[data-theme='dark'] .text-\[\#0d0e0f\],
+html[data-theme='dark'] .text-\[\#1E2939\],
+html[data-theme='dark'] .text-\[\#1e2939\] {
+  color: #f3f4f6;
+}
+html[data-theme='dark'] .text-body,
+html[data-theme='dark'] .text-\[\#364153\],
+html[data-theme='dark'] .text-\[\#4a5567\],
+html[data-theme='dark'] .text-\[\#4A5565\] {
+  color: #cbd5e1;
+}
+html[data-theme='dark'] .text-subtle,
+html[data-theme='dark'] .text-faint {
+  color: #94a3b8;
+}
+html[data-theme='dark'] [class*='border-line'],
+html[data-theme='dark'] .border-\[\#e7e9ef\],
+html[data-theme='dark'] .border-\[\#E5E7EB\] {
+  border-color: #27334a;
+}
+html[data-theme='dark'] input,
+html[data-theme='dark'] select,
+html[data-theme='dark'] textarea {
+  background-color: #0f1726;
+  color: #e5e7eb;
+  border-color: #27334a;
+}

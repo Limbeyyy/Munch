@@ -21,6 +21,7 @@ import { ReportsView } from '../organizer/views/ReportsView';
 import { SettingsView } from '../organizer/views/SettingsView';
 import { ProfileView } from '../organizer/ProfileView';
 import { SubscriptionView } from '../organizer/SubscriptionView';
+import { AppearanceView } from '../organizer/AppearanceView';
 import { RemindersView } from '../organizer/RemindersView';
 import { useNudges } from '../organizer/nudges';
 import { useEventPulse } from '../organizer/eventPulse';
@@ -156,6 +157,7 @@ const OrganizerInner: React.FC = () => {
             {view === 'reminders' && <RemindersView page={nudges.page} loading={nudges.loading} onRead={nudges.markRead} />}
             {view === 'profile' && <ProfileView onNavigate={setView} />}
             {view === 'subscription' && <SubscriptionView onNavigate={setView} />}
+            {view === 'appearance' && <AppearanceView />}
           </>
         )}
       </OrganizerShell>

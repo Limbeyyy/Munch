@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -10,6 +12,8 @@ from src.apps.accounts.serializers import (
 )
 from src.apps.accounts.services import AccountService
 from src.utilities.decorators import rate_limit
+
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
@@ -41,6 +45,37 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
             serializer.save()
             return Response(serializer.data)
     
+    @action(detail=False, methods=['post'], url_path='request_deletion')
+    def request_deletion(self, request):
+        """Close this account, to be removed a week from now.
+
+        Shut at once - the account cannot be signed into again - and the
+        row goes a week later. The week is the point: this is the sort of
+        thing people do at midnight and regret at nine.
+
+        Nothing is deleted here. An event holds the attendance of
+        everybody who came to it, which is why its host is PROTECTed;
+        removing the row is a thing somebody does deliberately, with the
+        events dealt with first.
+        """
+        from django.utils import timezone
+
+        user = request.user
+        if user.deletion_requested_at is None:
+            user.deletion_requested_at = timezone.now()
+            user.is_active = False
+            user.save(update_fields=[
+                'deletion_requested_at', 'is_active', 'updated_at',
+            ])
+            logger.info(f"Account closure asked for by {user.email}")
+
+        removed_on = user.deletion_requested_at + timezone.timedelta(days=7)
+        return Response({
+            'requested_at': user.deletion_requested_at,
+            'removed_on': removed_on,
+            'hosted_events': user.hosted_events.count(),
+        })
+
     @action(detail=False, methods=['get'])
     def roles(self, request):
         """Say whether this person hosts, attends, or both, and on what plan.

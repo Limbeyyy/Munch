@@ -1005,6 +1005,22 @@ class ApiClient {
     return response.data;
   }
 
+  /**
+   * Close this account, to be removed a week from now.
+   *
+   * Nothing is deleted on the spot. The account is shut - it cannot be
+   * signed into again - and the row goes a week later, which is the
+   * promise the confirmation makes.
+   */
+  async requestAccountDeletion(): Promise<{
+    requested_at: string;
+    removed_on: string;
+    hosted_events: number;
+  }> {
+    const response = await this.client.post('/users/request_deletion/');
+    return response.data;
+  }
+
   /** Take a shared file off the event, and out of the host's Drive. */
   async deleteResource(eventId: string, resourceId: string): Promise<void> {
     await this.client.delete(`/events/${eventId}/resources/`, {
