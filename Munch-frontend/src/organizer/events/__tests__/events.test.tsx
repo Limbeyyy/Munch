@@ -3,7 +3,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { OrganizerProvider } from '../../i18n';
 import { Event } from '../../../types';
 import { EventsDashboard, deckOf, whenLine } from '../EventsDashboard';
-import { Stepper } from '../chrome';
+import { DeckTabs, Stepper } from '../chrome';
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -189,5 +189,56 @@ describe('the stepper', () => {
 
     fireEvent.click(buttons[0]);
     expect(onGo).toHaveBeenCalledWith(0);
+  });
+});
+
+/**
+ * The strip of tabs above an event.
+ *
+ * It used to scroll rather than wrap, which is how a row three tabs wide
+ * ended up with a pair of stepper arrows in the corner - and why the
+ * selected tab's underline was invisible: the one-pixel overhang it
+ * needs was clipped by the scroll container.
+ */
+describe('the tab strip', () => {
+  const strip = (active = 'people') =>
+    render(
+      <OrganizerProvider>
+        <DeckTabs
+          active={active}
+          onChange={jest.fn()}
+          tabs={[
+            { id: 'overview', label: { ne: '', en: 'Overview' } },
+            { id: 'agenda', label: { ne: '', en: 'Agenda' } },
+            { id: 'people', label: { ne: '', en: 'People' } },
+          ]}
+        />
+      </OrganizerProvider>
+    );
+
+  it('wraps rather than scrolling, so it grows no stepper arrows', () => {
+    strip();
+
+    const row = screen.getByRole('tablist');
+    expect(row.className).not.toContain('overflow-x-auto');
+    expect(row.className).toContain('flex-wrap');
+  });
+
+  it('underlines the tab being read, and only that one', () => {
+    strip('people');
+
+    expect(screen.getByRole('tab', { name: 'People' }).className)
+      .toContain('border-head');
+    expect(screen.getByRole('tab', { name: 'Agenda' }).className)
+      .toContain('border-transparent');
+  });
+
+  it('moves the underline with the selection', () => {
+    strip('agenda');
+
+    expect(screen.getByRole('tab', { name: 'Agenda' }).className)
+      .toContain('border-head');
+    expect(screen.getByRole('tab', { name: 'People' }).className)
+      .toContain('border-transparent');
   });
 });

@@ -36,7 +36,11 @@ export const DeckTabs: React.FC<{
 }> = ({ tabs, active, onChange }) => {
   const { t, num } = useOrganizer();
   return (
-    <div className="flex gap-1 border-b border-line overflow-x-auto" role="tablist">
+    // Wrapping rather than scrolling. `overflow-x-auto` made a scroll
+    // container of a row three tabs wide, which clipped the one-pixel
+    // overhang the active tab's underline needs and put a pair of
+    // stepper arrows in the corner doing nothing.
+    <div className="flex gap-1 border-b border-line flex-wrap" role="tablist">
       {tabs.map((tab) => {
         const on = tab.id === active;
         return (

@@ -2,6 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { OrganizerProvider } from '../../i18n';
 import { EventWizard } from '../EventWizard';
+import { EventDetail } from '../EventDetail';
 import { apiClient } from '../../../services/api';
 import { useAuthStore } from '../../../store/authStore';
 
@@ -12,6 +13,9 @@ jest.mock('../../../services/api', () => ({
     withdrawEventInvite: jest.fn(),
     revokeRole: jest.fn(),
     getEvent: jest.fn(),
+    getResources: jest.fn(),
+    getEventSegments: jest.fn(),
+    getConclusions: jest.fn(),
     // The auth store reads this the moment it is imported.
     hasSession: () => false,
   },
@@ -157,5 +161,57 @@ describe('the people on an event', () => {
     const host = rowOf('sarah@example.com').parentElement;
     expect(rowOf('man@gmail.com').parentElement).toBe(host);
     expect(rowOf('john@example.com').parentElement).toBe(host);
+  });
+});
+
+/**
+ * The same list, on the event opened afterwards.
+ *
+ * The People tab used to be two cards side by side while the form that
+ * built the event had one column - the same people drawn two ways.
+ */
+describe('the People tab of an event', () => {
+  const openPeople = async () => {
+    render(
+      <OrganizerProvider>
+        <EventDetail
+          event={event}
+          onBack={jest.fn()}
+          onEdit={jest.fn()}
+          onOpenRoom={jest.fn()}
+          onChanged={jest.fn()}
+        />
+      </OrganizerProvider>
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'People' }));
+    await screen.findByText('man@gmail.com');
+  };
+
+  it('starts with the host, as the form does', async () => {
+    await openPeople();
+
+    const row = rowOf('sarah@example.com');
+    expect(within(row).getByText(/Sarah Sharma/)).toBeInTheDocument();
+    expect(within(row).getByText('Host')).toBeInTheDocument();
+  });
+
+  it('is one column, not two cards', async () => {
+    await openPeople();
+
+    const host = rowOf('sarah@example.com').parentElement;
+    expect(rowOf('man@gmail.com').parentElement).toBe(host);
+    expect(rowOf('john@example.com').parentElement).toBe(host);
+  });
+
+  it('takes an attendee off from here too', async () => {
+    await openPeople();
+
+    fireEvent.click(
+      within(rowOf('john@example.com')).getByRole('button', { name: 'Remove' })
+    );
+
+    await waitFor(() =>
+      expect(api.withdrawEventInvite).toHaveBeenCalledWith('e1', 'john@example.com')
+    );
   });
 });
