@@ -973,13 +973,22 @@ class ApiClient {
     return response.data;
   }
 
+  /**
+   * Share a file with the event.
+   *
+   * A session may be named, which files the document against that talk
+   * rather than against whatever is on stage when it is sent - how an
+   * organizer stages a speaker's handouts before the day.
+   */
   async uploadResource(
     eventId: string,
     file: File,
-    onProgress?: (percent: number) => void
+    onProgress?: (percent: number) => void,
+    sessionId?: string
   ): Promise<Artifact> {
     const formData = new FormData();
     formData.append('file', file);
+    if (sessionId) formData.append('session', sessionId);
 
     const response = await this.client.post(
       `/events/${eventId}/resources/`,
@@ -994,6 +1003,13 @@ class ApiClient {
       }
     );
     return response.data;
+  }
+
+  /** Take a shared file off the event, and out of the host's Drive. */
+  async deleteResource(eventId: string, resourceId: string): Promise<void> {
+    await this.client.delete(`/events/${eventId}/resources/`, {
+      params: { resource_id: resourceId },
+    });
   }
 
   // Artifact endpoints

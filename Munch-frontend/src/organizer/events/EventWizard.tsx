@@ -21,6 +21,41 @@ const STEPS: Pair[] = [
   { ne: 'मानिस', en: 'Peoples' },
 ];
 
+/**
+ * The two actions every step ends on.
+ *
+ * The design gives each step the same bar: a way out on the left and the
+ * step's own action on the right, both filling the width. The old row of
+ * Back and "Next: Sessions" named the step it went to, which read as a
+ * label for the screen you were leaving rather than the thing you were
+ * about to do.
+ */
+const Actions: React.FC<{
+  cancel: string;
+  go: string;
+  onCancel: () => void;
+  onGo: () => void;
+  disabled?: boolean;
+}> = ({ cancel, go, onCancel, onGo, disabled }) => (
+  <div className="border-t-[0.6px] border-[#f3f4f6] pt-4 flex gap-9">
+    <button
+      onClick={onCancel}
+      className="flex-1 h-[41px] bg-white border-[0.6px] border-line rounded-[8px]
+        text-[14px] leading-5 text-[#364153] hover:border-navy-800"
+    >
+      {cancel}
+    </button>
+    <button
+      onClick={onGo}
+      disabled={disabled}
+      className="flex-1 h-[41px] bg-navy-800 hover:bg-navy-700 rounded-[8px]
+        text-[14px] leading-5 text-white disabled:opacity-50"
+    >
+      {go}
+    </button>
+  </div>
+);
+
 interface Props {
   /** Absent when building a new one; present when changing one that exists. */
   event?: Event;
@@ -306,14 +341,17 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
             />
           </Field>
 
-          <div className="flex gap-3 justify-end pt-1">
-            <Btn onClick={onClose}>{t({ ne: 'रद्द', en: 'Cancel' })}</Btn>
-            <Btn tone="solid" onClick={saveDetails} disabled={busy}>
-              {busy
-                ? t({ ne: 'बचत गर्दै…', en: 'Saving…' })
-                : t({ ne: 'अर्को: सत्रहरू', en: 'Next: Sessions' })}
-            </Btn>
-          </div>
+          <Actions
+            cancel={t({ ne: 'रद्द', en: 'Cancel' })}
+            go={busy
+              ? t({ ne: 'बचत गर्दै…', en: 'Saving…' })
+              : saved
+              ? t({ ne: 'परिवर्तन बचत', en: 'Save changes' })
+              : t({ ne: 'कार्यक्रम बनाउनुहोस्', en: 'Create event' })}
+            onCancel={onClose}
+            onGo={saveDetails}
+            disabled={busy}
+          />
         </div>
       )}
 
@@ -369,12 +407,12 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
             </section>
           )}
 
-          <div className="flex gap-3 justify-end">
-            <Btn onClick={() => setStep(0)}>{t({ ne: 'पछाडि', en: 'Back' })}</Btn>
-            <Btn tone="solid" onClick={() => setStep(2)}>
-              {t({ ne: 'अर्को: मानिस', en: 'Next: Peoples' })}
-            </Btn>
-          </div>
+          <Actions
+            cancel={t({ ne: 'रद्द', en: 'Cancel' })}
+            go={t({ ne: 'जारी राख्नुहोस्', en: 'Continue' })}
+            onCancel={onClose}
+            onGo={() => setStep(2)}
+          />
 
           {(drafting || editing) && saved && (
             <AddAgendaDialog
@@ -485,10 +523,12 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
             )}
           </div>
 
-          <div className="flex gap-3 justify-end">
-            <Btn onClick={() => setStep(1)}>{t({ ne: 'पछाडि', en: 'Back' })}</Btn>
-            <Btn tone="solid" onClick={onClose}>{t({ ne: 'सकियो', en: 'Done' })}</Btn>
-          </div>
+          <Actions
+            cancel={t({ ne: 'रद्द', en: 'Cancel' })}
+            go={t({ ne: 'सकियो', en: 'Done' })}
+            onCancel={onClose}
+            onGo={onClose}
+          />
         </div>
       )}
 
