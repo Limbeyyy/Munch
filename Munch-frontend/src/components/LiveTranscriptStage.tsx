@@ -46,6 +46,7 @@ export const LiveTranscriptStage: React.FC<Props> = ({
           {transcript.map((seg, i) => (
             <p
               key={`${seg.speaker_name}-${seg.start_time}-${i}`}
+              data-transcript-line
               className="leading-relaxed"
             >
               <span className="text-blue-400 text-xs font-mono mr-2">

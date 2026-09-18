@@ -29,7 +29,7 @@ import { unseenSince, useSeen } from '../organizer/seen';
 import { ShareEventDialog } from '../components/ShareEventDialog';
 
 const OrganizerInner: React.FC = () => {
-  const { t, num, a11y, setA11y } = useOrganizer();
+  const { t, num } = useOrganizer();
   const navigate = useNavigate();
   const { user } = useAuthStore();
 
@@ -48,7 +48,6 @@ const OrganizerInner: React.FC = () => {
   /** Everything still awaiting a decision, with when each arrived. */
   const [queue, setQueue] = useState<{ id: string; created_at: string }[]>([]);
 
-  const [a11yOpen, setA11yOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [drawer, setDrawer] = useState<Event | null>(null);
   const [sharing, setSharing] = useState<Event | null>(null);
@@ -133,7 +132,7 @@ const OrganizerInner: React.FC = () => {
         onNavigate={setView}
         badges={badges}
         eventName={activeTitle}
-        onOpenA11y={() => setA11yOpen(true)}
+        onOpenA11y={() => setView('appearance')}
       >
         {loading ? (
           <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>
@@ -162,32 +161,6 @@ const OrganizerInner: React.FC = () => {
         )}
       </OrganizerShell>
 
-      {/* Accessibility */}
-      <Modal
-        open={a11yOpen}
-        onClose={() => setA11yOpen(false)}
-        title={t({ ne: 'पहुँच', en: 'Accessibility' })}
-        lede={t({ ne: 'डिजाइन उही रहन्छ — पढ्न सजिलो मात्र हुन्छ।', en: 'Same design, just easier to read.' })}
-        footer={<Btn tone="solid" onClick={() => setA11yOpen(false)}>{t({ ne: 'भयो', en: 'Done' })}</Btn>}
-      >
-        <div className="flex flex-col gap-3">
-          {([
-            ['big', { ne: 'ठूलो अक्षर', en: 'Larger text' }],
-            ['contrast', { ne: 'गाढा किनारा', en: 'Stronger borders' }],
-            ['calm', { ne: 'चलायमान कम', en: 'Reduce motion' }],
-          ] as const).map(([key, label]) => (
-            <label key={key} className="flex items-center gap-2.5 text-[13.5px] cursor-pointer">
-              <input
-                type="checkbox"
-                checked={a11y[key]}
-                onChange={() => setA11y((v) => ({ ...v, [key]: !v[key] }))}
-                className="w-4 h-4 accent-[#1B7F58]"
-              />
-              {t(label)}
-            </label>
-          ))}
-        </div>
-      </Modal>
 
       {createOpen && (
         <CreateSessionModal

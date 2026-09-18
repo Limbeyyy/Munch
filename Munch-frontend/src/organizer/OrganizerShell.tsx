@@ -231,10 +231,12 @@ export const OrganizerShell: React.FC<Props> = ({
                 ))}
               </div>
 
+              {/* Straight to the page these settings live on, rather than
+                  a second copy of them in a dialog over the top. */}
               <button
                 onClick={onOpenA11y}
                 aria-pressed={a11y.big || a11y.contrast || a11y.calm}
-                title={t({ ne: 'पहुँच', en: 'Accessibility' })}
+                title={t({ ne: 'पहुँच र रूपरंग', en: 'Accessibility and appearance' })}
                 className={`w-8 h-8 rounded-[10px] grid place-items-center ${
                   a11y.big || a11y.contrast || a11y.calm
                     ? 'bg-navy-800 text-white'
