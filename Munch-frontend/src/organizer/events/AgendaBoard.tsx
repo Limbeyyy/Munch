@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { Event } from '../../types';
+import { Artifact, Event } from '../../types';
 import { errorText } from '../errors';
 import { useOrganizer } from '../i18n';
 import { useSessionGap } from '../sessionGap';
@@ -23,6 +23,26 @@ const toLocalInput = (ms: number) => {
 
 /** A session already run, or running, keeps the time it actually had. */
 const settled = (s: PlannedSession) => s.status !== 'scheduled';
+
+/** The card's own ordinal: 01, 02, 03, the way the design numbers them. */
+const ordinal = (at: number) => String(at + 1).padStart(2, '0');
+
+/**
+ * What a file is, said in three letters and a colour.
+ *
+ * The design draws a small square chip per document rather than an icon
+ * set, so the kind is read off the name: there is no field for it, and a
+ * name is what the host uploaded it under.
+ */
+const KINDS: { match: RegExp; label: string; paint: string }[] = [
+  { match: /\.pptx?$/i, label: 'PPT', paint: '#F25219' },
+  { match: /\.docx?$/i, label: 'DOX', paint: '#4378E1' },
+  { match: /\.pdf$/i, label: 'PDF', paint: '#CE3A2B' },
+  { match: /\.xlsx?$|\.csv$/i, label: 'XLS', paint: '#1B7F58' },
+];
+
+const kindOf = (name: string) =>
+  KINDS.find((k) => k.match.test(name)) ?? { label: 'DOC', paint: '#6A7282' };
 
 interface Props {
   event: Event;
@@ -56,14 +76,45 @@ export const AgendaBoard: React.FC<Props> = ({ event, onChanged, onAdd, onEdit }
   const [saving, setSaving] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  /**
+   * The files shared against each talk, for the column the design puts
+   * down the right of a card.
+   *
+   * Decoration rather than substance: an event being typed for the first
+   * time has none, and a board that cannot reach them is still a board -
+   * so a refusal here leaves the column off rather than the screen.
+   */
+  const [documents, setDocuments] = useState<Record<string, Artifact[]>>({});
 
   // The server moves the day about too - a session started early brings
   // the rest forward - so the board follows what it last said.
   useEffect(() => { setPlan(toPlan([event])); }, [event]);
 
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const all = await apiClient.getResources(event.id);
+        if (!live) return;
+        const bySession: Record<string, Artifact[]> = {};
+        all.forEach((one) => {
+          if (!one.session) return;
+          bySession[one.session] = [...(bySession[one.session] ?? []), one];
+        });
+        setDocuments(bySession);
+      } catch {
+        if (live) setDocuments({});
+      }
+    })();
+    return () => { live = false; };
+  }, [event.id]);
+
   const day = plan[0];
   const sessions = day?.sessions ?? [];
   const changes = countChanges(plan);
+
+  /** What the plan does not carry: a talk's own words, and its speaker's. */
+  const detailOf = (id: string) => (event.sessions ?? []).find((s) => s.id === id);
 
   /**
    * Two talks change places, each taking the other's slot.
@@ -178,10 +229,14 @@ export const AgendaBoard: React.FC<Props> = ({ event, onChanged, onAdd, onEdit }
         })}
       </p>
 
-      <ul className="flex flex-col">
+      <ul className="flex flex-col gap-3">
         {sessions.map((one, at) => {
           const fixed = settled(one);
           const ends = one.startsAt + one.durationMinutes * 60000;
+          // The plan carries what the scheduler needs; the words a talk
+          // was written with come from the event itself.
+          const more = detailOf(one.id);
+          const files = documents[one.id] ?? [];
           return (
             <li
               key={one.id}
@@ -209,108 +264,183 @@ export const AgendaBoard: React.FC<Props> = ({ event, onChanged, onAdd, onEdit }
                 if (e.key === 'ArrowDown') { e.preventDefault(); nudge(one, 1); }
               }}
               tabIndex={fixed ? -1 : 0}
-              className={`flex items-center gap-3 py-3 border-b border-line last:border-0
+              className={`bg-white border-[0.6px] border-line rounded-[12px] p-5
+                flex items-start gap-4
+                shadow-[0px_1px_1px_rgba(0,0,0,0.11),0px_1px_1.5px_rgba(0,0,0,0.15)]
                 ${fixed ? 'opacity-70' : 'cursor-grab'}
-                ${dragging === one.id ? 'bg-[#eff6ff]' : ''}`}
+                ${dragging === one.id ? 'border-navy-500' : ''}`}
             >
-              <span
-                aria-hidden
-                className={`text-[14px] leading-none flex-none w-4 text-center
-                  ${fixed ? 'text-line' : 'text-faint'}`}
-                title={fixed ? undefined : t({ ne: 'तान्नुहोस्', en: 'Drag to reorder' })}
-              >
-                ⠿
-              </span>
-
-              <span className="font-mono text-[12.5px] text-subtle tabular-nums flex-none">
-                {clock(one.startsAt)}–{clock(ends)}
-              </span>
-
-              <span className="min-w-0 flex-1">
-                <span className="block text-[14px] font-medium text-head truncate">
-                  {one.title}
+              {/* Where this talk comes in the order, and the grip that moves it. */}
+              <div className="flex-none w-8 flex flex-col items-start pt-0.5">
+                <span className="text-[24px] font-light leading-8 text-[#959595] tabular-nums">
+                  {num(ordinal(at))}
                 </span>
-                <span className="text-[12.5px] text-subtle truncate">
-                  {num(one.durationMinutes)}′
-                  {one.speaker_name && ` · ${one.speaker_name}`}
-                </span>
-              </span>
-
-              {/* When it starts, and how long for. Both reflow the rest. */}
-              <input
-                type="datetime-local"
-                aria-label={t({ ne: 'सुरु', en: 'Starts' })}
-                disabled={fixed}
-                value={toLocalInput(one.startsAt)}
-                onChange={(e) => {
-                  const next = +new Date(e.target.value);
-                  if (!Number.isNaN(next)) {
-                    setPlan((p) => applyEdit(p, one.id, { startsAt: next }, gapMinutes));
-                  }
-                }}
-                className="border border-line rounded-[8px] px-2 py-1 text-[12.5px]
-                  text-head flex-none disabled:opacity-50"
-              />
-              <input
-                aria-label={t({ ne: 'हल', en: 'Hall' })}
-                placeholder={t({ ne: 'हल', en: 'Hall' })}
-                value={one.hall}
-                onChange={(e) => setPlan((p) => setHall(p, one.id, e.target.value))}
-                className="border border-line rounded-[8px] px-2 py-1 text-[12.5px]
-                  text-head w-[92px] flex-none"
-              />
-              <input
-                type="number"
-                min={5}
-                step={5}
-                aria-label={t({ ne: 'मिनेट', en: 'Minutes' })}
-                disabled={fixed}
-                value={one.durationMinutes}
-                onChange={(e) =>
-                  setPlan((p) => applyEdit(
-                    p, one.id, { durationMinutes: Number(e.target.value) || 5 }, gapMinutes
-                  ))
-                }
-                className="border border-line rounded-[8px] px-2 py-1 text-[12.5px]
-                  text-head w-[68px] flex-none disabled:opacity-50"
-              />
-
-              {one.moved && (
-                <span className="bg-[#FEF6E7] text-[#B26A00] rounded-[4px] px-2 py-0.5
-                  text-[12px] leading-4 flex-none">
-                  {t({ ne: 'सारिएको', en: 'Moved' })}
-                </span>
-              )}
-              {fixed && (
-                <span className="bg-[#F3F4F6] text-faint rounded-[4px] px-2 py-0.5
-                  text-[12px] leading-4 flex-none">
-                  {one.status === 'live'
-                    ? t({ ne: 'मञ्चमा', en: 'On stage' })
-                    : t({ ne: 'सकियो', en: 'Run' })}
-                </span>
-              )}
-
-              {onEdit && (
-                <button
-                  onClick={() => onEdit(one.id)}
-                  className="text-[13px] text-tagink hover:underline flex-none"
+                <span
+                  aria-hidden
+                  className={`text-[14px] leading-none ${fixed ? 'text-line' : 'text-faint'}`}
+                  title={fixed ? undefined : t({ ne: 'तान्नुहोस्', en: 'Drag to reorder' })}
                 >
-                  {t({ ne: 'सम्पादन', en: 'Edit' })}
-                </button>
+                  ⠿
+                </span>
+              </div>
+
+              <div className="min-w-0 flex-1 flex flex-col">
+                <p className="font-mono text-[12px] leading-4 text-faint tabular-nums">
+                  {clock(one.startsAt)} – {clock(ends)}
+                </p>
+                <p className="pt-1 text-[15px] font-semibold text-head leading-[22.5px] truncate">
+                  {one.title}
+                </p>
+
+                <div className="pt-2 flex flex-col items-start">
+                  {one.speaker_name ? (
+                    <>
+                      <span className="text-[12px] leading-4 text-faint">
+                        {t({ ne: 'वक्ता', en: 'Speaker' })}
+                      </span>
+                      <span className="pt-0.5 text-[14px] leading-5 font-medium text-[#364153]">
+                        {one.speaker_name}
+                      </span>
+                      {more?.speaker_role && (
+                        <span className="text-[12px] leading-4 text-subtle">
+                          {more.speaker_role}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-[12px] leading-4 italic text-faint">
+                      {t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker assigned' })}
+                    </span>
+                  )}
+                  {/* The speaker is written on the same form the talk is,
+                      so this is a way into it rather than a second one. */}
+                  {onEdit && (
+                    <button
+                      onClick={() => onEdit(one.id)}
+                      className="pt-1.5 text-[12px] leading-4 text-[#155DFC] hover:underline"
+                    >
+                      {one.speaker_name
+                        ? t({ ne: 'वक्ता फेर्नुहोस्', en: 'Change speaker' })
+                        : t({ ne: 'वक्ता थप्नुहोस्', en: 'Add speaker' })}
+                    </button>
+                  )}
+                </div>
+
+                {more?.description && (
+                  <p className="pt-2 text-[12px] leading-[19.5px] text-subtle">
+                    {more.description}
+                  </p>
+                )}
+
+                {/* When it starts, how long for, and which hall. All three
+                    reflow what follows. */}
+                <div className="pt-3 flex flex-wrap items-center gap-2">
+                  <input
+                    type="datetime-local"
+                    aria-label={t({ ne: 'सुरु', en: 'Starts' })}
+                    disabled={fixed}
+                    value={toLocalInput(one.startsAt)}
+                    onChange={(e) => {
+                      const next = +new Date(e.target.value);
+                      if (!Number.isNaN(next)) {
+                        setPlan((p) => applyEdit(p, one.id, { startsAt: next }, gapMinutes));
+                      }
+                    }}
+                    className="border border-line rounded-[8px] px-2 py-1 text-[12.5px]
+                      text-head disabled:opacity-50"
+                  />
+                  <input
+                    aria-label={t({ ne: 'हल', en: 'Hall' })}
+                    placeholder={t({ ne: 'हल', en: 'Hall' })}
+                    value={one.hall}
+                    onChange={(e) => setPlan((p) => setHall(p, one.id, e.target.value))}
+                    className="border border-line rounded-[8px] px-2 py-1 text-[12.5px]
+                      text-head w-[92px]"
+                  />
+                  <input
+                    type="number"
+                    min={5}
+                    step={5}
+                    aria-label={t({ ne: 'मिनेट', en: 'Minutes' })}
+                    disabled={fixed}
+                    value={one.durationMinutes}
+                    onChange={(e) =>
+                      setPlan((p) => applyEdit(
+                        p, one.id, { durationMinutes: Number(e.target.value) || 5 }, gapMinutes
+                      ))
+                    }
+                    className="border border-line rounded-[8px] px-2 py-1 text-[12.5px]
+                      text-head w-[68px] disabled:opacity-50"
+                  />
+
+                  {one.moved && (
+                    <span className="bg-[#FEF6E7] text-[#B26A00] rounded-[4px] px-2 py-0.5
+                      text-[12px] leading-4">
+                      {t({ ne: 'सारिएको', en: 'Moved' })}
+                    </span>
+                  )}
+                  {fixed && (
+                    <span className="bg-[#F3F4F6] text-faint rounded-[4px] px-2 py-0.5
+                      text-[12px] leading-4">
+                      {one.status === 'live'
+                        ? t({ ne: 'मञ्चमा', en: 'On stage' })
+                        : t({ ne: 'सकियो', en: 'Run' })}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* What was shared against this talk. Left off where there is
+                  nothing yet, rather than drawn as an empty column. */}
+              {files.length > 0 && (
+                <div className="flex-none w-[157px] flex flex-col gap-1 pt-11">
+                  <span className="text-[12px] leading-4 text-faint pb-0.5">
+                    {t({ ne: 'कागजात', en: 'Documents' })}
+                  </span>
+                  {files.map((file) => {
+                    const kind = kindOf(file.display_name);
+                    return (
+                      <span key={file.id} className="flex items-center gap-2">
+                        <span
+                          aria-hidden
+                          style={{ backgroundColor: kind.paint }}
+                          className="w-5 h-5 rounded-[4px] grid place-items-center flex-none
+                            text-[7px] font-bold leading-[10.5px] text-white"
+                        >
+                          {kind.label}
+                        </span>
+                        <span className="text-[12px] leading-4 text-body truncate">
+                          {file.display_name}
+                        </span>
+                      </span>
+                    );
+                  })}
+                </div>
               )}
-              {/* The only way off the running order, so it asks first
-                  and says what else goes with it. */}
-              <button
-                onClick={() => remove(one)}
-                disabled={removing === one.id || one.status === 'live'}
-                aria-label={t({ ne: 'सत्र हटाउने', en: 'Remove session' })}
-                title={t({ ne: 'सत्र हटाउने', en: 'Remove session' })}
-                className="w-7 h-7 rounded-md text-faint flex-none
-                  hover:text-live hover:bg-live/[.08] disabled:opacity-40"
-              >
-                ×
-              </button>
-              <span className="sr-only">{num(at + 1)}</span>
+
+              <div className="flex-none flex items-center gap-2">
+                {onEdit && (
+                  <button
+                    onClick={() => onEdit(one.id)}
+                    className="bg-white border-[0.6px] border-[#5B94E4] rounded-[8px]
+                      px-3 py-1.5 text-[12px] leading-4 text-navy-800 hover:bg-tagbg"
+                  >
+                    {t({ ne: 'सम्पादन', en: 'Edit' })}
+                  </button>
+                )}
+                {/* The only way off the running order, so it asks first
+                    and says what else goes with it. */}
+                <button
+                  onClick={() => remove(one)}
+                  disabled={removing === one.id || one.status === 'live'}
+                  aria-label={t({ ne: 'सत्र हटाउने', en: 'Remove session' })}
+                  title={t({ ne: 'सत्र हटाउने', en: 'Remove session' })}
+                  className="w-7 h-7 rounded-md text-faint
+                    hover:text-live hover:bg-live/[.08] disabled:opacity-40"
+                >
+                  ×
+                </button>
+              </div>
             </li>
           );
         })}

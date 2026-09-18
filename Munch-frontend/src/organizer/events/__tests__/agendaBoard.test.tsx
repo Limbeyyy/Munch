@@ -9,6 +9,7 @@ jest.mock('../../../services/api', () => ({
     rescheduleSessions: jest.fn(),
     deleteSession: jest.fn(),
     getSchedulingPrefs: jest.fn(),
+    getResources: jest.fn(),
     hasSession: () => false,
   },
 }));
@@ -60,6 +61,7 @@ beforeEach(() => {
   // strips implementations set when the module was defined.
   api.getSchedulingPrefs.mockResolvedValue({ session_gap_minutes: 15 } as any);
   api.deleteSession.mockResolvedValue(undefined as any);
+  api.getResources.mockResolvedValue([] as any);
 });
 
 const show = (ev = two(), onChanged = jest.fn()) => {
@@ -294,5 +296,127 @@ describe('what came across from the Sessions page', () => {
     expect(
       within(rowOf('Kataho')).getByRole('button', { name: 'Remove session' })
     ).toBeDisabled();
+  });
+});
+
+/**
+ * A talk drawn as a card rather than a row.
+ *
+ * The row said when and how long and left the rest to the edit form,
+ * which meant the one thing an organizer scans for - who is giving this -
+ * was the one thing the running order did not show.
+ */
+describe('what a card says about its talk', () => {
+  it('numbers it by where it comes in the order', () => {
+    show();
+
+    expect(within(rowOf('Kataho')).getByText('01')).toBeInTheDocument();
+    expect(within(rowOf('Addressgraph')).getByText('02')).toBeInTheDocument();
+  });
+
+  it('renumbers when the order changes', () => {
+    show();
+
+    dragOnto('Addressgraph', 'Kataho');
+
+    expect(within(rowOf('Addressgraph')).getByText('01')).toBeInTheDocument();
+    expect(within(rowOf('Kataho')).getByText('02')).toBeInTheDocument();
+  });
+
+  it('names the speaker, and what they do', () => {
+    show(event([session({ id: 's1', title: 'Kataho', speaker_name: 'Prabhat' })]));
+
+    const card = rowOf('Kataho');
+    expect(within(card).getByText('Speaker')).toBeInTheDocument();
+    expect(within(card).getByText('Prabhat')).toBeInTheDocument();
+  });
+
+  it('says so plainly when nobody is giving it', () => {
+    show(event([session({ id: 's1', title: 'Kataho', speaker_name: '' })]));
+
+    expect(within(rowOf('Kataho')).getByText('No speaker assigned')).toBeInTheDocument();
+  });
+
+  /**
+   * The speaker is written on the same form the talk is, so the link is a
+   * way into that form rather than a second place to keep a name.
+   */
+  it('offers to change the speaker, through the form the talk was written on', () => {
+    const onEdit = jest.fn();
+    render(
+      <OrganizerProvider>
+        <AgendaBoard event={two()} onChanged={jest.fn()} onEdit={onEdit} />
+      </OrganizerProvider>
+    );
+
+    fireEvent.click(
+      within(rowOf('Kataho')).getByRole('button', { name: 'Change speaker' })
+    );
+
+    expect(onEdit).toHaveBeenCalledWith('s1');
+  });
+
+  it('offers to add one where there is none', () => {
+    render(
+      <OrganizerProvider>
+        <AgendaBoard
+          event={event([session({ id: 's1', title: 'Kataho', speaker_name: '' })])}
+          onChanged={jest.fn()}
+          onEdit={jest.fn()}
+        />
+      </OrganizerProvider>
+    );
+
+    expect(
+      within(rowOf('Kataho')).getByRole('button', { name: 'Add speaker' })
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * What was shared against a talk, down the side of its card.
+ *
+ * Documents are decoration here: an event being typed for the first time
+ * has none, and the board is still a board when they cannot be reached.
+ */
+describe('the documents on a card', () => {
+  const files = [
+    { id: 'a1', session: 's1', display_name: 'research.ppt' },
+    { id: 'a2', session: 's1', display_name: 'documents.doc' },
+    { id: 'a3', session: null, display_name: 'programme.pdf' },
+  ];
+
+  it('lists the ones shared against that talk', async () => {
+    api.getResources.mockResolvedValue(files as any);
+    show();
+
+    const card = rowOf('Kataho');
+    expect(await within(card).findByText('research.ppt')).toBeInTheDocument();
+    expect(within(card).getByText('documents.doc')).toBeInTheDocument();
+    expect(within(card).getByText('Documents')).toBeInTheDocument();
+  });
+
+  it('keeps one belonging to no talk off every card', async () => {
+    api.getResources.mockResolvedValue(files as any);
+    show();
+
+    await screen.findByText('research.ppt');
+    expect(screen.queryByText('programme.pdf')).toBeNull();
+  });
+
+  it('leaves the column off a talk with nothing shared', async () => {
+    api.getResources.mockResolvedValue(files as any);
+    show();
+
+    await screen.findByText('research.ppt');
+    expect(within(rowOf('Addressgraph')).queryByText('Documents')).toBeNull();
+  });
+
+  it('draws the board anyway when they cannot be fetched', async () => {
+    api.getResources.mockRejectedValue(new Error('no'));
+    show();
+
+    await waitFor(() => expect(api.getResources).toHaveBeenCalled());
+    expect(rowOf('Kataho')).toBeInTheDocument();
   });
 });
