@@ -12,6 +12,7 @@ import { BackLink, Block, Caution, DeckTabs, EventHeading, PlusGlyph, ReadyRow, 
 import { CoHostDialog } from './CoHostDialog';
 import { PeopleEmpty, PeopleHeading, PersonRow, initialsOf } from './people';
 import { AddAgendaDialog } from './AddAgendaDialog';
+import { AgendaBoard } from './AgendaBoard';
 import { whenLine } from './EventsDashboard';
 
 const clock = (iso: string) =>
@@ -322,75 +323,41 @@ export const EventDetail: React.FC<Props> = ({
 
       {tab === 'agenda' && (
         <div className="flex flex-col gap-5">
-          {sessions.length === 0 ? (
-            <p className="text-[14px] text-subtle">
-              {t({ ne: 'यो कार्यक्रममा अझै बैठक छैन।', en: 'This event has no events yet.' })}
-            </p>
-          ) : (
-            [event]
-              .sort((a, b) => +new Date(a.scheduled_start) - +new Date(b.scheduled_start))
-              .map((event) => (
-                <div key={event.id} className="border border-line rounded-[12px] overflow-hidden">
-                  <div className="bg-sheet px-5 py-3 flex items-center gap-3 flex-wrap">
-                    <b className="text-[14px] font-medium text-head">{event.title}</b>
-                    <span className="text-[13px] text-subtle tabular-nums">
-                      {clock(event.scheduled_start)}–{clock(event.scheduled_end)}
-                    </span>
-                    <span className="text-[12.5px] font-mono text-navy-800">
-                      {event.code}
-                    </span>
-                    <Chip tone={EVENT_STATE_TONE[eventState(event)]}>
-                      {t(EVENT_STATE_LABEL[eventState(event)])}
-                    </Chip>
-                    <span className="ml-auto flex-none">
-                      <Btn sm onClick={() => setSharing(event)}>
-                        {t({ ne: 'लिंक र QR', en: 'Link & QR' })}
-                      </Btn>
-                    </span>
-                  </div>
+          <div className="border border-line rounded-[12px] overflow-hidden">
+            <div className="bg-sheet px-5 py-3 flex items-center gap-3 flex-wrap">
+              <b className="text-[14px] font-medium text-head">{event.title}</b>
+              <span className="text-[13px] text-subtle tabular-nums">
+                {clock(event.scheduled_start)}–{clock(event.scheduled_end)}
+              </span>
+              <span className="text-[12.5px] font-mono text-navy-800">{event.code}</span>
+              <Chip tone={EVENT_STATE_TONE[eventState(event)]}>
+                {t(EVENT_STATE_LABEL[eventState(event)])}
+              </Chip>
+              <span className="ml-auto flex-none">
+                <Btn sm onClick={() => setSharing(event)}>
+                  {t({ ne: 'लिंक र QR', en: 'Link & QR' })}
+                </Btn>
+              </span>
+            </div>
 
-                  <div className="px-5 py-2">
-                    {sessions.length === 0 ? (
-                      <p className="text-[13px] text-subtle py-2">
-                        {t({ ne: 'सत्र थपिएको छैन।', en: 'No sessions added.' })}
-                      </p>
-                    ) : (
-                      sessions.map((s) => (
-                        <div
-                          key={s.id}
-                          className="flex items-center gap-3 py-3 border-b border-line last:border-0"
-                        >
-                          <span className="font-mono text-[12.5px] text-subtle tabular-nums w-[52px] flex-none">
-                            {clock(s.starts_at)}
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block text-[14px] text-head truncate">{s.title}</span>
-                            <span className="text-[12.5px] text-faint">
-                              {num(s.duration_minutes)}′
-                              {s.hall && ` · ${s.hall}`}
-                              {s.speaker_name && ` · ${s.speaker_name}`}
-                            </span>
-                          </span>
-                          <span className="flex-none">
-                            {s.status === 'live' ? (
-                              <Btn sm tone="danger" disabled={busy === s.id}
-                                   onClick={() => runSession(s, 'end', event.code)}>
-                                {t({ ne: 'सकाउने', en: 'End' })}
-                              </Btn>
-                            ) : s.status === 'scheduled' || s.status === 'skipped' ? (
-                              <Btn sm tone="solid" disabled={busy === s.id}
-                                   onClick={() => runSession(s, 'start', event.code)}>
-                                {t({ ne: 'मञ्चमा', en: 'On stage' })}
-                              </Btn>
-                            ) : null}
-                          </span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              ))
-          )}
+            <div className="px-5 py-3">
+              <AgendaBoard
+                event={event}
+                onChanged={onChanged}
+                onAdd={() => setWriting('new')}
+                onEdit={(id) => {
+                  const one = sessions.find((s) => s.id === id);
+                  if (one) setWriting(one);
+                }}
+                onRun={(id, action) => {
+                  const one = sessions.find((s) => s.id === id);
+                  if (one) runSession(one, action, event.code);
+                }}
+                busyId={busy}
+              />
+            </div>
+          </div>
+
           <Btn className="self-start" onClick={() => setWriting('new')}>
             <PlusGlyph />
             {t({ ne: 'सत्र थप्नुहोस्', en: 'Add sessions' })}

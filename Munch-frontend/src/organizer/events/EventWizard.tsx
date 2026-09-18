@@ -2,15 +2,16 @@ import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
-import { Event, RoleGrantRow } from '../../types';
+import { Event, RoleGrantRow, Session } from '../../types';
 import { ShareEventDialog } from '../../components/ShareEventDialog';
 import { errorText } from '../errors';
 import { Pair, useOrganizer } from '../i18n';
-import { Btn, Chip } from '../ui';
+import { Btn } from '../ui';
 import { toLocalInput } from '../EventDraftFields';
 import { BackLink, Block, EventHeading, PlusGlyph, Sheet, Stepper } from './chrome';
 import { CoHostDialog, Field, inputClass } from './CoHostDialog';
 import { AddAgendaDialog } from './AddAgendaDialog';
+import { AgendaBoard } from './AgendaBoard';
 import { PeopleEmpty, PeopleHeading, PersonRow, initialsOf } from './people';
 import { whenLine } from './EventsDashboard';
 
@@ -65,6 +66,8 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
   const [busy, setBusy] = useState(false);
 
   const [drafting, setDrafting] = useState(false);
+  /** The talk being changed, if one is. */
+  const [editing, setEditing] = useState<Session | null>(null);
 
   const [roles, setRoles] = useState<RoleGrantRow[]>([]);
   const [invited, setInvited] = useState<{ email: string; joined: boolean }[]>([]);
@@ -340,35 +343,25 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
             )}
           </div>
 
-          {/* What is already in the running order. */}
-          {sessionCount > 0 && (
+          {/* What is already in the running order, and arranging it. */}
+          {saved && sessionCount > 0 && (
             <Block label={{
               ne: `एजेन्डा · ${num(sessionCount)} सत्र`,
               en: `Agenda · ${sessionCount} sessions`,
             }}>
-              {[...(saved?.sessions ?? [])]
-                .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at))
-                .map((one) => (
-                  <div key={one.id} className="py-3 border-b border-line last:border-0">
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <span className="font-mono text-[12.5px] text-subtle tabular-nums">
-                        {new Date(one.starts_at).toLocaleTimeString([], {
-                          hour: '2-digit', minute: '2-digit',
-                        })}
-                      </span>
-                      <b className="text-[14px] font-medium text-head">{one.title}</b>
-                      <Chip tone="draft">
-                        {num(one.duration_minutes)} {t({ ne: 'मिनेट', en: 'min' })}
-                      </Chip>
-                    </div>
-                    {one.speaker_name && (
-                      <p className="text-[13px] text-subtle mt-1.5">
-                        {one.speaker_name}
-                        {one.speaker_role ? ` · ${one.speaker_role}` : ''}
-                      </p>
-                    )}
-                  </div>
-                ))}
+              <AgendaBoard
+                event={saved}
+                onChanged={async () => {
+                  const fresh = await apiClient.getEvent(saved.id);
+                  setSaved(fresh);
+                  await onSaved();
+                }}
+                onAdd={() => setDrafting(true)}
+                onEdit={(id) => {
+                  const one = (saved.sessions ?? []).find((s) => s.id === id);
+                  if (one) setEditing(one);
+                }}
+              />
             </Block>
           )}
 
@@ -379,14 +372,16 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
             </Btn>
           </div>
 
-          {drafting && saved && (
+          {(drafting || editing) && saved && (
             <AddAgendaDialog
               eventId={saved.id}
               day={saved.event_date ?? toLocalInput(new Date(saved.scheduled_start)).slice(0, 10)}
+              session={editing ?? undefined}
               suggestedStart={nextFreeTime}
-              onClose={() => setDrafting(false)}
+              onClose={() => { setDrafting(false); setEditing(null); }}
               onAdded={async () => {
                 setDrafting(false);
+                setEditing(null);
                 const fresh = await apiClient.getEvent(saved.id);
                 setSaved(fresh);
                 await onSaved();
