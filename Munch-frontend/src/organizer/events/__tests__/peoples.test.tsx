@@ -331,3 +331,84 @@ describe('editing a session from the agenda', () => {
     expect(screen.queryByRole('button', { name: /Link & QR/ })).toBeNull();
   });
 });
+
+/**
+ * A speaker who is named but cannot be reached afterwards.
+ *
+ * The server asks for an address and a number when a session is first
+ * written and leaves them alone on a patch, so a talk edited later can
+ * carry a name and nothing else - and nothing said so. The warning for a
+ * missing speaker did not fire, because there was a speaker.
+ */
+describe('warning that a speaker cannot be reached', () => {
+  const withSpeaker = (contact: any) => ({
+    ...event,
+    sessions: [{
+      id: 's1',
+      title: 'Session Kataho',
+      description: '',
+      speaker_name: 'Prabhat Karmacharya',
+      speaker_contact: contact,
+      starts_at: '2026-09-15T10:00:00',
+      duration_minutes: 30,
+      status: 'scheduled',
+    }],
+    session_count: 1,
+  });
+
+  const openWith = (contact: any) =>
+    render(
+      <OrganizerProvider>
+        <EventDetail
+          event={withSpeaker(contact) as any}
+          onBack={jest.fn()}
+          onEdit={jest.fn()}
+          onOpenRoom={jest.fn()}
+          onChanged={jest.fn()}
+        />
+      </OrganizerProvider>
+    );
+
+  const warning = /Speaker contact information is not assigned or empty/;
+
+  it('says so when there is no address', () => {
+    openWith({ email: '', phone: '9811111111' });
+
+    expect(screen.getByText(warning)).toBeInTheDocument();
+  });
+
+  it('says so when there is no number', () => {
+    openWith({ email: 'p@example.com', phone: '' });
+
+    expect(screen.getByText(warning)).toBeInTheDocument();
+  });
+
+  it('says so when there is neither', () => {
+    openWith({ email: '   ', phone: '' });
+
+    expect(screen.getByText(warning)).toBeInTheDocument();
+  });
+
+  it('says nothing when the speaker can be reached', () => {
+    openWith({ email: 'p@example.com', phone: '9811111111' });
+
+    expect(screen.queryByText(warning)).toBeNull();
+  });
+
+  /**
+   * Only the host is sent a speaker's details, so for a co-host the field
+   * is null - which says nothing about whether they were filled in.
+   */
+  it('claims nothing where the reader is not sent the details', () => {
+    openWith(null);
+
+    expect(screen.queryByText(warning)).toBeNull();
+  });
+
+  /** The older warning is about there being no speaker at all. */
+  it('leaves the missing-speaker warning to say its own thing', () => {
+    openWith({ email: '', phone: '' });
+
+    expect(screen.queryByText(/has no speaker assigned/)).toBeNull();
+  });
+});
