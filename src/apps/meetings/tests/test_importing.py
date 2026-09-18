@@ -67,12 +67,23 @@ class TemplateTests(TestCase):
         self.assertEqual(found['EVENTS'], EVENT_COLUMNS)
         self.assertEqual(found['SESSIONS'], SESSION_COLUMNS)
 
-    def test_the_tables_are_joined_by_id(self):
-        # What makes it three tables rather than three lists: a event
-        # names its event, and a session names its event.
-        self.assertIn('event_id', EVENT_COLUMNS)
-        self.assertIn('event_id', SESSION_COLUMNS)
-        self.assertIn('event_id', SESSION_COLUMNS)
+    def test_it_asks_for_nothing_twice(self):
+        # A sheet holds one event, so there is nothing for an id to tell
+        # apart: the columns went, and with them a thing to get wrong.
+        self.assertNotIn('event_id', EVENT_COLUMNS)
+        self.assertNotIn('event_id', SESSION_COLUMNS)
+        self.assertNotIn('session_id', SESSION_COLUMNS)
+
+    def test_it_says_at_the_top_that_a_sheet_holds_one_event(self):
+        text = template_csv().decode('utf-8-sig')
+
+        self.assertIn('ONE EVENT PER SHEET', text)
+
+    def test_the_rules_are_numbered_so_one_can_be_pointed_at(self):
+        lines = template_csv().decode('utf-8-sig').splitlines()
+
+        self.assertTrue(any(line.startswith('# 1. ') for line in lines))
+        self.assertTrue(any(line.startswith('# HOW TO FILL THIS IN') for line in lines))
 
     def test_it_says_how_to_fill_it_in(self):
         text = template_csv().decode('utf-8-sig')
@@ -408,32 +419,56 @@ class TwoTablesTests(TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(len(events[0]['sessions']), 2)
 
-    def test_a_session_lands_in_the_event_its_id_names(self):
+    def test_a_second_event_in_the_table_is_refused(self):
+        # One sheet, one event. Several at once meant every session had to
+        # name which one it belonged to, and a sheet that quietly created
+        # four events is not something anybody asked for twice.
         raw = tables(
             events=[
                 AN_EVENT,
-                {'event_id': '2', 'event_title': 'Nepal Cannot Move',
-                 'event_date': '2026-09-14'},
+                {'event_title': 'Nepal Cannot Move', 'event_date': '2026-09-14'},
             ],
-            sessions=[a_row(event_id='2')],
-        )
-
-        one, two = read_sheet(raw)
-        self.assertEqual(one['sessions'], [])
-        self.assertEqual(len(two['sessions']), 1)
-
-    def test_a_programme_with_nothing_under_it_yet_is_still_made(self):
-        # Set the programme up now, fill in its day later. The form allows
-        # that, so the sheet does too.
-        raw = tables(
-            events=[AN_EVENT, {'event_id': '2', 'event_title': 'Later',
-                               'event_date': '2026-09-14'}],
             sessions=[a_row()],
         )
 
+        with self.assertRaises(ImportProblem) as problem:
+            read_sheet(raw)
+
+        self.assertIn('A sheet holds one event', str(problem.exception))
+        self.assertEqual(problem.exception.column, 'event_title')
+
+    def test_it_points_at_the_row_the_second_one_is_on(self):
+        raw = tables(
+            events=[AN_EVENT, {'event_title': 'Second', 'event_date': '2026-09-14'}],
+            sessions=[a_row()],
+        )
+
+        with self.assertRaises(ImportProblem) as problem:
+            read_sheet(raw)
+
+        self.assertIsNotNone(problem.exception.row)
+
+    def test_there_is_no_ceiling_on_the_sessions(self):
+        raw = tables(
+            events=[AN_EVENT],
+            sessions=[
+                a_row(session_title=f'Talk {n}',
+                      session_starts_at=f'2026-09-14 {9 + n:02d}:00')
+                for n in range(12)
+            ],
+        )
+
+        [programme] = read_sheet(raw)
+        self.assertEqual(len(programme['sessions']), 12)
+
+    def test_an_event_with_nothing_under_it_yet_is_still_made(self):
+        # Set the event up now, fill in its day later. The form allows
+        # that, so the sheet does too.
+        raw = tables(events=[AN_EVENT], sessions=[])
+
         programmes = read_sheet(raw)
-        self.assertEqual([p['title'] for p in programmes],
-                         ['Nepal Can Move', 'Later'])
+        self.assertEqual([p['title'] for p in programmes], ['Nepal Can Move'])
+        self.assertEqual(programmes[0]['sessions'], [])
 
     def test_the_order_of_the_rows_is_the_order_of_the_day(self):
         raw = tables(
@@ -449,32 +484,11 @@ class TwoTablesTests(TestCase):
         self.assertEqual([s['title'] for s in sessions], ['One', 'Two'])
         self.assertEqual([s['position'] for s in sessions], [1, 2])
 
-    def test_a_meeting_id_that_is_not_there_is_named(self):
-        raw = tables(events=[AN_EVENT], sessions=[a_row(event_id='9')])
-
-        with self.assertRaises(ImportProblem) as problem:
-            read_sheet(raw)
-
-        self.assertIn('no event with the id “9”', str(problem.exception))
-        self.assertEqual(problem.exception.column, 'event_id')
-
-    def test_two_things_cannot_share_an_id(self):
-        raw = tables(
-            events=[AN_EVENT, {**AN_EVENT, 'event_title': 'Same id'}], sessions=[a_row()],
-        )
-
-        with self.assertRaises(ImportProblem) as problem:
-            read_sheet(raw)
-
-        self.assertIn('share the id', str(problem.exception))
-
-    def test_a_single_event_needs_no_id_typed_at_all(self):
-        # One event: there is nothing to be ambiguous about, so the id can
-        # be left blank.
+    def test_a_session_needs_no_id_typed_at_all(self):
+        # There is one event, so there is nothing to be ambiguous about.
         raw = tables(
             events=[{'event_title': 'Small day', 'event_date': '2026-09-14'}],
-            sessions=[a_row(event_id='',
-                            session_starts_at='2026-09-14 09:00')],
+            sessions=[a_row(session_starts_at='2026-09-14 09:00')],
         )
 
         [programme] = read_sheet(raw)
@@ -519,34 +533,45 @@ class WorkbookTests(TestCase):
 
         self.assertEqual(markers, ['EVENTS', 'SESSIONS'])
 
-    def test_the_session_ids_are_chosen_rather_than_typed(self):
+    def test_nothing_is_picked_from_a_list_any_more(self):
+        # The dropdown existed to point a session at one of several
+        # events. There is one, so it pointed at nothing.
         from openpyxl import load_workbook
 
         book = load_workbook(io.BytesIO(template_workbook()))
-        lists = book.active.data_validations.dataValidation
 
-        self.assertEqual(len(lists), 1)
-        for validation in lists:
-            self.assertEqual(validation.type, 'list')
-            # It points at the id column of the table above.
-            self.assertTrue(validation.formula1.startswith('=$A$'))
-            # And is enforced rather than decorative: without this the
-            # arrow appears but anything typed is accepted.
-            self.assertTrue(validation.showErrorMessage)
-            self.assertEqual(validation.errorStyle, 'stop')
+        self.assertEqual(len(book.active.data_validations.dataValidation), 0)
 
-    def test_the_dropdown_sits_on_the_id_column_of_the_sessions_table(self):
+    def test_the_column_headings_stand_out_from_what_is_typed_under_them(self):
         from openpyxl import load_workbook
 
-        book = load_workbook(io.BytesIO(template_workbook()))
-        columns = sorted(
-            str(v.sqref).split('$')[0][0]
-            for v in book.active.data_validations.dataValidation
-        )
+        sheet = load_workbook(io.BytesIO(template_workbook())).active
+        headings = [
+            cell
+            for row in sheet.iter_rows()
+            for cell in row
+            if cell.value == 'session_title'
+        ]
 
-        # event_id is the second column of the sessions table.
-        self.assertEqual(columns, ['B'])
-        self.assertEqual(SESSION_COLUMNS[1], 'event_id')
+        self.assertTrue(headings)
+        for cell in headings:
+            self.assertTrue(cell.font.bold)
+            self.assertEqual(cell.fill.fgColor.rgb[-6:], '12386E')
+
+    def test_the_rules_are_set_to_be_read_rather_than_skipped(self):
+        from openpyxl import load_workbook
+
+        sheet = load_workbook(io.BytesIO(template_workbook())).active
+        rules = [
+            cell
+            for row in sheet.iter_rows()
+            for cell in row
+            if isinstance(cell.value, str) and cell.value.startswith('# 1. ')
+        ]
+
+        self.assertTrue(rules)
+        # Not the grey italics that say "skip me".
+        self.assertFalse(rules[0].font.italic)
 
     def test_a_filled_in_workbook_can_be_read_straight_back(self):
         # The loop has to close: the file we hand out has to be one we

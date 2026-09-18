@@ -34,15 +34,18 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-#: The three tables the sheet is made of, in the order they appear.
+#: The two tables the sheet is made of, in the order they appear.
+#:
+#: There are no id columns any more. A sheet carries one event, so every
+#: session in it belongs to that event and there was nothing for an id to
+#: tell apart - it was a column to fill in twice and get wrong once.
 EVENT_COLUMNS = [
-    'event_id', 'event_title', 'event_date', 'venue',
+    'event_title', 'event_date', 'venue',
     'event_starts_at', 'event_duration_minutes',
 ]
 
 SESSION_COLUMNS = [
-    'session_id', 'event_id', 'session_title',
-    'session_starts_at', 'session_duration_minutes',
+    'session_title', 'session_starts_at', 'session_duration_minutes',
     'speaker_name', 'speaker_email', 'speaker_phone', 'speaker_visibility',
 ]
 
@@ -51,40 +54,40 @@ TABLES = [
     ('SESSIONS', SESSION_COLUMNS),
 ]
 
-#: How many blank rows each table is given to be filled in. Enough for a
-#: long day; more can be added underneath, and the reader does not count.
-ROOM_TO_FILL = {'EVENTS': 10, 'SESSIONS': 30}
+#: How many blank rows each table is given to be filled in. One for the
+#: event, because a sheet holds one; enough for a long day of sessions,
+#: and more can be added underneath - the reader does not count them.
+ROOM_TO_FILL = {'EVENTS': 1, 'SESSIONS': 30}
 
 #: Said once at the top rather than in a note under every column, so the
 #: tables themselves are the clean thing the eye lands on.
 HOW_TO = [
-    'Two tables: the events, and the sessions inside them.',
-    'Give every event an id - 1, 2, 3 will do - and use those ids to say '
-    'which event each session belongs to.',
-    'A session names its event_id.',
-    'Dates and times are YYYY-MM-DD HH:MM, on the 24-hour clock: '
-    '2026-09-14 14:40. They are read as the clock in the hall, so type '
-    'the time the thing actually happens.',
-    'The first session of an event starts when the event starts.',
-    'speaker_name, speaker_email and speaker_phone are required; the email '
-    'is what makes them a presenter when they sign in.',
+    'ONE EVENT PER SHEET. Fill the EVENTS table in once. The SESSIONS '
+    'table takes as many rows as the day needs.',
+    'Dates and times are YYYY-MM-DD HH:MM on the 24-hour clock - '
+    '2026-10-02 14:40 - and are read as the clock in the room.',
+    'The first session starts when the event starts.',
+    'session_duration_minutes is 30 if left blank. The event is as long '
+    'as the sessions in it.',
+    'speaker_name, speaker_email and speaker_phone are required. The '
+    'email is what makes them a presenter when they sign in.',
     'speaker_visibility is private or public, and private if left blank.',
-    'session_duration_minutes is 30 if left blank; an event is as long as '
-    'the sessions in it.',
-    'Lines beginning with # are ignored, so this guidance can stay where it is.',
+    'venue and event_duration_minutes are optional.',
+    'Lines beginning with # are ignored, so this guidance can stay where '
+    'it is.',
 ]
 
 #: One filled-in programme, so the shape is obvious before anything is typed.
 EXAMPLE_ROWS = {
     'EVENTS': [
-        ['1', 'National Health Workers Conference', '2026-10-02',
+        ['National Health Workers Conference', '2026-10-02',
          'National Assembly Hall', '2026-10-02 09:00', '240'],
     ],
     'SESSIONS': [
-        ['1001', '1', 'Health service delivery in federalism',
-         '2026-10-02 09:00', '60', 'Dr Sarita Poudel',
-         'sarita.poudel@example.org', '9800000001', 'private'],
-        ['1002', '1', 'Digital health records', '2026-10-02 10:15', '45',
+        ['Health service delivery in federalism', '2026-10-02 09:00', '60',
+         'Dr Sarita Poudel', 'sarita.poudel@example.org',
+         '9800000001', 'private'],
+        ['Digital health records', '2026-10-02 10:15', '45',
          'Bikash Shrestha', 'bikash.shrestha@example.org',
          '9800000002', 'public'],
     ],
@@ -184,9 +187,10 @@ def _layout():
     the second value says what kind of row it is, which the workbook uses
     to decide what to make bold and where the dropdowns go.
     """
-    rows = [(['Manch programme template'], 'title'), ([], 'blank')]
-    for line in HOW_TO:
-        rows.append(([f'# {line}'], 'note'))
+    rows = [(['Manch event registration'], 'title'), ([], 'blank')]
+    rows.append((['# HOW TO FILL THIS IN'], 'rubric'))
+    for at, line in enumerate(HOW_TO, start=1):
+        rows.append(([f'# {at}. {line}'], 'note'))
 
     for name, columns in TABLES:
         rows.append(([], 'blank'))
@@ -219,20 +223,16 @@ class WorkbookUnavailable(Exception):
 
 
 def template_workbook() -> bytes:
-    """The same template as a workbook, with the id columns as dropdowns.
+    """The same template as a workbook, set so it can be read at a glance.
 
-    This is the one thing a CSV cannot carry. The sessions table has to
-    name the event each session belongs to, and typing an id by hand is
-    exactly the sort of thing that goes wrong quietly - a 2 where a 3 was
-    meant points a session at the wrong event and nothing looks amiss.
-    So in the workbook those two cells are lists, drawn from the ids typed
-    into the tables above: you pick an event rather than remembering one.
+    The rules at the top are the thing people get wrong, so they are set
+    in ordinary ink rather than the grey italics that say "skip me", and
+    the column headings are white on navy so the eye finds where to type.
     """
     try:
         from openpyxl import Workbook
         from openpyxl.styles import Alignment, Font, PatternFill
         from openpyxl.utils import get_column_letter
-        from openpyxl.worksheet.datavalidation import DataValidation
     except ImportError as missing:  # pragma: no cover - depends on the install
         raise WorkbookUnavailable(str(missing))
 
@@ -240,13 +240,17 @@ def template_workbook() -> bytes:
     sheet = book.active
     sheet.title = 'Programme'
 
-    grey = Font(color='6E7C8E', italic=True)
+    # The rules are the first thing anybody reads and the thing they get
+    # wrong, so they are set in the same ink as everything else rather
+    # than in the grey italics that say "skip me".
+    rule = Font(color='1F2937')
+    rubric = Font(bold=True, size=11, color='0A2550')
     heading = Font(bold=True, color='0A2550')
-    banner = Font(bold=True, size=13, color='0A2550')
-    header_fill = PatternFill('solid', fgColor='EFE8D8')
+    banner = Font(bold=True, size=14, color='0A2550')
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill('solid', fgColor='12386E')
+    example = Font(color='6E7C8E', italic=True)
 
-    # Where each table's id column lives, so the dropdowns can point at it.
-    id_ranges = {}
     widest = {}
 
     for index, (cells, kind) in enumerate(_layout(), start=1):
@@ -254,59 +258,26 @@ def template_workbook() -> bytes:
             cell = sheet.cell(row=index, column=column, value=value)
             if kind == 'title':
                 cell.font = banner
+            elif kind == 'rubric':
+                cell.font = rubric
             elif kind == 'note':
-                cell.font = grey
+                cell.font = rule
             elif kind == 'marker':
                 cell.font = heading
             elif kind == 'header':
-                cell.font = heading
+                cell.font = header_font
                 cell.fill = header_fill
                 cell.alignment = Alignment(vertical='center')
-            widest[column] = max(widest.get(column, 10), len(str(value or '')) + 2)
-
-        if kind == 'header':
-            name = sheet.cell(row=index - 1, column=1).value
-            first = index + 1
-            last = index + len(EXAMPLE_ROWS[name]) + ROOM_TO_FILL[name]
-            id_ranges[name] = (first, last)
+            elif kind == 'example':
+                cell.font = example
+            # The guidance runs the width of the sheet and would set every
+            # column to the width of a sentence, so it is left out of the
+            # measuring.
+            if kind not in ('title', 'rubric', 'note'):
+                widest[column] = max(widest.get(column, 12), len(str(value or '')) + 2)
 
     for column, width in widest.items():
-        sheet.column_dimensions[get_column_letter(column)].width = min(width, 42)
-
-    # The dropdown: a session's event is picked from the ids typed above
-    # rather than typed again.
-    session_first, session_last = id_ranges['SESSIONS']
-    picks = (
-        ('EVENTS', 'event_id', 'event', 'Events'),
-    )
-    for name, column_name, thing, table in picks:
-        source_first, source_last = id_ranges[name]
-        source = get_column_letter(1)
-        validation = DataValidation(
-            type='list',
-            formula1=f'=${source}${source_first}:${source}${source_last}',
-            allowBlank=True,
-            # openpyxl passes this through to Excel, where it is inverted:
-            # False is what puts the arrow on the cell.
-            showDropDown=False,
-            # Without these two the list is decoration - the arrow appears
-            # but anything typed is accepted, which is the whole thing this
-            # is here to prevent.
-            showErrorMessage=True,
-            showInputMessage=True,
-            errorStyle='stop',
-        )
-        validation.errorTitle = 'Not one of the ids above'
-        validation.error = (
-            f'Pick the {thing} from the {table} table above. '
-            'If it is not there yet, add it there first.'
-        )
-        validation.promptTitle = f'Which {thing}?'
-        validation.prompt = f'Choose one of the ids in the {table} table above.'
-        sheet.add_data_validation(validation)
-
-        at = get_column_letter(SESSION_COLUMNS.index(column_name) + 1)
-        validation.add(f'{at}{session_first}:{at}{session_last}')
+        sheet.column_dimensions[get_column_letter(column)].width = min(width, 38)
 
     sheet.freeze_panes = 'A2'
 
@@ -517,6 +488,7 @@ def _read_tables(rows) -> list:
 
     events = []
     by_event_id = {}
+    second_event_row = None
 
     for number, row in gathered['EVENTS']:
         title = _clean(row.get('event_title'))
@@ -551,9 +523,21 @@ def _read_tables(rows) -> list:
             )
         by_event_id[key] = entry
         events.append(entry)
+        if len(events) == 2:
+            second_event_row = number
 
     if not events:
         raise ImportProblem('There are no events in that sheet.')
+    if len(events) > 1:
+        # One sheet, one event. Several at once meant every session had
+        # to name which one it belonged to, and a sheet that quietly
+        # created four events is not something anybody asked for twice.
+        raise ImportProblem(
+            'A sheet holds one event. There are '
+            f'{len(events)} in the EVENTS table - put the rest in sheets '
+            'of their own.',
+            row=second_event_row, column='event_title',
+        )
 
     def the_event(key, *, number, column):
         """The event an id points at, forgiving a blank when there is one."""

@@ -146,16 +146,16 @@ export const ImportProgramme: React.FC<{ onImported: () => void }> = ({
       <div className="px-4 py-3.5">
         <p className="text-[13px] text-ink-2 leading-relaxed">
           {t({
-            ne: 'टेम्प्लेटमा तीन तालिका छन् — कार्यक्रम, बैठक, सत्र — र तिनीहरू id ले जोडिन्छन्। भरेर यहीँ फर्काउनुहोस् (.xlsx वा CSV UTF-8)। बनाउनुअघि पूरा दिन देखाइन्छ।',
-            en: 'The template is three tables — the programmes, the events inside them, the sessions inside those — joined by id. Fill it in and choose it here, as .xlsx or CSV UTF-8. The whole day is shown back before anything is created.',
+            ne: 'टेम्प्लेटमा दुई तालिका छन् — कार्यक्रम र त्यसभित्रका सत्र। एउटा पानामा एउटै कार्यक्रम। भरेर यहीँ फर्काउनुहोस् (.xlsx वा CSV UTF-8)। बनाउनुअघि पूरा दिन देखाइन्छ।',
+            en: 'The template is two tables — the event, and the sessions inside it — one event to a sheet. Fill it in and choose it here, as .xlsx or CSV UTF-8. The whole day is shown back before anything is created.',
           })}
         </p>
 
         {reading === null ? (
           <p className="text-[12.5px] text-[#6E7C8E] mt-2.5">
             {t({
-              ne: 'एक्सेल टेम्प्लेटमा सत्रको event_id र event_id माथिका तालिकाबाट छानिन्छ, टाइप गर्नुपर्दैन। फारमका सबै नियम यहाँ पनि लागू हुन्छन् — वक्ताको विवरण, पहिलो सत्रको समय, र सत्रबीचको अन्तराल।',
-              en: 'In the Excel one a session picks its event_id and event_id from the tables above rather than repeating them by hand. Every rule the form applies applies here too: the speaker details, the first session pinned to the event, and the interval between sessions.',
+              ne: 'सत्रको सङ्ख्यामा सीमा छैन। फारमका सबै नियम यहाँ पनि लागू हुन्छन् — वक्ताको विवरण, पहिलो सत्रको समय, र सत्रबीचको अन्तराल।',
+              en: 'There is no limit on the sessions. Every rule the form applies applies here too: the speaker details, the first session pinned to the event, and the interval between sessions.',
             })}
           </p>
         ) : reading.length === 0 ? (
