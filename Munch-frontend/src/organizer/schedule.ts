@@ -9,8 +9,6 @@ import { Event, Session } from '../types';
  * an installation gets if nobody ever changes it.
  */
 export const GAP_MINUTES = 15;
-/** Kept under the old name so existing callers still read well. */
-export const MEETING_GAP_MINUTES = GAP_MINUTES;
 
 const MS = 60000;
 
@@ -338,18 +336,6 @@ export const setHall = (
       s.id === sessionId ? { ...s, hall, moved: hasChanged({ ...s, hall }) } : s
     ),
   }));
-
-/** Every hall already in use, for suggesting one rather than retyping it. */
-export const hallsInUse = (plan: PlannedEvent[]): string[] => {
-  const seen: string[] = [];
-  plan.forEach((m) =>
-    m.sessions.forEach((s) => {
-      const hall = s.hall.trim();
-      if (hall && !seen.includes(hall)) seen.push(hall);
-    })
-  );
-  return seen.sort();
-};
 
 /** Move a whole event, running order and all. */
 export const reflowEvent = (
