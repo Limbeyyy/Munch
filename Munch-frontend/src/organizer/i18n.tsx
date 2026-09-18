@@ -21,7 +21,7 @@ interface Ctx {
   setLook: React.Dispatch<React.SetStateAction<Look>>;
 }
 
-export type Theme = 'light' | 'dark' | 'system';
+export type Theme = 'light' | 'dark' | 'contrast';
 export type TextSize = 'small' | 'medium' | 'large';
 export type LineSpacing = 'comfortable' | 'relaxed';
 
@@ -92,34 +92,21 @@ export const OrganizerProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // elements. The rules themselves live in index.css.
     const root = document.documentElement;
     root.toggleAttribute('data-a11y-big', a11y.big);
-    root.toggleAttribute('data-a11y-contrast', a11y.contrast);
+    // Two ways to ask for the same thing: the accessibility panel's
+    // switch, and choosing high contrast as the theme. One attribute,
+    // either source.
+    root.toggleAttribute(
+      'data-a11y-contrast', a11y.contrast || look.theme === 'contrast'
+    );
     root.toggleAttribute('data-a11y-calm', a11y.calm);
 
     // The look goes on the root for the same reasons: it has to reach
     // dialogs, and it has to outrank the explicit colours and sizes the
     // design sets on individual elements. The rules live in index.css.
-    // "system" is resolved here rather than stored, so a machine that
-    // changes its mind at dusk is followed without anybody choosing again.
-    const dark = look.theme === 'dark'
-      || (look.theme === 'system'
-          && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
-    root.setAttribute('data-theme', dark ? 'dark' : 'light');
+    root.setAttribute('data-theme', look.theme === 'dark' ? 'dark' : 'light');
     root.setAttribute('data-transcript-size', look.transcriptSize);
     root.setAttribute('data-transcript-spacing', look.transcriptSpacing);
   }, [lang, a11y, look]);
-
-  // A machine set to follow the hour changes its mind without being asked.
-  useEffect(() => {
-    if (look.theme !== 'system' || !window.matchMedia) return;
-    const watch = window.matchMedia('(prefers-color-scheme: dark)');
-    const follow = () => {
-      document.documentElement.setAttribute(
-        'data-theme', watch.matches ? 'dark' : 'light'
-      );
-    };
-    watch.addEventListener?.('change', follow);
-    return () => watch.removeEventListener?.('change', follow);
-  }, [look.theme]);
 
   const value = useMemo<Ctx>(
     () => ({
