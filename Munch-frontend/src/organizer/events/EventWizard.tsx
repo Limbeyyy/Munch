@@ -8,7 +8,7 @@ import { errorText } from '../errors';
 import { Pair, useOrganizer } from '../i18n';
 import { Btn } from '../ui';
 import { toLocalInput } from '../EventDraftFields';
-import { BackLink, Block, EventHeading, PlusGlyph, Sheet, Stepper } from './chrome';
+import { BackLink, EventHeading, PlusGlyph, Sheet, Stepper } from './chrome';
 import { CoHostDialog, Field, inputClass } from './CoHostDialog';
 import { AddAgendaDialog } from './AddAgendaDialog';
 import { AgendaBoard } from './AgendaBoard';
@@ -345,10 +345,14 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
 
           {/* What is already in the running order, and arranging it. */}
           {saved && sessionCount > 0 && (
-            <Block label={{
-              ne: `एजेन्डा · ${num(sessionCount)} सत्र`,
-              en: `Agenda · ${sessionCount} sessions`,
-            }}>
+            <section className="bg-wash rounded-[12px] p-5">
+              <h2 className="text-[12px] font-medium tracking-[.06em] uppercase
+                text-subtle mb-4">
+                {t({
+                  ne: `एजेन्डा · ${num(sessionCount)} सत्र`,
+                  en: `Agenda · ${sessionCount} sessions`,
+                })}
+              </h2>
               <AgendaBoard
                 event={saved}
                 onChanged={async () => {
@@ -362,7 +366,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
                   if (one) setEditing(one);
                 }}
               />
-            </Block>
+            </section>
           )}
 
           <div className="flex gap-3 justify-end">
