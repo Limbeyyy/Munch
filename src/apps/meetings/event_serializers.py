@@ -51,7 +51,7 @@ class SessionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Session
         fields = [
-            'id', 'event', 'title', 'description', 'speaker_name', 'hall',
+            'id', 'event', 'title', 'description', 'speaker_name', 'speaker_role', 'hall',
             'speaker_email', 'speaker_phone', 'speaker_visibility',
             'speaker_contact',
             'starts_at', 'duration_minutes', 'ends_at', 'position',
@@ -96,7 +96,7 @@ class SessionWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Session
         fields = [
-            'title', 'description', 'speaker_name', 'hall',
+            'title', 'description', 'speaker_name', 'speaker_role', 'hall',
             'speaker_email', 'speaker_phone', 'speaker_visibility',
             'starts_at', 'duration_minutes', 'position',
         ]
@@ -244,6 +244,7 @@ def build_event(data, *, host):
             title=s['title'],
             description=s.get('description', ''),
             speaker_name=s.get('speaker_name', ''),
+            speaker_role=s.get('speaker_role', ''),
             speaker_email=s.get('speaker_email', ''),
             speaker_phone=s.get('speaker_phone', ''),
             speaker_visibility=s.get('speaker_visibility', Session.SpeakerVisibility.PRIVATE),

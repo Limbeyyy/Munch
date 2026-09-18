@@ -496,6 +496,8 @@ export interface Session {
   title: string;
   description: string;
   speaker_name: string;
+  /** What they do, as it reads under their name on the running order. */
+  speaker_role?: string;
   /** Which room in the venue this runs in. */
   hall: string;
   /** Whether attendees may simply read the speaker's details, or must ask. */
