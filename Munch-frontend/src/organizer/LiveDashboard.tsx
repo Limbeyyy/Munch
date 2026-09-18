@@ -228,14 +228,6 @@ export const LiveDashboard: React.FC<Props> = ({
               </div>
 
               <div className="flex gap-3 items-center flex-wrap">
-                {onStage?.hall && (
-                  <span className="border border-[#e3e8ef] h-6 px-2 rounded-[4px] flex items-center
-                    gap-1.5 text-[14px] text-[#030712] tracking-[-0.07px]">
-                    <span className="bg-[#13cef7] rounded-full w-[5px] h-[5px]" aria-hidden />
-                    {onStage.hall}
-                  </span>
-                )}
-                {onStage?.hall && onStage.starts_at && <Rule />}
                 {onStage?.starts_at && (
                   <span className="text-[14px] text-[#4a5567] leading-[1.4] tracking-[-0.07px]">
                     {span(onStage.starts_at, onStage.duration_minutes)}

@@ -100,7 +100,6 @@ def for_reader(user):
             'session_title': session.title,
             'session_starts_at': session.starts_at,
             'speaker_name': session.speaker_name,
-            'hall': session.hall,
             'event_id': str(event.id),
             'event_title': event.title,
             'findings': findings_from(summary.body),

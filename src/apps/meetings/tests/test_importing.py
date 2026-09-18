@@ -41,7 +41,6 @@ def a_session(**over):
         'session_title': 'Service delivery',
         'session_starts_at': '2026-10-02 09:00',
         'session_duration_minutes': '60',
-        'hall': 'Hall A',
         'speaker_name': 'Sarita Poudel',
         'speaker_email': 'sarita@example.org',
         'speaker_phone': '9800000001',
@@ -386,7 +385,7 @@ def a_row(**over):
         'session_id': '1001', 'event_id': '1',
         'session_title': 'Health service delivery in federalism',
         'session_starts_at': '2026-09-14 12:40', 'session_duration_minutes': '5',
-        'hall': 'Hall A', 'speaker_name': 'Dr Sarita Poudel',
+        'speaker_name': 'Dr Sarita Poudel',
         'speaker_email': 'sarita@example.org', 'speaker_phone': '9800000001',
         'speaker_visibility': 'private',
     }

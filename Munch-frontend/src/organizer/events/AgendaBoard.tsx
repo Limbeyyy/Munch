@@ -9,18 +9,11 @@ import { Btn } from '../ui';
 import { FileBadge } from './fileKinds';
 import {
   PlannedEvent, PlannedSession,
-  applyEdit, countChanges, pendingChanges, setHall, swapSessions, toPlan, whyNotSwap,
+  applyEdit, countChanges, pendingChanges, swapSessions, toPlan, whyNotSwap,
 } from '../schedule';
 
 const clock = (ms: number) =>
   new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-/** A local value for <input type="datetime-local">. */
-const toLocalInput = (ms: number) => {
-  const at = new Date(ms);
-  return new Date(at.getTime() - at.getTimezoneOffset() * 60000)
-    .toISOString().slice(0, 16);
-};
 
 /** A session already run, or running, keeps the time it actually had. */
 const settled = (s: PlannedSession) => s.status !== 'scheduled';
@@ -174,7 +167,6 @@ export const AgendaBoard: React.FC<Props> = ({ event, onChanged, onAdd, onEdit }
           id: s.id,
           starts_at: new Date(s.startsAt).toISOString(),
           duration_minutes: s.durationMinutes,
-          hall: s.hall,
         }))
       );
       toast.success(t({
@@ -316,46 +308,31 @@ export const AgendaBoard: React.FC<Props> = ({ event, onChanged, onAdd, onEdit }
                   </p>
                 )}
 
-                {/* When it starts, how long for, and which hall. All three
-                    reflow what follows. */}
+                {/* How long it runs, which reflows what follows. When it
+                    starts is read off the card rather than typed into it:
+                    the hour belongs to the talk, and the talk is changed
+                    on the form the Edit button opens. */}
                 <div className="pt-3 flex flex-wrap items-center gap-2">
-                  <input
-                    type="datetime-local"
-                    aria-label={t({ ne: 'सुरु', en: 'Starts' })}
-                    disabled={fixed}
-                    value={toLocalInput(one.startsAt)}
-                    onChange={(e) => {
-                      const next = +new Date(e.target.value);
-                      if (!Number.isNaN(next)) {
-                        setPlan((p) => applyEdit(p, one.id, { startsAt: next }, gapMinutes));
+                  <label className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min={5}
+                      step={5}
+                      aria-label={t({ ne: 'मिनेट', en: 'Minutes' })}
+                      disabled={fixed}
+                      value={one.durationMinutes}
+                      onChange={(e) =>
+                        setPlan((p) => applyEdit(
+                          p, one.id, { durationMinutes: Number(e.target.value) || 5 }, gapMinutes
+                        ))
                       }
-                    }}
-                    className="border border-line rounded-[8px] px-2 py-1 text-[12.5px]
-                      text-head disabled:opacity-50"
-                  />
-                  <input
-                    aria-label={t({ ne: 'हल', en: 'Hall' })}
-                    placeholder={t({ ne: 'हल', en: 'Hall' })}
-                    value={one.hall}
-                    onChange={(e) => setPlan((p) => setHall(p, one.id, e.target.value))}
-                    className="border border-line rounded-[8px] px-2 py-1 text-[12.5px]
-                      text-head w-[92px]"
-                  />
-                  <input
-                    type="number"
-                    min={5}
-                    step={5}
-                    aria-label={t({ ne: 'मिनेट', en: 'Minutes' })}
-                    disabled={fixed}
-                    value={one.durationMinutes}
-                    onChange={(e) =>
-                      setPlan((p) => applyEdit(
-                        p, one.id, { durationMinutes: Number(e.target.value) || 5 }, gapMinutes
-                      ))
-                    }
-                    className="border border-line rounded-[8px] px-2 py-1 text-[12.5px]
-                      text-head w-[68px] disabled:opacity-50"
-                  />
+                      className="border border-line rounded-[8px] px-2 py-1 text-[12.5px]
+                        text-head w-[68px] disabled:opacity-50"
+                    />
+                    <span className="text-[12.5px] text-subtle">
+                      {t({ ne: 'मिनेट', en: 'min' })}
+                    </span>
+                  </label>
 
                   {one.moved && (
                     <span className="bg-[#FEF6E7] text-[#B26A00] rounded-[4px] px-2 py-0.5

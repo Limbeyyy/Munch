@@ -74,7 +74,7 @@ const reminder = (over: any = {}) => ({
   session_id: 's1',
   session_title: 'Mehendi',
   speaker_name: 'Surya Adhikari',
-  hall: 'Hall A',
+  venue: 'Kathmandu Convention Center',
   starts_at: new Date(Date.now() + 3 * 3600_000).toISOString(),
   ends_at: new Date(Date.now() + 4 * 3600_000).toISOString(),
   due_at: new Date(Date.now() + 2.75 * 3600_000).toISOString(),
@@ -319,7 +319,7 @@ describe('a nudge that has come due announces itself', () => {
 
     await waitFor(() => expect(made).toHaveLength(1));
     expect(made[0].title).toBe('Mehendi');
-    expect(made[0].options.body).toContain('Hall A');
+    expect(made[0].options.body).toContain('Kathmandu Convention Center');
   });
 
   it('does not say the same thing twice', async () => {

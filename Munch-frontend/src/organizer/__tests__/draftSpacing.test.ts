@@ -12,7 +12,6 @@ const session = (start: Date, minutes: number, title = 'S'): SessionDraft => ({
   speaker_email: 'a@example.com',
   speaker_phone: '9800000000',
   speaker_visibility: 'private',
-  hall: '',
   starts_at: toLocalInput(start),
   duration_minutes: minutes,
 });

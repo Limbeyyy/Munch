@@ -47,7 +47,7 @@ const wording = (r: Reminder): { title: string; body: string } => {
   if (r.kind === 'session') {
     return {
       title: r.session_title || r.event_title,
-      body: `Starts at ${when}${r.hall ? ` · ${r.hall}` : ''} — ${r.event_title}`,
+      body: `Starts at ${when}${r.venue ? ` · ${r.venue}` : ''} — ${r.event_title}`,
     };
   }
   return { title: r.event_title, body: `Starts at ${when}` };

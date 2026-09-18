@@ -17,14 +17,12 @@ export interface PlannedSession {
   eventId: string;
   title: string;
   speaker_name: string;
-  hall: string;
   status: Session['status'];
   startsAt: number;
   durationMinutes: number;
   /** What the server currently holds, so a change can be recognised. */
   baseStartsAt: number;
   baseDurationMinutes: number;
-  baseHall: string;
   moved: boolean;
 }
 
@@ -53,8 +51,7 @@ const endOf = (s: PlannedSession) => s.startsAt + s.durationMinutes * MS;
 /** Anything about this session that differs from what the server holds. */
 const hasChanged = (s: PlannedSession) =>
   s.startsAt !== s.baseStartsAt ||
-  s.durationMinutes !== s.baseDurationMinutes ||
-  s.hall !== s.baseHall;
+  s.durationMinutes !== s.baseDurationMinutes;
 
 export const toPlan = (events: Event[]): PlannedEvent[] =>
   [...events]
@@ -76,13 +73,11 @@ export const toPlan = (events: Event[]): PlannedEvent[] =>
           eventId: event.id,
           title: session.title,
           speaker_name: session.speaker_name,
-          hall: session.hall ?? '',
           status: session.status,
           startsAt: +new Date(session.starts_at),
           durationMinutes: session.duration_minutes,
           baseStartsAt: +new Date(session.starts_at),
           baseDurationMinutes: session.duration_minutes,
-          baseHall: session.hall ?? '',
           moved: false,
         })),
     }));
@@ -323,19 +318,6 @@ export const swapSessions = (
   const target = allSessions(plan).find((s) => s.id === bId)!;
   return applyEdit(plan, aId, { startsAt: target.startsAt }, gapMinutes);
 };
-
-/** Put a session in a different hall. Nothing else about the day changes. */
-export const setHall = (
-  plan: PlannedEvent[],
-  sessionId: string,
-  hall: string
-): PlannedEvent[] =>
-  plan.map((event) => ({
-    ...event,
-    sessions: event.sessions.map((s) =>
-      s.id === sessionId ? { ...s, hall, moved: hasChanged({ ...s, hall }) } : s
-    ),
-  }));
 
 /** Move a whole event, running order and all. */
 export const reflowEvent = (

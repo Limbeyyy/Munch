@@ -104,8 +104,7 @@ export const SessionDrawer: React.FC<Props> = ({ item, onClose, guestToken }) =>
           </button>
           <p className="text-[12.5px] text-[#AFC6E6]">
             {clock(session.starts_at)}–{clock(session.ends_at)}
-            {session.hall && ` · ${session.hall}`}
-            {` · ${event.title} · ${event.code}`}
+                        {` · ${event.title} · ${event.code}`}
           </p>
           <h2 className="text-[21px] font-semibold pr-9 mt-1">{session.title}</h2>
 

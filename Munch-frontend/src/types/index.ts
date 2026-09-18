@@ -490,8 +490,6 @@ export interface Session {
   speaker_name: string;
   /** What they do, as it reads under their name on the running order. */
   speaker_role?: string;
-  /** Which room in the venue this runs in. */
-  hall: string;
   /** Whether attendees may simply read the speaker's details, or must ask. */
   speaker_visibility: 'public' | 'private';
   /**
@@ -521,7 +519,6 @@ export interface SessionDraft {
   speaker_email?: string;
   speaker_phone?: string;
   speaker_visibility?: 'public' | 'private';
-  hall?: string;
   starts_at: string;
   duration_minutes: number;
   description?: string;
@@ -735,7 +732,8 @@ export interface Reminder {
   session_id: string | null;
   session_title: string | null;
   speaker_name: string;
-  hall: string;
+  /** Where to go: the event's venue, which every session shares. */
+  venue: string;
   starts_at: string;
   ends_at: string;
   /** When the nudge is owed: an hour before a event, a quarter before a session. */
@@ -762,7 +760,6 @@ export interface Conclusion {
   session_title: string;
   session_starts_at: string;
   speaker_name: string;
-  hall: string;
   event_id: string;
   event_title: string;
   findings: string[];

@@ -320,7 +320,7 @@ def reschedule(event, changes, anchored_id=None):
     # What the database holds right now, to tell a real move from a no-op
     # once the changes have been folded in.
     before = {
-        s.id: (s.starts_at, s.duration_minutes, s.hall) for s in locked
+        s.id: (s.starts_at, s.duration_minutes) for s in locked
     }
 
     for session_id, change in changes.items():
@@ -332,8 +332,6 @@ def reschedule(event, changes, anchored_id=None):
         # where it cannot be got round, now that the running order is
         # edited from inside a room with a speaker standing in it.
         if session.status != Session.Status.SCHEDULED:
-            if 'hall' in change:
-                session.hall = change['hall']
             logger.info(
                 f"Left {session.id} where it is: it has already run or is running"
             )
@@ -344,8 +342,6 @@ def reschedule(event, changes, anchored_id=None):
             session.duration_minutes = max(
                 MIN_DURATION_MINUTES, int(change['duration_minutes'])
             )
-        if 'hall' in change:
-            session.hall = change['hall']
 
     underway = _underway_event_ids(locked, editing=event.id)
     settled = resolve(
@@ -357,9 +353,9 @@ def reschedule(event, changes, anchored_id=None):
         session = by_id[slot.id]
         session.starts_at = slot.starts_at
         session.duration_minutes = slot.duration_minutes
-        if before[slot.id] != (session.starts_at, session.duration_minutes, session.hall):
+        if before[slot.id] != (session.starts_at, session.duration_minutes):
             session.save(
-                update_fields=['starts_at', 'duration_minutes', 'hall', 'updated_at']
+                update_fields=['starts_at', 'duration_minutes', 'updated_at']
             )
             moved.append(session)
 

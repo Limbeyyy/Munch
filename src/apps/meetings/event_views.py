@@ -201,7 +201,6 @@ class EventViewSet(EventRoomViewSet):
                         'starts_at': session['starts_at'],
                         'duration_minutes': session['duration_minutes'],
                         'speaker_name': session['speaker_name'],
-                        'hall': session['hall'],
                     }
                     for session in event['sessions']
                 ],
@@ -497,7 +496,7 @@ class SessionViewSet(viewsets.ModelViewSet):
 
         timing = {
             field: getattr(session, field)
-            for field in ('starts_at', 'duration_minutes', 'hall')
+            for field in ('starts_at', 'duration_minutes')
             if field in serializer.validated_data
         }
         if timing:
@@ -554,8 +553,6 @@ class SessionViewSet(viewsets.ModelViewSet):
                 edit['starts_at'] = parse_datetime(change['starts_at'])
             if change.get('duration_minutes') is not None:
                 edit['duration_minutes'] = int(change['duration_minutes'])
-            if change.get('hall') is not None:
-                edit['hall'] = change['hall']
             edits[session.id] = edit
 
         moved = apply_reschedule(event, edits)

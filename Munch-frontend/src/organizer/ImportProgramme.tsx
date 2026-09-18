@@ -212,7 +212,7 @@ export const ImportProgramme: React.FC<{ onImported: () => void }> = ({
                           </span>
                           {' · '}{session.title}
                           {session.speaker_name ? ` — ${session.speaker_name}` : ''}
-                          {session.hall ? ` · ${session.hall}` : ''}
+                          
                         </li>
                         );
                       })}
