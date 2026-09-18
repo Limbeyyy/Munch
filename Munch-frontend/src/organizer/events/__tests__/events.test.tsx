@@ -3,7 +3,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { OrganizerProvider } from '../../i18n';
 import { Event } from '../../../types';
 import { EventsDashboard, deckOf, whenLine } from '../EventsDashboard';
-import { DeckTabs, Stepper } from '../chrome';
+import { BackLink, DeckTabs, Stepper } from '../chrome';
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -240,5 +240,37 @@ describe('the tab strip', () => {
       .toContain('border-head');
     expect(screen.getByRole('tab', { name: 'People' }).className)
       .toContain('border-transparent');
+  });
+});
+
+/**
+ * The way back out of an opened event.
+ *
+ * A button is block-level, so in a column it filled the whole row and
+ * every inch of empty space beside the word was a way off the page.
+ */
+describe('the back link', () => {
+  it('is only as wide as the word, not the whole row', () => {
+    render(
+      <OrganizerProvider>
+        <BackLink label={{ ne: '', en: 'Event' }} onClick={jest.fn()} />
+      </OrganizerProvider>
+    );
+
+    const back = screen.getByRole('button', { name: 'Event' });
+    expect(back.className).toContain('w-fit');
+    expect(back.className).toContain('self-start');
+  });
+
+  it('still goes back when it is the word that is pressed', () => {
+    const onClick = jest.fn();
+    render(
+      <OrganizerProvider>
+        <BackLink label={{ ne: '', en: 'Event' }} onClick={onClick} />
+      </OrganizerProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Event' }));
+    expect(onClick).toHaveBeenCalled();
   });
 });

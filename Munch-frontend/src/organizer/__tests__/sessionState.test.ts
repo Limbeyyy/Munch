@@ -79,8 +79,11 @@ describe('an overrun session, and whether that is final', () => {
 });
 
 describe('what a event reads as', () => {
-  const m = (status: string, endHour: number, started = true) => ({
+  const m = (
+    status: string, endHour: number, started = true, startHour = endHour - 2
+  ) => ({
     status,
+    scheduled_start: at(startHour),
     scheduled_end: at(endHour),
     started_at: started ? at(endHour - 1) : null,
   });
@@ -90,7 +93,8 @@ describe('what a event reads as', () => {
   });
 
   it('is upcoming while its window is still ahead', () => {
-    expect(eventState(m('scheduled', 14, false), NOW)).toBe('upcoming');
+    // Opens at one, closes at two; it is noon.
+    expect(eventState(m('scheduled', 14, false, 13), NOW)).toBe('upcoming');
   });
 
   it('is finished when it ran and ended', () => {
@@ -105,6 +109,34 @@ describe('what a event reads as', () => {
 
   it('never started when its window went by while it sat scheduled', () => {
     expect(eventState(m('scheduled', 10, false), NOW)).toBe('never-started');
+  });
+
+  /**
+   * Its hour arriving is not the same as it being late, and being late is
+   * not the same as never having happened. An event nobody has opened is
+   * still openable right up until its window has gone by.
+   */
+  it('has not started once its hour has come and nobody opened it', () => {
+    // Opens at eleven, closes at one; it is noon.
+    expect(eventState(m('scheduled', 13, false, 11), NOW)).toBe('not-started');
+  });
+
+  it('is not started on the very minute it was due', () => {
+    expect(eventState(m('scheduled', 14, false, 12), NOW)).toBe('not-started');
+  });
+
+  it('is still upcoming a minute before that', () => {
+    const soon = {
+      status: 'scheduled',
+      scheduled_start: new Date(NOW + 60000).toISOString(),
+      scheduled_end: at(14),
+      started_at: null,
+    };
+    expect(eventState(soon, NOW)).toBe('upcoming');
+  });
+
+  it('becomes never started once the window has gone by as well', () => {
+    expect(eventState(m('scheduled', 11, false, 9), NOW)).toBe('never-started');
   });
 });
 

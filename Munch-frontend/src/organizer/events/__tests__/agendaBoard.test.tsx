@@ -210,44 +210,24 @@ describe('saving a rearrangement', () => {
   });
 });
 
-describe('running the day from here', () => {
-  it('offers the stage only where the caller asks for it', () => {
+/**
+ * Nothing is started from here.
+ *
+ * Putting a talk on stage belongs to the room and to live control, where
+ * whoever does it is watching the room at the time. The board arranges
+ * the day; it does not run it.
+ */
+describe('what the board will not do', () => {
+  it('offers no way to put a talk on stage', () => {
     show();
 
     expect(screen.queryByRole('button', { name: 'On stage' })).toBeNull();
   });
 
-  it('puts a talk on stage when it does', () => {
-    const onRun = jest.fn();
-    render(
-      <OrganizerProvider>
-        <AgendaBoard event={two()} onChanged={jest.fn()} onRun={onRun} />
-      </OrganizerProvider>
-    );
+  it('offers no way to end the one that is running either', () => {
+    show(event([session({ id: 's1', title: 'Kataho', status: 'live' })]));
 
-    fireEvent.click(
-      within(rowOf('Kataho')).getByRole('button', { name: 'On stage' })
-    );
-
-    expect(onRun).toHaveBeenCalledWith('s1', 'start');
-  });
-
-  it('offers to end the one that is running, not to start it', () => {
-    const onRun = jest.fn();
-    render(
-      <OrganizerProvider>
-        <AgendaBoard
-          event={event([session({ id: 's1', title: 'Kataho', status: 'live' })])}
-          onChanged={jest.fn()}
-          onRun={onRun}
-        />
-      </OrganizerProvider>
-    );
-
-    const row = rowOf('Kataho');
-    expect(within(row).queryByRole('button', { name: 'On stage' })).toBeNull();
-    fireEvent.click(within(row).getByRole('button', { name: 'End' }));
-    expect(onRun).toHaveBeenCalledWith('s1', 'end');
+    expect(screen.queryByRole('button', { name: 'End' })).toBeNull();
   });
 });
 

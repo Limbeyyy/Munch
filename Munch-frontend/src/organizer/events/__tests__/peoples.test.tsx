@@ -18,6 +18,9 @@ jest.mock('../../../services/api', () => ({
     getConclusions: jest.fn(),
     createSession: jest.fn(),
     updateSession: jest.fn(),
+    deleteSession: jest.fn(),
+    rescheduleSessions: jest.fn(),
+    getSchedulingPrefs: jest.fn(),
     // The auth store reads this the moment it is imported.
     hasSession: () => false,
   },
@@ -74,6 +77,7 @@ beforeEach(() => {
   api.withdrawEventInvite.mockResolvedValue({
     added: 0, invited: [], total_invited: 0, total_joined: 0,
   } as any);
+  api.getSchedulingPrefs.mockResolvedValue({ session_gap_minutes: 15 } as any);
 });
 
 /** Open the wizard and walk it to the last step. */
@@ -257,7 +261,12 @@ describe('editing a session from the agenda', () => {
     return onEdit;
   };
 
-  it('opens the dialog on that talk, and does not leave the page', () => {
+  /**
+   * The overview is a summary, so Edit there takes you to where the
+   * running order is arranged rather than opening a form over the top of
+   * a summary. The form itself opens from the agenda.
+   */
+  it('goes to the agenda from the overview, rather than opening a form', () => {
     const onEdit = openDetail();
 
     // Not the first Edit on the page - that one belongs to the event's
@@ -265,11 +274,25 @@ describe('editing a session from the agenda', () => {
     const row = screen.getByText('Session Kataho').closest('div') as HTMLElement;
     fireEvent.click(within(row).getByRole('button', { name: 'Edit' }));
 
+    expect(screen.getByRole('tab', { name: 'Agenda' }))
+      .toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByText('Edit agenda')).toBeNull();
+    // The setup form is where an event's own details live; Edit on a talk
+    // has no business going there either.
+    expect(onEdit).not.toHaveBeenCalled();
+  });
+
+  it('opens the form once you are on the agenda', async () => {
+    openDetail();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Agenda' }));
+    const row = await screen.findByText('Session Kataho');
+    fireEvent.click(
+      within(row.closest('li') as HTMLElement).getByRole('button', { name: 'Edit' })
+    );
+
     expect(screen.getByText('Edit agenda')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Session Kataho')).toBeInTheDocument();
-    // The setup form is where an event's own details live; Edit on a talk
-    // has no business going there.
-    expect(onEdit).not.toHaveBeenCalled();
   });
 
   it('adds a new one from the same place, unfilled', () => {

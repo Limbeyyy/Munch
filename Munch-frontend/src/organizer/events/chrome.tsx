@@ -77,7 +77,8 @@ export const BackLink: React.FC<{ label: Pair; onClick: () => void }> = ({ label
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-2.5 text-[14px] text-head hover:text-navy-800"
+      className="self-start w-fit flex items-center gap-2.5 text-[14px] text-head
+        hover:text-navy-800"
     >
       <Ic d="M15 18l-6-6 6-6" size={18} />
       {t(label)}
