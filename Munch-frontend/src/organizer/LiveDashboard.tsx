@@ -163,7 +163,11 @@ export const LiveDashboard: React.FC<Props> = ({
   ];
 
   return (
-    <div className="flex flex-col gap-3">
+    // Everything the desk shows sits on one sheet of white, the way the
+    // design draws it: the heading, the stage, the panels and the queues
+    // are one thing to look at rather than cards adrift on the page.
+    <div className="bg-white border border-[#e7e9ef] rounded-[12px] p-4 sm:p-5
+      flex flex-col gap-3">
       {/* Heading, and the way back into the room itself. */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="min-w-0">
