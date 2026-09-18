@@ -333,6 +333,58 @@ describe('editing a session from the agenda', () => {
 });
 
 /**
+ * Who is speaking, and what they do.
+ *
+ * A name on its own says who is at the front of the room; the post says
+ * why they are the one to speak, and it was already being collected on
+ * the form. The agenda tab showed both and the overview did not.
+ */
+describe('the speaker on an overview row', () => {
+  const withRole = (role?: string) => ({
+    ...event,
+    sessions: [{
+      id: 's1',
+      title: 'Session Kataho',
+      description: '',
+      speaker_name: 'Prabhat Karmacharya',
+      speaker_role: role,
+      speaker_contact: { email: 'p@example.com', phone: '9811111111' },
+      starts_at: '2026-09-15T10:00:00',
+      duration_minutes: 30,
+      status: 'scheduled',
+    }],
+    session_count: 1,
+  });
+
+  const openWith = (role?: string) =>
+    render(
+      <OrganizerProvider>
+        <EventDetail
+          event={withRole(role) as any}
+          onBack={jest.fn()}
+          onEdit={jest.fn()}
+          onOpenRoom={jest.fn()}
+          onChanged={jest.fn()}
+        />
+      </OrganizerProvider>
+    );
+
+  it('follows the name with the post', () => {
+    openWith('Senior Manager, Kataho');
+
+    expect(
+      screen.getByText('Prabhat Karmacharya · Senior Manager, Kataho')
+    ).toBeInTheDocument();
+  });
+
+  it('says the name alone where no post was given', () => {
+    openWith(undefined);
+
+    expect(screen.getByText('Prabhat Karmacharya')).toBeInTheDocument();
+  });
+});
+
+/**
  * A speaker who is named but cannot be reached afterwards.
  *
  * The server asks for an address and a number when a session is first
