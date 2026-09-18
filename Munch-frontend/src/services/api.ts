@@ -1250,7 +1250,21 @@ class ApiClient {
   }
 
   // User endpoints
-  async updateProfile(data: Partial<User>): Promise<User> {
+  /**
+   * Write what somebody put on their own profile.
+   *
+   * The address is not among it: it is what the account is, and what
+   * Google signed them in as. The server ignores it either way.
+   */
+  async updateProfile(data: {
+    first_name?: string;
+    last_name?: string;
+    phone?: string;
+    position?: string;
+    organization_name?: string;
+    preferred_language?: string;
+    timezone?: string;
+  }): Promise<User> {
     const response = await this.client.patch('/users/profile/', data);
     return response.data;
   }

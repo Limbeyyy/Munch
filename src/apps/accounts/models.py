@@ -18,6 +18,14 @@ class User(AbstractUser):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
+    # What somebody puts on their own profile. None of it is required:
+    # an account is made from a Google sign-in, which carries a name and
+    # an address and nothing else.
+    phone = models.CharField(max_length=40, blank=True)
+    #: What they do - "Director, Emergency Services".
+    position = models.CharField(max_length=150, blank=True)
+    organization_name = models.CharField(max_length=150, blank=True)
+
     # Application-specific fields
     preferred_language = models.CharField(max_length=10, default='en')
     timezone = models.CharField(max_length=50, default='UTC')

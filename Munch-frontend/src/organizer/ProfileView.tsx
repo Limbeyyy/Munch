@@ -2,36 +2,111 @@ import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
 import { ProfileSummary } from '../types';
+import { errorText } from './errors';
 import { Pair, useOrganizer } from './i18n';
-import { BarRow, Btn, Card, Chip, Empty, Head } from './ui';
+import { Chip, Empty } from './ui';
 
-const Line: React.FC<{ label: Pair; children: React.ReactNode }> = ({ label, children }) => {
+/** The sheet every settings page is laid on. */
+export const SettingsSheet: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="bg-white border border-line-soft rounded-[12px] px-5 sm:px-8 py-5
+    flex flex-col gap-8">
+    {children}
+  </div>
+);
+
+/** A page's name and what it is for, at the top of the sheet. */
+export const SettingsHeading: React.FC<{ title: Pair; lede: Pair }> = ({ title, lede }) => {
   const { t } = useOrganizer();
   return (
-    <div className="flex gap-3 py-2 text-[13.5px] border-b border-navy-800/[.08] last:border-0">
-      <span className="text-[#6E7C8E] w-[150px] flex-none">{t(label)}</span>
-      <span className="min-w-0">{children}</span>
+    <div className="flex flex-col gap-2">
+      <h1 className="text-[24px] font-medium text-[#030712] leading-[1.2]">{t(title)}</h1>
+      <p className="text-[14px] text-[#4a5567] leading-[1.5]">{t(lede)}</p>
     </div>
   );
 };
 
+/** The small bold heading over each block. */
+export const SectionHeading: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <h2 className="text-[16px] font-semibold text-head leading-5">{children}</h2>
+);
+
+/** The bordered card each block's contents sit in. */
+export const SectionCard: React.FC<{
+  className?: string;
+  children: React.ReactNode;
+}> = ({ className = '', children }) => (
+  <div className={`bg-white border-[0.6px] border-line rounded-[12px] ${className}`}>
+    {children}
+  </div>
+);
+
+/** One row of a two-column list: a quiet label, and the answer. */
+export const FactRow: React.FC<{ label: string; children: React.ReactNode }> = ({
+  label, children,
+}) => (
+  <div className="flex items-start justify-between gap-4 px-5 py-3
+    border-b-[0.6px] border-[#f3f4f6] last:border-0">
+    <span className="text-[14px] text-subtle leading-5">{label}</span>
+    <span className="text-[14px] text-[#364153] leading-5 text-right min-w-0">
+      {children}
+    </span>
+  </div>
+);
+
+/** A field on the form: a small label over a bordered box. */
+const Field: React.FC<{
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+}> = ({ label, required, children }) => (
+  <label className="flex flex-col items-start w-full">
+    <span className="h-[22px] pb-1.5 text-[12px] font-medium text-body leading-4">
+      {label}
+      {required && <span className="text-[#fb2c36]">{' *'}</span>}
+    </span>
+    {children}
+  </label>
+);
+
+const BOX =
+  'w-full border-[0.6px] border-line rounded-[8px] px-3 py-2 text-[14px] text-head '
+  + 'leading-5 placeholder:text-black/40 focus:outline-none focus:border-navy-800 '
+  + 'disabled:bg-[#f9fafb] disabled:text-subtle';
+
+/** The initials the avatar falls back to, where there is no photograph. */
+const initialsOf = (name: string, email: string) => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return (parts[0] ?? email).slice(0, 2).toUpperCase();
+};
+
 /**
- * Who somebody is here, and what their plan leaves them.
+ * Who somebody is here.
  *
- * The allowance is shown as it is spent rather than as a feature list: a
- * host wants to know whether they can open another programme today, which
- * is a different question from what the tier includes.
+ * The details are theirs to write: how to reach them, what they do, and
+ * who they do it for. The address is not among them - it is what the
+ * account is, and what Google signed them in as - so it is shown and not
+ * asked for.
  */
-export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = ({
-  onNavigate,
-}) => {
-  const { t, num } = useOrganizer();
+export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = () => {
+  const { t } = useOrganizer();
   const [profile, setProfile] = useState<ProfileSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [position, setPosition] = useState('');
+  const [organization, setOrganization] = useState('');
 
   const load = useCallback(async () => {
     try {
-      setProfile(await apiClient.getProfileSummary());
+      const summary = await apiClient.getProfileSummary();
+      setProfile(summary);
+      setName(summary.user.name ?? '');
+      setPhone(summary.user.phone ?? '');
+      setPosition(summary.user.position ?? '');
+      setOrganization(summary.user.organization_name ?? '');
     } catch {
       toast.error(t({ ne: 'विवरण ल्याउन सकिएन', en: 'Could not load your details' }));
     } finally {
@@ -45,166 +120,182 @@ export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = ({
     return <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>;
   }
   if (!profile) {
-    return <Card><Empty>{t({ ne: 'विवरण उपलब्ध छैन।', en: 'Nothing to show.' })}</Empty></Card>;
+    return (
+      <SettingsSheet>
+        <Empty>{t({ ne: 'विवरण उपलब्ध छैन।', en: 'Nothing to show.' })}</Empty>
+      </SettingsSheet>
+    );
   }
 
-  const { user, plan, usage, remaining } = profile;
+  const { user } = profile;
 
-  const allowance: { label: Pair; used: number; cap: number | null; left: number | null }[] =
-    plan && usage
-      ? [
-          {
-            label: { ne: 'कार्यक्रम', en: 'Events' },
-            used: usage.events, cap: plan.limits.events, left: remaining.events,
-          },
-        ]
-      : [];
+  /** Everything on the form, against what the server last sent back. */
+  const changed =
+    name.trim() !== (user.name ?? '').trim()
+    || phone.trim() !== (user.phone ?? '')
+    || position.trim() !== (user.position ?? '')
+    || organization.trim() !== (user.organization_name ?? '');
+
+  const save = async () => {
+    if (!name.trim()) {
+      toast.error(t({ ne: 'नाम लेख्नुहोस्', en: 'Give your name' }));
+      return;
+    }
+    // One field on the form, two on the account: the first word is the
+    // given name and whatever follows is the rest of it.
+    const parts = name.trim().split(/\s+/);
+    try {
+      setSaving(true);
+      await apiClient.updateProfile({
+        first_name: parts[0],
+        last_name: parts.slice(1).join(' '),
+        phone: phone.trim(),
+        position: position.trim(),
+        organization_name: organization.trim(),
+      });
+      toast.success(t({ ne: 'प्रोफाइल बचत भयो', en: 'Profile saved' }));
+      await load();
+    } catch (e: any) {
+      toast.error(errorText(e, t({ ne: 'बचत गर्न सकिएन', en: 'Could not save it' })));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <>
-      <Head
+    <SettingsSheet>
+      <SettingsHeading
         title={{ ne: 'प्रोफाइल', en: 'Profile' }}
         lede={{
-          ne: 'तपाईंको विवरण, योजना, र कति बाँकी छ।',
-          en: 'Your details, your plan, and what is left of it.',
+          ne: 'आफ्नो व्यक्तिगत विवरण व्यवस्थापन गर्नुहोस्।',
+          en: 'Manage your personal information.',
         }}
       />
 
-      <div className="grid gap-3.5" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))' }}>
-        <Card>
-          <div className="flex items-center gap-3">
-            <span className="w-14 h-14 rounded-full bg-navy-700 text-white grid place-items-center text-[20px] font-bold flex-none">
-              {(user.name || user.email).charAt(0).toUpperCase()}
+      <div className="flex flex-col gap-4 max-w-[906px] w-full">
+        {/* Who you are, before any of it is asked for again. */}
+        <SectionCard className="p-4 flex flex-col gap-4">
+          {user.avatar_url ? (
+            <img
+              src={user.avatar_url}
+              alt=""
+              className="w-16 h-16 rounded-full object-cover"
+            />
+          ) : (
+            <span className="w-16 h-16 rounded-full bg-head text-white grid place-items-center
+              text-[20px] font-semibold leading-7">
+              {initialsOf(user.name ?? '', user.email)}
             </span>
-            <div className="min-w-0">
-              <h3 className="text-[17px] font-semibold truncate">
-                {user.name || user.email}
-              </h3>
-              <p className="text-[12.5px] text-[#6E7C8E] truncate">{user.email}</p>
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <Line label={{ ne: 'भूमिका', en: 'You are' }}>
-              <span className="flex gap-1.5 flex-wrap">
-                {profile.is_host && (
-                  <Chip tone="ok">{t({ ne: 'आयोजक', en: 'Host' })}</Chip>
-                )}
-                {profile.is_attendee && (
-                  <Chip>{t({ ne: 'सहभागी', en: 'Attendee' })}</Chip>
-                )}
-                {!profile.is_host && !profile.is_attendee && (
-                  <span className="text-[#6E7C8E]">
-                    {t({ ne: 'अझै कतै जोडिएको छैन', en: 'Not on a programme yet' })}
-                  </span>
-                )}
-              </span>
-            </Line>
-            <Line label={{ ne: 'साइन इन', en: 'Signed in with' }}>
+          )}
+          <div className="flex flex-col">
+            <p className="text-[14px] font-medium text-[#1E2939] leading-5">
+              {user.name || user.email}
+            </p>
+            {user.position && (
+              <p className="text-[12px] text-subtle leading-4">{user.position}</p>
+            )}
+            <p className="text-[12px] text-subtle leading-4 pt-1 flex items-center gap-2">
               {user.signed_in_with_google
-                ? t({ ne: 'गुगल', en: 'Google' })
-                : t({ ne: 'इमेल', en: 'Email' })}
+                ? t({ ne: 'गुगलबाट साइन इन', en: 'Signed in with Google' })
+                : t({ ne: 'इमेलबाट साइन इन', en: 'Signed in with email' })}
               {user.is_verified && (
-                <span className="ms-1.5">
-                  <Chip tone="ok">{t({ ne: 'प्रमाणित', en: 'Verified' })}</Chip>
-                </span>
+                <Chip tone="ok">{t({ ne: 'प्रमाणित', en: 'Verified' })}</Chip>
               )}
-            </Line>
-            <Line label={{ ne: 'सामेल भएको', en: 'Joined' }}>
+            </p>
+          </div>
+        </SectionCard>
+
+        <div className="flex flex-col gap-4">
+          <SectionHeading>
+            {t({ ne: 'प्रोफाइलको विवरण', en: 'Profile information' })}
+          </SectionHeading>
+
+          <SectionCard className="p-5 flex flex-col gap-4">
+            <div className="grid gap-10 sm:grid-cols-2">
+              <Field label={t({ ne: 'पूरा नाम', en: 'Full name' })} required>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className={BOX}
+                />
+              </Field>
+              {/* Shown rather than asked for: the address is what the
+                  account is, and the server will not take another. */}
+              <Field label={t({ ne: 'इमेल', en: 'Email' })} required>
+                <input value={user.email} disabled className={BOX} />
+              </Field>
+            </div>
+
+            <div className="grid gap-10 sm:grid-cols-2">
+              <Field label={t({ ne: 'फोन नम्बर', en: 'Phone number' })}>
+                <input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+977 9801234567"
+                  className={BOX}
+                />
+              </Field>
+              <Field label={t({ ne: 'पद', en: 'Position' })}>
+                <input
+                  value={position}
+                  onChange={(e) => setPosition(e.target.value)}
+                  placeholder={t({
+                    ne: 'निर्देशक, आपतकालीन सेवा',
+                    en: 'Director, Emergency Services',
+                  })}
+                  className={BOX}
+                />
+              </Field>
+            </div>
+
+            <div className="sm:max-w-[567px]">
+              <Field label={t({ ne: 'संस्था', en: 'Organization' })}>
+                <input
+                  value={organization}
+                  onChange={(e) => setOrganization(e.target.value)}
+                  placeholder={t({
+                    ne: 'आपतकालीन सेवा विभाग',
+                    en: 'Emergency Service Department',
+                  })}
+                  className={BOX}
+                />
+              </Field>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={save}
+                disabled={saving || !changed}
+                className="rounded-[8px] px-4 py-2 text-[14px] font-medium leading-5 text-white
+                  bg-navy-800 hover:bg-navy-700 disabled:bg-[#e1e1e1] disabled:hover:bg-[#e1e1e1]"
+              >
+                {saving
+                  ? t({ ne: 'बचत गर्दै…', en: 'Saving…' })
+                  : t({ ne: 'परिवर्तन बचत', en: 'Save changes' })}
+              </button>
+            </div>
+          </SectionCard>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <SectionHeading>
+            {t({ ne: 'खाताको विवरण', en: 'Account Information' })}
+          </SectionHeading>
+          <SectionCard>
+            <FactRow label={t({ ne: 'खाता खुलेको', en: 'Account created' })}>
               {new Date(user.joined).toLocaleDateString(undefined, {
                 day: 'numeric', month: 'long', year: 'numeric',
               })}
-            </Line>
-            <Line label={{ ne: 'समय क्षेत्र', en: 'Timezone' }}>{user.timezone}</Line>
-          </div>
-        </Card>
-
-        <Card>
-          {plan ? (
-            <>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[12px] text-[#6E7C8E]">
-                    {t({ ne: 'तपाईंको योजना', en: 'Your plan' })}
-                  </p>
-                  <h3 className="text-[19px] font-semibold">
-                    {plan.name}
-                    {!plan.paid && (
-                      <span className="ms-2 text-[12.5px] font-normal text-[#6E7C8E]">
-                        {t({ ne: 'निःशुल्क परीक्षण', en: 'free trial' })}
-                      </span>
-                    )}
-                  </h3>
-                </div>
-                <Btn tone="amber" onClick={() => onNavigate?.('subscription')}>
-                  {t({ ne: 'योजना बदल्ने', en: 'Change plan' })}
-                </Btn>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {allowance.map((row) =>
-                  row.cap === null ? (
-                    <div key={t(row.label)} className="flex justify-between text-[13px]">
-                      <span>{t(row.label)}</span>
-                      <span className="text-[#6E7C8E]">
-                        {t({ ne: 'असीमित', en: 'Unlimited' })}
-                      </span>
-                    </div>
-                  ) : (
-                    <BarRow
-                      key={t(row.label)}
-                      label={t(row.label)}
-                      pct={Math.min(100, Math.round((row.used / row.cap) * 100))}
-                      right={t({
-                        ne: `${num(row.left ?? 0)} बाँकी · ${num(row.used)}/${num(row.cap)}`,
-                        en: `${row.left} left of ${row.cap}`,
-                      })}
-                    />
-                  )
-                )}
-
-                <div className="flex justify-between text-[13px] pt-1">
-                  <span>{t({ ne: 'प्रति बैठक सत्र', en: 'Sessions per event' })}</span>
-                  <span className="text-[#6E7C8E]">
-                    {plan.limits.sessions_per_event === null
-                      ? t({ ne: 'असीमित', en: 'Unlimited' })
-                      : t({
-                          ne: `${num(plan.limits.sessions_per_event)} सम्म`,
-                          en: `up to ${plan.limits.sessions_per_event}`,
-                        })}
-                  </span>
-                </div>
-                <div className="flex justify-between text-[13px]">
-                  <span>{t({ ne: 'सहभागी', en: 'Attendees' })}</span>
-                  <span className="text-[#6E7C8E]">
-                    {plan.limits.attendees === null
-                      ? t({ ne: 'असीमित', en: 'Unlimited' })
-                      : t({
-                          ne: `${num(plan.limits.attendees)} सम्म`,
-                          en: `up to ${plan.limits.attendees}`,
-                        })}
-                  </span>
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              <h3 className="text-[17px] font-semibold">
-                {t({ ne: 'तपाईं आयोजक होइन', en: 'You are not hosting yet' })}
-              </h3>
-              <p className="text-[13px] text-[#6E7C8E] mt-1">
-                {t({
-                  ne: 'कार्यक्रम खोल्नु भए निःशुल्क परीक्षण सुरु हुन्छ — २ कार्यक्रम, प्रत्येकमा २ बैठक, प्रत्येकमा २ सत्र।',
-                  en: 'Opening a programme starts the free trial: 2 events, 2 events each, 2 sessions each.',
-                })}
-              </p>
-              <Btn tone="amber" className="mt-3" onClick={() => onNavigate?.('subscription')}>
-                {t({ ne: 'योजना हेर्नुहोस्', en: 'See the plans' })}
-              </Btn>
-            </>
-          )}
-        </Card>
+            </FactRow>
+            <FactRow label={t({ ne: 'खाता आईडी', en: 'Account ID' })}>
+              <span className="font-mono text-faint break-all">{user.id}</span>
+            </FactRow>
+            <FactRow label={t({ ne: 'समय क्षेत्र', en: 'Timezone' })}>
+              {user.timezone}
+            </FactRow>
+          </SectionCard>
+        </div>
       </div>
-    </>
+    </SettingsSheet>
   );
 };

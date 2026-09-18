@@ -858,6 +858,12 @@ export interface ProfileSummary extends UserRoles {
     id: string;
     email: string;
     name: string;
+    first_name: string;
+    last_name: string;
+    /** What somebody put on their own profile. All three may be blank. */
+    phone: string;
+    position: string;
+    organization_name: string;
     avatar_url: string | null;
     is_verified: boolean;
     joined: string;

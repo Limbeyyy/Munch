@@ -25,9 +25,13 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
         # Users can only see themselves and their event participants
         return User.objects.filter(id=self.request.user.id)
     
-    @action(detail=False, methods=['get', 'put'])
+    @action(detail=False, methods=['get', 'put', 'patch'])
     def profile(self, request):
-        """Get or update current user's profile"""
+        """Get or update current user's profile.
+
+        PATCH as well as PUT: the write is partial either way, and the
+        client has always sent a patch - which this refused with a 405.
+        """
         if request.method == 'GET':
             serializer = UserProfileSerializer(request.user)
             return Response(serializer.data)
@@ -86,6 +90,11 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
                 'id': str(request.user.id),
                 'email': request.user.email,
                 'name': request.user.display_name,
+                'first_name': request.user.first_name,
+                'last_name': request.user.last_name,
+                'phone': request.user.phone,
+                'position': request.user.position,
+                'organization_name': request.user.organization_name,
                 'avatar_url': request.user.avatar_url,
                 'is_verified': request.user.is_verified,
                 'joined': request.user.created_at,
