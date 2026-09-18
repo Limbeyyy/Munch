@@ -1,8 +1,9 @@
 import React from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { OrganizerProvider } from '../../i18n';
 import { Event } from '../../../types';
 import { EventsDashboard, isSetUp } from '../EventsDashboard';
+import { EVENT_STATE_LABEL, eventState } from '../../sessionState';
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -11,7 +12,10 @@ beforeEach(() => {
   );
 });
 
-const day = '2026-09-15';
+// Relative to now, so an event meant to be ahead stays ahead however
+// long this suite outlives the date somebody typed into it.
+const hoursFromNow = (h: number) => new Date(Date.now() + h * 3600000).toISOString();
+const day = hoursFromNow(24).slice(0, 10);
 
 const anEvent = (over: Partial<Event> = {}): Event => ({
   id: 'e1',
@@ -21,8 +25,8 @@ const anEvent = (over: Partial<Event> = {}): Event => ({
   event_date: day,
   status: 'scheduled',
   code: 'MXC-DOX',
-  scheduled_start: `${day}T10:00:00`,
-  scheduled_end: `${day}T12:00:00`,
+  scheduled_start: hoursFromNow(24),
+  scheduled_end: hoursFromNow(26),
   participant_count: 0,
   sessions: [],
   session_count: 3,
@@ -99,7 +103,12 @@ describe('the colour a card carries', () => {
   };
 
   it('washes a finished event green, the colour of its tag', () => {
-    show([anEvent({ status: 'ended' })]);
+    // Ran, then ended. One that ended without ever running is a
+    // different thing, and reads as never started.
+    show([anEvent({
+      status: 'ended', started_at: hoursFromNow(-3), ended_at: hoursFromNow(-1),
+      scheduled_start: hoursFromNow(-3), scheduled_end: hoursFromNow(-1),
+    })]);
 
     const card = theCard();
     expect(card.className).toContain('bg-[#e1faea]');
@@ -120,5 +129,65 @@ describe('the colour a card carries', () => {
     const card = theCard();
     expect(card.className).toContain('bg-[#eff6ff]');
     expect(within(card).getByText('Upcoming').className).toContain('text-[#1447e6]');
+  });
+});
+
+/**
+ * What a card says about itself.
+ *
+ * Which deck an event is filed under and what state it is in are two
+ * different questions. The card used to answer the first while appearing
+ * to answer the second: an event whose hour had come and gone unopened
+ * sat under Upcoming, so its tag said "Upcoming" while the agenda tab
+ * beside it said "Not started".
+ */
+describe('the word on the tag', () => {
+  const tagOn = (title = 'Emergency Service Meeting') => {
+    const heading = screen.getByRole('heading', { name: title });
+    const card = heading.closest('button')!.parentElement!.parentElement as HTMLElement;
+    return within(card).getByText(
+      /Upcoming|Not started|Live|Completed|Never started|Draft/
+    );
+  };
+
+  it('says not started once the hour has come and nobody opened it', () => {
+    show([anEvent({
+      scheduled_start: hoursFromNow(-1), scheduled_end: hoursFromNow(1),
+    })]);
+
+    expect(tagOn()).toHaveTextContent('Not started');
+  });
+
+  it('agrees with what every other screen calls it', () => {
+    const event = anEvent({
+      scheduled_start: hoursFromNow(-1), scheduled_end: hoursFromNow(1),
+    });
+    show([event]);
+
+    // Not started, here and on the agenda tab beside it.
+    expect(eventState(event)).toBe('not-started');
+    expect(tagOn()).toHaveTextContent(EVENT_STATE_LABEL[eventState(event)].en!);
+  });
+
+  it('still says upcoming while the hour is genuinely ahead', () => {
+    show([anEvent()]);
+
+    expect(tagOn()).toHaveTextContent('Upcoming');
+  });
+
+  it('says never started once the window has gone by unopened', () => {
+    show([anEvent({
+      scheduled_start: hoursFromNow(-3), scheduled_end: hoursFromNow(-1),
+    })]);
+
+    // Filed under Upcoming, since it never ended - but it did not happen.
+    expect(tagOn()).toHaveTextContent('Never started');
+  });
+
+  it('keeps calling a draft a draft, which has no state to read', () => {
+    show([anEvent({ status: 'draft' })]);
+
+    fireEvent.click(screen.getByRole('tab', { name: /Draft/ }));
+    expect(tagOn()).toHaveTextContent('Draft');
   });
 });
