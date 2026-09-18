@@ -52,7 +52,6 @@ export const EventDetail: React.FC<Props> = ({
    */
   const [writing, setWriting] = useState<Session | 'new' | null>(null);
   const [sharing, setSharing] = useState<Event | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
 
   const sessions = event.sessions ?? [];
   const withoutSpeaker = sessions.filter((s) => !s.speaker_name).length;
@@ -112,29 +111,6 @@ export const EventDetail: React.FC<Props> = ({
     onOpenRoom(opener.code);
   };
 
-  const runSession = async (session: Session, action: 'start' | 'end', code: string) => {
-    try {
-      setBusy(session.id);
-      if (action === 'start') {
-        await apiClient.startSession(session.id);
-        toast.success(t({ ne: `${session.title} मञ्चमा`, en: `${session.title} is on stage` }));
-        await onChanged();
-        onOpenRoom(code);
-        return;
-      }
-      const done = await apiClient.endSession(session.id);
-      toast.success(t({
-        ne: `सत्र सकियो — ${num(done.attendance_recorded)} जनाको उपस्थिति दर्ता`,
-        en: `Session ended — attendance recorded for ${done.attendance_recorded}`,
-      }));
-      await onChanged();
-    } catch (e: any) {
-      toast.error(errorText(e, t({ ne: 'गर्न सकिएन', en: 'That did not work' })));
-    } finally {
-      setBusy(null);
-    }
-  };
-
   const dropCoHost = async (grant: RoleGrantRow) => {
     try {
       await apiClient.revokeRole(event.id, grant.id);
@@ -178,8 +154,11 @@ export const EventDetail: React.FC<Props> = ({
                 <span className="font-mono text-[12.5px] text-subtle tabular-nums">
                   {clock(s.starts_at)} – {clock(new Date(+new Date(s.starts_at) + s.duration_minutes * 60000).toISOString())}
                 </span>
+                {/* The overview is a summary; a talk is changed where the
+                    running order is arranged, so this goes there rather
+                    than opening a form over the top of a summary. */}
                 <button
-                  onClick={() => setWriting(s)}
+                  onClick={() => setTab('agenda')}
                   className="ml-auto text-[13px] text-tagink hover:underline flex-none"
                 >
                   {t({ ne: 'सम्पादन', en: 'Edit' })}
@@ -349,11 +328,6 @@ export const EventDetail: React.FC<Props> = ({
                   const one = sessions.find((s) => s.id === id);
                   if (one) setWriting(one);
                 }}
-                onRun={(id, action) => {
-                  const one = sessions.find((s) => s.id === id);
-                  if (one) runSession(one, action, event.code);
-                }}
-                busyId={busy}
               />
             </div>
           </div>

@@ -62,10 +62,13 @@ export const sessionState = (
   return 'never-started';
 };
 
-export type EventState = 'upcoming' | 'live' | 'finished' | 'never-started';
+export type EventState =
+  | 'upcoming' | 'not-started' | 'live' | 'finished' | 'never-started';
 
 interface TimedEvent {
   status: string;
+  /** Needed to tell "its hour has come" from "it is still to come". */
+  scheduled_start: string;
   scheduled_end: string;
   started_at?: string | null;
 }
@@ -86,8 +89,13 @@ export const eventState = (
   if (event.status === 'ended') {
     return event.started_at ? 'finished' : 'never-started';
   }
-  // Still scheduled: yet to come, or its window went by without it.
-  return now > +new Date(event.scheduled_end) ? 'never-started' : 'upcoming';
+  // Still scheduled, so where the clock has got to is the whole answer.
+  // Its hour arriving is not the same as it being late, and being late is
+  // not the same as never having happened: an event nobody opened is
+  // still openable until its window has gone by entirely.
+  if (now > +new Date(event.scheduled_end)) return 'never-started';
+  if (now >= +new Date(event.scheduled_start)) return 'not-started';
+  return 'upcoming';
 };
 
 export const SESSION_STATE_LABEL: Record<SessionState, Pair> = {
@@ -118,6 +126,7 @@ export const isPast = (state: SessionState) =>
 
 export const EVENT_STATE_LABEL: Record<EventState, Pair> = {
   upcoming: { ne: 'आउँदै', en: 'Upcoming' },
+  'not-started': { ne: 'सुरु भएको छैन', en: 'Not started' },
   live: { ne: 'चलिरहेको', en: 'Live' },
   finished: { ne: 'सकियो', en: 'Finished' },
   'never-started': { ne: 'सुरु नै भएन', en: 'Never started' },
@@ -128,6 +137,7 @@ export const EVENT_STATE_TONE: Record<
   'default' | 'ok' | 'live' | 'warn' | 'draft' | 'lock'
 > = {
   upcoming: 'draft',
+  'not-started': 'warn',
   live: 'live',
   finished: 'ok',
   'never-started': 'draft',

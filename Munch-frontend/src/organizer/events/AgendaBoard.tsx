@@ -32,15 +32,6 @@ interface Props {
   onAdd?: () => void;
   /** Open one to change its name, speaker or notes. */
   onEdit?: (sessionId: string) => void;
-  /**
-   * Put a talk on stage, or take it off.
-   *
-   * Left out where the running order is only being arranged - the setup
-   * form has no business starting anything.
-   */
-  onRun?: (sessionId: string, action: 'start' | 'end') => void;
-  /** Which row is waiting on the server, so it cannot be pressed twice. */
-  busyId?: string | null;
 }
 
 /**
@@ -53,11 +44,11 @@ interface Props {
  * anything that has already run keeps the time it actually had.
  *
  * Nothing is written until it is saved, so a rearrangement can be thought
- * about and abandoned.
+ * about and abandoned. Nothing is *started* from here either: putting a
+ * talk on stage belongs to the room and to live control, where whoever
+ * does it is watching the room at the time.
  */
-export const AgendaBoard: React.FC<Props> = ({
-  event, onChanged, onAdd, onEdit, onRun, busyId,
-}) => {
+export const AgendaBoard: React.FC<Props> = ({ event, onChanged, onAdd, onEdit }) => {
   const { t, num } = useOrganizer();
   const gapMinutes = useSessionGap();
 
@@ -306,21 +297,6 @@ export const AgendaBoard: React.FC<Props> = ({
                 >
                   {t({ ne: 'सम्पादन', en: 'Edit' })}
                 </button>
-              )}
-
-              {/* Running the day, which is a different thing from
-                  arranging it - so it only appears where both belong. */}
-              {onRun && one.status === 'live' && (
-                <Btn sm tone="danger" disabled={busyId === one.id}
-                     onClick={() => onRun(one.id, 'end')}>
-                  {t({ ne: 'सकाउने', en: 'End' })}
-                </Btn>
-              )}
-              {onRun && (one.status === 'scheduled' || one.status === 'skipped') && (
-                <Btn sm tone="solid" disabled={busyId === one.id}
-                     onClick={() => onRun(one.id, 'start')}>
-                  {t({ ne: 'मञ्चमा', en: 'On stage' })}
-                </Btn>
               )}
               {/* The only way off the running order, so it asks first
                   and says what else goes with it. */}
