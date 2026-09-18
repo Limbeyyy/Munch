@@ -12,6 +12,7 @@ import { apiClient } from '../../services/api';
 jest.mock('../../services/api', () => ({
   apiClient: {
     getProfileSummary: jest.fn(),
+    updateProfile: jest.fn(),
     getUpgradeRequests: jest.fn(),
     requestUpgrade: jest.fn(),
     getReminders: jest.fn(),
@@ -25,6 +26,8 @@ jest.mock('react-hot-toast', () => ({
   __esModule: true,
   default: { error: jest.fn(), success: jest.fn() },
 }));
+
+const toast = require('react-hot-toast').default;
 
 const api = apiClient as jest.Mocked<typeof apiClient>;
 
@@ -46,6 +49,11 @@ const profile = (over: any = {}) => ({
     id: 'u1',
     email: 'sabina@example.org',
     name: 'Sabina Rai',
+    first_name: 'Sabina',
+    last_name: 'Rai',
+    phone: '+977 9801234567',
+    position: 'Director, Emergency Services',
+    organization_name: 'Emergency Service Department',
     avatar_url: null,
     is_verified: true,
     joined: '2026-01-05T04:00:00Z',
@@ -98,38 +106,92 @@ beforeEach(() => {
   );
 });
 
+/**
+ * Who somebody is here.
+ *
+ * The plan and what is left of it used to share this page. They are the
+ * billing page's now, which left this one to do the thing it is named
+ * after: the details somebody writes about themselves.
+ */
 describe('the profile page', () => {
-  it('says what is left of the allowance, not just what the plan includes', async () => {
+  it('opens on what is already written down', async () => {
     api.getProfileSummary.mockResolvedValue(profile() as any);
 
     show(<ProfileView />);
 
-    expect(await screen.findByText('Sabina Rai')).toBeInTheDocument();
-    expect(screen.getByText('sabina@example.org')).toBeInTheDocument();
-    expect(screen.getByText(/Free trial/)).toBeInTheDocument();
-    // One of two events used, so one is left.
-    expect(screen.getByText('1 left of 2')).toBeInTheDocument();
+    expect(await screen.findByDisplayValue('Sabina Rai')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('+977 9801234567')).toBeInTheDocument();
+    expect(
+      screen.getByDisplayValue('Director, Emergency Services')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByDisplayValue('Emergency Service Department')
+    ).toBeInTheDocument();
   });
 
-  it('calls an uncapped allowance unlimited rather than showing a full bar', async () => {
-    api.getProfileSummary.mockResolvedValue(
-      profile({ plan: BIG, remaining: { events: null, sessions_per_event: null, attendees: null } }) as any
-    );
+  /**
+   * The address is what the account is, and what Google signed them in
+   * as. The server refuses another, so the form does not offer one.
+   */
+  it('shows the address rather than asking for it', async () => {
+    api.getProfileSummary.mockResolvedValue(profile() as any);
 
     show(<ProfileView />);
 
-    await screen.findByText('Enterprise');
-    expect(screen.getAllByText('Unlimited').length).toBeGreaterThan(0);
+    expect(await screen.findByDisplayValue('sabina@example.org')).toBeDisabled();
   });
 
-  it('offers the trial to somebody who has never hosted', async () => {
-    api.getProfileSummary.mockResolvedValue(
-      profile({ is_host: false, is_attendee: true, can_start_hosting: true, plan: null, usage: null }) as any
-    );
+  it('has nothing to save until something is typed', async () => {
+    api.getProfileSummary.mockResolvedValue(profile() as any);
 
     show(<ProfileView />);
 
-    expect(await screen.findByText(/not hosting yet/i)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: 'Save changes' })
+    ).toBeDisabled();
+  });
+
+  it('writes the details, splitting the name the account keeps in two', async () => {
+    api.getProfileSummary.mockResolvedValue(profile() as any);
+    api.updateProfile.mockResolvedValue({} as any);
+
+    show(<ProfileView />);
+    fireEvent.change(await screen.findByDisplayValue('+977 9801234567'), {
+      target: { value: '+977 9800000000' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(api.updateProfile).toHaveBeenCalled());
+    const sent = api.updateProfile.mock.calls[0][0];
+    expect(sent.first_name).toBe('Sabina');
+    expect(sent.last_name).toBe('Rai');
+    expect(sent.phone).toBe('+977 9800000000');
+    // Not sent at all: the server would ignore it, and offering it would
+    // suggest otherwise.
+    expect(sent).not.toHaveProperty('email');
+  });
+
+  it('will not write an empty name', async () => {
+    api.getProfileSummary.mockResolvedValue(profile() as any);
+
+    show(<ProfileView />);
+    fireEvent.change(await screen.findByDisplayValue('Sabina Rai'), {
+      target: { value: '  ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(api.updateProfile).not.toHaveBeenCalled();
+  });
+
+  it('says when the account was opened, and what it is called', async () => {
+    api.getProfileSummary.mockResolvedValue(profile() as any);
+
+    show(<ProfileView />);
+
+    expect(await screen.findByText('Account created')).toBeInTheDocument();
+    expect(screen.getByText('Account ID')).toBeInTheDocument();
+    expect(screen.getByText('u1')).toBeInTheDocument();
   });
 });
 
@@ -167,6 +229,56 @@ describe('the subscription page', () => {
     // 'Free trial' names the card and captions it, hence the two matches.
     expect((await screen.findAllByText('Free trial')).length).toBeGreaterThan(0);
     expect(screen.getByText('Current')).toBeInTheDocument();
+  });
+
+  it('says what is left of the allowance, not just what the plan includes', async () => {
+    api.getProfileSummary.mockResolvedValue(profile() as any);
+    api.getUpgradeRequests.mockResolvedValue({ requests: [] } as any);
+
+    show(<SubscriptionView />);
+
+    // One of two events used, so one is left.
+    expect(await screen.findByText('1 / 2')).toBeInTheDocument();
+    expect(screen.getByText('1 event left.')).toBeInTheDocument();
+  });
+
+  it('calls an uncapped allowance unlimited rather than showing a full bar', async () => {
+    api.getProfileSummary.mockResolvedValue(
+      profile({
+        plan: BIG,
+        remaining: { events: null, sessions_per_event: null, attendees: null },
+      }) as any
+    );
+    api.getUpgradeRequests.mockResolvedValue({ requests: [] } as any);
+
+    show(<SubscriptionView />);
+
+    // Named on the banner and again on its card, hence the two matches.
+    expect((await screen.findAllByText('Enterprise')).length).toBeGreaterThan(1);
+    expect(screen.getAllByText('Unlimited').length).toBeGreaterThan(0);
+  });
+
+  it('has nothing to show of a month somebody has not hosted in', async () => {
+    api.getProfileSummary.mockResolvedValue(
+      profile({ is_host: false, plan: null, usage: null }) as any
+    );
+    api.getUpgradeRequests.mockResolvedValue({ requests: [] } as any);
+
+    show(<SubscriptionView />);
+
+    expect(
+      await screen.findByText(/shows here once you open an event/i)
+    ).toBeInTheDocument();
+  });
+
+  it('holds no card, and says so rather than drawing one', async () => {
+    api.getProfileSummary.mockResolvedValue(profile() as any);
+    api.getUpgradeRequests.mockResolvedValue({ requests: [] } as any);
+
+    show(<SubscriptionView />);
+
+    expect(await screen.findByText('No card is held')).toBeInTheDocument();
+    expect(screen.queryByText(/VISA/i)).toBeNull();
   });
 
   it('records the ask and then stops offering that plan', async () => {
