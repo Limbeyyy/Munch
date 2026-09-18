@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 
 from src.apps.accounts.tokens import issue_tokens
 from src.apps.meetings.models import Session
-from src.apps.meetings.scheduling import realign_running_order
+from src.apps.meetings.scheduling import ScheduleConflict, check_slot, realign_running_order
 from src.apps.meetings.tests.factories import at, make_event, make_host, make_session
 
 API = '/api/v1'
@@ -146,3 +146,44 @@ class SavingTheEventTests(TestCase):
 
         self.first.refresh_from_db()
         self.assertEqual(self.first.starts_at, self.event.scheduled_start)
+
+
+class NothingStartsBeforeTheEventTests(TestCase):
+    """An event is the parent of its sessions; none of them precedes it."""
+
+    def setUp(self):
+        self.host = make_host()
+        self.ten = (timezone.now() + timezone.timedelta(days=1)).replace(
+            hour=10, minute=30, second=0, microsecond=0
+        )
+        self.event = make_event(self.host, start=self.ten, minutes=180)
+
+    def test_a_slot_before_the_event_opens_is_refused(self):
+        with self.assertRaises(ScheduleConflict) as refused:
+            check_slot(self.event, at(self.ten, hours=-1), 30)
+
+        self.assertIn('opens at', str(refused.exception))
+
+    def test_the_hour_it_opens_is_allowed(self):
+        check_slot(self.event, self.ten, 30)
+
+    def test_so_is_anything_after_it(self):
+        check_slot(self.event, at(self.ten, hours=2), 30)
+
+    def test_the_endpoint_refuses_it_too(self):
+        response = signed_in(self.host).post(
+            f'{API}/sessions/',
+            {
+                'event': str(self.event.id),
+                'title': 'Too early',
+                'starts_at': at(self.ten, hours=-1).isoformat(),
+                'duration_minutes': 30,
+                'speaker_name': 'A Speaker',
+                'speaker_email': 'speaker@example.com',
+                'speaker_phone': '9800000000',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Session.objects.filter(event=self.event).count(), 0)

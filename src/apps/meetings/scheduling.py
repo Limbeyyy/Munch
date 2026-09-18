@@ -231,6 +231,18 @@ def check_slot(event, starts_at, duration_minutes, exclude_id=None):
             field='duration_minutes',
         )
 
+    # An event is the parent of its sessions, so nothing in it may begin
+    # before it does. The running order is pinned to the event's own hour
+    # everywhere else; this is the same rule at the door.
+    if event.scheduled_start and starts_at < event.scheduled_start:
+        opens = timezone.localtime(event.scheduled_start).strftime('%H:%M')
+        raise ScheduleConflict(
+            f'"{event.title}" opens at {opens}. Nothing in it can start '
+            f'before that.',
+            field='starts_at',
+            earliest=event.scheduled_start,
+        )
+
     ends_at = starts_at + timezone.timedelta(minutes=duration_minutes)
     gap = gap_for(event)
     query = day_sessions(event)
