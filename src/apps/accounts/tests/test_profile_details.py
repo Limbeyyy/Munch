@@ -34,6 +34,7 @@ class ProfileDetailTests(TestCase):
             'phone': '+977 9801234567',
             'position': 'Director, Emergency Services',
             'organization_name': 'Emergency Service Department',
+            'billing_address': 'Kathmandu, Nepal',
         }, format='json')
 
         self.assertEqual(response.status_code, 200)
@@ -41,11 +42,13 @@ class ProfileDetailTests(TestCase):
         self.assertEqual(self.user.phone, '+977 9801234567')
         self.assertEqual(self.user.position, 'Director, Emergency Services')
         self.assertEqual(self.user.organization_name, 'Emergency Service Department')
+        self.assertEqual(self.user.billing_address, 'Kathmandu, Nepal')
 
     def test_they_are_read_back_with_the_profile(self):
         self.user.phone = '+977 9801234567'
         self.user.position = 'Director, Emergency Services'
         self.user.organization_name = 'Emergency Service Department'
+        self.user.billing_address = 'Kathmandu, Nepal'
         self.user.save()
 
         body = signed_in(self.user).get(f'{API}/users/profile_summary/').json()
@@ -55,6 +58,7 @@ class ProfileDetailTests(TestCase):
         self.assertEqual(
             body['user']['organization_name'], 'Emergency Service Department'
         )
+        self.assertEqual(body['user']['billing_address'], 'Kathmandu, Nepal')
         # The name is split, so a form can offer one field per part.
         self.assertEqual(body['user']['first_name'], 'Sarah')
         self.assertEqual(body['user']['last_name'], 'Sharma')

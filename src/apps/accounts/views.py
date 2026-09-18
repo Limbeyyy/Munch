@@ -95,6 +95,7 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
                 'phone': request.user.phone,
                 'position': request.user.position,
                 'organization_name': request.user.organization_name,
+                'billing_address': request.user.billing_address,
                 'avatar_url': request.user.avatar_url,
                 'is_verified': request.user.is_verified,
                 'joined': request.user.created_at,

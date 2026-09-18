@@ -6,14 +6,35 @@ import { errorText } from './errors';
 import { Pair, useOrganizer } from './i18n';
 import { Chip, Empty } from './ui';
 import {
-  FactRow, SectionCard, SectionHeading, SettingsHeading, SettingsSheet,
+  SectionCard, SectionHeading, SettingsHeading, SettingsSheet,
 } from './ProfileView';
 
-const STATUS: Record<UpgradeRequestRow['status'], Pair> = {
-  asked: { ne: 'अनुरोध गरिएको', en: 'Requested' },
-  done: { ne: 'लागू भयो', en: 'Applied' },
-  declined: { ne: 'अस्वीकृत', en: 'Declined' },
-};
+/**
+ * A bill that has been raised against this account.
+ *
+ * Nothing raises one yet: no money changes hands here, an operator
+ * applies the plan. The shape is written down so the section that shows
+ * them is the real thing rather than a drawing of one, and so whatever
+ * wires up a payment provider has something to fill in.
+ */
+interface Invoice {
+  id: string;
+  issued_at: string;
+  plan_name: string;
+  /** Already formatted with its currency: this page does not do money. */
+  amount: string;
+  download_url?: string;
+}
+
+/** One line of the billing details: a quiet label, then the answer. */
+const BillingLine: React.FC<{ label: string; children: React.ReactNode }> = ({
+  label, children,
+}) => (
+  <div className="flex items-start gap-6">
+    <span className="w-16 flex-none text-[12px] text-faint leading-5">{label}</span>
+    <span className="text-[14px] text-[#364153] leading-5 min-w-0">{children}</span>
+  </div>
+);
 
 /** One allowance, drawn as the design draws it: a bar under its name. */
 const Meter: React.FC<{
@@ -53,12 +74,17 @@ const Meter: React.FC<{
  * - without a card on file or an invoice to download, neither of which
  * this system has ever held.
  */
-export const SubscriptionView: React.FC = () => {
+export const SubscriptionView: React.FC<{
+  onNavigate?: (view: string) => void;
+}> = ({ onNavigate }) => {
   const { t, num } = useOrganizer();
   const [profile, setProfile] = useState<ProfileSummary | null>(null);
   const [asks, setAsks] = useState<UpgradeRequestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState('');
+  const [choosing, setChoosing] = useState(false);
+  // Nothing raises one yet; the section is real and therefore empty.
+  const [invoices] = useState<Invoice[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -85,6 +111,7 @@ export const SubscriptionView: React.FC = () => {
         ne: `${plan.name} को अनुरोध पठाइयो`,
         en: `Asked for ${plan.name}`,
       }));
+      setChoosing(false);
       await load();
     } catch (err) {
       toast.error(errorText(err, t({
@@ -116,75 +143,114 @@ export const SubscriptionView: React.FC = () => {
   const capText = (cap: number | null) =>
     cap === null ? t({ ne: 'असीमित', en: 'Unlimited' }) : num(cap);
 
+  /**
+   * Every plan, and the way to ask for one.
+   *
+   * Behind the banner's button rather than laid out down the page: what
+   * a host is on belongs on this page, and the shelf of everything they
+   * could be on is a thing they go looking for once.
+   */
   const plans = (
-    <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))' }}>
-      {profile.plans.map((plan) => {
-        const mine = current?.id === plan.id;
-        const waiting = pending.some((a) => a.plan === plan.id);
-        return (
-          <SectionCard
-            key={plan.id}
-            className={`p-5 flex flex-col gap-3 ${mine ? 'border-navy-800' : ''}`}
+    <div
+      className="fixed inset-0 z-[70] grid place-items-center p-4 bg-[#0b1220]/50"
+      onClick={(e) => { if (e.target === e.currentTarget) setChoosing(false); }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={t({ ne: 'योजनाहरू', en: 'Plans' })}
+    >
+      <div className="bg-white rounded-[12px] w-full max-w-[720px] max-h-[88vh] overflow-auto
+        shadow-[0px_25px_25px_rgba(0,0,0,0.25)] p-6 flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-[16px] font-semibold text-head leading-6">
+            {t({ ne: 'योजनाहरू', en: 'Plans' })}
+          </h3>
+          <button
+            onClick={() => setChoosing(false)}
+            className="text-[13px] text-subtle hover:text-head"
           >
-            <div className="flex items-start justify-between gap-2">
-              <h3 className="text-[16px] font-semibold text-head leading-5">{plan.name}</h3>
-              {mine && <Chip tone="ok">{t({ ne: 'हालको', en: 'Current' })}</Chip>}
-            </div>
-            <p className="text-[12px] text-subtle leading-4">
-              {plan.paid
-                ? t({ ne: 'सशुल्क योजना', en: 'Paid plan' })
-                : t({ ne: 'निःशुल्क परीक्षण', en: 'Free trial' })}
-            </p>
-
-            <dl className="flex flex-col gap-2 text-[13px]">
-              {(
-                [
-                  [{ ne: 'कार्यक्रम', en: 'Events' }, plan.limits.events],
-                  [{ ne: 'प्रति कार्यक्रम सत्र', en: 'Sessions per event' },
-                   plan.limits.sessions_per_event],
-                  [{ ne: 'सहभागी', en: 'Attendees' }, plan.limits.attendees],
-                ] as [Pair, number | null][]
-              ).map(([label, cap]) => (
-                <div key={t(label)} className="flex justify-between gap-3">
-                  <dt className="text-subtle">{t(label)}</dt>
-                  <dd className="text-[#364153] tabular-nums">{capText(cap)}</dd>
+            {t({ ne: 'बन्द', en: 'Close' })}
+          </button>
+        </div>
+        <p className="text-[12px] text-subtle leading-4">
+          {t({
+            ne: 'यहाँ भुक्तानी लिइँदैन। अनुरोध दर्ता हुन्छ र सञ्चालकले योजना लागू गर्छ।',
+            en: 'No payment is taken here. Your request is recorded and an operator applies the plan.',
+          })}
+        </p>
+        {pending.length > 0 && (
+          <p className="text-[12px] text-subtle leading-4">
+            {t({
+              ne: `${pending[0].plan_name} को अनुरोध प्रतीक्षामा छ।`,
+              en: `Your request for ${pending[0].plan_name} is waiting.`,
+            })}
+          </p>
+        )}
+        <div
+          className="grid gap-3"
+          style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))' }}
+        >
+          {profile.plans.map((plan) => {
+            const mine = current?.id === plan.id;
+            const waiting = pending.some((a) => a.plan === plan.id);
+            return (
+              <SectionCard
+                key={plan.id}
+                className={`p-4 flex flex-col gap-3 ${mine ? 'border-navy-800' : ''}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <h4 className="text-[15px] font-semibold text-head leading-5">
+                    {plan.name}
+                  </h4>
+                  {mine && <Chip tone="ok">{t({ ne: 'हालको', en: 'Current' })}</Chip>}
                 </div>
-              ))}
-            </dl>
-
-            <div className="pt-1">
-              {mine ? (
-                <button
-                  disabled
-                  className="w-full rounded-[8px] border-[0.6px] border-line px-3 py-1.5
-                    text-[14px] leading-5 text-subtle"
-                >
-                  {t({ ne: 'यही चलिरहेको छ', en: 'In use' })}
-                </button>
-              ) : waiting ? (
-                <button
-                  disabled
-                  className="w-full rounded-[8px] border-[0.6px] border-line px-3 py-1.5
-                    text-[14px] leading-5 text-subtle"
-                >
-                  {t({ ne: 'अनुरोध पठाइएको', en: 'Requested' })}
-                </button>
-              ) : (
-                <button
-                  disabled={sending === plan.id}
-                  onClick={() => ask(plan)}
-                  className="w-full rounded-[8px] bg-navy-800 hover:bg-navy-700 px-3 py-1.5
-                    text-[14px] leading-5 text-white disabled:opacity-50"
-                >
-                  {sending === plan.id
-                    ? t({ ne: 'पठाउँदै…', en: 'Sending…' })
-                    : t({ ne: 'यो योजना माग्ने', en: 'Ask for this plan' })}
-                </button>
-              )}
-            </div>
-          </SectionCard>
-        );
-      })}
+                <dl className="flex flex-col gap-1.5 text-[12.5px]">
+                  {(
+                    [
+                      [{ ne: 'कार्यक्रम', en: 'Events' }, plan.limits.events],
+                      [{ ne: 'प्रति कार्यक्रम सत्र', en: 'Sessions per event' },
+                       plan.limits.sessions_per_event],
+                      [{ ne: 'सहभागी', en: 'Attendees' }, plan.limits.attendees],
+                    ] as [Pair, number | null][]
+                  ).map(([label, cap]) => (
+                    <div key={t(label)} className="flex justify-between gap-3">
+                      <dt className="text-subtle">{t(label)}</dt>
+                      <dd className="text-[#364153] tabular-nums">{capText(cap)}</dd>
+                    </div>
+                  ))}
+                </dl>
+                {mine ? (
+                  <button
+                    disabled
+                    className="w-full rounded-[8px] border-[0.6px] border-line px-3 py-1.5
+                      text-[14px] leading-5 text-subtle"
+                  >
+                    {t({ ne: 'यही चलिरहेको छ', en: 'In use' })}
+                  </button>
+                ) : waiting ? (
+                  <button
+                    disabled
+                    className="w-full rounded-[8px] border-[0.6px] border-line px-3 py-1.5
+                      text-[14px] leading-5 text-subtle"
+                  >
+                    {t({ ne: 'अनुरोध पठाइएको', en: 'Requested' })}
+                  </button>
+                ) : (
+                  <button
+                    disabled={sending === plan.id}
+                    onClick={() => ask(plan)}
+                    className="w-full rounded-[8px] bg-navy-800 hover:bg-navy-700 px-3 py-1.5
+                      text-[14px] leading-5 text-white disabled:opacity-50"
+                  >
+                    {sending === plan.id
+                      ? t({ ne: 'पठाउँदै…', en: 'Sending…' })
+                      : t({ ne: 'यो योजना माग्ने', en: 'Ask for this plan' })}
+                  </button>
+                )}
+              </SectionCard>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 
@@ -228,13 +294,13 @@ export const SubscriptionView: React.FC = () => {
                   })}
                 </p>
               </div>
-              <a
-                href="#manch-plans"
+              <button
+                onClick={() => setChoosing(true)}
                 className="bg-white border-[0.6px] border-line rounded-[8px] px-3 py-1.5
-                  text-[14px] text-[#364153] leading-5 flex-none"
+                  text-[14px] text-[#364153] leading-5 flex-none hover:border-navy-800"
               >
                 {t({ ne: 'योजना व्यवस्थापन', en: 'Manage subscription' })}
-              </a>
+              </button>
             </div>
           </div>
         </div>
@@ -291,90 +357,100 @@ export const SubscriptionView: React.FC = () => {
           </SectionCard>
         </div>
 
-        {/* Every plan, and the way to ask for one. */}
-        <div className="flex flex-col gap-3" id="manch-plans">
-          <SectionHeading>{t({ ne: 'योजनाहरू', en: 'Plans' })}</SectionHeading>
-          {pending.length > 0 && (
-            <p className="text-[12px] text-subtle leading-4">
+        {/* The card an invoice would be charged to. There is none: no
+            money changes hands here, so nothing is drawn as though it
+            had. The section stands ready for the day one is taken. */}
+        <div className="flex flex-col gap-3">
+          <SectionHeading>
+            {t({ ne: 'भुक्तानीको तरिका', en: 'Payment method' })}
+          </SectionHeading>
+          <SectionCard className="px-5 py-4">
+            <p className="text-[14px] text-subtle leading-5">
+              {t({ ne: 'देखाउन केही छैन।', en: 'Nothing to show.' })}
+            </p>
+            <p className="pt-1 text-[12px] text-faint leading-4">
               {t({
-                ne: `${pending[0].plan_name} को अनुरोध प्रतीक्षामा छ।`,
-                en: `Your request for ${pending[0].plan_name} is waiting.`,
+                ne: 'यहाँ भुक्तानी लिइँदैन, त्यसैले कुनै कार्ड राखिएको छैन।',
+                en: 'No payment is taken here, so no card is held.',
               })}
             </p>
-          )}
-          {plans}
+          </SectionCard>
         </div>
 
-        {/* Who the plan is held against. There is no card on file. */}
+        {/* Who the plan is held against. */}
         <div className="flex flex-col gap-3">
           <SectionHeading>
             {t({ ne: 'बिलिङ विवरण', en: 'Billing information' })}
           </SectionHeading>
-          <SectionCard>
-            <FactRow label={t({ ne: 'नाम', en: 'Name' })}>
+          <SectionCard className="px-5 py-4 flex flex-col gap-1.5">
+            <BillingLine label={t({ ne: 'नाम', en: 'Name' })}>
               {user.name || user.email}
-            </FactRow>
-            <FactRow label={t({ ne: 'इमेल', en: 'Email' })}>{user.email}</FactRow>
-            {user.organization_name && (
-              <FactRow label={t({ ne: 'संस्था', en: 'Organization' })}>
-                {user.organization_name}
-              </FactRow>
-            )}
-            <FactRow label={t({ ne: 'भुक्तानीको तरिका', en: 'Payment method' })}>
-              <span className="text-subtle">
-                {t({ ne: 'कुनै कार्ड राखिएको छैन', en: 'No card is held' })}
-              </span>
-            </FactRow>
+            </BillingLine>
+            <BillingLine label={t({ ne: 'इमेल', en: 'Email' })}>{user.email}</BillingLine>
+            <BillingLine label={t({ ne: 'ठेगाना', en: 'Address' })}>
+              {user.billing_address || (
+                <span className="text-faint">
+                  {t({ ne: 'तोकिएको छैन', en: 'Not given' })}
+                </span>
+              )}
+            </BillingLine>
+            <div className="pt-1.5">
+              <button
+                onClick={() => onNavigate?.('profile')}
+                className="text-[12px] text-[#155DFC] leading-4 hover:underline"
+              >
+                {t({ ne: 'बिलिङ विवरण सम्पादन', en: 'Edit billing information' })}
+              </button>
+            </div>
           </SectionCard>
-          <p className="text-[12px] text-subtle leading-4">
-            {t({
-              ne: 'यी विवरण प्रोफाइल पानाबाट फेरिन्छन्।',
-              en: 'These are changed on the Profile page.',
-            })}
-          </p>
         </div>
 
-        {/* What was asked for, and what came of it. */}
+        {/* What has been charged. Nothing has. */}
         <div className="flex flex-col gap-3">
-          <SectionHeading>{t({ ne: 'अनुरोधहरू', en: 'Requests' })}</SectionHeading>
+          <SectionHeading>{t({ ne: 'बिलहरू', en: 'Invoices' })}</SectionHeading>
           <SectionCard className="bg-sheet">
-            {asks.length === 0 ? (
+            {invoices.length === 0 ? (
               <div className="px-5 py-4">
                 <p className="text-[14px] text-subtle leading-5">
-                  {t({
-                    ne: 'अझै कुनै अनुरोध छैन।',
-                    en: 'No requests yet.',
-                  })}
+                  {t({ ne: 'देखाउन केही छैन।', en: 'Nothing to show.' })}
                 </p>
               </div>
             ) : (
-              asks.map((a) => (
+              invoices.map((one) => (
                 <div
-                  key={a.id}
+                  key={one.id}
                   className="flex items-center justify-between gap-4 px-5 py-3
                     border-b-[0.6px] border-[#f3f4f6] last:border-0"
                 >
                   <div className="min-w-0">
                     <p className="text-[14px] text-[#1E2939] leading-5">
-                      {new Date(a.created_at).toLocaleDateString(undefined, {
+                      {new Date(one.issued_at).toLocaleDateString(undefined, {
                         day: 'numeric', month: 'long', year: 'numeric',
                       })}
                     </p>
-                    <p className="text-[12px] text-faint leading-4">
-                      {a.from_plan ? `${a.from_plan} → ` : ''}{a.plan_name}
-                    </p>
+                    <p className="text-[12px] text-faint leading-4">{one.plan_name}</p>
                   </div>
-                  <Chip
-                    tone={a.status === 'done' ? 'ok' : a.status === 'declined' ? 'warn' : undefined}
-                  >
-                    {t(STATUS[a.status])}
-                  </Chip>
+                  <div className="flex items-center gap-4 flex-none">
+                    <span className="text-[14px] text-[#364153] leading-5 tabular-nums">
+                      {one.amount}
+                    </span>
+                    {one.download_url && (
+                      <a
+                        href={one.download_url}
+                        className="text-[12px] text-[#155DFC] leading-4 hover:underline"
+                      >
+                        {t({ ne: 'डाउनलोड', en: 'Download' })}
+                      </a>
+                    )}
+                  </div>
                 </div>
               ))
             )}
           </SectionCard>
         </div>
       </div>
+
+      {choosing && plans}
     </SettingsSheet>
   );
 };

@@ -25,6 +25,9 @@ class User(AbstractUser):
     #: What they do - "Director, Emergency Services".
     position = models.CharField(max_length=150, blank=True)
     organization_name = models.CharField(max_length=150, blank=True)
+    #: Where invoices would be addressed. Free text: an address is not the
+    #: same shape in two countries.
+    billing_address = models.CharField(max_length=255, blank=True)
 
     # Application-specific fields
     preferred_language = models.CharField(max_length=10, default='en')

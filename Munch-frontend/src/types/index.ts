@@ -864,6 +864,8 @@ export interface ProfileSummary extends UserRoles {
     phone: string;
     position: string;
     organization_name: string;
+    /** Where invoices would be addressed. */
+    billing_address: string;
     avatar_url: string | null;
     is_verified: boolean;
     joined: string;
