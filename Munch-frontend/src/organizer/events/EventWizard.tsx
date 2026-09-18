@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
 import { Event, RoleGrantRow } from '../../types';
 import { ShareEventDialog } from '../../components/ShareEventDialog';
 import { errorText } from '../errors';
@@ -11,6 +12,87 @@ import { BackLink, Block, EventHeading, PlusGlyph, Sheet, Stepper } from './chro
 import { CoHostDialog, Field, inputClass } from './CoHostDialog';
 import { AddAgendaDialog } from './AddAgendaDialog';
 import { whenLine } from './EventsDashboard';
+
+/** The initials a face falls back to, from a name or failing that an address. */
+const initialsOf = (name: string, email = ''): string => {
+  const from = (name || email.split('@')[0] || '?').trim();
+  const parts = from.split(/[\s._-]+/).filter(Boolean);
+  const two = parts.length > 1 ? parts[0][0] + parts[1][0] : from.slice(0, 2);
+  return two.toUpperCase();
+};
+
+/** A section label over the list, with an optional link on the right. */
+const PeopleHeading: React.FC<{
+  label: Pair;
+  action?: { label: Pair; onClick: () => void };
+}> = ({ label, action }) => {
+  const { t } = useOrganizer();
+  return (
+    <div className="flex items-center justify-between pt-6 first:pt-0">
+      <h3 className="text-[12px] font-semibold uppercase tracking-[0.6px] text-faint leading-4">
+        {t(label)}
+      </h3>
+      {action && (
+        <button
+          onClick={action.onClick}
+          className="text-[12px] text-[#155dfc] leading-4 hover:underline"
+        >
+          {t(action.label)}
+        </button>
+      )}
+    </div>
+  );
+};
+
+/** One person on the list: a face, who they are, and what may be done. */
+const PersonRow: React.FC<{
+  initials: string;
+  name: string;
+  suffix?: string;
+  email: string;
+  tag?: string;
+  dark?: boolean;
+  onRemove?: () => void;
+}> = ({ initials, name, suffix, email, tag, dark, onRemove }) => {
+  const { t } = useOrganizer();
+  return (
+    <div className="flex gap-3 items-center pt-5 pb-2">
+      <span
+        className={`w-8 h-8 rounded-full grid place-items-center flex-none text-[12px]
+          font-semibold ${dark ? 'bg-head text-white' : 'bg-line text-body'}`}
+        aria-hidden
+      >
+        {initials}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[14px] font-medium text-head leading-5 truncate">
+          {name}
+          {suffix && <span className="font-normal text-faint">{` ${suffix}`}</span>}
+        </p>
+        <p className="text-[12px] text-subtle leading-4 truncate">{email}</p>
+      </div>
+      {tag && (
+        <span className="bg-[#f3f4f6] text-faint rounded-[4px] px-2 py-0.5
+          text-[12px] leading-4 flex-none">
+          {tag}
+        </span>
+      )}
+      {onRemove && (
+        <button
+          onClick={onRemove}
+          className="ps-2 text-[12px] text-[#fb2c36] leading-4 flex-none hover:underline"
+        >
+          {t({ ne: 'हटाउनुहोस्', en: 'Remove' })}
+        </button>
+      )}
+    </div>
+  );
+};
+
+/** What a section says when there is nobody in it yet. */
+const PeopleEmpty: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <p className="text-[13px] text-subtle pt-4 pb-2">{children}</p>
+);
 
 const STEPS: Pair[] = [
   { ne: 'कार्यक्रमको विवरण', en: 'Event Details' },
@@ -35,6 +117,7 @@ interface Props {
  */
 export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
   const { t, num } = useOrganizer();
+  const { user } = useAuthStore();
   const today = toLocalInput(new Date()).slice(0, 10);
 
   const [step, setStep] = useState(0);
@@ -125,6 +208,31 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
   const coHosts = roles.filter((r) => r.role === 'co_host');
   // The event is the room, so it is its own invitation target.
   const opener = saved;
+
+  const hostName = [user?.first_name, user?.last_name]
+    .filter(Boolean).join(' ').trim();
+
+  const dropCoHost = async (grant: RoleGrantRow) => {
+    if (!saved) return;
+    try {
+      await apiClient.revokeRole(saved.id, grant.id);
+      toast.success(t({ ne: 'हटाइयो', en: 'Removed' }));
+      await loadPeople(saved.id);
+    } catch (e: any) {
+      toast.error(errorText(e, t({ ne: 'हटाउन सकिएन', en: 'Could not remove them' })));
+    }
+  };
+
+  const withdraw = async (email: string) => {
+    if (!saved) return;
+    try {
+      await apiClient.withdrawEventInvite(saved.id, email);
+      toast.success(t({ ne: 'निम्तो फिर्ता', en: 'Invitation withdrawn' }));
+      await loadPeople(saved.id);
+    } catch (e: any) {
+      toast.error(errorText(e, t({ ne: 'हटाउन सकिएन', en: 'Could not take them off' })));
+    }
+  };
 
   const skip = step < 2 && saved
     ? (
@@ -306,86 +414,88 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
             <h2 className="text-[20px] font-medium text-head">
               {t({ ne: 'मानिस', en: 'Peoples' })}
             </h2>
-            <p className="text-[14px] text-body mt-1">
+            <p className="text-[14px] text-body mt-1.5">
               {t({
-                ne: 'तपाईंसँगै चलाउने र आउने मानिस थप्नुहोस्।',
-                en: 'Add the people who run this with you, and the people coming to it.',
+                ne: 'यो कार्यक्रमका सहभागी, वक्ता र सह-आयोजक व्यवस्थापन गर्नुहोस्।',
+                en: 'Manage attendees, speakers and co-hosts for the event',
               })}
             </p>
           </div>
 
-          <div className="grid gap-5 lg:grid-cols-2 items-start">
-            <Block
-              label={{ ne: 'सह-आयोजक', en: 'Co-hosts' }}
-              link={{ label: { ne: '+ थप्नुहोस्', en: '+ Add co-host' }, onClick: () => setAddCoHost(true) }}
-            >
-              {coHosts.length === 0 ? (
-                <div className="py-6 text-center">
-                  <p className="text-[14px] text-head">
-                    {t({ ne: 'अझै सह-आयोजक छैन।', en: 'No co-hosts yet.' })}
-                  </p>
-                  <p className="text-[13px] text-subtle mt-1.5">
-                    {t({
-                      ne: 'सह-आयोजकले तपाईंसँगै यो कार्यक्रम चलाउन सक्छन्।',
-                      en: 'A co-host can run this event beside you.',
-                    })}
-                  </p>
-                  <Btn tone="solid" className="mt-4" onClick={() => setAddCoHost(true)}>
-                    <PlusGlyph />
-                    {t({ ne: 'सह-आयोजक थप्नुहोस्', en: 'Add co-host' })}
-                  </Btn>
-                </div>
-              ) : (
-                coHosts.map((r) => (
-                  <p key={r.id} className="text-[14px] text-head py-2 border-b border-line last:border-0">
-                    {r.email}
-                  </p>
-                ))
-              )}
-            </Block>
+          {/* One list, read top to bottom: who owns the event, who runs it
+              beside them, and who is coming. The two side-by-side cards
+              this replaces asked the eye to start twice. */}
+          <div className="flex flex-col">
+            <PeopleHeading label={{ ne: 'आयोजक', en: 'Host' }} />
+            <PersonRow
+              initials={initialsOf(hostName, saved.host_email)}
+              dark
+              name={hostName || (saved.host_email ?? '')}
+              suffix={t({ ne: '(तपाईं)', en: '(you)' })}
+              email={saved.host_email ?? ''}
+              tag={t({ ne: 'आयोजक', en: 'Host' })}
+            />
 
-            <Block
+            <PeopleHeading
+              label={{
+                ne: `सह-आयोजक · ${num(coHosts.length)}`,
+                en: `Co-hosts · ${coHosts.length}`,
+              }}
+              action={{
+                label: { ne: '+ सह-आयोजक थप्नुहोस्', en: '+ Add co-host' },
+                onClick: () => setAddCoHost(true),
+              }}
+            />
+            {coHosts.length === 0 ? (
+              <PeopleEmpty>
+                {t({
+                  ne: 'सह-आयोजकले तपाईंसँगै यो कार्यक्रम चलाउन सक्छन्।',
+                  en: 'A co-host can run this event beside you.',
+                })}
+              </PeopleEmpty>
+            ) : (
+              coHosts.map((one) => (
+                <PersonRow
+                  key={one.id}
+                  initials={initialsOf('', one.email)}
+                  name={one.email.split('@')[0]}
+                  email={one.email}
+                  tag={t({ ne: 'सह-आयोजक', en: 'Co-host' })}
+                  onRemove={() => dropCoHost(one)}
+                />
+              ))
+            )}
+
+            <PeopleHeading
               label={{ ne: 'सहभागी', en: 'Attendees' }}
-              link={
+              action={
                 opener
-                  ? { label: { ne: 'निम्तो दिनुहोस्', en: 'Invite attendees' },
-                      onClick: () => setSharing(opener) }
+                  ? {
+                      label: { ne: '+ सहभागीलाई निम्तो', en: '+ Invite attendees' },
+                      onClick: () => setSharing(opener),
+                    }
                   : undefined
               }
-            >
-              {invited.length === 0 ? (
-                <div className="py-6 text-center">
-                  <p className="text-[14px] text-head">
-                    {t({ ne: 'अझै कसैलाई निम्तो छैन।', en: 'No attendees invited yet.' })}
-                  </p>
-                  <p className="text-[13px] text-subtle mt-1.5">
-                    {opener
-                      ? t({
-                          ne: 'लिंक वा QR बाँड्नुहोस् — बाँडेको हरेक ठेगाना अपेक्षित उपस्थितिमा गनिन्छ।',
-                          en: 'Share the link or QR — everyone you share it with is counted as expected to attend.',
-                        })
-                      : t({
-                          ne: 'निम्तो दिन पहिले एउटा बैठक चाहिन्छ।',
-                          en: 'There has to be a event before anyone can be invited to one.',
-                        })}
-                  </p>
-                  {opener && (
-                    <Btn tone="solid" className="mt-4" onClick={() => setSharing(opener)}>
-                      {t({ ne: 'सहभागीलाई निम्तो', en: 'Invite attendees' })}
-                    </Btn>
-                  )}
-                </div>
-              ) : (
-                invited.map((row) => (
-                  <div key={row.email} className="flex items-center gap-3 py-2.5 border-b border-line last:border-0">
-                    <span className="text-[14px] text-head truncate min-w-0 flex-1">{row.email}</span>
-                    {row.joined
-                      ? <Chip tone="ok">{t({ ne: 'आइसके', en: 'Joined' })}</Chip>
-                      : <Chip tone="draft">{t({ ne: 'पर्खिँदै', en: 'Not yet' })}</Chip>}
-                  </div>
-                ))
-              )}
-            </Block>
+            />
+            {invited.length === 0 ? (
+              <PeopleEmpty>
+                {t({
+                  ne: 'अझै कसैलाई निम्तो छैन।',
+                  en: 'No attendees invited yet.',
+                })}
+              </PeopleEmpty>
+            ) : (
+              invited.map((row) => (
+                <PersonRow
+                  key={row.email}
+                  initials={initialsOf('', row.email)}
+                  name={row.email.split('@')[0]}
+                  email={row.email}
+                  tag={row.joined ? t({ ne: 'आइसके', en: 'Joined' }) : undefined}
+                  onRemove={() => withdraw(row.email)}
+                />
+              ))
+            )}
           </div>
 
           <div className="flex gap-3 justify-end">

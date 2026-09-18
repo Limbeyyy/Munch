@@ -227,7 +227,7 @@ class EventViewSet(EventRoomViewSet):
             status=status.HTTP_201_CREATED,
         )
 
-    @action(detail=True, methods=['get', 'post'])
+    @action(detail=True, methods=['get', 'post', 'delete'])
     def invites(self, request, pk=None):
         """Who has been asked to this event.
 
@@ -235,7 +235,6 @@ class EventViewSet(EventRoomViewSet):
         the programme, so being asked covers everything that happens in it.
         """
         from src.apps.meetings.models import EventInvite
-        from src.apps.meetings.serializers import EventInviteSerializer
 
         event = self.get_object()
         if str(event.host_id) != str(request.user.id):
@@ -244,6 +243,7 @@ class EventViewSet(EventRoomViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
 
+        added = 0
         if request.method == 'POST':
             emails = request.data.get('emails') or []
             if isinstance(emails, str):
@@ -260,7 +260,6 @@ class EventViewSet(EventRoomViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            added = 0
             for email in emails:
                 _, created = EventInvite.objects.get_or_create(
                     event=event,
@@ -271,6 +270,24 @@ class EventViewSet(EventRoomViewSet):
                 _match_existing_participant(event, email)
 
             logger.info(f"Invited {len(emails)} address(es) to event {event.id}")
+
+        # Taking somebody off the list. An invitation is the expected
+        # headcount, so withdrawing one is how a list that was pasted in
+        # wrong gets corrected rather than living with it.
+        if request.method == 'DELETE':
+            email = (request.data.get('email') or '').strip().lower()
+            if not email:
+                return Response(
+                    {'error': 'Say which address to take off the list'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            gone, _ = EventInvite.objects.filter(event=event, email__iexact=email).delete()
+            if not gone:
+                return Response(
+                    {'error': 'Nobody by that address was invited to this event'},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            logger.info(f"Withdrew the invitation to {email} for event {event.id}")
 
         invites = EventInvite.objects.filter(event=event).select_related(
             'joined_user'
@@ -287,6 +304,9 @@ class EventViewSet(EventRoomViewSet):
             row['joined'] = row['joined'] or invite.joined_at is not None
 
         return Response({
+            # How many of the addresses sent were new, which is what the
+            # screen that sent them reports back to the host.
+            'added': added,
             'invited': sorted(by_email.values(), key=lambda r: r['email']),
             'total_invited': len(by_email),
             'total_joined': sum(1 for r in by_email.values() if r['joined']),
