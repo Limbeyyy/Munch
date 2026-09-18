@@ -34,9 +34,9 @@ module.exports = {
         body: '#4A5565',
         subtle: '#6A7282',
         faint: '#99A1AF',
-        // The ground the running order is laid on: a blue so pale the
-        // white cards on it still read as paper.
-        wash: '#F5F8FD',
+        // The ground the running order is laid on: a blue pale enough that
+        // the white cards on it still read as paper.
+        wash: '#D6E4F8',
         // The tag a status wears, and the blue it is written in.
         tagbg: '#EFF6FF',
         tagink: '#1447E6',
