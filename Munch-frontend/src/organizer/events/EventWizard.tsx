@@ -38,7 +38,15 @@ interface Props {
 export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
   const { t, num } = useOrganizer();
   const { user } = useAuthStore();
-  const today = toLocalInput(new Date()).slice(0, 10);
+  /** Nine tomorrow morning, which is what most events want offered. */
+  const defaultStart = (() => {
+    const at = new Date();
+    at.setDate(at.getDate() + 1);
+    at.setHours(9, 0, 0, 0);
+    return toLocalInput(at);
+  })();
+  const plusAnHour = (from: string) =>
+    toLocalInput(new Date(+new Date(from) + 60 * 60000));
 
   const [step, setStep] = useState(0);
   const [saved, setSaved] = useState<Event | null>(event ?? null);
@@ -46,7 +54,14 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
   const [title, setTitle] = useState(event?.title ?? '');
   const [venue, setVenue] = useState(event?.venue ?? '');
   const [description, setDescription] = useState(event?.description ?? '');
-  const [date, setDate] = useState(event?.event_date ?? today);
+  const [startsAt, setStartsAt] = useState(
+    event?.scheduled_start ? toLocalInput(new Date(event.scheduled_start)) : defaultStart
+  );
+  const [endsAt, setEndsAt] = useState(
+    event?.scheduled_end
+      ? toLocalInput(new Date(event.scheduled_end))
+      : plusAnHour(defaultStart)
+  );
   const [busy, setBusy] = useState(false);
 
   const [drafting, setDrafting] = useState(false);
@@ -79,16 +94,47 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
       toast.error(t({ ne: 'कार्यक्रमको नाम लेख्नुहोस्', en: 'Give the event a name' }));
       return;
     }
+    if (!startsAt) {
+      toast.error(t({ ne: 'सुरु हुने समय दिनुहोस्', en: 'Say when it starts' }));
+      return;
+    }
+    if (endsAt && +new Date(endsAt) <= +new Date(startsAt)) {
+      toast.error(t({
+        ne: 'अन्त्य सुरुभन्दा पछि हुनुपर्छ',
+        en: 'The end has to come after the start',
+      }));
+      return;
+    }
+
+    const from = new Date(startsAt);
+    // The day is the day it starts on; there is no separate date to
+    // disagree with the hours any more.
+    const day = toLocalInput(from).slice(0, 10);
+    const minutes = endsAt
+      ? Math.max(5, Math.round((+new Date(endsAt) - +from) / 60000))
+      : 60;
+
     try {
       setBusy(true);
       if (saved) {
         const next = await apiClient.updateEvent(saved.id, {
-          title: title.trim(), venue: venue.trim(), description, event_date: date,
+          title: title.trim(),
+          venue: venue.trim(),
+          description,
+          event_date: day,
+          scheduled_start: from.toISOString(),
+          scheduled_end: new Date(+from + minutes * 60000).toISOString(),
         });
         setSaved(next);
       } else {
         const next = await apiClient.createEvent({
-          title: title.trim(), venue: venue.trim(), event_date: date, sessions: [],
+          title: title.trim(),
+          venue: venue.trim(),
+          description,
+          event_date: day,
+          scheduled_start: from.toISOString(),
+          duration_minutes: minutes,
+          sessions: [],
         });
         setSaved(next);
         toast.success(t({ ne: `${next.title} बन्यो`, en: `${next.title} created` }));
@@ -208,23 +254,45 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
           </Field>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={t({ ne: 'मिति', en: 'Date' })} required>
+            <Field label={t({ ne: 'सुरु', en: 'Starts' })} required>
               <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
+                type="datetime-local"
+                value={startsAt}
+                onChange={(e) => {
+                  setStartsAt(e.target.value);
+                  // Keep the end ahead of the start rather than letting
+                  // the two cross over while somebody is typing.
+                  if (e.target.value && +new Date(endsAt) <= +new Date(e.target.value)) {
+                    setEndsAt(plusAnHour(e.target.value));
+                  }
+                }}
                 className={inputClass}
               />
             </Field>
-            <Field label={t({ ne: 'स्थान', en: 'Venue' })}>
+            <Field label={t({ ne: 'अन्त्य', en: 'Ends' })}>
               <input
-                value={venue}
-                onChange={(e) => setVenue(e.target.value)}
-                placeholder={t({ ne: 'काठमाडौँ सम्मेलन केन्द्र', en: 'Kathmandu Convention Center' })}
+                type="datetime-local"
+                value={endsAt}
+                onChange={(e) => setEndsAt(e.target.value)}
                 className={inputClass}
               />
             </Field>
           </div>
+          <p className="-mt-2 text-[12.5px] text-subtle">
+            {t({
+              ne: 'अन्त्यको समय औपचारिक हो — कार्यक्रम आयोजकले नसकाएसम्म चलिरहन्छ।',
+              en: 'The end is a formality: the event runs until the host ends it.',
+            })}
+          </p>
+
+          <Field label={t({ ne: 'स्थान', en: 'Venue' })}>
+            <input
+              value={venue}
+              onChange={(e) => setVenue(e.target.value)}
+              placeholder={t({ ne: 'काठमाडौँ सम्मेलन केन्द्र', en: 'Kathmandu Convention Center' })}
+              className={inputClass}
+            />
+          </Field>
 
           <Field label={t({ ne: 'विवरण', en: 'Description' })} hint={t({ ne: 'वैकल्पिक', en: 'optional' })}>
             <textarea
@@ -314,7 +382,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
           {drafting && saved && (
             <AddAgendaDialog
               eventId={saved.id}
-              day={saved.event_date ?? date}
+              day={saved.event_date ?? toLocalInput(new Date(saved.scheduled_start)).slice(0, 10)}
               suggestedStart={nextFreeTime}
               onClose={() => setDrafting(false)}
               onAdded={async () => {
