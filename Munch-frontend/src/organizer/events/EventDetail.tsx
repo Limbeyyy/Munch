@@ -312,9 +312,15 @@ export const EventDetail: React.FC<Props> = ({
               <Chip tone={EVENT_STATE_TONE[eventState(event)]}>
                 {t(EVENT_STATE_LABEL[eventState(event)])}
               </Chip>
-              <span className="ml-auto flex-none">
+              {/* The two things done to a running order from outside it:
+                  add to it, and let people in to see it. */}
+              <span className="ml-auto flex-none flex items-center gap-2">
+                <Btn sm onClick={() => setWriting('new')}>
+                  <PlusGlyph />
+                  {t({ ne: 'सत्र थप्नुहोस्', en: 'Add sessions' })}
+                </Btn>
                 <Btn sm onClick={() => setSharing(event)}>
-                  {t({ ne: 'लिंक र QR', en: 'Link & QR' })}
+                  {t({ ne: 'निम्तो', en: 'Invite' })}
                 </Btn>
               </span>
             </div>
@@ -331,11 +337,6 @@ export const EventDetail: React.FC<Props> = ({
               />
             </div>
           </div>
-
-          <Btn className="self-start" onClick={() => setWriting('new')}>
-            <PlusGlyph />
-            {t({ ne: 'सत्र थप्नुहोस्', en: 'Add sessions' })}
-          </Btn>
         </div>
       )}
 
