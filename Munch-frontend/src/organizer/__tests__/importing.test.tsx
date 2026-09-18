@@ -41,11 +41,12 @@ const show = () =>
   );
 
 /**
- * The template is three tables joined by id, and comes in two shapes.
+ * The template is two tables - the event, and the sessions inside it -
+ * and comes in two shapes.
  *
- * The CSV opens anywhere. The workbook carries the one thing a CSV cannot:
- * the sessions table picking its event and event from the ids typed
- * above, rather than having them typed again.
+ * A sheet holds one event, so nothing has to name which event it belongs
+ * to: the id columns that used to join the tables, and the dropdowns that
+ * filled them in, went with the second event.
  */
 describe('the programme template', () => {
   it('is offered as a workbook and as a CSV', async () => {
@@ -75,11 +76,17 @@ describe('the programme template', () => {
     );
   });
 
-  it('says the sheet is three tables joined by id', () => {
+  it('says the sheet is two tables, one event to a sheet', () => {
     show();
 
-    expect(screen.getByText(/three tables/)).toBeInTheDocument();
-    expect(screen.getByText(/joined by id/)).toBeInTheDocument();
+    expect(screen.getByText(/two tables/)).toBeInTheDocument();
+    expect(screen.getByText(/one event to a sheet/)).toBeInTheDocument();
+  });
+
+  it('says the sessions are not capped', () => {
+    show();
+
+    expect(screen.getByText(/no limit on the sessions/)).toBeInTheDocument();
   });
 
   it('takes a filled-in workbook back without a detour through Save As', async () => {
