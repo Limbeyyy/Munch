@@ -420,14 +420,6 @@ export interface GuestSession {
 
 
 // Invitations & attendance
-export interface EventInvite {
-  id: string;
-  email: string;
-  created_at: string;
-  joined_at: string | null;
-  has_joined: boolean;
-  invited_by_email?: string;
-}
 
 export interface AttendanceEntry {
   type: 'user' | 'guest';
@@ -623,6 +615,15 @@ export type RoleScope = 'event' | 'session';
  * The scope is the whole point: a co-host of one event is nobody in the
  * next one until the host says otherwise.
  */
+/** The invitation list as the server hands it back, on read and on write. */
+export interface EventInviteList {
+  /** How many of the addresses just sent were new. Nought on a read. */
+  added: number;
+  invited: { email: string; joined: boolean; invited_at: string }[];
+  total_invited: number;
+  total_joined: number;
+}
+
 export interface RoleGrantRow {
   id: string;
   email: string;

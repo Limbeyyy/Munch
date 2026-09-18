@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
-import { User, Event, AuthTokens, Transcript, TranscriptSummary, Artifact, Recording, Organization, Team, OrganizationMember, OrganizationInvite, SubscriptionData, Invoice, PaymentMethod, DriveFile, DriveSyncStatus, OrganizationAnalytics, ChatSettings, ChatMessage, EventParticipant, GuestAttendee, GuestSession, EventInvite, AttendanceReport, ChatPerson, GuestResource, TranscriptionSegment, EventDraft, Session, SessionDraft, SessionAttendanceRow, SpeakerContact, ContactRequestRow, UserRoles, ProfileSummary, ReminderPage, EventPhoto, PhotoFolder, PhotoPage, ConclusionAction, ConclusionPage, SchedulingPrefs, SheetExport, UpgradeRequestRow, ResourceVisibility, HubBoard, HubKind, HubPost, SessionSummary, EventBoard, MessageTopic, ProgrammeRoles, RoleGrantRow, RoleScope } from '../types';
+import { User, Event, AuthTokens, Transcript, TranscriptSummary, Artifact, Recording, Organization, Team, OrganizationMember, OrganizationInvite, SubscriptionData, Invoice, PaymentMethod, DriveFile, DriveSyncStatus, OrganizationAnalytics, ChatSettings, ChatMessage, EventParticipant, GuestAttendee, GuestSession, EventInviteList, AttendanceReport, ChatPerson, GuestResource, TranscriptionSegment, EventDraft, Session, SessionDraft, SessionAttendanceRow, SpeakerContact, ContactRequestRow, UserRoles, ProfileSummary, ReminderPage, EventPhoto, PhotoFolder, PhotoPage, ConclusionAction, ConclusionPage, SchedulingPrefs, SheetExport, UpgradeRequestRow, ResourceVisibility, HubBoard, HubKind, HubPost, SessionSummary, EventBoard, MessageTopic, ProgrammeRoles, RoleGrantRow, RoleScope } from '../types';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
 
@@ -633,28 +633,29 @@ class ApiClient {
    * event stands on its own. Either way it must bring at least one
    * session, which the server enforces.
    */
-  /** Who has been asked to a programme, and how many have turned up. */
-  async getEventInvites(eventId: string): Promise<{
-    invited: { email: string; events: number; joined: boolean; invited_at: string }[];
-    total_invited: number;
-    total_joined: number;
-  }> {
+  /** Who has been asked to this event, and how many have turned up. */
+  async getEventInvites(eventId: string): Promise<EventInviteList> {
     const response = await this.client.get(`/events/${eventId}/invites/`);
     return response.data;
   }
 
   /**
-   * Invite people to a programme by email.
+   * Invite people to an event by email.
    *
-   * The invitation covers every event in the event, and is what lets
-   * them see it at all once they sign in with that address.
+   * The invitation is what lets them see the event at all, once they sign
+   * in with that address. It comes back with the whole list, so a screen
+   * showing it does not have to ask again.
    */
-  async inviteToEvent(eventId: string, emails: string[]): Promise<{
-    invited: { email: string; events: number; joined: boolean }[];
-    total_invited: number;
-    total_joined: number;
-  }> {
+  async inviteToEvent(eventId: string, emails: string[]): Promise<EventInviteList> {
     const response = await this.client.post(`/events/${eventId}/invites/`, { emails });
+    return response.data;
+  }
+
+  /** Take somebody off the list, correcting a headcount rather than living with it. */
+  async withdrawEventInvite(eventId: string, email: string): Promise<EventInviteList> {
+    const response = await this.client.delete(`/events/${eventId}/invites/`, {
+      data: { email },
+    });
     return response.data;
   }
 
@@ -847,15 +848,6 @@ class ApiClient {
     const response = await axios.get(`${API_BASE_URL}/events/guest/presenters/`, {
       params: { token },
     });
-    return response.data;
-  }
-
-  // Invitations - each shared link counts toward expected attendance
-  async addEventInvites(
-    eventId: string,
-    emails: string[]
-  ): Promise<{ added: EventInvite[]; already_invited: EventInvite[]; total_invited: number }> {
-    const response = await this.client.post(`/events/${eventId}/invites/`, { emails });
     return response.data;
   }
 

@@ -66,13 +66,12 @@ export const ShareEventDialog: React.FC<Props> = ({
 
     try {
       setIsSending(true);
-      const result = await apiClient.addEventInvites(eventId, valid);
-      const added = result.added.length;
-      const dupes = result.already_invited.length;
+      const result = await apiClient.inviteToEvent(eventId, valid);
+      const dupes = valid.length - result.added;
 
       toast.success(
-        added > 0
-          ? `${added} invited${dupes ? `, ${dupes} already on the list` : ''}`
+        result.added > 0
+          ? `${result.added} invited${dupes ? `, ${dupes} already on the list` : ''}`
           : 'Everyone was already invited'
       );
       onInvited?.(result.total_invited);

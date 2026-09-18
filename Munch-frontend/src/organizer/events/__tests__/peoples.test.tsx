@@ -1,0 +1,161 @@
+import React from 'react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { OrganizerProvider } from '../../i18n';
+import { EventWizard } from '../EventWizard';
+import { apiClient } from '../../../services/api';
+import { useAuthStore } from '../../../store/authStore';
+
+jest.mock('../../../services/api', () => ({
+  apiClient: {
+    getProgrammeRoles: jest.fn(),
+    getEventInvites: jest.fn(),
+    withdrawEventInvite: jest.fn(),
+    revokeRole: jest.fn(),
+    getEvent: jest.fn(),
+    // The auth store reads this the moment it is imported.
+    hasSession: () => false,
+  },
+}));
+
+jest.mock('react-hot-toast', () => ({
+  __esModule: true,
+  default: Object.assign(jest.fn(), {
+    error: jest.fn(), success: jest.fn(), loading: jest.fn(), dismiss: jest.fn(),
+  }),
+}));
+
+const api = apiClient as jest.Mocked<typeof apiClient>;
+
+const event = {
+  id: 'e1',
+  title: 'Emergency Service Meeting',
+  description: '',
+  venue: 'Kathmandu Convention Center',
+  event_date: '2026-09-15',
+  status: 'scheduled',
+  code: 'MXC-DOX',
+  host_email: 'sarah@example.com',
+  scheduled_start: '2026-09-15T10:00:00',
+  scheduled_end: '2026-09-15T12:00:00',
+  participant_count: 0,
+  sessions: [],
+  session_count: 0,
+  created_at: '', updated_at: '',
+} as any;
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  window.localStorage.clear();
+  window.localStorage.setItem(
+    'manch.organizer.prefs', JSON.stringify({ lang: 'en', a11y: {} })
+  );
+  useAuthStore.setState({
+    user: { first_name: 'Sarah', last_name: 'Sharma', email: 'sarah@example.com' } as any,
+  });
+  api.getProgrammeRoles.mockResolvedValue({
+    granted: [{ id: 'g1', email: 'man@gmail.com', role: 'co_host' }],
+    speakers: [],
+  } as any);
+  api.getEventInvites.mockResolvedValue({
+    added: 0,
+    invited: [
+      { email: 'john@example.com', joined: false, invited_at: '' },
+      { email: 'jane@example.com', joined: true, invited_at: '' },
+    ],
+    total_invited: 2,
+    total_joined: 1,
+  } as any);
+  api.withdrawEventInvite.mockResolvedValue({
+    added: 0, invited: [], total_invited: 0, total_joined: 0,
+  } as any);
+});
+
+/** Open the wizard and walk it to the last step. */
+const atPeoples = async () => {
+  render(
+    <OrganizerProvider>
+      <EventWizard event={event} onClose={jest.fn()} onSaved={jest.fn()} />
+    </OrganizerProvider>
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Skip' }));
+  fireEvent.click(screen.getByRole('button', { name: /Next: Peoples/ }));
+  // Wait for the lists themselves, not merely for the calls that fetch
+  // them - the state lands a tick after the request goes out.
+  await screen.findByText('man@gmail.com');
+  await screen.findByText('john@example.com');
+};
+
+/** The row a person's address appears on. */
+const rowOf = (email: string) =>
+  screen.getByText(email).closest('div.flex.gap-3') as HTMLElement;
+
+/**
+ * Everybody on one list, read top to bottom.
+ *
+ * The two side-by-side cards this replaced asked the eye to start twice,
+ * and left the host - the one person who is always there - off it
+ * entirely.
+ */
+describe('the people on an event', () => {
+  it('names the host, and marks them as you', async () => {
+    await atPeoples();
+
+    const row = rowOf('sarah@example.com');
+    expect(within(row).getByText(/Sarah Sharma/)).toBeInTheDocument();
+    expect(within(row).getByText(/\(you\)/)).toBeInTheDocument();
+    expect(within(row).getByText('Host')).toBeInTheDocument();
+  });
+
+  it('says how many co-hosts there are, beside the heading', async () => {
+    await atPeoples();
+
+    expect(screen.getByText('Co-hosts · 1')).toBeInTheDocument();
+  });
+
+  it('gives a co-host their tag and a way off', async () => {
+    await atPeoples();
+
+    const row = rowOf('man@gmail.com');
+    expect(within(row).getByText('Co-host')).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Remove' })).toBeInTheDocument();
+  });
+
+  it('lists the attendees, and marks the ones who came', async () => {
+    await atPeoples();
+
+    expect(within(rowOf('jane@example.com')).getByText('Joined')).toBeInTheDocument();
+    expect(within(rowOf('john@example.com')).queryByText('Joined')).toBeNull();
+  });
+
+  it('takes an attendee off the list when asked', async () => {
+    await atPeoples();
+
+    fireEvent.click(
+      within(rowOf('john@example.com')).getByRole('button', { name: 'Remove' })
+    );
+
+    await waitFor(() =>
+      expect(api.withdrawEventInvite).toHaveBeenCalledWith('e1', 'john@example.com')
+    );
+  });
+
+  it('takes a co-host off by the grant, not by the address', async () => {
+    await atPeoples();
+
+    fireEvent.click(
+      within(rowOf('man@gmail.com')).getByRole('button', { name: 'Remove' })
+    );
+
+    await waitFor(() => expect(api.revokeRole).toHaveBeenCalledWith('e1', 'g1'));
+  });
+
+  it('is one list rather than two columns', async () => {
+    await atPeoples();
+
+    // The host, the co-host and the two attendees all sit under the same
+    // parent: that is what makes it one column to read down.
+    const host = rowOf('sarah@example.com').parentElement;
+    expect(rowOf('man@gmail.com').parentElement).toBe(host);
+    expect(rowOf('john@example.com').parentElement).toBe(host);
+  });
+});
