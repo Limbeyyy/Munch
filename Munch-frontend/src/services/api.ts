@@ -1262,6 +1262,7 @@ class ApiClient {
     phone?: string;
     position?: string;
     organization_name?: string;
+    billing_address?: string;
     preferred_language?: string;
     timezone?: string;
   }): Promise<User> {

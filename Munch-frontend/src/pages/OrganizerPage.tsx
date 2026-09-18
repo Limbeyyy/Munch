@@ -155,7 +155,7 @@ const OrganizerInner: React.FC = () => {
             {view === 'settings' && <SettingsView />}
             {view === 'reminders' && <RemindersView page={nudges.page} loading={nudges.loading} onRead={nudges.markRead} />}
             {view === 'profile' && <ProfileView onNavigate={setView} />}
-            {view === 'subscription' && <SubscriptionView />}
+            {view === 'subscription' && <SubscriptionView onNavigate={setView} />}
           </>
         )}
       </OrganizerShell>

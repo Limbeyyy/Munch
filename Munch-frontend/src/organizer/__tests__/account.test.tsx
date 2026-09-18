@@ -202,7 +202,30 @@ describe('the subscription page', () => {
 
     show(<SubscriptionView />);
 
-    expect(await screen.findByText(/No payment is taken here/i)).toBeInTheDocument();
+    expect(
+      (await screen.findAllByText(/no payment is taken here/i)).length
+    ).toBeGreaterThan(0);
+  });
+
+  /**
+   * The shelf of every plan is a thing a host goes looking for once, so
+   * it is behind the banner's own button rather than laid down the page
+   * under what they are already on.
+   */
+  it('keeps the plans behind the button that manages them', async () => {
+    api.getProfileSummary.mockResolvedValue(profile() as any);
+    api.getUpgradeRequests.mockResolvedValue({ requests: [] } as any);
+
+    show(<SubscriptionView />);
+    await screen.findByText('This month');
+
+    expect(screen.queryByRole('button', { name: 'Ask for this plan' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Manage subscription' }));
+
+    expect(
+      await screen.findByRole('button', { name: 'Ask for this plan' })
+    ).toBeInTheDocument();
   });
 
   it('marks the plan in use and does not offer it again', async () => {
@@ -210,6 +233,7 @@ describe('the subscription page', () => {
     api.getUpgradeRequests.mockResolvedValue({ requests: [] } as any);
 
     show(<SubscriptionView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage subscription' }));
 
     await screen.findByText('Enterprise');
     expect(screen.getByText('Current')).toBeInTheDocument();
@@ -225,8 +249,9 @@ describe('the subscription page', () => {
     api.getUpgradeRequests.mockResolvedValue({ requests: [] } as any);
 
     show(<SubscriptionView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage subscription' }));
 
-    // 'Free trial' names the card and captions it, hence the two matches.
+    // 'Free trial' names the banner and the card, hence the two matches.
     expect((await screen.findAllByText('Free trial')).length).toBeGreaterThan(0);
     expect(screen.getByText('Current')).toBeInTheDocument();
   });
@@ -252,6 +277,7 @@ describe('the subscription page', () => {
     api.getUpgradeRequests.mockResolvedValue({ requests: [] } as any);
 
     show(<SubscriptionView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage subscription' }));
 
     // Named on the banner and again on its card, hence the two matches.
     expect((await screen.findAllByText('Enterprise')).length).toBeGreaterThan(1);
@@ -271,14 +297,50 @@ describe('the subscription page', () => {
     ).toBeInTheDocument();
   });
 
+  /**
+   * The sections stand where the design puts them, and say there is
+   * nothing in them - rather than drawing a card and three invoices that
+   * were never taken or raised.
+   */
   it('holds no card, and says so rather than drawing one', async () => {
     api.getProfileSummary.mockResolvedValue(profile() as any);
     api.getUpgradeRequests.mockResolvedValue({ requests: [] } as any);
 
     show(<SubscriptionView />);
 
-    expect(await screen.findByText('No card is held')).toBeInTheDocument();
+    expect(await screen.findByText('Payment method')).toBeInTheDocument();
+    expect(screen.getAllByText('Nothing to show.').length).toBe(2);
     expect(screen.queryByText(/VISA/i)).toBeNull();
+    expect(screen.queryByText(/\$29/)).toBeNull();
+  });
+
+  it('addresses the plan to whoever is on it, and says where to change that', async () => {
+    api.getProfileSummary.mockResolvedValue(
+      profile({
+        user: { ...profile().user, billing_address: 'Kathmandu, Nepal' },
+      }) as any
+    );
+    api.getUpgradeRequests.mockResolvedValue({ requests: [] } as any);
+    const onNavigate = jest.fn();
+
+    show(<SubscriptionView onNavigate={onNavigate} />);
+
+    expect(await screen.findByText('Kathmandu, Nepal')).toBeInTheDocument();
+    expect(screen.getByText('sabina@example.org')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit billing information' }));
+    expect(onNavigate).toHaveBeenCalledWith('profile');
+  });
+
+  it('says there is nothing to show where no invoice has been raised', async () => {
+    api.getProfileSummary.mockResolvedValue(profile() as any);
+    api.getUpgradeRequests.mockResolvedValue({ requests: [] } as any);
+
+    show(<SubscriptionView />);
+
+    expect(await screen.findByText('Invoices')).toBeInTheDocument();
+    // Requests used to sit here; invoices do.
+    expect(screen.queryByText('Requests')).toBeNull();
   });
 
   it('records the ask and then stops offering that plan', async () => {
@@ -297,10 +359,13 @@ describe('the subscription page', () => {
     });
 
     show(<SubscriptionView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage subscription' }));
 
     fireEvent.click(await screen.findByRole('button', { name: 'Ask for this plan' }));
 
     await waitFor(() => expect(api.requestUpgrade).toHaveBeenCalledWith('enterprise'));
+    // Asking closes the chooser, so it is opened again to read it back.
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage subscription' }));
     expect(await screen.findByRole('button', { name: 'Requested' })).toBeDisabled();
   });
 });

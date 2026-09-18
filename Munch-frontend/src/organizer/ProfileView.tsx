@@ -98,6 +98,7 @@ export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = ()
   const [phone, setPhone] = useState('');
   const [position, setPosition] = useState('');
   const [organization, setOrganization] = useState('');
+  const [address, setAddress] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -107,6 +108,7 @@ export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = ()
       setPhone(summary.user.phone ?? '');
       setPosition(summary.user.position ?? '');
       setOrganization(summary.user.organization_name ?? '');
+      setAddress(summary.user.billing_address ?? '');
     } catch {
       toast.error(t({ ne: 'विवरण ल्याउन सकिएन', en: 'Could not load your details' }));
     } finally {
@@ -134,7 +136,8 @@ export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = ()
     name.trim() !== (user.name ?? '').trim()
     || phone.trim() !== (user.phone ?? '')
     || position.trim() !== (user.position ?? '')
-    || organization.trim() !== (user.organization_name ?? '');
+    || organization.trim() !== (user.organization_name ?? '')
+    || address.trim() !== (user.billing_address ?? '');
 
   const save = async () => {
     if (!name.trim()) {
@@ -152,6 +155,7 @@ export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = ()
         phone: phone.trim(),
         position: position.trim(),
         organization_name: organization.trim(),
+        billing_address: address.trim(),
       });
       toast.success(t({ ne: 'प्रोफाइल बचत भयो', en: 'Profile saved' }));
       await load();
@@ -248,7 +252,7 @@ export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = ()
               </Field>
             </div>
 
-            <div className="sm:max-w-[567px]">
+            <div className="grid gap-10 sm:grid-cols-2">
               <Field label={t({ ne: 'संस्था', en: 'Organization' })}>
                 <input
                   value={organization}
@@ -257,6 +261,16 @@ export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = ()
                     ne: 'आपतकालीन सेवा विभाग',
                     en: 'Emergency Service Department',
                   })}
+                  className={BOX}
+                />
+              </Field>
+              {/* Where an invoice would be addressed. The billing page
+                  shows it and sends anybody wanting to change it here. */}
+              <Field label={t({ ne: 'ठेगाना', en: 'Address' })}>
+                <input
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder={t({ ne: 'काठमाडौँ, नेपाल', en: 'Kathmandu, Nepal' })}
                   className={BOX}
                 />
               </Field>
