@@ -747,28 +747,6 @@ describe('the appearance page', () => {
     expect(screen.getByRole('radio', { name: /medium/i })).not.toBeChecked();
   });
 
-  /**
-   * The header's button used to open a dialog holding these. It comes
-   * here now, so they had to as well: two copies of one switch is how
-   * they end up disagreeing.
-   */
-  it('holds the settings the accessibility dialog used to', () => {
-    show(<AppearanceView />);
-
-    expect(screen.getByLabelText('Larger text')).toBeInTheDocument();
-    expect(screen.getByLabelText('Reduce motion')).toBeInTheDocument();
-    // Stronger borders is the third theme above, not a fourth switch.
-    expect(screen.queryByLabelText('Stronger borders')).toBeNull();
-  });
-
-  it('turns larger text on from here', () => {
-    show(<AppearanceView />);
-
-    fireEvent.click(screen.getByLabelText('Larger text'));
-
-    expect(document.documentElement.hasAttribute('data-a11y-big')).toBe(true);
-  });
-
   /** Per browser, not per account: see the note on the describe. */
   it('remembers the choice for next time', async () => {
     show(<AppearanceView />);

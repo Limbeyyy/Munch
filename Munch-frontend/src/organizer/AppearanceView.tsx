@@ -46,7 +46,7 @@ const SPACINGS: { id: LineSpacing; label: Pair }[] = [
  * wants it larger there and not everywhere they ever sign in.
  */
 export const AppearanceView: React.FC = () => {
-  const { t, look, setLook, a11y, setA11y } = useOrganizer();
+  const { t, look, setLook } = useOrganizer();
 
   return (
     <SettingsSheet>
@@ -177,42 +177,6 @@ export const AppearanceView: React.FC = () => {
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* What used to be a dialog behind the header's button. The button
-            comes here now, so the settings had to as well - two copies of
-            the same switch is how they end up disagreeing. */}
-        <div className="flex flex-col gap-3">
-          <SectionHeading>{t({ ne: 'पहुँच', en: 'Accessibility' })}</SectionHeading>
-          <div className="bg-white border-[0.6px] border-line rounded-[12px] p-5
-            flex flex-col gap-3">
-            <p className="text-[12px] text-subtle leading-4">
-              {t({
-                ne: 'डिजाइन उही रहन्छ — पढ्न सजिलो मात्र हुन्छ।',
-                en: 'Same design, just easier to read.',
-              })}
-            </p>
-            {([
-              ['big', { ne: 'ठूलो अक्षर', en: 'Larger text' }],
-              ['calm', { ne: 'चलायमान कम', en: 'Reduce motion' }],
-            ] as const).map(([key, label]) => (
-              <label
-                key={key}
-                className="flex items-center gap-2.5 text-[14px] text-head leading-5
-                  cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  checked={a11y[key]}
-                  onChange={() => setA11y((v) => ({ ...v, [key]: !v[key] }))}
-                  className="w-4 h-4 accent-navy-800"
-                />
-                {t(label)}
-              </label>
-            ))}
-            {/* Stronger borders is the third theme above, so it is not
-                offered twice. */}
           </div>
         </div>
       </div>
