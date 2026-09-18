@@ -9,7 +9,7 @@ import { Btn } from '../ui';
 import { FileBadge } from './fileKinds';
 import {
   PlannedEvent, PlannedSession,
-  applyEdit, countChanges, pendingChanges, swapSessions, toPlan, whyNotSwap,
+  countChanges, pendingChanges, swapSessions, toPlan, whyNotSwap,
 } from '../schedule';
 
 const clock = (ms: number) =>
@@ -21,6 +21,20 @@ const stamp = (ms: number) =>
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit',
   });
+
+/**
+ * One fact about a talk, named and stated.
+ *
+ * The bare number that used to sit here read as a count of something
+ * unnamed, and the field it sat in invited an edit the card does not do.
+ */
+const Stated: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <span className="bg-[#F9FAFB] border border-line rounded-[8px] px-2 py-1
+    text-[12.5px] text-body">
+    <span className="text-subtle">{label}: </span>
+    <span className="tabular-nums text-head">{value}</span>
+  </span>
+);
 
 /** A session already run, or running, keeps the time it actually had. */
 const settled = (s: PlannedSession) => s.status !== 'scheduled';
@@ -315,35 +329,19 @@ export const AgendaBoard: React.FC<Props> = ({ event, onChanged, onAdd, onEdit }
                   </p>
                 )}
 
-                {/* When it starts, stated rather than asked for: the hour
-                    belongs to the talk, and the talk is changed on the
-                    form the Edit button opens. The length is still set
-                    here, and reflows what follows. */}
+                {/* When it runs and for how long, stated rather than
+                    asked for. Both belong to the talk, and the talk is
+                    changed on the form the Edit button opens; what is
+                    done from the card is the order, by dragging. */}
                 <div className="pt-3 flex flex-wrap items-center gap-2">
-                  <span className="bg-[#F9FAFB] border border-line rounded-[8px]
-                    px-2 py-1 text-[12.5px] text-body tabular-nums">
-                    {stamp(one.startsAt)}
-                  </span>
-                  <label className="flex items-center gap-1.5">
-                    <input
-                      type="number"
-                      min={5}
-                      step={5}
-                      aria-label={t({ ne: 'मिनेट', en: 'Minutes' })}
-                      disabled={fixed}
-                      value={one.durationMinutes}
-                      onChange={(e) =>
-                        setPlan((p) => applyEdit(
-                          p, one.id, { durationMinutes: Number(e.target.value) || 5 }, gapMinutes
-                        ))
-                      }
-                      className="border border-line rounded-[8px] px-2 py-1 text-[12.5px]
-                        text-head w-[68px] disabled:opacity-50"
-                    />
-                    <span className="text-[12.5px] text-subtle">
-                      {t({ ne: 'मिनेट', en: 'min' })}
-                    </span>
-                  </label>
+                  <Stated
+                    label={t({ ne: 'मिति', en: 'Date' })}
+                    value={stamp(one.startsAt)}
+                  />
+                  <Stated
+                    label={t({ ne: 'अवधि', en: 'Duration' })}
+                    value={`${num(one.durationMinutes)} ${t({ ne: 'मिनेट', en: 'min' })}`}
+                  />
 
                   {one.moved && (
                     <span className="bg-[#FEF6E7] text-[#B26A00] rounded-[4px] px-2 py-0.5
