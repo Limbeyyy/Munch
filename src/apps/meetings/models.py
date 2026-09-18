@@ -455,6 +455,11 @@ class Session(models.Model):
     # of the institution who never sign in.
     speaker_name = models.CharField(max_length=255, blank=True)
 
+    # What they do, as it should read under their name on the running
+    # order: "Director, Emergency Services". Free text for the same reason
+    # the name is - a speaker is often somebody with no account here.
+    speaker_role = models.CharField(max_length=255, blank=True)
+
     # How to reach the speaker once the day is over. Held against the
     # session rather than an account, for the same reason as the name.
     speaker_email = models.EmailField(blank=True)

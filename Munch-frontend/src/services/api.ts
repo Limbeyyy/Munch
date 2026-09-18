@@ -686,7 +686,9 @@ class ApiClient {
   async createSession(data: {
     event: string;
     title: string;
+    description?: string;
     speaker_name?: string;
+    speaker_role?: string;
     speaker_email?: string;
     speaker_phone?: string;
     speaker_visibility?: 'public' | 'private';

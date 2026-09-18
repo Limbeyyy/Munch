@@ -1,18 +1,15 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { Event, EventDraft, RoleGrantRow } from '../../types';
+import { Event, RoleGrantRow } from '../../types';
 import { ShareEventDialog } from '../../components/ShareEventDialog';
-import { confirmSpacing } from '../confirmSpacing';
-import { useSessionGap } from '../sessionGap';
 import { errorText } from '../errors';
 import { Pair, useOrganizer } from '../i18n';
 import { Btn, Chip } from '../ui';
-import {
-  EventDraftFields, emptyEvent, missingSpeakerDetails, toApiEvent, toLocalInput,
-} from '../EventDraftFields';
+import { toLocalInput } from '../EventDraftFields';
 import { BackLink, Block, EventHeading, PlusGlyph, Sheet, Stepper } from './chrome';
 import { CoHostDialog, Field, inputClass } from './CoHostDialog';
+import { AddAgendaDialog } from './AddAgendaDialog';
 import { whenLine } from './EventsDashboard';
 
 const STEPS: Pair[] = [
@@ -38,7 +35,6 @@ interface Props {
  */
 export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
   const { t, num } = useOrganizer();
-  const gapMinutes = useSessionGap();
   const today = toLocalInput(new Date()).slice(0, 10);
 
   const [step, setStep] = useState(0);
@@ -50,7 +46,6 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
   const [date, setDate] = useState(event?.event_date ?? today);
   const [busy, setBusy] = useState(false);
 
-  const [events, setEventRooms] = useState<EventDraft[]>([]);
   const [drafting, setDrafting] = useState(false);
 
   const [roles, setRoles] = useState<RoleGrantRow[]>([]);
@@ -105,51 +100,31 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
   };
 
   /** Step two: one event's worth of running order at a time. */
-  const saveSessions = async () => {
-    if (!saved) return;
-    const named = events.filter((m) => m.title.trim());
-    if (named.length !== events.length) {
-      toast.error(t({ ne: 'हरेक बैठकको नाम चाहिन्छ', en: 'Every event needs a name' }));
-      return;
-    }
-    const incomplete = named.flatMap(missingSpeakerDetails);
-    if (incomplete.length > 0) {
-      toast.error(t({
-        ne: `वक्ताको नाम, इमेल र फोन चाहिन्छ: ${incomplete.join(', ')}`,
-        en: `A speaker name, email and phone are needed for: ${incomplete.join(', ')}`,
-      }));
-      return;
-    }
-    // The gap is mandatory, so a running order typed too tight is put right
-    // here - with the organizer agreeing to the new times - rather than
-    // being bounced back by the server.
-    const plan = confirmSpacing(named, window.confirm, gapMinutes);
-    if (!plan) return;
+  const sessionCount = saved?.sessions?.length ?? 0;
 
-    try {
-      setBusy(true);
-      for (const event of plan) {
-        await apiClient.addSessionsToEvent(saved.id, toApiEvent(event));
-      }
-      const fresh = await apiClient.getEvent(saved.id);
-      setSaved(fresh);
-      setEventRooms([]);
-      setDrafting(false);
-      toast.success(t({ ne: 'सत्रहरू थपिए', en: 'Sessions added' }));
-      await onSaved();
-    } catch (e: any) {
-      toast.error(errorText(e, t({ ne: 'थप्न सकिएन', en: 'Could not add them' })));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const existing = saved ? [saved] : [];
-  const sessionCount = existing.reduce((n, m) => n + (m.sessions?.length ?? 0), 0);
+  /**
+   * Where the running order has reached, offered as the next start.
+   *
+   * The dialog asks for a time rather than working one out, so it is
+   * handed the end of the last talk: a morning is usually typed in order,
+   * and re-reading the clock for every row is the tedious part.
+   */
+  const nextFreeTime = (() => {
+    const order = [...(saved?.sessions ?? [])].sort(
+      (a, b) => +new Date(a.starts_at) - +new Date(b.starts_at)
+    );
+    const last = order[order.length - 1];
+    const from = last
+      ? new Date(+new Date(last.starts_at) + last.duration_minutes * 60000)
+      : saved?.scheduled_start
+      ? new Date(saved.scheduled_start)
+      : null;
+    if (!from) return undefined;
+    return `${String(from.getHours()).padStart(2, '0')}:${String(from.getMinutes()).padStart(2, '0')}`;
+  })();
   const coHosts = roles.filter((r) => r.role === 'co_host');
-  const opener = [...existing].sort(
-    (a, b) => +new Date(a.scheduled_start) - +new Date(b.scheduled_start)
-  )[0];
+  // The event is the room, so it is its own invitation target.
+  const opener = saved;
 
   const skip = step < 2 && saved
     ? (
@@ -261,7 +236,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
               <Btn
                 tone="solid"
                 className="px-5 py-3 text-[16px]"
-                onClick={() => { setDrafting(true); setEventRooms([emptyEvent(date, 9)]); }}
+                onClick={() => setDrafting(true)}
               >
                 <PlusGlyph />
                 {t({ ne: 'नयाँ सत्र बनाउनुहोस्', en: 'Create New Sessions' })}
@@ -270,77 +245,57 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
           </div>
 
           {/* What is already in the running order. */}
-          {existing.length > 0 && (
+          {sessionCount > 0 && (
             <Block label={{
               ne: `एजेन्डा · ${num(sessionCount)} सत्र`,
               en: `Agenda · ${sessionCount} sessions`,
             }}>
-              {existing.map((event) => (
-                <div key={event.id} className="py-3 border-b border-line last:border-0">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <b className="text-[14px] font-medium text-head">{event.title}</b>
-                    <span className="text-[12.5px] font-mono text-navy-800">
-                      {event.code}
-                    </span>
-                    <Chip tone="draft">
-                      {num(event.sessions?.length ?? 0)} {t({ ne: 'सत्र', en: 'sessions' })}
-                    </Chip>
-                  </div>
-                  {(event.sessions ?? []).map((s) => (
-                    <p key={s.id} className="text-[13px] text-subtle mt-1.5">
-                      <span className="font-mono tabular-nums">
-                        {new Date(s.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {[...(saved?.sessions ?? [])]
+                .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at))
+                .map((one) => (
+                  <div key={one.id} className="py-3 border-b border-line last:border-0">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className="font-mono text-[12.5px] text-subtle tabular-nums">
+                        {new Date(one.starts_at).toLocaleTimeString([], {
+                          hour: '2-digit', minute: '2-digit',
+                        })}
                       </span>
-                      {' · '}{s.title}
-                      {s.speaker_name && ` · ${s.speaker_name}`}
-                    </p>
-                  ))}
-                </div>
-              ))}
+                      <b className="text-[14px] font-medium text-head">{one.title}</b>
+                      <Chip tone="draft">
+                        {num(one.duration_minutes)} {t({ ne: 'मिनेट', en: 'min' })}
+                      </Chip>
+                    </div>
+                    {one.speaker_name && (
+                      <p className="text-[13px] text-subtle mt-1.5">
+                        {one.speaker_name}
+                        {one.speaker_role ? ` · ${one.speaker_role}` : ''}
+                      </p>
+                    )}
+                  </div>
+                ))}
             </Block>
           )}
 
-          {drafting && (
-            <div className="flex flex-col gap-4">
-              {events.map((event, i) => (
-                <EventDraftFields
-                  key={i}
-                  index={i}
-                  event={event}
-                  onChange={(next) => setEventRooms((v) => v.map((m, j) => (j === i ? next : m)))}
-                  onRemove={
-                    events.length > 1
-                      ? () => setEventRooms((v) => v.filter((_, j) => j !== i))
-                      : undefined
-                  }
-                />
-              ))}
-              <Btn
-                className="self-start"
-                onClick={() => setEventRooms((v) => [...v, emptyEvent(date, 14)])}
-              >
-                <PlusGlyph />
-                {t({ ne: 'अर्को बैठक', en: 'Another event' })}
-              </Btn>
+          <div className="flex gap-3 justify-end">
+            <Btn onClick={() => setStep(0)}>{t({ ne: 'पछाडि', en: 'Back' })}</Btn>
+            <Btn tone="solid" onClick={() => setStep(2)}>
+              {t({ ne: 'अर्को: मानिस', en: 'Next: Peoples' })}
+            </Btn>
+          </div>
 
-              <div className="flex gap-3 justify-end">
-                <Btn onClick={() => { setDrafting(false); setEventRooms([]); }}>
-                  {t({ ne: 'रद्द', en: 'Cancel' })}
-                </Btn>
-                <Btn tone="solid" onClick={saveSessions} disabled={busy}>
-                  {busy ? t({ ne: 'थप्दै…', en: 'Adding…' }) : t({ ne: 'सत्र बचत', en: 'Save sessions' })}
-                </Btn>
-              </div>
-            </div>
-          )}
-
-          {!drafting && (
-            <div className="flex gap-3 justify-end">
-              <Btn onClick={() => setStep(0)}>{t({ ne: 'पछाडि', en: 'Back' })}</Btn>
-              <Btn tone="solid" onClick={() => setStep(2)}>
-                {t({ ne: 'अर्को: मानिस', en: 'Next: Peoples' })}
-              </Btn>
-            </div>
+          {drafting && saved && (
+            <AddAgendaDialog
+              eventId={saved.id}
+              day={saved.event_date ?? date}
+              suggestedStart={nextFreeTime}
+              onClose={() => setDrafting(false)}
+              onAdded={async () => {
+                setDrafting(false);
+                const fresh = await apiClient.getEvent(saved.id);
+                setSaved(fresh);
+                await onSaved();
+              }}
+            />
           )}
         </div>
       )}
