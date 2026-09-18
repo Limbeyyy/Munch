@@ -722,6 +722,53 @@ describe('the appearance page', () => {
     expect(container.querySelectorAll('[data-transcript-line]').length).toBe(1);
   });
 
+  /**
+   * A chosen setting stays chosen. The mark on the control is the only
+   * way to tell which one is in use, and in the dark it was drawn in the
+   * same near-black as the card it sat on.
+   */
+  it('keeps the choice marked once it is made', () => {
+    show(<AppearanceView />);
+
+    fireEvent.click(screen.getByRole('radio', { name: /Dark/ }));
+
+    expect(screen.getByRole('radio', { name: /Dark/ })).toBeChecked();
+    expect(screen.getByRole('radio', { name: /Light/ })).not.toBeChecked();
+  });
+
+  it('keeps the transcript choices marked too', () => {
+    show(<AppearanceView />);
+
+    fireEvent.click(screen.getByRole('radio', { name: /large/i }));
+    fireEvent.click(screen.getByRole('radio', { name: /relaxed/i }));
+
+    expect(screen.getByRole('radio', { name: /large/i })).toBeChecked();
+    expect(screen.getByRole('radio', { name: /relaxed/i })).toBeChecked();
+    expect(screen.getByRole('radio', { name: /medium/i })).not.toBeChecked();
+  });
+
+  /**
+   * The header's button used to open a dialog holding these. It comes
+   * here now, so they had to as well: two copies of one switch is how
+   * they end up disagreeing.
+   */
+  it('holds the settings the accessibility dialog used to', () => {
+    show(<AppearanceView />);
+
+    expect(screen.getByLabelText('Larger text')).toBeInTheDocument();
+    expect(screen.getByLabelText('Reduce motion')).toBeInTheDocument();
+    // Stronger borders is the third theme above, not a fourth switch.
+    expect(screen.queryByLabelText('Stronger borders')).toBeNull();
+  });
+
+  it('turns larger text on from here', () => {
+    show(<AppearanceView />);
+
+    fireEvent.click(screen.getByLabelText('Larger text'));
+
+    expect(document.documentElement.hasAttribute('data-a11y-big')).toBe(true);
+  });
+
   /** Per browser, not per account: see the note on the describe. */
   it('remembers the choice for next time', async () => {
     show(<AppearanceView />);

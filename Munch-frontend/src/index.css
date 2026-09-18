@@ -202,11 +202,16 @@ html[data-transcript-spacing='relaxed'] [data-transcript-line] * {
 
 /* Dark.
 
-   The design paints on a handful of colours, so this repaints those
-   rather than editing every screen one at a time. Surfaces go dark in
-   three steps - the page under everything, the sheet a page sits on, and
-   the card inside it - so the depth the light theme gets from borders
-   and white-on-grey survives. */
+   Light values become dark and dark values become light, by the shape of
+   the value rather than by naming every class one at a time: a fill
+   whose hex begins e or f is a light surface wherever it appears, and
+   ink beginning 0, 1, 2 or 3 is dark ink. Enumerating them was how the
+   first attempt left black headings on a dark page - there is always one
+   more screen with its own hex in it.
+
+   The brand colours are left alone. Navy, amber, the red of a live
+   session and the green of a finished one are already themselves in the
+   dark, and white on them still reads. */
 html[data-theme='dark'] {
   color-scheme: dark;
 }
@@ -216,57 +221,54 @@ html[data-theme='dark'] body {
   color: #e5e7eb;
 }
 
-/* The page under everything. */
+/* The page under everything, then the sheet, then the card on it. Three
+   steps, so the depth the light theme gets from white on grey survives. */
 html[data-theme='dark'] .bg-page {
   background-color: #0b1220 !important;
 }
 
-/* The sheet a page is laid on, and the cards inside it. */
 html[data-theme='dark'] .bg-white,
 html[data-theme='dark'] .bg-sheet,
-html[data-theme='dark'] .bg-\[\#fcfcfc\],
-html[data-theme='dark'] .bg-\[\#FCFCFC\] {
+html[data-theme='dark'] [class*='bg-[#fc'],
+html[data-theme='dark'] [class*='bg-[#FC'],
+html[data-theme='dark'] [class*='bg-[#ff'],
+html[data-theme='dark'] [class*='bg-[#FF'] {
   background-color: #141d2e !important;
 }
 
-/* The quieter fills: an inset panel, a disabled box, a meter's track. */
-html[data-theme='dark'] .bg-\[\#f9fafb\],
-html[data-theme='dark'] .bg-\[\#F9FAFB\],
-html[data-theme='dark'] .bg-\[\#f3f4f6\],
-html[data-theme='dark'] .bg-\[\#F3F4F6\],
-html[data-theme='dark'] .bg-\[\#f5f5f5\],
-html[data-theme='dark'] .bg-\[\#F5F5F5\],
-html[data-theme='dark'] .bg-\[\#e1e1e1\],
+/* Every other light fill: an inset panel, a disabled box, a meter track,
+   a pastel tint. They differ by a shade or two in the light and all of
+   them mean "quieter than the card". */
+html[data-theme='dark'] [class*='bg-[#e'],
+html[data-theme='dark'] [class*='bg-[#E'],
+html[data-theme='dark'] [class*='bg-[#f'],
+html[data-theme='dark'] [class*='bg-[#F'],
+html[data-theme='dark'] [class*='bg-[#d'],
+html[data-theme='dark'] [class*='bg-[#D'],
 html[data-theme='dark'] .bg-wash,
 html[data-theme='dark'] .bg-cream,
-html[data-theme='dark'] .bg-cream-200 {
+html[data-theme='dark'] .bg-cream-200,
+html[data-theme='dark'] .bg-tagbg {
   background-color: #1b2639 !important;
 }
 
-/* The tag a status wears. */
-html[data-theme='dark'] .bg-tagbg,
-html[data-theme='dark'] .bg-\[\#eff6ff\],
-html[data-theme='dark'] .bg-\[\#EFF6FF\] {
+/* The two fills that are a colour rather than a surface: the mark on a
+   selected control, and the tag a status wears. */
+html[data-theme='dark'] .bg-head,
+html[data-theme='dark'] .bg-ink {
+  background-color: #e5e7eb !important;
+}
+html[data-theme='dark'] .bg-tagbg {
   background-color: #17294a !important;
 }
-html[data-theme='dark'] .text-tagink,
-html[data-theme='dark'] .text-\[\#1447E6\],
-html[data-theme='dark'] .text-\[\#155DFC\],
-html[data-theme='dark'] .text-\[\#155dfc\] {
-  color: #7fa9ff !important;
-}
 
-/* Headings and the ink the design writes them in. */
+/* Dark ink, whatever hex it was written as. */
+html[data-theme='dark'] [class*='text-[#0'],
+html[data-theme='dark'] [class*='text-[#1'],
+html[data-theme='dark'] [class*='text-[#2'],
+html[data-theme='dark'] [class*='text-[#3'],
 html[data-theme='dark'] .text-head,
 html[data-theme='dark'] .text-ink,
-html[data-theme='dark'] .text-\[\#030712\],
-html[data-theme='dark'] .text-\[\#101828\],
-html[data-theme='dark'] .text-\[\#0d0e0f\],
-html[data-theme='dark'] .text-\[\#0a090b\],
-html[data-theme='dark'] .text-\[\#151515\],
-html[data-theme='dark'] .text-\[\#1e2939\],
-html[data-theme='dark'] .text-\[\#1E2939\],
-html[data-theme='dark'] .text-\[\#383838\],
 html[data-theme='dark'] h1,
 html[data-theme='dark'] h2,
 html[data-theme='dark'] h3,
@@ -276,43 +278,65 @@ html[data-theme='dark'] strong {
   color: #f3f4f6 !important;
 }
 
-/* Body copy. */
+/* Body copy, and the greys a label or a caption is written in. */
+html[data-theme='dark'] [class*='text-[#4'],
+html[data-theme='dark'] [class*='text-[#5'],
 html[data-theme='dark'] .text-body,
-html[data-theme='dark'] .text-ink-2,
-html[data-theme='dark'] .text-\[\#4a5565\],
-html[data-theme='dark'] .text-\[\#4A5565\],
-html[data-theme='dark'] .text-\[\#4a5567\],
-html[data-theme='dark'] .text-\[\#364153\],
-html[data-theme='dark'] .text-\[\#475467\],
-html[data-theme='dark'] .text-\[\#4f4d55\],
-html[data-theme='dark'] .text-\[\#656565\] {
+html[data-theme='dark'] .text-ink-2 {
   color: #cbd5e1 !important;
 }
-
-/* The quiet greys: a label, a caption, a hint. */
+html[data-theme='dark'] [class*='text-[#6'],
+html[data-theme='dark'] [class*='text-[#7'],
+html[data-theme='dark'] [class*='text-[#8'],
+html[data-theme='dark'] [class*='text-[#9'],
 html[data-theme='dark'] .text-subtle,
-html[data-theme='dark'] .text-faint,
-html[data-theme='dark'] .text-\[\#6a7282\],
-html[data-theme='dark'] .text-\[\#6A7282\],
-html[data-theme='dark'] .text-\[\#6E7C8E\],
-html[data-theme='dark'] .text-\[\#99a1af\],
-html[data-theme='dark'] .text-\[\#99A1AF\],
-html[data-theme='dark'] .text-\[\#959595\] {
+html[data-theme='dark'] .text-faint {
   color: #94a3b8 !important;
 }
 
-/* Every border the design draws, in one shade that reads against both
-   the sheet and the cards on it. */
+/* The blue a link is written in, which is too dark against a dark card,
+   and the navy the design writes on white. Both after the sweep above,
+   so they win it. */
+html[data-theme='dark'] .text-tagink,
+html[data-theme='dark'] [class*='text-[#15'],
+html[data-theme='dark'] [class*='text-[#14'],
+html[data-theme='dark'] [class*='text-[#19'] {
+  color: #7fa9ff !important;
+}
+html[data-theme='dark'] .text-navy-800,
+html[data-theme='dark'] .text-navy-900,
+html[data-theme='dark'] .text-navy-700,
+html[data-theme='dark'] [class*='text-[#12386'] {
+  color: #8fb4ee !important;
+}
+
+/* White is white on purpose: it sits on the navy bar, the gradient
+   banner and every solid button. */
+html[data-theme='dark'] .text-white,
+html[data-theme='dark'] [class*='text-white'] {
+  color: #ffffff !important;
+}
+
+/* Every hairline the design draws. */
 html[data-theme='dark'] [class*='border-line'],
-html[data-theme='dark'] [class*='border-\[\#e'],
-html[data-theme='dark'] [class*='border-\[\#E'],
-html[data-theme='dark'] [class*='border-\[\#f3f4f6'],
-html[data-theme='dark'] [class*='border-\[\#d1d5dc'],
-html[data-theme='dark'] [class*='border-\[\#ccc'],
 html[data-theme='dark'] [class*='divide-line'],
+html[data-theme='dark'] [class*='border-[#c'],
+html[data-theme='dark'] [class*='border-[#C'],
+html[data-theme='dark'] [class*='border-[#d'],
+html[data-theme='dark'] [class*='border-[#D'],
+html[data-theme='dark'] [class*='border-[#e'],
+html[data-theme='dark'] [class*='border-[#E'],
+html[data-theme='dark'] [class*='border-[#f'],
+html[data-theme='dark'] [class*='border-[#F'],
 html[data-theme='dark'] table th,
 html[data-theme='dark'] table td {
   border-color: #2b3854 !important;
+}
+
+/* The border on a chosen control is the one that has to stay visible. */
+html[data-theme='dark'] .border-head,
+html[data-theme='dark'] [class*='border-[#101828'] {
+  border-color: #e5e7eb !important;
 }
 
 /* What is typed into. */
@@ -332,21 +356,6 @@ html[data-theme='dark'] select:disabled,
 html[data-theme='dark'] textarea:disabled {
   background-color: #1b2639 !important;
   color: #94a3b8 !important;
-}
-
-/* The navy the design uses for its loudest button is already dark, and
-   white on it still reads. What does not is navy ink on a dark card. */
-html[data-theme='dark'] .text-navy-800,
-html[data-theme='dark'] .text-navy-900,
-html[data-theme='dark'] .text-\[\#12386e\],
-html[data-theme='dark'] .text-\[\#12386E\] {
-  color: #8fb4ee !important;
-}
-
-/* Anything white on the navy bar, the gradient banner or a solid button
-   is white on purpose, and stays. */
-html[data-theme='dark'] .text-white {
-  color: #ffffff !important;
 }
 
 /* The shadows the design lifts cards with are invisible on a dark page,
