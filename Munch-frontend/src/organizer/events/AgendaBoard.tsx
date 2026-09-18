@@ -8,7 +8,7 @@ import { useSessionGap } from '../sessionGap';
 import { Btn } from '../ui';
 import {
   PlannedEvent, PlannedSession,
-  applyEdit, countChanges, pendingChanges, swapSessions, toPlan, whyNotSwap,
+  applyEdit, countChanges, pendingChanges, setHall, swapSessions, toPlan, whyNotSwap,
 } from '../schedule';
 
 const clock = (ms: number) =>
@@ -64,6 +64,7 @@ export const AgendaBoard: React.FC<Props> = ({
   const [plan, setPlan] = useState<PlannedEvent[]>(() => toPlan([event]));
   const [saving, setSaving] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
 
   // The server moves the day about too - a session started early brings
   // the rest forward - so the board follows what it last said.
@@ -110,6 +111,27 @@ export const AgendaBoard: React.FC<Props> = ({
   };
 
   const revert = () => setPlan(toPlan([event]));
+
+  /** Take a talk out of the running order for good. */
+  const remove = async (session: PlannedSession) => {
+    const ok = window.confirm(
+      t({
+        ne: `“${session.title}” हटाउने?\n\nयसको उपस्थिति रेकर्ड पनि जान्छ।`,
+        en: `Remove “${session.title}”?\n\nIts attendance record goes with it.`,
+      })
+    );
+    if (!ok) return;
+    try {
+      setRemoving(session.id);
+      await apiClient.deleteSession(session.id);
+      toast.success(t({ ne: 'सत्र हटाइयो', en: 'Session removed' }));
+      await onChanged();
+    } catch (e: any) {
+      toast.error(errorText(e, t({ ne: 'हटाउन सकिएन', en: 'Could not remove it' })));
+    } finally {
+      setRemoving(null);
+    }
+  };
 
   /** Write every row the reflow touched, then read the day back. */
   const save = async () => {
@@ -239,6 +261,14 @@ export const AgendaBoard: React.FC<Props> = ({
                   text-head flex-none disabled:opacity-50"
               />
               <input
+                aria-label={t({ ne: 'हल', en: 'Hall' })}
+                placeholder={t({ ne: 'हल', en: 'Hall' })}
+                value={one.hall}
+                onChange={(e) => setPlan((p) => setHall(p, one.id, e.target.value))}
+                className="border border-line rounded-[8px] px-2 py-1 text-[12.5px]
+                  text-head w-[92px] flex-none"
+              />
+              <input
                 type="number"
                 min={5}
                 step={5}
@@ -292,6 +322,18 @@ export const AgendaBoard: React.FC<Props> = ({
                   {t({ ne: 'मञ्चमा', en: 'On stage' })}
                 </Btn>
               )}
+              {/* The only way off the running order, so it asks first
+                  and says what else goes with it. */}
+              <button
+                onClick={() => remove(one)}
+                disabled={removing === one.id || one.status === 'live'}
+                aria-label={t({ ne: 'सत्र हटाउने', en: 'Remove session' })}
+                title={t({ ne: 'सत्र हटाउने', en: 'Remove session' })}
+                className="w-7 h-7 rounded-md text-faint flex-none
+                  hover:text-live hover:bg-live/[.08] disabled:opacity-40"
+              >
+                ×
+              </button>
               <span className="sr-only">{num(at + 1)}</span>
             </li>
           );

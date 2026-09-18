@@ -7,6 +7,7 @@ import { apiClient } from '../../../services/api';
 jest.mock('../../../services/api', () => ({
   apiClient: {
     rescheduleSessions: jest.fn(),
+    deleteSession: jest.fn(),
     getSchedulingPrefs: jest.fn(),
     hasSession: () => false,
   },
@@ -58,6 +59,7 @@ beforeEach(() => {
   // Re-applied here rather than at the mock, since clearAllMocks above
   // strips implementations set when the module was defined.
   api.getSchedulingPrefs.mockResolvedValue({ session_gap_minutes: 15 } as any);
+  api.deleteSession.mockResolvedValue(undefined as any);
 });
 
 const show = (ev = two(), onChanged = jest.fn()) => {
@@ -246,5 +248,71 @@ describe('running the day from here', () => {
     expect(within(row).queryByRole('button', { name: 'On stage' })).toBeNull();
     fireEvent.click(within(row).getByRole('button', { name: 'End' }));
     expect(onRun).toHaveBeenCalledWith('s1', 'end');
+  });
+});
+
+/**
+ * The two things that used to live only on the Sessions page.
+ *
+ * Deleting that page without these would have left no way to say which
+ * hall a talk is in, or to take one off the running order at all.
+ */
+describe('what came across from the Sessions page', () => {
+  it('says which hall a talk is in', () => {
+    show();
+
+    const hall = within(rowOf('Kataho')).getByLabelText('Hall');
+    fireEvent.change(hall, { target: { value: 'Hall A' } });
+
+    expect(hall).toHaveValue('Hall A');
+    // A hall is a change like any other, so it waits to be saved.
+    expect(screen.getByRole('button', { name: /Save the order/ })).toBeInTheDocument();
+  });
+
+  it('sends the hall with the rest of the rearrangement', async () => {
+    show();
+    fireEvent.change(
+      within(rowOf('Kataho')).getByLabelText('Hall'), { target: { value: 'Hall A' } }
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Save the order/ }));
+
+    await waitFor(() => expect(api.rescheduleSessions).toHaveBeenCalled());
+    const sent = api.rescheduleSessions.mock.calls[0][0];
+    expect(sent.find((s: any) => s.id === 's1')?.hall).toBe('Hall A');
+  });
+
+  it('takes a talk off the running order, once it has asked', async () => {
+    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    const onChanged = show();
+
+    fireEvent.click(
+      within(rowOf('Kataho')).getByRole('button', { name: 'Remove session' })
+    );
+
+    expect(confirm).toHaveBeenCalled();
+    await waitFor(() => expect(api.deleteSession).toHaveBeenCalledWith('s1'));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    confirm.mockRestore();
+  });
+
+  it('removes nothing when the asking is declined', () => {
+    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
+    show();
+
+    fireEvent.click(
+      within(rowOf('Kataho')).getByRole('button', { name: 'Remove session' })
+    );
+
+    expect(api.deleteSession).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it('will not take away the talk that is on stage', () => {
+    show(event([session({ id: 's1', title: 'Kataho', status: 'live' })]));
+
+    expect(
+      within(rowOf('Kataho')).getByRole('button', { name: 'Remove session' })
+    ).toBeDisabled();
   });
 });

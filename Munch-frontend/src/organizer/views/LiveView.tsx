@@ -207,12 +207,12 @@ export const LiveView: React.FC<Props> = ({ events, onChanged, onNavigate }) => 
         <Card className="text-center py-10">
           <p className="text-[#6E7C8E]">
             {t({
-              ne: 'कुनै सत्र तालिकामा छैन। एजेन्डाबाट थप्नुहोस्।',
-              en: 'Nothing is scheduled. Add a session from the agenda.',
+              ne: 'कुनै सत्र तालिकामा छैन। कार्यक्रमभित्रबाट थप्नुहोस्।',
+              en: 'Nothing is scheduled. Add a session from inside the event.',
             })}
           </p>
-          <Btn tone="amber" className="mt-4" onClick={() => onNavigate('agenda')}>
-            {t({ ne: 'एजेन्डा खोल्नुहोस्', en: 'Open the agenda' })}
+          <Btn tone="amber" className="mt-4" onClick={() => onNavigate('events')}>
+            {t({ ne: 'कार्यक्रम खोल्नुहोस्', en: 'Open the event' })}
           </Btn>
         </Card>
       </>

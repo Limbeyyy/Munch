@@ -14,7 +14,6 @@ import { Btn, Chip } from '../organizer/ui';
 import { SetupView } from '../organizer/views/SetupView';
 import { EventsView } from '../organizer/views/EventsView';
 import { LiveView } from '../organizer/views/LiveView';
-import { AgendaView } from '../organizer/views/AgendaView';
 import { ContentView } from '../organizer/views/ContentView';
 import { AttendanceView } from '../organizer/views/AttendanceView';
 import { PeopleView } from '../organizer/views/PeopleView';
@@ -152,7 +151,6 @@ const OrganizerInner: React.FC = () => {
                 onChanged={load}
               />
             )}
-            {view === 'agenda' && <AgendaView onChanged={load} />}
             {view === 'content' && <ContentView events={events} />}
             {view === 'attendance' && <AttendanceView events={events} />}
             {view === 'people' && <PeopleView events={events} currentUserId={user?.id} />}

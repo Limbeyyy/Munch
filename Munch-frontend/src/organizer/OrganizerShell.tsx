@@ -23,8 +23,6 @@ export const NAV: NavItem[] = [
 
   { id: 'events', group: 2, label: { ne: 'कार्यक्रम', en: 'Events' },
     icon: 'M4 5h16M4 5v14a2 2 0 002 2h12a2 2 0 002-2V5M9 10h6M9 14h6M7 3v4M17 3v4' },
-  { id: 'agenda', group: 2, label: { ne: 'सत्रहरू', en: 'Sessions' },
-    icon: 'M8 2v4M16 2v4M3 9h18M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z' },
   { id: 'content', group: 2, label: { ne: 'सामग्री र सारांश', en: 'Files and Summaries' },
     icon: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M9 13h6M9 17h6' },
   { id: 'people', group: 2, label: { ne: 'वक्ता र टोली', en: 'Speaker and teams' },
@@ -59,7 +57,6 @@ const CRUMB: Record<string, Pair> = {
   attendance: { ne: 'उपस्थिति', en: 'Attendance' },
   moderation: { ne: 'मडेरेसन', en: 'Moderation' },
   events: { ne: 'कार्यक्रम', en: 'Events' },
-  agenda: { ne: 'सत्रहरू', en: 'Sessions' },
   content: { ne: 'सामग्री र सारांश', en: 'Files and Summaries' },
   people: { ne: 'वक्ता र टोली', en: 'Speaker and teams' },
   setup: { ne: 'सेटअप', en: 'Setup' },
