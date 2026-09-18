@@ -11,7 +11,6 @@ import { Event } from '../types';
 import { OrganizerProvider, useOrganizer } from '../organizer/i18n';
 import { Modal, OrganizerShell } from '../organizer/OrganizerShell';
 import { Btn, Chip } from '../organizer/ui';
-import { SetupView } from '../organizer/views/SetupView';
 import { EventsView } from '../organizer/views/EventsView';
 import { LiveView } from '../organizer/views/LiveView';
 import { ContentView } from '../organizer/views/ContentView';
@@ -139,9 +138,6 @@ const OrganizerInner: React.FC = () => {
           <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>
         ) : (
           <>
-            {view === 'setup' && (
-              <SetupView events={events} onNavigate={setView} onCreate={() => setCreateOpen(true)} />
-            )}
             {view === 'live' && (
               <LiveView events={events} onChanged={load} onNavigate={setView} />
             )}

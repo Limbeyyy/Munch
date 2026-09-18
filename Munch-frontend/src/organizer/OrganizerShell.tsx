@@ -28,8 +28,6 @@ export const NAV: NavItem[] = [
   { id: 'people', group: 2, label: { ne: 'वक्ता र टोली', en: 'Speaker and teams' },
     icon: 'M17 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9.5 7a3.5 3.5 0 11-7 0 3.5 3.5 0 017 0zM22 21v-2a4 4 0 00-3-3.9M16 3.1a4 4 0 010 7.8' },
 
-  { id: 'setup', group: 3, label: { ne: 'सेटअप', en: 'Setup' },
-    icon: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-2.7 1.1v.3a2 2 0 11-4 0v-.2a1.6 1.6 0 00-2.8-1.1l-.1.1a2 2 0 11-2.8-2.8l.1-.1A1.6 1.6 0 003.7 15H3.4a2 2 0 110-4h.2a1.6 1.6 0 001.1-2.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 002.7-1.1V4a2 2 0 114 0v.2a1.6 1.6 0 002.7 1.1l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 001.1 2.7h.3a2 2 0 110 4h-.2z' },
   { id: 'reminders', group: 3, label: { ne: 'सूचना र सम्झना', en: 'Notifications' },
     icon: 'M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0' },
   { id: 'profile', group: 3, label: { ne: 'प्रोफाइल', en: 'Profile' },
@@ -59,7 +57,6 @@ const CRUMB: Record<string, Pair> = {
   events: { ne: 'कार्यक्रम', en: 'Events' },
   content: { ne: 'सामग्री र सारांश', en: 'Files and Summaries' },
   people: { ne: 'वक्ता र टोली', en: 'Speaker and teams' },
-  setup: { ne: 'सेटअप', en: 'Setup' },
   reminders: { ne: 'सूचना', en: 'Notifications' },
   profile: { ne: 'प्रोफाइल', en: 'Profile' },
 };
