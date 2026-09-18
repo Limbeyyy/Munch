@@ -11,6 +11,7 @@ import { EVENT_STATE_LABEL, EVENT_STATE_TONE, eventState } from '../sessionState
 import { BackLink, Block, Caution, DeckTabs, EventHeading, PlusGlyph, ReadyRow, Sheet } from './chrome';
 import { CoHostDialog } from './CoHostDialog';
 import { PeopleEmpty, PeopleHeading, PersonRow, initialsOf } from './people';
+import { AddAgendaDialog } from './AddAgendaDialog';
 import { whenLine } from './EventsDashboard';
 
 const clock = (iso: string) =>
@@ -41,6 +42,14 @@ export const EventDetail: React.FC<Props> = ({
   const [roles, setRoles] = useState<RoleGrantRow[]>([]);
   const [invited, setInvited] = useState<{ email: string; joined: boolean }[]>([]);
   const [addCoHost, setAddCoHost] = useState(false);
+  /**
+   * The session being written, if one is.
+   *
+   * `'new'` is a fresh one; a session is one being changed. Editing used
+   * to bounce out to the first step of the setup form, which is where an
+   * event's name and hours live rather than a talk's.
+   */
+  const [writing, setWriting] = useState<Session | 'new' | null>(null);
   const [sharing, setSharing] = useState<Event | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -135,6 +144,18 @@ export const EventDetail: React.FC<Props> = ({
     }
   };
 
+  /** The end of the last talk, offered as the next one's start. */
+  const nextFreeTime = (() => {
+    const order = [...sessions].sort(
+      (a, b) => +new Date(a.starts_at) - +new Date(b.starts_at)
+    );
+    const last = order[order.length - 1];
+    const from = last
+      ? new Date(+new Date(last.starts_at) + last.duration_minutes * 60000)
+      : new Date(event.scheduled_start);
+    return `${String(from.getHours()).padStart(2, '0')}:${String(from.getMinutes()).padStart(2, '0')}`;
+  })();
+
   const startButton = (
     <Btn tone="solid" className="px-8 py-3 text-[15px]" onClick={startEvent}>
       {t({ ne: 'बैठक सुरु गर्नुहोस्', en: 'Start event' })}
@@ -157,7 +178,7 @@ export const EventDetail: React.FC<Props> = ({
                   {clock(s.starts_at)} – {clock(new Date(+new Date(s.starts_at) + s.duration_minutes * 60000).toISOString())}
                 </span>
                 <button
-                  onClick={onEdit}
+                  onClick={() => setWriting(s)}
                   className="ml-auto text-[13px] text-tagink hover:underline flex-none"
                 >
                   {t({ ne: 'सम्पादन', en: 'Edit' })}
@@ -234,7 +255,10 @@ export const EventDetail: React.FC<Props> = ({
                 ne: `एजेन्डा · ${num(sessions.length)} सत्र`,
                 en: `Agenda · ${sessions.length} sessions`,
               }}
-              link={{ label: { ne: '+ सत्र थप्नुहोस्', en: '+ Add session' }, onClick: onEdit }}
+              link={{
+                label: { ne: '+ सत्र थप्नुहोस्', en: '+ Add session' },
+                onClick: () => setWriting('new'),
+              }}
             >
               {agendaRows}
             </Block>
@@ -367,7 +391,7 @@ export const EventDetail: React.FC<Props> = ({
                 </div>
               ))
           )}
-          <Btn className="self-start" onClick={onEdit}>
+          <Btn className="self-start" onClick={() => setWriting('new')}>
             <PlusGlyph />
             {t({ ne: 'सत्र थप्नुहोस्', en: 'Add sessions' })}
           </Btn>
@@ -448,6 +472,17 @@ export const EventDetail: React.FC<Props> = ({
             ))
           )}
         </div>
+      )}
+
+      {writing && (
+        <AddAgendaDialog
+          eventId={event.id}
+          day={(event.event_date ?? event.scheduled_start).slice(0, 10)}
+          session={writing === 'new' ? undefined : writing}
+          suggestedStart={nextFreeTime}
+          onClose={() => setWriting(null)}
+          onAdded={async () => { setWriting(null); await onChanged(); }}
+        />
       )}
 
       {addCoHost && (

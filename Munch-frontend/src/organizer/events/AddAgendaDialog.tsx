@@ -35,6 +35,13 @@ interface Props {
   day: string;
   /** Where the running order has reached, offered as the next start. */
   suggestedStart?: string;
+  /**
+   * The session being changed, if this is an edit rather than a new one.
+   *
+   * The same form either way: what is being asked for is identical, and
+   * a second dialog that only differed in where it posted would drift.
+   */
+  session?: Session;
   onClose: () => void;
   onAdded: (session: Session) => void;
 }
@@ -48,18 +55,30 @@ interface Props {
  * runs, and who is giving it.
  */
 export const AddAgendaDialog: React.FC<Props> = ({
-  eventId, day, suggestedStart, onClose, onAdded,
+  eventId, day, suggestedStart, session, onClose, onAdded,
 }) => {
   const { t, num } = useOrganizer();
+  const editing = !!session;
 
-  const [title, setTitle] = useState('');
-  const [startTime, setStartTime] = useState(suggestedStart ?? '10:00');
-  const [minutes, setMinutes] = useState(30);
-  const [details, setDetails] = useState('');
-  const [speaker, setSpeaker] = useState('');
-  const [role, setRole] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
+  /** The hour a stored session starts, as the time field wants it. */
+  const storedTime = session
+    ? (() => {
+        const at = new Date(session.starts_at);
+        return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+      })()
+    : undefined;
+
+  const [title, setTitle] = useState(session?.title ?? '');
+  const [startTime, setStartTime] = useState(storedTime ?? suggestedStart ?? '10:00');
+  const [minutes, setMinutes] = useState(session?.duration_minutes ?? 30);
+  const [details, setDetails] = useState(session?.description ?? '');
+  const [speaker, setSpeaker] = useState(session?.speaker_name ?? '');
+  const [role, setRole] = useState(session?.speaker_role ?? '');
+  // The address and number are written but never read back with the
+  // session: the host reads their own through `speaker_contact`, and
+  // nobody else reads them here at all.
+  const [email, setEmail] = useState(session?.speaker_contact?.email ?? '');
+  const [phone, setPhone] = useState(session?.speaker_contact?.phone ?? '');
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
@@ -71,9 +90,11 @@ export const AddAgendaDialog: React.FC<Props> = ({
       toast.error(t({ ne: 'सुरु हुने समय दिनुहोस्', en: 'Give it a start time' }));
       return;
     }
-    // The server asks for all three so the speaker can be reached after the
-    // day, and says so field by field - this only spares a round trip.
-    if (!speaker.trim() || !email.trim() || !phone.trim()) {
+    // The server asks for all three when a session is written, so the
+    // speaker can be reached after the day - and leaves them alone on a
+    // patch. This follows that, so an edit is not held up by details
+    // that were never collected in the first place.
+    if (!editing && (!speaker.trim() || !email.trim() || !phone.trim())) {
       toast.error(t({
         ne: 'वक्ताको नाम, इमेल र फोन चाहिन्छ',
         en: 'A speaker name, email and phone are needed',
@@ -81,23 +102,32 @@ export const AddAgendaDialog: React.FC<Props> = ({
       return;
     }
 
+    const written = {
+      title: title.trim(),
+      description: details.trim(),
+      speaker_name: speaker.trim(),
+      speaker_role: role.trim(),
+      speaker_email: email.trim(),
+      speaker_phone: phone.trim(),
+      starts_at: new Date(`${day}T${startTime}`).toISOString(),
+      duration_minutes: minutes,
+    };
+
     try {
       setBusy(true);
-      const made = await apiClient.createSession({
-        event: eventId,
-        title: title.trim(),
-        description: details.trim(),
-        speaker_name: speaker.trim(),
-        speaker_role: role.trim(),
-        speaker_email: email.trim(),
-        speaker_phone: phone.trim(),
-        starts_at: new Date(`${day}T${startTime}`).toISOString(),
-        duration_minutes: minutes,
-      });
-      toast.success(t({ ne: `${made.title} थपियो`, en: `${made.title} added` }));
-      onAdded(made);
+      const saved = editing
+        ? await apiClient.updateSession(session!.id, written)
+        : await apiClient.createSession({ event: eventId, ...written });
+      toast.success(
+        editing
+          ? t({ ne: `${saved.title} अद्यावधिक भयो`, en: `${saved.title} updated` })
+          : t({ ne: `${saved.title} थपियो`, en: `${saved.title} added` })
+      );
+      onAdded(saved);
     } catch (e: any) {
-      toast.error(errorText(e, t({ ne: 'थप्न सकिएन', en: 'Could not add it' })));
+      toast.error(errorText(e, editing
+        ? t({ ne: 'बचत गर्न सकिएन', en: 'Could not save it' })
+        : t({ ne: 'थप्न सकिएन', en: 'Could not add it' })));
     } finally {
       setBusy(false);
     }
@@ -109,14 +139,18 @@ export const AddAgendaDialog: React.FC<Props> = ({
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       role="dialog"
       aria-modal="true"
-      aria-label={t({ ne: 'एजेन्डा थप्नुहोस्', en: 'Add agenda' })}
+      aria-label={editing
+        ? t({ ne: 'एजेन्डा सम्पादन', en: 'Edit agenda' })
+        : t({ ne: 'एजेन्डा थप्नुहोस्', en: 'Add agenda' })}
     >
       <div className="bg-white rounded-[12px] w-full max-w-[512px] max-h-[88vh] overflow-auto
         shadow-[0px_25px_25px_rgba(0,0,0,0.25)]">
         <div className="flex items-center justify-between border-b-[0.6px] border-[#f3f4f6]
           px-6 pt-6 pb-4">
           <h3 className="text-[16px] font-semibold text-head leading-6">
-            {t({ ne: 'एजेन्डा थप्नुहोस्', en: 'Add agenda' })}
+            {editing
+              ? t({ ne: 'एजेन्डा सम्पादन', en: 'Edit agenda' })
+              : t({ ne: 'एजेन्डा थप्नुहोस्', en: 'Add agenda' })}
           </h3>
           <button
             onClick={onClose}
@@ -230,7 +264,9 @@ export const AddAgendaDialog: React.FC<Props> = ({
                 px-4 py-2 text-[14px] text-white leading-5"
             >
               {busy
-                ? t({ ne: 'थप्दै…', en: 'Adding…' })
+                ? t({ ne: 'बचत गर्दै…', en: 'Saving…' })
+                : editing
+                ? t({ ne: 'परिवर्तन बचत', en: 'Save changes' })
                 : t({ ne: 'सत्र थप्नुहोस्', en: 'Add session' })}
             </button>
           </div>
