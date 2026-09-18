@@ -121,7 +121,7 @@ describe('rearranging the running order', () => {
 
     // Whichever talk is first, it starts when the event does.
     const rows = screen.getAllByRole('listitem');
-    expect(within(rows[0]).getByText(/10:30/)).toBeInTheDocument();
+    expect(within(rows[0]).getAllByText(/10:30/).length).toBeGreaterThan(0);
   });
 
   it('will not move a talk that has already run, and says why', () => {
@@ -161,7 +161,8 @@ describe('changing a time or a length', () => {
     fireEvent.change(mins, { target: { value: '120' } });
 
     // Kataho now runs to 12:30, so Addressgraph cannot stay at 12:00.
-    expect(within(rowOf('Addressgraph')).getByText(/12:45|13:/)).toBeInTheDocument();
+    expect(within(rowOf('Addressgraph')).getAllByText(/12:45|13:/).length)
+      .toBeGreaterThan(0);
   });
 
   it('marks what it moved, so the change can be seen before it is saved', () => {
@@ -288,8 +289,18 @@ describe('the hour on a card', () => {
     show();
 
     const card = rowOf('Kataho');
-    expect(within(card).getByText(/10:30/)).toBeInTheDocument();
+    expect(within(card).getAllByText(/10:30/).length).toBeGreaterThan(0);
+    // Stated, not typed: there is no field to change it in.
     expect(within(card).queryByLabelText('Starts')).toBeNull();
+    expect(card.querySelector('input[type="datetime-local"]')).toBeNull();
+  });
+
+  it('states the day along with the hour, so neither is guessed at', () => {
+    show();
+
+    // 18 September 2026, however this machine writes a date.
+    expect(within(rowOf('Kataho')).getByText(/2026.*10:30|10:30.*2026/))
+      .toBeInTheDocument();
   });
 
   it('still moves when the talk before it grows', () => {
@@ -299,7 +310,8 @@ describe('the hour on a card', () => {
       within(rowOf('Kataho')).getByLabelText('Minutes'), { target: { value: '120' } }
     );
 
-    expect(within(rowOf('Addressgraph')).getByText(/12:45|13:/)).toBeInTheDocument();
+    expect(within(rowOf('Addressgraph')).getAllByText(/12:45|13:/).length)
+      .toBeGreaterThan(0);
   });
 });
 

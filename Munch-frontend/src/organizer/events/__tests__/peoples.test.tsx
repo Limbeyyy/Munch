@@ -305,4 +305,29 @@ describe('editing a session from the agenda', () => {
     ).toBeInTheDocument();
     expect(screen.queryByDisplayValue('Session Kataho')).toBeNull();
   });
+
+  /**
+   * The two things done to a running order from outside it: add to it,
+   * and let people in to see it. They sat at opposite ends of the screen,
+   * one above the list and one below it.
+   */
+  it('keeps adding and inviting together, above the running order', () => {
+    openDetail();
+    fireEvent.click(screen.getByRole('tab', { name: 'Agenda' }));
+
+    const add = screen.getByRole('button', { name: /Add sessions/ });
+    const invite = screen.getByRole('button', { name: 'Invite' });
+    expect(add.parentElement).toBe(invite.parentElement);
+    // Adding first, since inviting people to an empty list is the odd
+    // way round.
+    expect(add.compareDocumentPosition(invite))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('calls it inviting, rather than naming the two things handed over', () => {
+    openDetail();
+    fireEvent.click(screen.getByRole('tab', { name: 'Agenda' }));
+
+    expect(screen.queryByRole('button', { name: /Link & QR/ })).toBeNull();
+  });
 });

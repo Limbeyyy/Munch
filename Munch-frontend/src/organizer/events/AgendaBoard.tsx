@@ -15,6 +15,13 @@ import {
 const clock = (ms: number) =>
   new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+/** The day and the hour together, as the card states them. */
+const stamp = (ms: number) =>
+  new Date(ms).toLocaleString([], {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  });
+
 /** A session already run, or running, keeps the time it actually had. */
 const settled = (s: PlannedSession) => s.status !== 'scheduled';
 
@@ -308,11 +315,15 @@ export const AgendaBoard: React.FC<Props> = ({ event, onChanged, onAdd, onEdit }
                   </p>
                 )}
 
-                {/* How long it runs, which reflows what follows. When it
-                    starts is read off the card rather than typed into it:
-                    the hour belongs to the talk, and the talk is changed
-                    on the form the Edit button opens. */}
+                {/* When it starts, stated rather than asked for: the hour
+                    belongs to the talk, and the talk is changed on the
+                    form the Edit button opens. The length is still set
+                    here, and reflows what follows. */}
                 <div className="pt-3 flex flex-wrap items-center gap-2">
+                  <span className="bg-[#F9FAFB] border border-line rounded-[8px]
+                    px-2 py-1 text-[12.5px] text-body tabular-nums">
+                    {stamp(one.startsAt)}
+                  </span>
                   <label className="flex items-center gap-1.5">
                     <input
                       type="number"
