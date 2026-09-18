@@ -656,6 +656,43 @@ def shift_event_window(event, delta):
 
 
 @transaction.atomic
+def realign_running_order(event):
+    """Pin the running order to the hour the event opens.
+
+    An event is the parent of its sessions, so the first one begins when
+    the event does. A day that opens at half past ten with its first talk
+    at half past nine is not a day that opens at half past ten - and the
+    two drifted apart because moving the event's own hours left the
+    running order where it was.
+
+    The whole block moves together, so the gaps the host arranged between
+    talks are kept; only the front is pinned. Nothing is moved once the
+    day has started: from then on the times are a record of what actually
+    happened, and absorb_overrun owns them.
+
+    Returns the sessions whose times changed.
+    """
+    from src.apps.meetings.models import Session as _Session
+
+    order = list(event.sessions.order_by('starts_at'))
+    if not order:
+        return []
+    if any(s.status != _Session.Status.SCHEDULED for s in order):
+        return []
+
+    delta = event.scheduled_start - order[0].starts_at
+    if not delta:
+        return []
+
+    moved = _slide(order, delta)
+    stretch_event(event)
+    logger.info(
+        f"Event {event.code} moved; its running order came with it"
+    )
+    return moved
+
+
+@transaction.atomic
 def begin_event_now(event, now):
     """Open a event before its hour, and bring its day forward with it.
 

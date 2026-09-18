@@ -55,6 +55,23 @@ class EventViewSet(EventRoomViewSet):
     def get_serializer_class(self):
         return EventCreateSerializer if self.action == 'create' else EventSerializer
 
+    def perform_update(self, serializer):
+        """Save the event, and carry its running order with it.
+
+        The hours belong to the event and the sessions hang off it, so
+        moving the one moves the other: the first talk opens the event
+        whatever the event's hour is changed to.
+
+        Done on every save rather than only when the hour changed, so a
+        running order that has already drifted away from its event is put
+        back the next time the event is touched. It is a no-op when the
+        two already agree.
+        """
+        from src.apps.meetings.scheduling import realign_running_order
+
+        event = serializer.save()
+        realign_running_order(event)
+
     def create(self, request, *args, **kwargs):
         from src.apps.accounts.plans import check_can_create_event, check_session_count
         from src.apps.accounts.roles import ensure_host
