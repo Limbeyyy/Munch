@@ -78,7 +78,7 @@ describe('the hours an event keeps', () => {
     set(/Starts/, '2026-09-18T09:30');
     set(/Ends/, '2026-09-18T10:30');
 
-    fireEvent.click(screen.getByRole('button', { name: /Next: Sessions/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Create event/ }));
 
     await waitFor(() => expect(api.createEvent).toHaveBeenCalled());
     const sent = api.createEvent.mock.calls[0][0];
@@ -95,7 +95,7 @@ describe('the hours an event keeps', () => {
     set(/Starts/, '2026-09-18T09:00');
     set(/Ends/, '2026-09-18T17:00');
 
-    fireEvent.click(screen.getByRole('button', { name: /Next: Sessions/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Create event/ }));
 
     await waitFor(() => expect(api.createEvent).toHaveBeenCalled());
     expect(api.createEvent.mock.calls[0][0].duration_minutes).toBe(480);
@@ -108,7 +108,7 @@ describe('the hours an event keeps', () => {
     // Typed straight into the end, so the start does not drag it along.
     set(/Ends/, '2026-09-18T09:00');
 
-    fireEvent.click(screen.getByRole('button', { name: /Next: Sessions/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Create event/ }));
 
     expect(api.createEvent).not.toHaveBeenCalled();
     expect(toast.error).toHaveBeenCalled();
@@ -143,7 +143,7 @@ describe('where the first agenda item starts', () => {
     set(/Event name/, 'Emergency Services');
     set(/Starts/, '2026-09-18T09:30');
     set(/Ends/, '2026-09-18T10:30');
-    fireEvent.click(screen.getByRole('button', { name: /Next: Sessions/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Create event/ }));
     // Wait for step two itself; the call going out is a tick earlier
     // than the step it advances to.
     const create = await screen.findByRole('button', { name: /Create New Sessions/ });

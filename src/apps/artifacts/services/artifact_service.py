@@ -363,9 +363,15 @@ Participants:
         )
         return folder['id']
 
-    def upload_resource(self, uploaded_file, uploader) -> Artifact:
+    def upload_resource(self, uploaded_file, uploader, session=None) -> Artifact:
         """Upload a file to the event's Shared Resources folder in the
-        host's Drive, and grant every participant read access."""
+        host's Drive, and grant every participant read access.
+
+        A session may be named, which is how an organizer stages a
+        speaker's handouts against the talk they belong to before the day.
+        Left out, the file belongs to whatever is on stage - the case of
+        somebody sharing something during a talk.
+        """
         parent_id = self._get_or_create_resources_folder()
 
         drive_file = self.drive_adapter.upload_file(
@@ -376,12 +382,13 @@ Participants:
         )
 
         # Whatever is on stage owns this file, which is what decides when
-        # the rest of the room gets to read it.
-        live_session = self.event.sessions.filter(status='live').first()
+        # the rest of the room gets to read it - unless the organizer has
+        # said which talk it belongs to.
+        owner = session or self.event.sessions.filter(status='live').first()
 
         artifact = Artifact.objects.create(
             event=self.event,
-            session=live_session,
+            session=owner,
             artifact_type=ArtifactType.RESOURCE,
             drive_file_id=drive_file['id'],
             display_name=uploaded_file.name,

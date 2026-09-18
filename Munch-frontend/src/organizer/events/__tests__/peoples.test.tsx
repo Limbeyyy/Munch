@@ -88,7 +88,7 @@ const atPeoples = async () => {
     </OrganizerProvider>
   );
   fireEvent.click(screen.getByRole('button', { name: 'Skip' }));
-  fireEvent.click(screen.getByRole('button', { name: /Next: Peoples/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
   // Wait for the lists themselves, not merely for the calls that fetch
   // them - the state lands a tick after the request goes out.
   await screen.findByText('man@gmail.com');
@@ -300,7 +300,9 @@ describe('editing a session from the agenda', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /\+ Add session/ }));
 
-    expect(screen.getByText('Add agenda')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Add agenda' })
+    ).toBeInTheDocument();
     expect(screen.queryByDisplayValue('Session Kataho')).toBeNull();
   });
 });

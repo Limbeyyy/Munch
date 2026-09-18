@@ -6,6 +6,7 @@ import chatLeftDots from './chat-left-dots.svg';
 import chevronDown from './chevron-down.svg';
 import exitStroke from './exit-stroke.svg';
 import fileCopy from './file-copy.svg';
+import fileUpload from './file-upload.svg';
 import folderOpenOutline from './folder-open-outline.svg';
 import layoutGrid from './layout-grid.svg';
 import peoplesTwo from './peoples-two.svg';
@@ -37,6 +38,8 @@ export const FIGMA_ICON = {
   chevronDown,
   arrowRight,
   copy: fileCopy,
+  /** The page-with-an-arrow over an empty upload box. */
+  fileUpload,
   shareNodes,
   layoutGrid,
   /** The mark against a question on the board. */

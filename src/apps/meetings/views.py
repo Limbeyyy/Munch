@@ -1302,25 +1302,29 @@ class EventRoomViewSet(viewsets.ModelViewSet):
 
     @action(
         detail=True,
-        methods=['get', 'post'],
+        methods=['get', 'post', 'delete'],
         parser_classes=[MultiPartParser, FormParser],
     )
     def resources(self, request, pk=None):
-        """List, or upload, shared files for a event.
+        """List, upload, or take away a shared file for a event.
 
         Uploads always land in the host's Drive regardless of who sends them,
-        and every participant is granted read access.
+        and every participant is granted read access. An upload may name the
+        session it belongs to, which is how an organizer stages a speaker's
+        handouts against the talk they were written for.
         """
         from src.apps.artifacts.serializers import ArtifactSerializer
+        from src.apps.artifacts.visibility import can_organize
 
         event = self.get_object()
         artifact_service = MeetingArtifactService(event.id, event.host_id)
 
+        if request.method == 'DELETE':
+            return self._remove_resource(request, event)
+
         if request.method == 'GET':
             # Attendees read a session's files once that session is over;
             # organizers see what they have staged for sessions still to come.
-            from src.apps.artifacts.visibility import can_organize
-
             resources = artifact_service.list_resources(
                 include_unreleased=can_organize(event, request.user)
             )
@@ -1339,8 +1343,30 @@ class EventRoomViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # Which talk this belongs to, where the organizer has said. Only
+        # they may stage against a session: for anybody else a file belongs
+        # to whatever is on stage when they share it, and saying otherwise
+        # would be a way to hold a file back from the room, or let it out
+        # early.
+        session = None
+        named = request.data.get('session')
+        if named:
+            if not can_organize(event, request.user):
+                return Response(
+                    {'error': 'Only an organizer can file a document against a session'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            session = event.sessions.filter(id=named).first()
+            if session is None:
+                return Response(
+                    {'error': 'No such session on this event'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
         try:
-            artifact = artifact_service.upload_resource(uploaded_file, request.user)
+            artifact = artifact_service.upload_resource(
+                uploaded_file, request.user, session=session
+            )
         except Exception as e:
             logger.error(f"Resource upload failed for {event.code}: {e}")
             return Response(
@@ -1353,6 +1379,48 @@ class EventRoomViewSet(viewsets.ModelViewSet):
             ArtifactSerializer(artifact).data,
             status=status.HTTP_201_CREATED
         )
+
+    def _remove_resource(self, request, event):
+        """Take a shared file off the event, and out of the host's Drive.
+
+        Only an organizer, and only a resource of this event: a file is
+        read by everybody who was invited, so removing one is not a thing
+        an attendee gets to do to the rest of the room.
+        """
+        from src.apps.artifacts.models import Artifact, ArtifactType
+        from src.apps.artifacts.visibility import can_organize
+
+        if not can_organize(event, request.user):
+            return Response(
+                {'error': 'Only an organizer can remove a shared file'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        resource_id = request.query_params.get('resource_id') or request.data.get('resource_id')
+        artifact = Artifact.objects.filter(
+            id=resource_id, event=event, artifact_type=ArtifactType.RESOURCE
+        ).first()
+        if artifact is None:
+            return Response(
+                {'error': 'No such resource on this event'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # The Drive copy goes with it. Leaving it behind would mean a file
+        # the host can no longer see from here but is still sharing.
+        if artifact.drive_file_id:
+            try:
+                MeetingArtifactService(
+                    event.id, event.host_id
+                ).drive_adapter.delete_file(artifact.drive_file_id)
+            except Exception as e:
+                logger.warning(
+                    f"Drive copy of {artifact.display_name} not removed: {e}"
+                )
+
+        artifact.delete()
+        broadcast_resources_changed(event)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['post'], url_path='resource_settings')
     def resource_settings(self, request, pk=None):

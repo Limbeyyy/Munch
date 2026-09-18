@@ -6,6 +6,7 @@ import { errorText } from '../errors';
 import { useOrganizer } from '../i18n';
 import { useSessionGap } from '../sessionGap';
 import { Btn } from '../ui';
+import { FileBadge } from './fileKinds';
 import {
   PlannedEvent, PlannedSession,
   applyEdit, countChanges, pendingChanges, setHall, swapSessions, toPlan, whyNotSwap,
@@ -26,23 +27,6 @@ const settled = (s: PlannedSession) => s.status !== 'scheduled';
 
 /** The card's own ordinal: 01, 02, 03, the way the design numbers them. */
 const ordinal = (at: number) => String(at + 1).padStart(2, '0');
-
-/**
- * What a file is, said in three letters and a colour.
- *
- * The design draws a small square chip per document rather than an icon
- * set, so the kind is read off the name: there is no field for it, and a
- * name is what the host uploaded it under.
- */
-const KINDS: { match: RegExp; label: string; paint: string }[] = [
-  { match: /\.pptx?$/i, label: 'PPT', paint: '#F25219' },
-  { match: /\.docx?$/i, label: 'DOX', paint: '#4378E1' },
-  { match: /\.pdf$/i, label: 'PDF', paint: '#CE3A2B' },
-  { match: /\.xlsx?$|\.csv$/i, label: 'XLS', paint: '#1B7F58' },
-];
-
-const kindOf = (name: string) =>
-  KINDS.find((k) => k.match.test(name)) ?? { label: 'DOC', paint: '#6A7282' };
 
 interface Props {
   event: Event;
@@ -397,24 +381,14 @@ export const AgendaBoard: React.FC<Props> = ({ event, onChanged, onAdd, onEdit }
                   <span className="text-[12px] leading-4 text-faint pb-0.5">
                     {t({ ne: 'कागजात', en: 'Documents' })}
                   </span>
-                  {files.map((file) => {
-                    const kind = kindOf(file.display_name);
-                    return (
-                      <span key={file.id} className="flex items-center gap-2">
-                        <span
-                          aria-hidden
-                          style={{ backgroundColor: kind.paint }}
-                          className="w-5 h-5 rounded-[4px] grid place-items-center flex-none
-                            text-[7px] font-bold leading-[10.5px] text-white"
-                        >
-                          {kind.label}
-                        </span>
-                        <span className="text-[12px] leading-4 text-body truncate">
-                          {file.display_name}
-                        </span>
+                  {files.map((file) => (
+                    <span key={file.id} className="flex items-center gap-2">
+                      <FileBadge name={file.display_name} />
+                      <span className="text-[12px] leading-4 text-body truncate">
+                        {file.display_name}
                       </span>
-                    );
-                  })}
+                    </span>
+                  ))}
                 </div>
               )}
 
