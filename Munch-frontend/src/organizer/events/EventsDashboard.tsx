@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Event } from '../../types';
-import { useOrganizer } from '../i18n';
+import { Pair, useOrganizer } from '../i18n';
+import { EVENT_STATE_LABEL, EventState, eventState } from '../sessionState';
 import { Btn } from '../ui';
 import { DeckTabs, PenGlyph, PlusGlyph, Sheet } from './chrome';
 
@@ -19,18 +20,46 @@ const DECK_TAG = {
 };
 
 /**
+ * What a card says about itself.
+ *
+ * Which deck an event is filed under and what state it is in are two
+ * different questions, and the card used to answer the first while
+ * appearing to answer the second: an event whose hour had come and gone
+ * unopened sat under Upcoming, so its tag read "Upcoming" while every
+ * other screen called it "Not started".
+ *
+ * A draft has no state to read - it has never been scheduled for
+ * anything - so it keeps the deck's own word. Everything else says what
+ * `eventState` says, which is what the agenda and the room say too.
+ */
+export type CardTag = 'draft' | EventState;
+
+export const tagOf = (event: Event): CardTag =>
+  event.status === 'draft' ? 'draft' : eventState(event);
+
+const TAG_LABEL: Record<CardTag, Pair> = {
+  ...EVENT_STATE_LABEL,
+  draft: DECK_TAG.draft,
+  // The same state the rest of the product calls "Finished", under the
+  // word this screen's own deck uses for it.
+  finished: DECK_TAG.done,
+};
+
+/**
  * The colour a card is washed in, which is the colour of its state.
  *
- * The tag and the card are the same hue at two strengths, so the deck an
- * event is on can be read from across the page without stopping to read
- * the word.
+ * The tag and the card are the same hue at two strengths, so how an event
+ * stands can be read from across the page without stopping for the word.
  */
-const DECK_PAINT: Record<'upcoming' | 'draft' | 'done', {
-  card: string; tag: string; ink: string;
-}> = {
+const TAG_PAINT: Record<CardTag, { card: string; tag: string; ink: string }> = {
   upcoming: { card: 'bg-[#eff6ff]', tag: 'bg-[#dbeafe]', ink: 'text-[#1447e6]' },
   draft: { card: 'bg-[#f5f5f5]', tag: 'bg-[#e1e1e1]', ink: 'text-[#656565]' },
-  done: { card: 'bg-[#e1faea]', tag: 'bg-[#ebfbf1]', ink: 'text-[#019939]' },
+  // Its hour has come and nobody has opened it, which is the one state
+  // on this page worth catching an eye.
+  'not-started': { card: 'bg-[#fefbf0]', tag: 'bg-[#fdf0d5]', ink: 'text-[#b26a00]' },
+  live: { card: 'bg-[#fdecea]', tag: 'bg-[#fbd9d5]', ink: 'text-[#ce3a2b]' },
+  finished: { card: 'bg-[#e1faea]', tag: 'bg-[#ebfbf1]', ink: 'text-[#019939]' },
+  'never-started': { card: 'bg-[#f5f5f5]', tag: 'bg-[#e1e1e1]', ink: 'text-[#656565]' },
 };
 
 /**
@@ -146,7 +175,8 @@ export const EventsDashboard: React.FC<Props> = ({
         ) : (
           showing.map((event) => {
             const head = counts[event.id];
-            const paint = DECK_PAINT[deckOf(event)];
+            const tag = tagOf(event);
+            const paint = TAG_PAINT[tag];
             const ready = isSetUp(event, head);
             return (
               <div
@@ -184,7 +214,7 @@ export const EventsDashboard: React.FC<Props> = ({
                   <div className="flex flex-col gap-8 items-end flex-none">
                     <span className={`${paint.tag} ${paint.ink} rounded-[4px] px-2 py-0.5
                       text-[12px] font-medium leading-4`}>
-                      {t(DECK_TAG[deckOf(event)])}
+                      {t(TAG_LABEL[tag])}
                     </span>
                     <Btn
                       onClick={() => onEdit(event)}
