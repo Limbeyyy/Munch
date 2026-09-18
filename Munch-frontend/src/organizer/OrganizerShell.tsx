@@ -28,18 +28,21 @@ export const NAV: NavItem[] = [
   { id: 'people', group: 2, label: { ne: 'वक्ता र टोली', en: 'Speaker and teams' },
     icon: 'M17 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9.5 7a3.5 3.5 0 11-7 0 3.5 3.5 0 017 0zM22 21v-2a4 4 0 00-3-3.9M16 3.1a4 4 0 010 7.8' },
 
-  { id: 'reminders', group: 3, label: { ne: 'सूचना र सम्झना', en: 'Notifications' },
-    icon: 'M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0' },
+  // Settings, in the order 594-6439 lists them.
   { id: 'profile', group: 3, label: { ne: 'प्रोफाइल', en: 'Profile' },
     icon: 'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z' },
+  { id: 'subscription', group: 3, label: { ne: 'बिलिङ र योजना', en: 'Billing & subscription' },
+    icon: 'M2 7h20v12a2 2 0 01-2 2H4a2 2 0 01-2-2zM2 7l2.5-4h15L22 7M2 11h20' },
+  { id: 'appearance', group: 3, label: { ne: 'रूपरंग', en: 'Appearance' },
+    icon: 'M12 3a9 9 0 100 18 2 2 0 001.6-3.2 2 2 0 011.6-3.2H18a3 3 0 003-3A9 9 0 0012 3zM7.5 10.5h.01M10.5 7.5h.01M14 7.5h.01M16.5 10.5h.01' },
+  { id: 'reminders', group: 3, label: { ne: 'सूचना र सम्झना', en: 'Notifications' },
+    icon: 'M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0' },
 
   // Kept reachable, below the three groups the design names.
   { id: 'reports', group: 4, label: { ne: 'रिपोर्ट', en: 'Reports' },
     icon: 'M3 3v18h18M7 15l4-4 3 3 5-6' },
   { id: 'settings', group: 4, label: { ne: 'सेटिङ', en: 'Settings' },
     icon: 'M4 6h16M4 12h16M4 18h16' },
-  { id: 'subscription', group: 4, label: { ne: 'योजना', en: 'Subscription' },
-    icon: 'M2 7h20v12a2 2 0 01-2 2H4a2 2 0 01-2-2zM2 7l2.5-4h15L22 7M2 11h20' },
 ];
 
 const GROUP_LABELS: Record<number, Pair> = {
@@ -59,6 +62,8 @@ const CRUMB: Record<string, Pair> = {
   people: { ne: 'वक्ता र टोली', en: 'Speaker and teams' },
   reminders: { ne: 'सूचना', en: 'Notifications' },
   profile: { ne: 'प्रोफाइल', en: 'Profile' },
+  subscription: { ne: 'बिलिङ र योजना', en: 'Billing & subscription' },
+  appearance: { ne: 'रूपरंग', en: 'Appearance' },
 };
 
 interface Props {

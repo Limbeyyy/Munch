@@ -373,7 +373,12 @@ export const LiveDashboard: React.FC<Props> = ({
                       {line.created_at ? clock(line.created_at) : num(i + 1)}
                     </TimeChip>
                     <Rule />
-                    <p className="text-[14px] text-[#030712] leading-[1.5] min-w-0 flex-1">
+                    {/* Marked, so the size and spacing the reader chose on
+                        the appearance page reach it. */}
+                    <p
+                      data-transcript-line
+                      className="text-[14px] text-[#030712] leading-[1.5] min-w-0 flex-1"
+                    >
                       {line.text}
                     </p>
                   </div>

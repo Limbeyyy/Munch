@@ -3,6 +3,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { OrganizerProvider } from '../i18n';
 import { ProfileView } from '../ProfileView';
 import { SubscriptionView } from '../SubscriptionView';
+import { AppearanceView } from '../AppearanceView';
 import { RemindersView } from '../RemindersView';
 import { useNudges } from '../nudges';
 import { ATTENDEE_NAV } from '../../attendee/AttendeeShell';
@@ -13,6 +14,8 @@ jest.mock('../../services/api', () => ({
   apiClient: {
     getProfileSummary: jest.fn(),
     updateProfile: jest.fn(),
+    requestAccountDeletion: jest.fn(),
+    logout: jest.fn(),
     getUpgradeRequests: jest.fn(),
     requestUpgrade: jest.fn(),
     getReminders: jest.fn(),
@@ -577,5 +580,124 @@ describe('both portals can reach the new pages', () => {
     expect(ids).toContain('reminders');
     expect(ids).toContain('subscription');
     expect(ids).toContain('profile');
+  });
+});
+
+/**
+ * Closing an account.
+ *
+ * Nothing is deleted on the spot: the account is shut and the row goes a
+ * week later. That week is the promise the confirmation makes, and the
+ * reason the button does not simply do it.
+ */
+describe('closing an account', () => {
+  const openProfile = async () => {
+    api.getProfileSummary.mockResolvedValue(profile() as any);
+    show(<ProfileView />);
+    return screen.findByRole('button', { name: 'Delete account' });
+  };
+
+  it('offers the way out under the account details', async () => {
+    expect(await openProfile()).toBeInTheDocument();
+  });
+
+  it('asks before doing anything', async () => {
+    fireEvent.click(await openProfile());
+
+    expect(
+      screen.getByText('Are you sure you want to delete your account?')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/permanently deleted after 7 days/i)
+    ).toBeInTheDocument();
+    expect(api.requestAccountDeletion).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the asking is declined', async () => {
+    fireEvent.click(await openProfile());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(api.requestAccountDeletion).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText('Are you sure you want to delete your account?')
+    ).toBeNull();
+  });
+
+  it('closes the account once it has asked', async () => {
+    api.requestAccountDeletion.mockResolvedValue({
+      requested_at: '', removed_on: '', hosted_events: 0,
+    } as any);
+    fireEvent.click(await openProfile());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() => expect(api.requestAccountDeletion).toHaveBeenCalled());
+  });
+});
+
+/**
+ * How the place looks.
+ *
+ * Both settings are this browser's rather than the account's, which is
+ * the point: somebody reading a transcript on a projector at the back of
+ * a hall wants it larger there and not everywhere they ever sign in.
+ */
+describe('the appearance page', () => {
+  it('offers the three themes, and marks the one in use', () => {
+    show(<AppearanceView />);
+
+    expect(screen.getByRole('radio', { name: /Light/ })).toBeChecked();
+    expect(screen.getByRole('radio', { name: /Dark/ })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: /System/ })).toBeInTheDocument();
+  });
+
+  it('puts the choice where the styling can reach it', () => {
+    show(<AppearanceView />);
+
+    fireEvent.click(screen.getByRole('radio', { name: /Dark/ }));
+
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+  });
+
+  it('sets the size a transcript is read at', () => {
+    show(<AppearanceView />);
+
+    fireEvent.click(screen.getByRole('radio', { name: /large/i }));
+
+    expect(
+      document.documentElement.getAttribute('data-transcript-size')
+    ).toBe('large');
+  });
+
+  it('sets how far apart its lines sit', () => {
+    show(<AppearanceView />);
+
+    fireEvent.click(screen.getByRole('radio', { name: /relaxed/i }));
+
+    expect(
+      document.documentElement.getAttribute('data-transcript-spacing')
+    ).toBe('relaxed');
+  });
+
+  it('reads the settings back in the thing they change', () => {
+    show(<AppearanceView />);
+
+    expect(screen.getByText('Preview')).toBeInTheDocument();
+    expect(screen.getByText('Sarah Sharma')).toBeInTheDocument();
+  });
+
+  /** Per browser, not per account: see the note on the describe. */
+  it('remembers the choice for next time', async () => {
+    show(<AppearanceView />);
+
+    fireEvent.click(screen.getByRole('radio', { name: /Dark/ }));
+
+    await waitFor(() => {
+      const saved = JSON.parse(
+        window.localStorage.getItem('manch.organizer.prefs') || '{}'
+      );
+      expect(saved.look.theme).toBe('dark');
+    });
   });
 });

@@ -23,6 +23,13 @@ describe('the organizer rail', () => {
    * carries its own readiness beside its Start button now, so the page
    * asked the same questions a second time and further from the answers.
    */
+  /** Settings, in the order 594-6439 lists them. */
+  it('files the settings pages in the order the design gives them', () => {
+    const settings = NAV.filter((n) => n.group === 3).map((n) => n.id);
+
+    expect(settings).toEqual(['profile', 'subscription', 'appearance', 'reminders']);
+  });
+
   it('does not offer a setup page either', () => {
     expect(NAV.map((n) => n.id)).not.toContain('setup');
     expect(NAV.map((n) => n.label.en)).not.toContain('Setup');

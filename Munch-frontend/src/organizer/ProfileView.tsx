@@ -4,7 +4,8 @@ import { apiClient } from '../services/api';
 import { ProfileSummary } from '../types';
 import { errorText } from './errors';
 import { Pair, useOrganizer } from './i18n';
-import { Chip, Empty } from './ui';
+import { Chip, Empty, Ic } from './ui';
+import { useAuthStore } from '../store/authStore';
 
 /** The sheet every settings page is laid on. */
 export const SettingsSheet: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -90,9 +91,12 @@ const initialsOf = (name: string, email: string) => {
  */
 export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = () => {
   const { t } = useOrganizer();
+  const logout = useAuthStore((v) => v.logout);
   const [profile, setProfile] = useState<ProfileSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [shutting, setShutting] = useState(false);
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -163,6 +167,32 @@ export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = ()
       toast.error(errorText(e, t({ ne: 'बचत गर्न सकिएन', en: 'Could not save it' })));
     } finally {
       setSaving(false);
+    }
+  };
+
+  /**
+   * Shut the account, and leave.
+   *
+   * Nothing is deleted on the spot: the server closes it and removes the
+   * row a week later. Signing out is the honest next step - the account
+   * will not let them back in, and a dashboard that kept working would
+   * say otherwise.
+   */
+  const close = async () => {
+    try {
+      setShutting(true);
+      await apiClient.requestAccountDeletion();
+      toast.success(t({
+        ne: 'खाता बन्द भयो। ७ दिनपछि हटाइनेछ।',
+        en: 'Your account is closed, and will be removed in 7 days.',
+      }));
+      await logout();
+    } catch (e: any) {
+      toast.error(errorText(e, t({
+        ne: 'खाता बन्द गर्न सकिएन', en: 'Could not close the account',
+      })));
+      setShutting(false);
+      setClosing(false);
     }
   };
 
@@ -308,7 +338,84 @@ export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = ()
               {user.timezone}
             </FactRow>
           </SectionCard>
+
+          <div className="flex justify-end">
+            <button
+              onClick={() => setClosing(true)}
+              className="border-[0.6px] border-[#ffa2a2] rounded-[8px] px-[11px] py-1.5
+                text-[14px] leading-5 text-[#e7000b] hover:bg-[#e7000b]/[.06]"
+            >
+              {t({ ne: 'खाता बन्द गर्नुहोस्', en: 'Delete account' })}
+            </button>
+          </div>
         </div>
+
+        {closing && (
+          <div
+            className="fixed inset-0 z-[70] grid place-items-center p-4 bg-[#0b1220]/50"
+            onClick={(e) => { if (e.target === e.currentTarget) setClosing(false); }}
+            role="alertdialog"
+            aria-modal="true"
+            aria-label={t({
+              ne: 'खाता बन्द गर्ने?', en: 'Are you sure you want to delete your account?',
+            })}
+          >
+            <div className="bg-white border border-[#e6e6e6] rounded-[8px] w-full max-w-[400px]
+              px-4 pt-5 pb-4 flex flex-col gap-4
+              shadow-[0px_10px_18px_-2px_rgba(10,9,11,0.07)]">
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-start justify-between">
+                  <span
+                    aria-hidden
+                    className="w-5 h-5 rounded-full bg-[#0a090b] text-white grid place-items-center
+                      text-[13px] font-bold leading-none"
+                  >
+                    !
+                  </span>
+                  <button
+                    onClick={() => setClosing(false)}
+                    aria-label={t({ ne: 'बन्द', en: 'Close' })}
+                    className="w-6 h-6 grid place-items-center text-subtle hover:text-head"
+                  >
+                    <Ic d="M18 6L6 18M6 6l12 12" size={14} />
+                  </button>
+                </div>
+                <h3 className="text-[14px] font-semibold text-[#0a090b] leading-5">
+                  {t({
+                    ne: 'तपाईं पक्का खाता बन्द गर्न चाहनुहुन्छ?',
+                    en: 'Are you sure you want to delete your account?',
+                  })}
+                </h3>
+                <p className="text-[14px] text-[#475467] leading-5">
+                  {t({
+                    ne: 'तपाईंको खाता ७ दिनपछि स्थायी रूपमा हटाइनेछ।',
+                    en: 'Your account will be permanently deleted after 7 days.',
+                  })}
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setClosing(false)}
+                  className="h-10 px-3.5 rounded-[6px] bg-white border border-[#e6e6e6]
+                    text-[14px] text-[#4f4d55] leading-5
+                    shadow-[0px_1.5px_4px_-1px_rgba(10,9,11,0.07)]"
+                >
+                  {t({ ne: 'रद्द', en: 'Cancel' })}
+                </button>
+                <button
+                  onClick={close}
+                  disabled={shutting}
+                  className="h-10 px-3.5 rounded-[6px] bg-[#e12121] text-white text-[14px]
+                    leading-5 disabled:opacity-50"
+                >
+                  {shutting
+                    ? t({ ne: 'बन्द गर्दै…', en: 'Closing…' })
+                    : t({ ne: 'पक्का', en: 'Confirm' })}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </SettingsSheet>
   );

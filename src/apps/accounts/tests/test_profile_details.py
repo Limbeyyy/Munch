@@ -77,3 +77,54 @@ class ProfileDetailTests(TestCase):
 
         self.user.refresh_from_db()
         self.assertEqual(self.user.email, 'sarah@example.com')
+
+
+class ClosingAnAccountTests(TestCase):
+    """Asking for an account to be closed.
+
+    Shut at once and removed a week later. The week is the point: this is
+    the sort of thing people do at midnight and regret at nine.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email='sarah@example.com', username='sarah', password='x',
+        )
+
+    def test_it_shuts_the_account_at_once(self):
+        response = signed_in(self.user).post(f'{API}/users/request_deletion/')
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertIsNotNone(self.user.deletion_requested_at)
+        self.assertFalse(self.user.is_active)
+
+    def test_it_says_when_the_account_goes(self):
+        body = signed_in(self.user).post(f'{API}/users/request_deletion/').json()
+
+        self.assertIn('removed_on', body)
+        self.assertIn('requested_at', body)
+
+    def test_nothing_is_deleted_yet(self):
+        # An event holds the attendance of everybody who came to it, which
+        # is why its host is PROTECTed. The row goes when somebody deals
+        # with the events, not when a button is pressed.
+        signed_in(self.user).post(f'{API}/users/request_deletion/')
+
+        self.assertTrue(User.objects.filter(id=self.user.id).exists())
+
+    def test_there_is_no_second_time_to_ask(self):
+        # The account is shut by the first ask, so the second is turned
+        # away at the door like any other request from it.
+        signed_in(self.user).post(f'{API}/users/request_deletion/')
+
+        again = signed_in(self.user).post(f'{API}/users/request_deletion/')
+
+        self.assertIn(again.status_code, (401, 403))
+
+    def test_a_stranger_cannot_close_somebody_else(self):
+        response = APIClient().post(f'{API}/users/request_deletion/')
+
+        self.assertIn(response.status_code, (401, 403))
+        self.user.refresh_from_db()
+        self.assertIsNone(self.user.deletion_requested_at)

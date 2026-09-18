@@ -1132,8 +1132,11 @@ const EventRoomInner: React.FC = () => {
                           : formatElapsed(Math.round(seg.start_time))}
                       </span>
                       <span aria-hidden className="w-px h-3 bg-[#e3e8ef] mt-1.5 flex-none" />
-                      <p className="flex-1 min-w-0 text-[14px] leading-[1.4] tracking-[-0.07px]
-                        text-[#383838]">
+                      <p
+                        data-transcript-line
+                        className="flex-1 min-w-0 text-[14px] leading-[1.4] tracking-[-0.07px]
+                          text-[#383838]"
+                      >
                         {seg.speaker_name && (
                           <span className="text-[#4a5567]">{seg.speaker_name}: </span>
                         )}

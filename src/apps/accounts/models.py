@@ -29,6 +29,16 @@ class User(AbstractUser):
     #: same shape in two countries.
     billing_address = models.CharField(max_length=255, blank=True)
 
+    #: When somebody asked for their account to be closed.
+    #:
+    #: The account is shut at once - they cannot sign back in - and the
+    #: row itself goes a week later. The week is the point: closing an
+    #: account is the sort of thing people do at midnight and regret at
+    #: nine, and an event holds other people's attendance records, which
+    #: is why `Event.host` is PROTECT and a row cannot simply be deleted
+    #: out from under them.
+    deletion_requested_at = models.DateTimeField(null=True, blank=True)
+
     # Application-specific fields
     preferred_language = models.CharField(max_length=10, default='en')
     timezone = models.CharField(max_length=50, default='UTC')
