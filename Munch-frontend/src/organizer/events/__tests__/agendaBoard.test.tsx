@@ -153,26 +153,29 @@ describe('rearranging the running order', () => {
   });
 });
 
-describe('changing a time or a length', () => {
-  it('pushes what follows out of the way', () => {
+/**
+ * What a rearrangement does to the rest of the day.
+ *
+ * The reflow itself belongs to the scheduler and is pinned there; what
+ * the board owes is to show it - moving a talk moves what follows, and
+ * says which rows it touched before any of it is written.
+ */
+describe('rearranging what follows', () => {
+  it('moves what follows out of the way', () => {
     show();
 
-    const mins = within(rowOf('Kataho')).getByLabelText('Minutes');
-    fireEvent.change(mins, { target: { value: '120' } });
+    dragOnto('Addressgraph', 'Kataho');
 
-    // Kataho now runs to 12:30, so Addressgraph cannot stay at 12:00.
-    expect(within(rowOf('Addressgraph')).getAllByText(/12:45|13:/).length)
-      .toBeGreaterThan(0);
+    // Addressgraph now opens the day, so Kataho cannot stay at 10:30.
+    expect(within(rowOf('Kataho')).queryAllByText(/10:30/)).toHaveLength(0);
   });
 
   it('marks what it moved, so the change can be seen before it is saved', () => {
     show();
 
-    fireEvent.change(
-      within(rowOf('Kataho')).getByLabelText('Minutes'), { target: { value: '120' } }
-    );
+    dragOnto('Addressgraph', 'Kataho');
 
-    expect(within(rowOf('Addressgraph')).getByText('Moved')).toBeInTheDocument();
+    expect(within(rowOf('Kataho')).getByText('Moved')).toBeInTheDocument();
   });
 });
 
@@ -303,15 +306,13 @@ describe('the hour on a card', () => {
       .toBeInTheDocument();
   });
 
-  it('still moves when the talk before it grows', () => {
+  it('still moves when the order changes', () => {
     show();
 
-    fireEvent.change(
-      within(rowOf('Kataho')).getByLabelText('Minutes'), { target: { value: '120' } }
-    );
+    dragOnto('Addressgraph', 'Kataho');
 
-    expect(within(rowOf('Addressgraph')).getAllByText(/12:45|13:/).length)
-      .toBeGreaterThan(0);
+    // The two exchange slots: Kataho takes the hour Addressgraph held.
+    expect(within(rowOf('Kataho')).getAllByText(/12:00/).length).toBeGreaterThan(0);
   });
 });
 
@@ -340,14 +341,33 @@ describe('where a talk is held', () => {
   });
 });
 
-/** The number on its own read as a count of something unnamed. */
+/**
+ * The two facts, named and stated.
+ *
+ * A bare number read as a count of something unnamed, and the field it
+ * sat in invited an edit the card does not do: the length belongs to the
+ * talk, and the talk is changed on the form Edit opens.
+ */
 describe('how long a talk runs', () => {
-  it('says what the number is counting', () => {
+  it('says what the number is counting, and what it is', () => {
     show();
 
     const card = rowOf('Kataho');
-    expect(within(card).getByLabelText('Minutes')).toHaveValue(30);
-    expect(within(card).getByText('min')).toBeInTheDocument();
+    expect(within(card).getByText('Duration:')).toBeInTheDocument();
+    expect(within(card).getByText('30 min')).toBeInTheDocument();
+  });
+
+  it('names the day and hour too', () => {
+    show();
+
+    expect(within(rowOf('Kataho')).getByText('Date:')).toBeInTheDocument();
+  });
+
+  it('cannot be changed from the card', () => {
+    show();
+
+    expect(within(rowOf('Kataho')).queryByLabelText('Minutes')).toBeNull();
+    expect(rowOf('Kataho').querySelector('input')).toBeNull();
   });
 });
 
