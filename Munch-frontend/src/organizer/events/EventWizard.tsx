@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
@@ -186,6 +186,61 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
     }
   };
 
+  /**
+   * Leaving the last step without finishing it.
+   *
+   * By the time step three is reached the event exists - it was written
+   * at step one, so the running order and the people had something to
+   * hang off. What it does not have is a host who has said they are done
+   * with it, so anything other than Done files it under drafts: the back
+   * link, the stepper, walking off to another page, and the button that
+   * used to say Cancel.
+   *
+   * An event that has started, or ended, is not a draft whatever the
+   * form does, so only a scheduled one is moved.
+   */
+  const asDraft = useCallback(async () => {
+    if (!saved || saved.status !== 'scheduled') return;
+    try {
+      const next = await apiClient.updateEvent(saved.id, { status: 'draft' });
+      setSaved(next);
+      await onSaved();
+    } catch {
+      // Leaving is not the moment to argue about it.
+    }
+  }, [saved, onSaved]);
+
+  const leave = async () => { await asDraft(); onClose(); };
+
+  /** Said once, by Done, so walking away afterwards does not undo it. */
+  const finished = useRef(false);
+  const done = async () => {
+    finished.current = true;
+    if (saved?.status === 'draft') {
+      try {
+        setSaved(await apiClient.updateEvent(saved.id, { status: 'scheduled' }));
+        await onSaved();
+      } catch (e: any) {
+        toast.error(errorText(e, t({ ne: 'बचत गर्न सकिएन', en: 'Could not save it' })));
+        return;
+      }
+    }
+    onClose();
+  };
+
+  /**
+   * Walking off to another page, which unmounts the form rather than
+   * closing it. The cleanup reads the last state through a ref, since the
+   * one it closed over is whatever it was when the effect was set up.
+   */
+  const latest = useRef({ step, saved });
+  latest.current = { step, saved };
+  useEffect(() => () => {
+    const { step: at, saved: made } = latest.current;
+    if (finished.current || at !== 2 || !made || made.status !== 'scheduled') return;
+    apiClient.updateEvent(made.id, { status: 'draft' }).catch(() => {});
+  }, []);
+
   /** Step two: one event's worth of running order at a time. */
   const sessionCount = saved?.sessions?.length ?? 0;
 
@@ -241,7 +296,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
   const skip = step < 2 && saved
     ? (
       <button
-        onClick={() => (step === 2 ? onClose() : setStep(step + 1))}
+        onClick={() => (step === 2 ? leave() : setStep(step + 1))}
         className="text-[14px] text-tagink underline hover:no-underline"
       >
         {t({ ne: 'छोड्नुहोस्', en: 'Skip' })}
@@ -253,7 +308,10 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
     <Sheet>
       <div className="flex flex-col gap-5">
         <div className="flex items-center gap-4">
-          <BackLink label={{ ne: 'कार्यक्रम', en: 'Event' }} onClick={onClose} />
+          <BackLink
+            label={{ ne: 'कार्यक्रम', en: 'Event' }}
+            onClick={() => (step === 2 ? leave() : onClose())}
+          />
           {skip && <span className="ml-auto">{skip}</span>}
         </div>
 
@@ -263,7 +321,15 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
                        : t({ ne: 'तीन चरणमा तयार गर्नुहोस्', en: 'Set it up in three steps' })}
         />
 
-        <Stepper steps={STEPS} at={step} onGo={(i) => saved && setStep(i)} />
+        <Stepper
+          steps={STEPS}
+          at={step}
+          onGo={(i) => {
+            if (!saved || i === step) return;
+            if (step === 2) asDraft();
+            setStep(i);
+          }}
+        />
       </div>
 
       {step === 0 && (
@@ -523,11 +589,13 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
             )}
           </div>
 
+          {/* Nothing is cancelled from here: the event exists already, so
+              the choice is between finishing it and leaving it a draft. */}
           <Actions
-            cancel={t({ ne: 'रद्द', en: 'Cancel' })}
+            cancel={t({ ne: 'मस्यौदाका रूपमा बचत', en: 'Save as draft' })}
             go={t({ ne: 'सकियो', en: 'Done' })}
-            onCancel={onClose}
-            onGo={onClose}
+            onCancel={leave}
+            onGo={done}
           />
         </div>
       )}
