@@ -29,7 +29,7 @@ const at = (hh: string) => `${day}T${hh}:00`;
 
 const session = (over: any = {}) => ({
   id: 's1', title: 'Kataho', description: '', speaker_name: 'Prabhat',
-  hall: '', speaker_visibility: 'private',
+  speaker_visibility: 'private',
   starts_at: at('10:30'), duration_minutes: 30, ends_at: at('11:00'),
   position: 0, status: 'scheduled', started_at: null, ended_at: null,
   attendance_count: 0, created_at: '', updated_at: '',
@@ -234,36 +234,13 @@ describe('what the board will not do', () => {
 });
 
 /**
- * The two things that used to live only on the Sessions page.
+ * Taking a talk off the running order.
  *
- * Deleting that page without these would have left no way to say which
- * hall a talk is in, or to take one off the running order at all.
+ * This came across from the Sessions page, which was the only place it
+ * lived; deleting that page without it would have left no way off the
+ * running order at all.
  */
 describe('what came across from the Sessions page', () => {
-  it('says which hall a talk is in', () => {
-    show();
-
-    const hall = within(rowOf('Kataho')).getByLabelText('Hall');
-    fireEvent.change(hall, { target: { value: 'Hall A' } });
-
-    expect(hall).toHaveValue('Hall A');
-    // A hall is a change like any other, so it waits to be saved.
-    expect(screen.getByRole('button', { name: /Save the order/ })).toBeInTheDocument();
-  });
-
-  it('sends the hall with the rest of the rearrangement', async () => {
-    show();
-    fireEvent.change(
-      within(rowOf('Kataho')).getByLabelText('Hall'), { target: { value: 'Hall A' } }
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /Save the order/ }));
-
-    await waitFor(() => expect(api.rescheduleSessions).toHaveBeenCalled());
-    const sent = api.rescheduleSessions.mock.calls[0][0];
-    expect(sent.find((s: any) => s.id === 's1')?.hall).toBe('Hall A');
-  });
-
   it('takes a talk off the running order, once it has asked', async () => {
     const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
     const onChanged = show();
@@ -300,12 +277,68 @@ describe('what came across from the Sessions page', () => {
 });
 
 /**
- * A talk drawn as a card rather than a row.
+ * The hour a talk keeps is read off its card, not typed into it.
  *
- * The row said when and how long and left the rest to the edit form,
- * which meant the one thing an organizer scans for - who is giving this -
- * was the one thing the running order did not show.
+ * A field for it beside the times already printed at the top of the card
+ * was two places saying the same thing, one of them editable. The hour
+ * belongs to the talk, and the talk is changed on the form Edit opens.
  */
+describe('the hour on a card', () => {
+  it('shows when it runs, in words rather than a field', () => {
+    show();
+
+    const card = rowOf('Kataho');
+    expect(within(card).getByText(/10:30/)).toBeInTheDocument();
+    expect(within(card).queryByLabelText('Starts')).toBeNull();
+  });
+
+  it('still moves when the talk before it grows', () => {
+    show();
+
+    fireEvent.change(
+      within(rowOf('Kataho')).getByLabelText('Minutes'), { target: { value: '120' } }
+    );
+
+    expect(within(rowOf('Addressgraph')).getByText(/12:45|13:/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * Where a talk is held is the event's business, not each talk's.
+ *
+ * Every agenda item of an event runs at the venue the event names, so a
+ * hall per talk was a field that could only ever disagree with it.
+ */
+describe('where a talk is held', () => {
+  it('is not asked for on the card', () => {
+    show();
+
+    expect(within(rowOf('Kataho')).queryByLabelText('Hall')).toBeNull();
+  });
+
+  it('is not sent with a rearrangement either', async () => {
+    show();
+    dragOnto('Addressgraph', 'Kataho');
+
+    fireEvent.click(screen.getByRole('button', { name: /Save the order/ }));
+
+    await waitFor(() => expect(api.rescheduleSessions).toHaveBeenCalled());
+    const sent = api.rescheduleSessions.mock.calls[0][0];
+    expect(sent[0]).not.toHaveProperty('hall');
+  });
+});
+
+/** The number on its own read as a count of something unnamed. */
+describe('how long a talk runs', () => {
+  it('says what the number is counting', () => {
+    show();
+
+    const card = rowOf('Kataho');
+    expect(within(card).getByLabelText('Minutes')).toHaveValue(30);
+    expect(within(card).getByText('min')).toBeInTheDocument();
+  });
+});
+
 describe('what a card says about its talk', () => {
   it('numbers it by where it comes in the order', () => {
     show();

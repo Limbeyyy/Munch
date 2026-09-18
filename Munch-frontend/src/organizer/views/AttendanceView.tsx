@@ -275,7 +275,7 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
                               className="w-full text-start"
                             >
                               <BarRow
-                                label={`${clock(session.starts_at)}  ${session.title}${session.hall ? ` · ${session.hall}` : ''}`}
+                                label={`${clock(session.starts_at)}  ${session.title}`}
                                 pct={pct}
                                 right={`${num(rows.length)}/${num(roll.people.length)}`}
                               />

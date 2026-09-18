@@ -478,10 +478,6 @@ class Session(models.Model):
         default=SpeakerVisibility.PRIVATE,
     )
 
-    # Which room in the venue this runs in. Free text, because halls are
-    # named differently at every venue and are not worth a table of their own.
-    hall = models.CharField(max_length=255, blank=True)
-
     starts_at = models.DateTimeField()
     duration_minutes = models.PositiveIntegerField(default=30)
 

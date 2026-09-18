@@ -374,8 +374,8 @@ export const DashboardView: React.FC<Props> = ({
                     flex items-center gap-1.5">
                     <i className="w-[5px] h-[5px] rounded-full bg-[#13cef7]" aria-hidden />
                     <span className="text-[14px] text-[#030712] tracking-[-0.07px]">
-                      {current.session.hall ||
-                        t({ ne: 'हल तोकिएको छैन', en: 'No hall named' })}
+                      {current?.event.venue
+                        || t({ ne: 'स्थान तोकिएको छैन', en: 'No venue named' })}
                     </span>
                   </span>
                   <Rule />

@@ -98,8 +98,6 @@ export const emptySession = (
     // Private by default: handing out somebody's number should be a
     // decision, not what happens when nobody thinks about it.
     speaker_visibility: 'private',
-    // A new session usually runs in the same hall as the one before it.
-    hall: last?.hall ?? '',
     starts_at: toLocalInput(from),
     duration_minutes: 30,
   };
@@ -260,17 +258,6 @@ export const EventDraftFields: React.FC<Props> = ({ event, onChange, onRemove, i
                   <input
                     value={session.speaker_name ?? ''}
                     onChange={(e) => setSession(i, { speaker_name: e.target.value })}
-                    className="w-full border border-navy-800/15 rounded-md px-2 py-1 text-[13px] bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11.5px] text-[#6E7C8E] mb-1">
-                    {t({ ne: 'हल', en: 'Hall' })}
-                  </label>
-                  <input
-                    value={session.hall ?? ''}
-                    onChange={(e) => setSession(i, { hall: e.target.value })}
-                    placeholder={t({ ne: 'मुख्य हल', en: 'Main hall' })}
                     className="w-full border border-navy-800/15 rounded-md px-2 py-1 text-[13px] bg-white"
                   />
                 </div>

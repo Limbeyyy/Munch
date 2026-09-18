@@ -167,7 +167,7 @@ export const EventDetail: React.FC<Props> = ({
               <p className="text-[14px] font-medium text-head mt-1">{s.title}</p>
               <p className="text-[13px] text-subtle mt-0.5">
                 {s.speaker_name
-                  ? `${s.speaker_name}${s.hall ? ` · ${s.hall}` : ''}`
+                  ? s.speaker_name
                   : <i className="text-faint">{t({ ne: 'वक्ता तोकिएको छैन', en: 'No speaker assigned' })}</i>}
               </p>
             </div>

@@ -505,16 +505,16 @@ describe('the running order inside the room', () => {
   const start = new Date(Date.now() - hour).toISOString();
   const running = [
     {
-      id: 's1', title: 'Haldi', speaker_name: 'Asha', hall: '', status: 'live',
+      id: 's1', title: 'Haldi', speaker_name: 'Asha', status: 'live',
       starts_at: start, duration_minutes: 40, event: 'm1', position: 0,
     },
     {
-      id: 's2', title: 'Mehendi', speaker_name: 'Bina', hall: '', status: 'scheduled',
+      id: 's2', title: 'Mehendi', speaker_name: 'Bina', status: 'scheduled',
       starts_at: new Date(Date.now() + hour).toISOString(),
       duration_minutes: 60, event: 'm1', position: 1,
     },
     {
-      id: 's3', title: 'Sangeet', speaker_name: 'Chandra', hall: '', status: 'scheduled',
+      id: 's3', title: 'Sangeet', speaker_name: 'Chandra', status: 'scheduled',
       starts_at: new Date(Date.now() + 3 * hour).toISOString(),
       duration_minutes: 60, event: 'm1', position: 2,
     },
@@ -776,16 +776,16 @@ describe('the running order inside the room', () => {
   const start = new Date(Date.now() - hour).toISOString();
   const running = [
     {
-      id: 's1', title: 'Haldi', speaker_name: 'Asha', hall: '', status: 'live',
+      id: 's1', title: 'Haldi', speaker_name: 'Asha', status: 'live',
       starts_at: start, duration_minutes: 40, event: 'm1', position: 0,
     },
     {
-      id: 's2', title: 'Mehendi', speaker_name: 'Bina', hall: '', status: 'scheduled',
+      id: 's2', title: 'Mehendi', speaker_name: 'Bina', status: 'scheduled',
       starts_at: new Date(Date.now() + hour).toISOString(),
       duration_minutes: 60, event: 'm1', position: 1,
     },
     {
-      id: 's3', title: 'Sangeet', speaker_name: 'Chandra', hall: '', status: 'scheduled',
+      id: 's3', title: 'Sangeet', speaker_name: 'Chandra', status: 'scheduled',
       starts_at: new Date(Date.now() + 3 * hour).toISOString(),
       duration_minutes: 60, event: 'm1', position: 2,
     },
@@ -994,12 +994,12 @@ describe('the agenda cards', () => {
   const hour = 3600000;
   const running = [
     {
-      id: 's1', title: 'Haldi', speaker_name: 'Asha', hall: '', status: 'live',
+      id: 's1', title: 'Haldi', speaker_name: 'Asha', status: 'live',
       starts_at: new Date(Date.now() - hour).toISOString(),
       duration_minutes: 40, event: 'm1', position: 0,
     },
     {
-      id: 's2', title: 'Mehendi', speaker_name: 'Bina', hall: '', status: 'scheduled',
+      id: 's2', title: 'Mehendi', speaker_name: 'Bina', status: 'scheduled',
       starts_at: new Date(Date.now() + hour).toISOString(),
       duration_minutes: 60, event: 'm1', position: 1,
     },
@@ -1082,7 +1082,7 @@ describe('the agenda cards', () => {
  */
 describe('a summary on the agenda', () => {
   const finished = [{
-    id: 's0', title: 'Kataho', speaker_name: 'Sumin', hall: '', status: 'done',
+    id: 's0', title: 'Kataho', speaker_name: 'Sumin', status: 'done',
     starts_at: new Date(Date.now() - 7200000).toISOString(),
     duration_minutes: 60, event: 'm1', position: 0,
   }];
@@ -1091,7 +1091,7 @@ describe('a summary on the agenda', () => {
     conclusions: [{
       session_id: 's0', session_title: 'Kataho',
       session_starts_at: new Date().toISOString(),
-      speaker_name: 'Sumin', hall: '', event_id: 'm1', event_title: 'NEA',
+      speaker_name: 'Sumin', event_id: 'm1', event_title: 'NEA',
       findings: ['The grant is released in two parts.'],
       actions: [{ task: 'Send the letter', owner: 'Bina', due: 'Friday' }],
       published_at: new Date().toISOString(),

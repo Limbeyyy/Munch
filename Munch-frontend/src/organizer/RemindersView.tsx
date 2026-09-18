@@ -55,7 +55,7 @@ const Row: React.FC<{ reminder: Reminder; onRead: (id: string) => void }> = ({
         <p className="text-[12.5px] text-[#6E7C8E] mt-1">
           {day(reminder.starts_at)} · {clock(reminder.starts_at)}–{clock(reminder.ends_at)}
           {isSession && reminder.session_title ? ` · ${reminder.event_title}` : ''}
-          {reminder.hall ? ` · ${reminder.hall}` : ''}
+          {reminder.venue ? ` · ${reminder.venue}` : ''}
           {reminder.speaker_name ? ` · ${reminder.speaker_name}` : ''}
         </p>
 

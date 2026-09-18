@@ -265,7 +265,6 @@ def guest_status(request):
                     'id': str(session.id),
                     'title': session.title,
                     'speaker_name': session.speaker_name,
-                    'hall': session.hall,
                     'starts_at': session.starts_at.isoformat(),
                     'duration_minutes': session.duration_minutes,
                     'status': session.status,

@@ -173,7 +173,7 @@ export const EventOverview: React.FC<{
                   <span className="min-w-0">
                     <span className="block truncate">{session.title}</span>
                     <span className="block text-[12px] text-[#6E7C8E]">
-                      {[session.speaker_name, session.hall].filter(Boolean).join(' · ') || '—'}
+                      {session.speaker_name || '—'}
                     </span>
                   </span>
                   <span className="ml-auto flex-none">

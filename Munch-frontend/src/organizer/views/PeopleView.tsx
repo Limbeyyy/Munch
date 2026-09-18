@@ -608,7 +608,6 @@ const SpeakerCard: React.FC<{
           <span className="tabular-nums">{clock(session.starts_at)}</span>
           {' · '}
           {session.title}
-          {session.hall && <span className="text-[#6E7C8E]"> · {session.hall}</span>}
           <span className="block text-[11.5px] text-[#6E7C8E] mt-0.5">
             {event.title}
             <span className="ms-1.5">

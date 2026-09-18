@@ -33,7 +33,9 @@ def _as_json(reminder):
     if session is not None:
         title = f'{session.title} — {event.title}'
         ends = session.starts_at + timezone.timedelta(minutes=session.duration_minutes)
-        where = session.hall or ''
+        # Every session of an event runs where the event does, so where to
+        # go is the event's venue rather than a room named per session.
+        where = event.venue or ''
         details = (
             f'Session in {event.title}. '
             f'Event code {event.code}.'
@@ -43,7 +45,7 @@ def _as_json(reminder):
     else:
         title = event.title
         ends = event.scheduled_end
-        where = ''
+        where = event.venue or ''
         details = f'Event code {event.code}.'
 
     return {
@@ -55,7 +57,7 @@ def _as_json(reminder):
         'session_id': str(session.id) if session else None,
         'session_title': session.title if session else None,
         'speaker_name': session.speaker_name if session else '',
-        'hall': where,
+        'venue': where,
         'starts_at': reminder.starts_at,
         'ends_at': ends,
         'due_at': reminder.due_at,

@@ -42,7 +42,7 @@ EVENT_COLUMNS = [
 
 SESSION_COLUMNS = [
     'session_id', 'event_id', 'session_title',
-    'session_starts_at', 'session_duration_minutes', 'hall',
+    'session_starts_at', 'session_duration_minutes',
     'speaker_name', 'speaker_email', 'speaker_phone', 'speaker_visibility',
 ]
 
@@ -82,10 +82,10 @@ EXAMPLE_ROWS = {
     ],
     'SESSIONS': [
         ['1001', '1', 'Health service delivery in federalism',
-         '2026-10-02 09:00', '60', 'Hall A', 'Dr Sarita Poudel',
+         '2026-10-02 09:00', '60', 'Dr Sarita Poudel',
          'sarita.poudel@example.org', '9800000001', 'private'],
         ['1002', '1', 'Digital health records', '2026-10-02 10:15', '45',
-         'Hall A', 'Bikash Shrestha', 'bikash.shrestha@example.org',
+         'Bikash Shrestha', 'bikash.shrestha@example.org',
          '9800000002', 'public'],
     ],
 }
@@ -103,7 +103,6 @@ COLUMNS = [
     'session_title',
     'session_starts_at',
     'session_duration_minutes',
-    'hall',
     'speaker_name',
     'speaker_email',
     'speaker_phone',
@@ -121,7 +120,6 @@ NOTES = {
     'session_title': 'One row per session.',
     'session_starts_at': 'YYYY-MM-DD HH:MM.',
     'session_duration_minutes': 'How long the session runs. 30 if left blank.',
-    'hall': 'Which hall. Optional.',
     'speaker_name': 'Required.',
     'speaker_email': 'Required. This is what makes them a presenter when they sign in.',
     'speaker_phone': 'Required.',
@@ -139,7 +137,6 @@ EXAMPLE = [
         'session_title': 'Health service delivery in federalism',
         'session_starts_at': '2026-10-02 09:00',
         'session_duration_minutes': '60',
-        'hall': 'Hall A',
         'speaker_name': 'Dr Sarita Poudel',
         'speaker_email': 'sarita.poudel@example.org',
         'speaker_phone': '9800000001',
@@ -154,7 +151,6 @@ EXAMPLE = [
         'session_title': 'Digital health records',
         'session_starts_at': '2026-10-02 10:15',
         'session_duration_minutes': '45',
-        'hall': 'Hall A',
         'speaker_name': 'Bikash Shrestha',
         'speaker_email': 'bikash.shrestha@example.org',
         'speaker_phone': '9800000002',
@@ -600,7 +596,6 @@ def _read_tables(rows) -> list:
             'speaker_email': _clean(row.get('speaker_email')),
             'speaker_phone': _clean(row.get('speaker_phone')),
             'speaker_visibility': visibility,
-            'hall': _clean(row.get('hall')),
             'starts_at': _moment(
                 row.get('session_starts_at'), row=number, column='session_starts_at'
             ),
@@ -636,7 +631,7 @@ def _read_flat(rows) -> list:
     got = {name.lower() for name in fieldnames}
     missing = [c for c in COLUMNS if c not in got and c not in (
         'venue', 'event_duration_minutes', 'session_duration_minutes',
-        'hall', 'speaker_visibility',
+        'speaker_visibility',
     )]
     if missing:
         raise ImportProblem(
@@ -706,7 +701,6 @@ def _read_flat(rows) -> list:
             'speaker_email': _clean(row.get('speaker_email')),
             'speaker_phone': _clean(row.get('speaker_phone')),
             'speaker_visibility': visibility,
-            'hall': _clean(row.get('hall')),
             'starts_at': _moment(
                 row.get('session_starts_at'), row=number, column='session_starts_at'
             ),
