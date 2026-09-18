@@ -649,7 +649,34 @@ describe('the appearance page', () => {
 
     expect(screen.getByRole('radio', { name: /Light/ })).toBeChecked();
     expect(screen.getByRole('radio', { name: /Dark/ })).not.toBeChecked();
-    expect(screen.getByRole('radio', { name: /System/ })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /High contrast/ })).toBeInTheDocument();
+  });
+
+  /**
+   * What a machine is set to is its own business; what somebody cannot
+   * read is theirs. The third choice is the one that helps.
+   */
+  it('turns the greys and hairlines up when high contrast is chosen', () => {
+    show(<AppearanceView />);
+
+    fireEvent.click(screen.getByRole('radio', { name: /High contrast/ }));
+
+    expect(document.documentElement.hasAttribute('data-a11y-contrast')).toBe(true);
+  });
+
+  it('turns them back down on the way out of it', () => {
+    show(<AppearanceView />);
+    fireEvent.click(screen.getByRole('radio', { name: /High contrast/ }));
+
+    fireEvent.click(screen.getByRole('radio', { name: /Light/ }));
+
+    expect(document.documentElement.hasAttribute('data-a11y-contrast')).toBe(false);
+  });
+
+  it('offers no third thing that only follows the machine', () => {
+    show(<AppearanceView />);
+
+    expect(screen.queryByRole('radio', { name: /System/ })).toBeNull();
   });
 
   it('puts the choice where the styling can reach it', () => {
@@ -680,11 +707,19 @@ describe('the appearance page', () => {
     ).toBe('relaxed');
   });
 
+  /**
+   * The preview is the setting read back in the thing it changes, so it
+   * has to be one of the things it changes.
+   */
   it('reads the settings back in the thing they change', () => {
-    show(<AppearanceView />);
+    const { container } = show(<AppearanceView />);
 
     expect(screen.getByText('Preview')).toBeInTheDocument();
-    expect(screen.getByText('Sarah Sharma')).toBeInTheDocument();
+    const line = screen.getByText('Sarah Sharma').closest('[data-transcript-line]');
+    expect(line).not.toBeNull();
+    // The same mark the room and the desk put on their own lines, which
+    // is what the rules in index.css hang off.
+    expect(container.querySelectorAll('[data-transcript-line]').length).toBe(1);
   });
 
   /** Per browser, not per account: see the note on the describe. */

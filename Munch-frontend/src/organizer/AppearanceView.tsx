@@ -17,10 +17,13 @@ const THEMES: { id: Theme; label: Pair; lede: Pair; swatch: string }[] = [
     swatch: 'bg-[#1e2939] border-[0.6px] border-[#364153]',
   },
   {
-    id: 'system',
-    label: { ne: 'यन्त्रअनुसार', en: 'System' },
-    lede: { ne: 'यन्त्रको सेटिङ पछ्याउने', en: 'Match your device settings' },
-    swatch: 'border-[0.6px] border-[#d1d5dc] bg-gradient-to-br from-[#f9fafb] to-[#1e2939]',
+    id: 'contrast',
+    label: { ne: 'उच्च कन्ट्रास्ट', en: 'High contrast' },
+    lede: {
+      ne: 'गाढा किनारा र अक्षर',
+      en: 'Stronger borders and text',
+    },
+    swatch: 'bg-white border-[2px] border-black',
   },
 ];
 
