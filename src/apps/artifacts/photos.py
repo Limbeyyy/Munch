@@ -2,11 +2,9 @@
 
 Two rules shape everything here.
 
-A photograph of the day is worth having once the day has happened, so
-uploading waits until the event is over. Before then the folders exist
-and can be arranged, but there is nothing to record yet - and a hall
-photograph taken during the session it is meant to show would be a
-photograph of an empty hall.
+A photograph may be added before, during, or after the event. The host
+controls the folders, while permitted participants may add photographs
+whenever they choose.
 
 And a record of the event is the organizers' to make. The host and the
 people presenting were there in that capacity; everybody else was a guest
@@ -91,11 +89,6 @@ def check_can_upload(event, user):
             'Only the host, a co-host or somebody who presented can add '
             'photographs.',
             code='not_an_organizer',
-        )
-    if not event_is_done(event):
-        raise PhotoRefused(
-            'Photographs can be added once the event has finished.',
-            code='event_not_finished',
         )
 
 

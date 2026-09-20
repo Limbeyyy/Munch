@@ -113,17 +113,14 @@ describe('the photo section in the event room', () => {
     expect(screen.queryByRole('button', { name: '+ Folder' })).not.toBeInTheDocument();
   });
 
-  it('will not upload before the event has finished, and says why', async () => {
+  it('allows upload before the event has finished', async () => {
     api.getPhotos.mockResolvedValue(
-      page({ event_is_finished: false, can_upload: false }) as any
+      page({ event_is_finished: false, can_upload: true }) as any
     );
 
     show(<PhotoUploads eventRef="ABC123" tone="dark" />);
 
-    expect(
-      await screen.findByText(/once the event has finished/i)
-    ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Upload' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Upload' })).toBeEnabled();
   });
 });
 

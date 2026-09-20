@@ -9,7 +9,6 @@ import { ReviewedMessages, ReviewedRow } from '../ReviewedMessages';
 import { errorText } from '../errors';
 import { useOrganizer } from '../i18n';
 import { Btn, Chip, Empty, Head, Panel, Tabs } from '../ui';
-import { PhotoAlbums } from '../Photos';
 
 const PAGE_SIZE = 20;
 
@@ -34,68 +33,10 @@ interface Row extends Placement {
   at: string;
   message?: ChatMessage;
   guest?: GuestAttendee;
-  /** Everything a search can match, lowercased once. */
   haystack: string;
 }
 
 interface Props { events: Event[]; }
-
-/**
- * The photographs of a event, filed by whoever was there to take them.
- *
- * Here rather than beside the reports because it belongs with the other
- * things people put into a event - the messages, the questions, the
- * suggestions - and not with the settings, which are about how the
- * platform behaves rather than what happened on the day.
- */
-const PhotoModeration: React.FC<{ events: Event[] }> = ({ events }) => {
-  const { t } = useOrganizer();
-  const [chosen, setChosen] = useState('');
-
-  const ordered = useMemo(
-    () => [
-      ...events.filter((m) => m.status === 'ended'),
-      ...events.filter((m) => m.status !== 'ended'),
-    ],
-    [events]
-  );
-  const event = events.find((m) => m.id === chosen) ?? ordered[0] ?? null;
-
-  if (!event) {
-    return <Panel><Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No events.' })}</Empty></Panel>;
-  }
-
-  return (
-    <div className="flex flex-col gap-3.5">
-      {events.length > 1 && (
-        <div>
-          <label
-            htmlFor="manch-photo-event"
-            className="block text-[12.5px] text-[#6E7C8E] mb-1.5"
-          >
-            {t({ ne: 'कुन बैठक', en: 'Which event' })}
-          </label>
-          <select
-            id="manch-photo-event"
-            value={event.id}
-            onChange={(e) => setChosen(e.target.value)}
-            className="w-full max-w-md border border-navy-800/15 rounded-[9px] px-3 py-2 bg-white text-[14px]"
-          >
-            {ordered.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.title}
-                {m.status === 'ended'
-                  ? ''
-                  : t({ ne: ' (सकिएको छैन)', en: ' (not finished)' })}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-      <PhotoAlbums eventRef={event.code} />
-    </div>
-  );
-};
 
 /**
  * Everything waiting on the organizer's word, kept in the shape of the
@@ -105,7 +46,7 @@ const PhotoModeration: React.FC<{ events: Event[] }> = ({ events }) => {
 export const ModerationView: React.FC<Props> = ({ events }) => {
   const { t, num } = useOrganizer();
 
-  const [tab, setTab] = useState<'messages' | 'guests' | 'board' | 'photos'>(
+  const [tab, setTab] = useState<'messages' | 'guests' | 'board'>(
     'messages'
   );
   const [boardEvent, setBoardEvent] = useState('');
@@ -444,18 +385,15 @@ export const ModerationView: React.FC<Props> = ({ events }) => {
 
       <Tabs
         active={tab}
-        onChange={(id) => setTab(id as 'messages' | 'guests' | 'board' | 'photos')}
+        onChange={(id) => setTab(id as 'messages' | 'guests' | 'board')}
         tabs={[
           { id: 'messages', label: { ne: `सन्देश (${num(messageCount)})`, en: `Messages (${messageCount})` } },
           { id: 'guests', label: { ne: `पाहुना (${num(guestCount)})`, en: `Guests (${guestCount})` } },
           { id: 'board', label: { ne: 'प्रश्न र सुझाव', en: 'Questions & suggestions' } },
-          { id: 'photos', label: { ne: 'फोटो', en: 'Photos' } },
         ]}
       />
 
-      {tab === 'photos' ? (
-        <PhotoModeration events={events} />
-      ) : tab === 'board' ? (
+      {tab === 'board' ? (
         <div className="flex flex-col gap-3.5">
           {events.length === 0 ? (
             <Panel><Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No events.' })}</Empty></Panel>

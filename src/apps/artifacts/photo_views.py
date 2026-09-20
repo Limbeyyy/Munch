@@ -108,13 +108,9 @@ def event_photos(request, event_ref):
         'code': event.code,
         'event_title': event.title,
         'event_is_finished': photo_service.event_is_done(event),
-        # Whether this person may add one *now*: the permission and the
-        # timing together, so the page does not offer a button the server
-        # is going to refuse.
-        'can_upload': (
-            photo_service.may_upload(event, request.user)
-            and photo_service.event_is_done(event)
-        ),
+        # The permission is the only upload rule. Photos may be added before,
+        # during, or after the event.
+        'can_upload': photo_service.may_upload(event, request.user),
         'is_a_photographer': photo_service.may_upload(event, request.user),
         'can_arrange': photo_service.may_arrange(event, request.user),
         'folders': [_folder_json(f, request, counts) for f in folders],

@@ -230,15 +230,10 @@ export const PhotoUploads: React.FC<{
 
       <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
         <p className={`text-[12px] ${dark ? 'text-gray-400' : 'text-[#6E7C8E]'}`}>
-          {page.event_is_finished
-            ? t({
-                ne: 'कुन फोल्डरमा राख्ने, त्यहीँको अपलोड थिच्नुहोस्।',
-                en: 'Press upload on the folder it belongs in.',
-              })
-            : t({
-                ne: 'बैठक सकिएपछि तस्बिर थप्न मिल्छ।',
-                en: 'Photographs can be added once the event has finished.',
-              })}
+          {t({
+            ne: 'कुन फोल्डरमा राख्ने, त्यहीँको अपलोड थिच्नुहोस्।',
+            en: 'Press upload on the folder it belongs in.',
+          })}
         </p>
         {page.can_arrange && (
           dark ? (
@@ -293,14 +288,6 @@ export const PhotoUploads: React.FC<{
                 type="button"
                 disabled={!page.can_upload || busy === folder.id}
                 onClick={() => pick(folder.id)}
-                title={
-                  page.can_upload
-                    ? undefined
-                    : t({
-                        ne: 'बैठक सकिएपछि खुल्छ',
-                        en: 'Opens once the event has finished',
-                      })
-                }
                 className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50 flex-none"
               >
                 {busy === folder.id
@@ -312,14 +299,6 @@ export const PhotoUploads: React.FC<{
                 sm
                 disabled={!page.can_upload || busy === folder.id}
                 onClick={() => pick(folder.id)}
-                title={
-                  page.can_upload
-                    ? undefined
-                    : t({
-                        ne: 'बैठक सकिएपछि खुल्छ',
-                        en: 'Opens once the event has finished',
-                      })
-                }
               >
                 {busy === folder.id
                   ? t({ ne: 'पठाउँदै…', en: 'Adding…' })
@@ -351,6 +330,7 @@ export const PhotoAlbums: React.FC<{
   const { pick, busy, input } = useUploader(eventRef, () => reload(true));
   const [openFolder, setOpenFolder] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
+  const [timing, setTiming] = useState<'before' | 'during' | 'after'>('after');
 
   useEffect(() => { setOpenFolder(null); }, [eventRef]);
 
@@ -440,11 +420,16 @@ export const PhotoAlbums: React.FC<{
         ))}
 
         <span className="ms-auto flex items-center gap-2">
-          {!page.event_is_finished && mayAdd && (
-            <Chip tone="warn">
-              {t({ ne: 'बैठक सकिएपछि', en: 'Once the event ends' })}
-            </Chip>
-          )}
+          <select
+            aria-label={t({ ne: 'फोटो थप्ने समय', en: 'Photo timing' })}
+            value={timing}
+            onChange={(e) => setTiming(e.target.value as typeof timing)}
+            className="border border-navy-800/15 rounded-md px-2 py-1 text-[12px] bg-white"
+          >
+            <option value="before">{t({ ne: 'कार्यक्रम अघि', en: 'Before the event' })}</option>
+            <option value="after">{t({ ne: 'कार्यक्रमपछि', en: 'After the event' })}</option>
+            <option value="during">{t({ ne: 'कार्यक्रममा', en: 'During event' })}</option>
+          </select>
           {mayAdd && page.can_arrange && (
             <Btn sm onClick={addFolder}>
               {t({ ne: 'फोल्डर बनाउने', en: 'Create folder' })}

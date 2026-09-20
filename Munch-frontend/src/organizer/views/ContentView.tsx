@@ -4,7 +4,7 @@ import { apiClient } from '../../services/api';
 import { Artifact, Event, TranscriptionSegment } from '../../types';
 import { EventOverview } from '../EventOverview';
 import { SummaryApprovals } from '../SummaryApprovals';
-import { ResourceControls } from '../ResourceVisibility';
+import { PhotoAlbums } from '../Photos';
 import { EVENT_STATE_LABEL, EVENT_STATE_TONE, eventState } from '../sessionState';
 import { useOrganizer } from '../i18n';
 import { Btn, Chip, Empty, Head, Panel, Tabs } from '../ui';
@@ -38,6 +38,7 @@ const KIND_COLOR: Record<string, string> = {
 export const ContentView: React.FC<Props> = ({ events }) => {
   const { t, num } = useOrganizer();
   const [tab, setTab] = useState('files');
+  const [photoEvent, setPhotoEvent] = useState('');
   const [resources, setResources] = useState<Record<string, Artifact[]>>({});
   const [transcripts, setTranscripts] = useState<Record<string, TranscriptionSegment[]>>({});
   const [uploading, setUploading] = useState<string | null>(null);
@@ -111,19 +112,11 @@ export const ContentView: React.FC<Props> = ({ events }) => {
         tabs={[
           { id: 'files', label: { ne: 'सत्रका फाइल', en: 'Session files' } },
           { id: 'transcripts', label: { ne: 'सारांश स्वीकृति', en: 'Summary approvals' } },
+          { id: 'photos', label: { ne: 'फोटो', en: 'Photos' } },
         ]}
       />
 
-      {tab === 'files' && (
-        <div className="mb-3.5 bg-[#EEF3FA] border border-navy-500/20 rounded-[10px] px-4 py-3 text-[13px] text-ink-2">
-          {t({
-            ne: 'सत्र चलिरहेकै बेला साझा गरिएको फाइल त्यो सत्र नसकिँदासम्म सहभागीले पढ्न पाउँदैनन् — तपाईंले भने सधैँ देख्नुहुन्छ।',
-            en: 'A file shared during a session stays out of the room\u2019s reach until that session ends. You always see it; they do not.',
-          })}
-        </div>
-      )}
-
-      <div className="flex flex-col gap-3.5">
+      {tab !== 'photos' && <div className="flex flex-col gap-3.5">
         {events.length === 0 && (
           <Panel><Empty>{t({ ne: 'कुनै सत्र छैन।', en: 'No sessions yet.' })}</Empty></Panel>
         )}
@@ -197,32 +190,6 @@ export const ContentView: React.FC<Props> = ({ events }) => {
                               <span className="block text-[13.5px] truncate">{f.display_name}</span>
                               <span className="text-[12.5px] text-[#6E7C8E]">{formatSize(f.file_size)}</span>
                             </span>
-                            {f.is_released === false && (
-                              <span className="flex-none">
-                                <Chip tone="lock">
-                                  {f.session_title
-                                    ? t({
-                                        ne: `“${f.session_title}” सकिएपछि खुल्छ`,
-                                        en: `Opens when “${f.session_title}” ends`,
-                                      })
-                                    : t({ ne: 'सत्रपछि खुल्छ', en: 'Opens after the session' })}
-                                </Chip>
-                              </span>
-                            )}
-                            {f.is_released !== false && f.session_title && (
-                              <span className="flex-none">
-                                <Chip tone="ok">{f.session_title}</Chip>
-                              </span>
-                            )}
-                            {/* Who may read it, and where it sits in the
-                                order attendees see. */}
-                            <ResourceControls
-                              eventId={event.id}
-                              resource={f}
-                              index={i}
-                              total={files.length}
-                              onChanged={loadResources}
-                            />
                             {f.web_view_link && (
                               <a
                                 href={f.web_view_link}
@@ -245,7 +212,27 @@ export const ContentView: React.FC<Props> = ({ events }) => {
             </Panel>
           );
         })}
-      </div>
+      </div>}
+
+      {tab === 'photos' && (
+        <div className="flex flex-col gap-3.5">
+          {events.length > 1 && (
+            <select
+              aria-label={t({ ne: 'कुन बैठक', en: 'Which event' })}
+              value={photoEvent || events[0]?.id || ''}
+              onChange={(e) => setPhotoEvent(e.target.value)}
+              className="w-full max-w-md border border-line rounded-[9px] px-3 py-2 bg-white text-[14px]"
+            >
+              {events.map((event) => (
+                <option key={event.id} value={event.id}>{event.title}</option>
+              ))}
+            </select>
+          )}
+          {events.length === 0
+            ? <Panel><Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No events.' })}</Empty></Panel>
+            : <PhotoAlbums eventRef={(events.find((e) => e.id === photoEvent) ?? events[0]).code} />}
+        </div>
+      )}
 
       {opened && (
         <EventOverview event={opened} onClose={() => setOpened(null)} />

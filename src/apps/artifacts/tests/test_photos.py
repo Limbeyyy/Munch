@@ -109,11 +109,8 @@ class WhoMayAddPhotosTests(TestCase):
         self.event.ended_at = timezone.now()
         self.event.save()
 
-    def test_nothing_can_be_added_before_the_meeting_has_finished(self):
-        with self.assertRaises(photo_service.PhotoRefused) as refusal:
-            photo_service.check_can_upload(self.event, self.host)
-
-        self.assertEqual(refusal.exception.code, 'event_not_finished')
+    def test_the_host_may_add_them_before_the_meeting_has_finished(self):
+        photo_service.check_can_upload(self.event, self.host)  # no refusal
 
     def test_the_host_may_add_them_afterwards(self):
         self.finish()
@@ -183,13 +180,13 @@ class PhotoEndpointTests(TestCase):
     def url(self, tail=''):
         return f'{API}/events/{self.event.code}/photos/{tail}'
 
-    def test_the_page_says_whether_anything_can_be_added_yet(self):
+    def test_the_page_allows_a_photographer_to_add_before_the_event_ends(self):
         body = self.as_(self.host).get(self.url()).json()
 
         self.assertFalse(body['event_is_finished'])
-        # The host is a photographer, but there is nothing to record yet.
+        # The host may add photos before, during, or after the event.
         self.assertTrue(body['is_a_photographer'])
-        self.assertFalse(body['can_upload'])
+        self.assertTrue(body['can_upload'])
         self.assertTrue(body['can_arrange'])
         self.assertEqual(len(body['folders']), 1)
 
@@ -233,16 +230,6 @@ class PhotoEndpointTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()['code'], 'not_an_organizer')
-
-    def test_uploading_before_the_meeting_ends_is_refused_and_says_why(self):
-        folder = photo_service.default_folder(self.event)
-
-        response = self.as_(self.host).post(
-            self.url(f'folders/{folder.id}/upload/'), {'file': a_photo()}
-        )
-
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.json()['code'], 'event_not_finished')
 
     def test_a_photograph_lands_in_the_folder_it_was_sent_to(self):
         self.finish()
