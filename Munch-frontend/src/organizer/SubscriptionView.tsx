@@ -42,11 +42,14 @@ const Meter: React.FC<{
   used: number;
   cap: number | null;
   right: string;
-}> = ({ label, used, cap, right }) => {
+  tone: 'teal' | 'amber' | 'coral';
+}> = ({ label, used, cap, right, tone }) => {
   // The colour is how close to the ceiling it is, not what it counts:
   // the point of the bar is to be noticed before the ceiling is hit.
   const pct = cap ? Math.min(100, Math.round((used / cap) * 100)) : 0;
-  const paint = pct >= 90 ? '#E12121' : pct >= 60 ? '#F25219' : '#101828';
+  const paint = pct >= 90 ? '#ef6b6b' : pct >= 60 ? '#f0a22b' : {
+    teal: '#39b9a4', amber: '#f0a22b', coral: '#ef6b6b',
+  }[tone];
   return (
     <div className="flex flex-col w-full">
       <div className="flex items-start justify-between gap-4">
@@ -54,7 +57,7 @@ const Meter: React.FC<{
         <span className="text-[14px] text-subtle leading-4 tabular-nums">{right}</span>
       </div>
       <div className="pt-1.5 w-full">
-        <div className="bg-[#f3f4f6] h-1.5 rounded-full overflow-hidden w-full">
+        <div className="meter-track bg-[#f3f4f6] h-1.5 rounded-full overflow-hidden w-full">
           <div
             className="h-1.5 rounded-full"
             style={{ width: `${cap === null ? 0 : pct}%`, backgroundColor: paint }}
@@ -318,6 +321,7 @@ export const SubscriptionView: React.FC<{
                   right={current.limits.events === null
                     ? t({ ne: `${num(usage.events)} · असीमित`, en: `${usage.events} · unlimited` })
                     : `${num(usage.events)} / ${num(current.limits.events)}`}
+                  tone="teal"
                 />
                 <Meter
                   label={t({ ne: 'सत्र', en: 'Sessions' })}
@@ -327,6 +331,7 @@ export const SubscriptionView: React.FC<{
                     ne: `${num(usage.sessions)} · प्रति कार्यक्रम ${capText(current.limits.sessions_per_event)}`,
                     en: `${usage.sessions} · ${capText(current.limits.sessions_per_event)} per event`,
                   })}
+                  tone="amber"
                 />
                 <Meter
                   label={t({ ne: 'सहभागी', en: 'Attendees' })}
@@ -336,6 +341,7 @@ export const SubscriptionView: React.FC<{
                     ne: `प्रति कार्यक्रम ${capText(current.limits.attendees)}`,
                     en: `${capText(current.limits.attendees)} per event`,
                   })}
+                  tone="coral"
                 />
                 {remaining.events !== null && (
                   <p className="text-[12px] text-subtle leading-4">

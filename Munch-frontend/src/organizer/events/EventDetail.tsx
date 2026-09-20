@@ -4,6 +4,7 @@ import { apiClient } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import { Event, RoleGrantRow, Session } from '../../types';
 import { ShareEventDialog } from '../../components/ShareEventDialog';
+import { EventQrCard } from '../../components/EventQrCard';
 import { errorText } from '../errors';
 import { useOrganizer } from '../i18n';
 import { Btn, Chip, Ic } from '../ui';
@@ -300,6 +301,7 @@ export const EventDetail: React.FC<Props> = ({
             </Block>
           </div>
 
+          <div className="flex flex-col gap-5">
           <aside className="bg-white border border-line rounded-[12px] p-5">
             <h2 className="text-[12px] font-medium tracking-[.06em] uppercase text-subtle mb-4">
               {t({ ne: 'तयारी', en: 'Event readiness' })}
@@ -327,6 +329,8 @@ export const EventDetail: React.FC<Props> = ({
               </Btn>
             </div>
           </aside>
+          <EventQrCard eventName={event.title} eventCode={event.code} />
+          </div>
         </div>
       )}
 

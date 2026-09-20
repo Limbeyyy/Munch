@@ -8,13 +8,13 @@ const THEMES: { id: Theme; label: Pair; lede: Pair; swatch: string }[] = [
     id: 'light',
     label: { ne: 'उज्यालो', en: 'Light' },
     lede: { ne: 'उज्यालो रूप', en: 'Use a light interface' },
-    swatch: 'bg-[#f9fafb] border-[0.6px] border-line',
+    swatch: 'theme-swatch-light bg-[#f9fafb] border-[0.6px] border-line',
   },
   {
     id: 'dark',
     label: { ne: 'अँध्यारो', en: 'Dark' },
     lede: { ne: 'अँध्यारो रूप', en: 'Use a dark interface' },
-    swatch: 'bg-[#1e2939] border-[0.6px] border-[#364153]',
+    swatch: 'theme-swatch-dark bg-[#1e2939] border-[0.6px] border-[#364153]',
   },
   {
     id: 'contrast',
@@ -23,7 +23,7 @@ const THEMES: { id: Theme; label: Pair; lede: Pair; swatch: string }[] = [
       ne: 'गाढा किनारा र अक्षर',
       en: 'Stronger borders and text',
     },
-    swatch: 'bg-white border-[2px] border-black',
+    swatch: 'theme-swatch-contrast bg-white border-[2px] border-black',
   },
 ];
 

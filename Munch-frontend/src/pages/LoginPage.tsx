@@ -39,6 +39,15 @@ export const LoginPage: React.FC = () => {
 
   useEffect(() => {
     const handleGoogleCallback = async (code: string) => {
+      const callbackKey = `google_oauth_callback:${code}`;
+      if (sessionStorage.getItem(callbackKey)) return;
+      sessionStorage.setItem(callbackKey, '1');
+
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete('code');
+      cleanUrl.searchParams.delete('state');
+      window.history.replaceState({}, document.title, cleanUrl.toString());
+
       try {
         const redirectUri = `${window.location.origin}/login`;
         await googleLogin(code, redirectUri);

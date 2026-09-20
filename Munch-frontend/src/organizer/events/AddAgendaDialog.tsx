@@ -269,7 +269,7 @@ export const AddAgendaDialog: React.FC<Props> = ({
         ? t({ ne: 'एजेन्डा सम्पादन', en: 'Edit agenda' })
         : t({ ne: 'एजेन्डा थप्नुहोस्', en: 'Add agenda' })}
     >
-      <div className="bg-white rounded-[12px] w-full max-w-[512px] max-h-[88vh] overflow-auto
+      <div className="agenda-dialog bg-white rounded-[12px] w-full max-w-[512px] max-h-[88vh] overflow-auto
         shadow-[0px_25px_25px_rgba(0,0,0,0.25)]">
         <div className="flex items-center justify-between border-b-[0.6px] border-[#f3f4f6]
           px-6 pt-6 pb-4">
@@ -447,7 +447,7 @@ export const AddAgendaDialog: React.FC<Props> = ({
                     <button
                       onClick={() => picker.current?.click()}
                       disabled={sending}
-                      className="bg-head text-white rounded-[8px] px-3 h-9
+                      className="agenda-upload-button bg-head text-white rounded-[8px] px-3 h-9
                         text-[14px] leading-5 disabled:opacity-50"
                     >
                       {sending ? t({ ne: 'पठाउँदै…', en: 'Uploading…' }) : uploadLabel}
