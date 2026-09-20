@@ -2,6 +2,7 @@ import axios, { AxiosInstance, AxiosError } from 'axios';
 import { User, Event, AuthTokens, Transcript, TranscriptSummary, Artifact, Recording, Organization, Team, OrganizationMember, OrganizationInvite, SubscriptionData, Invoice, PaymentMethod, DriveFile, DriveSyncStatus, OrganizationAnalytics, ChatSettings, ChatMessage, EventParticipant, GuestAttendee, GuestSession, EventInviteList, AttendanceReport, ChatPerson, GuestResource, TranscriptionSegment, EventDraft, Session, SessionDraft, SessionAttendanceRow, SpeakerContact, ContactRequestRow, UserRoles, ProfileSummary, ReminderPage, EventPhoto, PhotoFolder, PhotoPage, ConclusionAction, ConclusionPage, SchedulingPrefs, SheetExport, UpgradeRequestRow, ResourceVisibility, HubBoard, HubKind, HubPost, SessionSummary, EventBoard, MessageTopic, ProgrammeRoles, RoleGrantRow, RoleScope } from '../types';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
+const PAYMENT_API_ROOT = API_BASE_URL.replace(/\/api\/v1\/?$/, '');
 
 class ApiClient {
   private client: AxiosInstance;
@@ -1246,6 +1247,54 @@ class ApiClient {
   async getPaymentMethods(orgId: string): Promise<PaymentMethod[]> {
     const response = await this.client.get(`/organizations/${orgId}/payment-methods/`);
     return response.data.results || response.data;
+  }
+
+  async initiatePayment(orderId: string, amount: string, paymentChannel = 'esewa'): Promise<{
+    order_id: string;
+    transaction_id: string;
+    gateway_url: string;
+    payload: Record<string, string>;
+  }> {
+    const response = await fetch(`${PAYMENT_API_ROOT}/api/payments/initiate/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.accessToken ?? ''}`,
+      },
+      body: JSON.stringify({ order_id: orderId, amount, payment_channel: paymentChannel }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const error = new Error(data?.error ?? 'Could not start payment') as Error & {
+        response?: { data: unknown };
+      };
+      error.response = { data };
+      throw error;
+    }
+    return data;
+  }
+
+  async submitManualQrPayment(orderId: string, referenceNumber: string): Promise<{
+    order_id: string;
+    status: string;
+  }> {
+    const response = await fetch(`${PAYMENT_API_ROOT}/api/payments/submit-manual-qr/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.accessToken ?? ''}`,
+      },
+      body: JSON.stringify({ order_id: orderId, reference_number: referenceNumber }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const error = new Error(data?.error ?? 'Could not submit payment reference') as Error & {
+        response?: { data: unknown };
+      };
+      error.response = { data };
+      throw error;
+    }
+    return data;
   }
 
   async addPaymentMethod(orgId: string, data: Partial<PaymentMethod>): Promise<PaymentMethod> {
