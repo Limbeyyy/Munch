@@ -38,13 +38,25 @@ export const EventQrCard: React.FC<Props> = ({ eventName, eventCode }) => {
     try {
       const file = await qrFile();
       if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
-        window.open(qrSrc, '_blank', 'noopener');
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(qrSrc);
+          toast.success(t({ ne: 'QR को लिंक प्रतिलिपि भयो', en: 'QR link copied' }));
+        } else {
+          window.open(qrSrc, '_blank', 'noopener');
+          toast(t({ ne: 'QR नयाँ ट्याबमा खोलियो', en: 'QR opened in a new tab' }));
+        }
         return;
       }
       await navigator.clipboard.write([new ClipboardItem({ [file.type]: file })]);
       toast.success(t({ ne: 'QR प्रतिलिपि भयो', en: 'QR image copied' }));
     } catch {
-      toast.error(t({ ne: 'QR प्रतिलिपि गर्न सकिएन', en: 'Could not copy the QR image' }));
+      try {
+        await navigator.clipboard.writeText(qrSrc);
+        toast.success(t({ ne: 'QR को लिंक प्रतिलिपि भयो', en: 'QR link copied' }));
+      } catch {
+        window.open(qrSrc, '_blank', 'noopener');
+        toast(t({ ne: 'QR नयाँ ट्याबमा खोलियो', en: 'QR opened in a new tab' }));
+      }
     }
   };
 

@@ -111,9 +111,10 @@ def check_can_add_sessions(user, event, adding=1):
 
 def usage_for(user) -> dict:
     """What the host has spent of their allowance, for the dashboard to show."""
-    from src.apps.meetings.models import Event, Session
+    from src.apps.meetings.models import Event, EventInvite, Session
 
     return {
         'events': Event.objects.filter(host=user).count(),
         'sessions': Session.objects.filter(event__host=user).count(),
+        'attendees': EventInvite.objects.filter(event__host=user).count(),
     }
