@@ -599,7 +599,7 @@ export interface UserRoles {
   can_start_hosting: boolean;
   portals: Array<'host' | 'attendee'>;
   plan: HostPlan | null;
-  usage: { events: number; sessions: number } | null;
+  usage: { events: number; sessions: number; attendees: number } | null;
   subscription: { status: string; current_period_end: string | null } | null;
 }
 

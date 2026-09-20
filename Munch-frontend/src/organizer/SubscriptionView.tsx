@@ -39,11 +39,12 @@ const BillingLine: React.FC<{ label: string; children: React.ReactNode }> = ({
 /** One allowance, drawn as the design draws it: a bar under its name. */
 const Meter: React.FC<{
   label: string;
+  detail?: string;
   used: number;
   cap: number | null;
   right: string;
   tone: 'teal' | 'amber' | 'coral';
-}> = ({ label, used, cap, right, tone }) => {
+}> = ({ label, detail, used, cap, right, tone }) => {
   // The colour is how close to the ceiling it is, not what it counts:
   // the point of the bar is to be noticed before the ceiling is hit.
   const pct = cap ? Math.min(100, Math.round((used / cap) * 100)) : 0;
@@ -53,7 +54,10 @@ const Meter: React.FC<{
   return (
     <div className="flex flex-col w-full">
       <div className="flex items-start justify-between gap-4">
-        <span className="text-[16px] text-[#364153] leading-5">{label}</span>
+        <span className="text-[16px] text-[#364153] leading-5">
+          {label}
+          {detail && <span className="ml-1 text-[13px] text-subtle">· {detail}</span>}
+        </span>
         <span className="text-[14px] text-subtle leading-4 tabular-nums">{right}</span>
       </div>
       <div className="pt-1.5 w-full">
@@ -142,6 +146,19 @@ export const SubscriptionView: React.FC<{
   const current = profile.plan ?? profile.plans.find((p) => !p.paid) ?? null;
   const pending = asks.filter((a) => a.status === 'asked');
   const { usage, remaining, user } = profile;
+  const usedAttendees = usage?.attendees ?? 0;
+  const totalSessionCapacity = current?.limits.events === null
+    || current?.limits.sessions_per_event === null
+    ? null
+    : current
+      ? current.limits.events * current.limits.sessions_per_event
+      : null;
+  const totalAttendeeCapacity = current?.limits.events === null
+    || current?.limits.attendees === null
+    ? null
+    : current
+      ? current.limits.events * current.limits.attendees
+      : null;
 
   const capText = (cap: number | null) =>
     cap === null ? t({ ne: 'असीमित', en: 'Unlimited' }) : num(cap);
@@ -325,22 +342,28 @@ export const SubscriptionView: React.FC<{
                 />
                 <Meter
                   label={t({ ne: 'सत्र', en: 'Sessions' })}
-                  used={usage.sessions}
-                  cap={null}
-                  right={t({
-                    ne: `${num(usage.sessions)} · प्रति कार्यक्रम ${capText(current.limits.sessions_per_event)}`,
-                    en: `${usage.sessions} · ${capText(current.limits.sessions_per_event)} per event`,
+                  detail={t({
+                    ne: `प्रति कार्यक्रम ${capText(current.limits.sessions_per_event)}`,
+                    en: `${capText(current.limits.sessions_per_event)} per event`,
                   })}
+                  used={usage.sessions}
+                  cap={totalSessionCapacity}
+                  right={totalSessionCapacity === null
+                    ? t({ ne: `${num(usage.sessions)} · असीमित`, en: `${usage.sessions} · unlimited` })
+                    : `${num(usage.sessions)} / ${num(totalSessionCapacity)}`}
                   tone="amber"
                 />
                 <Meter
                   label={t({ ne: 'सहभागी', en: 'Attendees' })}
-                  used={0}
-                  cap={null}
-                  right={t({
+                  detail={t({
                     ne: `प्रति कार्यक्रम ${capText(current.limits.attendees)}`,
                     en: `${capText(current.limits.attendees)} per event`,
                   })}
+                  used={usedAttendees}
+                  cap={totalAttendeeCapacity}
+                  right={totalAttendeeCapacity === null
+                    ? t({ ne: `${num(usedAttendees)} · असीमित`, en: `${usedAttendees} · unlimited` })
+                    : `${num(usedAttendees)} / ${num(totalAttendeeCapacity)}`}
                   tone="coral"
                 />
                 {remaining.events !== null && (
