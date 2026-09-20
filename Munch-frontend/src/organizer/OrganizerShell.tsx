@@ -166,7 +166,7 @@ export const OrganizerShell: React.FC<Props> = ({
     <div
       // Accessibility is applied at the document root now, so the shell
       // only has to state its own base size.
-      className="min-h-screen bg-page text-ink font-sans text-[14.5px]"
+      className="organizer-shell min-h-screen bg-page text-ink font-sans text-[14.5px]"
     >
       <div className="lg:grid min-h-screen" style={{ gridTemplateColumns: '258px minmax(0,1fr)' }}>
         {railOpen && (
