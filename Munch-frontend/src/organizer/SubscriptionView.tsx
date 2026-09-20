@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
-import { HostPlan, ProfileSummary, UpgradeRequestRow } from '../types';
-import { errorText } from './errors';
+import { ProfileSummary } from '../types';
+import { PaymentCheckout } from '../components/PaymentCheckout';
 import { Pair, useOrganizer } from './i18n';
 import { Chip, Empty } from './ui';
 import {
@@ -25,6 +25,34 @@ interface Invoice {
   amount: string;
   download_url?: string;
 }
+
+type SavedPaymentMethod =
+  | { id: string; kind: 'wallet'; wallet: 'eSewa' | 'Khalti' | 'IME Pay'; phone: string; fullName: string }
+  | { id: string; kind: 'bank'; bankName: string; accountName: string; accountNumber: string };
+
+const PLAN_COPY: Record<string, { description: string; usd: number | null; period: string }> = {
+  free: { description: 'Best for trying the system', usd: 0, period: 'Forever free' },
+  starter: { description: 'Small teams and startups', usd: 49, period: 'per month' },
+  growth: { description: 'Departments and mid-size organizations', usd: 129, period: 'per month' },
+  business: { description: 'Large teams and organizations', usd: 299, period: 'per month' },
+  enterprise: { description: 'Unlimited needs and dedicated support', usd: null, period: 'Contact us' },
+};
+
+const NPR_PER_USD = 152;
+
+const PaymentMethodIcon: React.FC<{ kind: SavedPaymentMethod['kind'] }> = ({ kind }) => (
+  <span className="w-9 h-9 rounded-[9px] bg-[#EEF3FA] text-navy-800 grid place-items-center flex-none" aria-hidden>
+    {kind === 'wallet' ? (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="5" width="18" height="15" rx="2" /><path d="M3 9h18M16 14h3" />
+      </svg>
+    ) : (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 10h18M5 10v8M9 10v8M15 10v8M19 10v8M3 21h18M2 10l10-7 10 7" />
+      </svg>
+    )}
+  </span>
+);
 
 /** One line of the billing details: a quiet label, then the answer. */
 const BillingLine: React.FC<{ label: string; children: React.ReactNode }> = ({
@@ -73,34 +101,32 @@ const Meter: React.FC<{
 };
 
 /**
- * What a host is on, and how to ask for more.
+ * What a host is on, and how to buy more.
  *
- * No money changes hands here: the request is recorded and an operator
- * applies it. So the page carries the design's shape - the plan on its
- * banner, the allowance as it is spent, the record of what was asked for
- * - without a card on file or an invoice to download, neither of which
- * this system has ever held.
+ * The plan chooser stays separate from checkout. A Buy action opens the
+ * payment modal with the saved billing and payment-method details.
  */
 export const SubscriptionView: React.FC<{
   onNavigate?: (view: string) => void;
 }> = ({ onNavigate }) => {
   const { t, num } = useOrganizer();
   const [profile, setProfile] = useState<ProfileSummary | null>(null);
-  const [asks, setAsks] = useState<UpgradeRequestRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState('');
   const [choosing, setChoosing] = useState(false);
+  const [buyingPlan, setBuyingPlan] = useState('');
+  const [currency, setCurrency] = useState<'USD' | 'NPR'>('NPR');
+  const [methodMenu, setMethodMenu] = useState(false);
+  const [methodForm, setMethodForm] = useState<'bank' | 'wallet' | null>(null);
+  const [methods, setMethods] = useState<SavedPaymentMethod[]>([]);
+  const [wallet, setWallet] = useState<'eSewa' | 'Khalti' | 'IME Pay'>('eSewa');
+  const [methodFields, setMethodFields] = useState({ fullName: '', phone: '', bankName: '', accountName: '', accountNumber: '' });
   // Nothing raises one yet; the section is real and therefore empty.
   const [invoices] = useState<Invoice[]>([]);
 
   const load = useCallback(async () => {
     try {
-      const [summary, requests] = await Promise.all([
-        apiClient.getProfileSummary(),
-        apiClient.getUpgradeRequests().catch(() => ({ requests: [] })),
-      ]);
+      const summary = await apiClient.getProfileSummary();
       setProfile(summary);
-      setAsks(requests.requests || []);
     } catch {
       toast.error(t({ ne: 'योजना ल्याउन सकिएन', en: 'Could not load the plans' }));
     } finally {
@@ -109,24 +135,21 @@ export const SubscriptionView: React.FC<{
   }, [t]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    try { setMethods(JSON.parse(localStorage.getItem('manch.payment.methods') || '[]')); } catch { setMethods([]); }
+  }, []);
 
-  const ask = async (plan: HostPlan) => {
-    setSending(plan.id);
-    try {
-      await apiClient.requestUpgrade(plan.id);
-      toast.success(t({
-        ne: `${plan.name} को अनुरोध पठाइयो`,
-        en: `Asked for ${plan.name}`,
-      }));
-      setChoosing(false);
-      await load();
-    } catch (err) {
-      toast.error(errorText(err, t({
-        ne: 'अनुरोध पठाउन सकिएन', en: 'Could not send the request',
-      })));
-    } finally {
-      setSending('');
-    }
+  const saveMethod = () => {
+    const next: SavedPaymentMethod = methodForm === 'wallet'
+      ? { id: crypto.randomUUID(), kind: 'wallet', wallet, phone: methodFields.phone, fullName: methodFields.fullName }
+      : { id: crypto.randomUUID(), kind: 'bank', bankName: methodFields.bankName, accountName: methodFields.accountName, accountNumber: methodFields.accountNumber };
+    const saved = [...methods, next];
+    setMethods(saved);
+    localStorage.setItem('manch.payment.methods', JSON.stringify(saved));
+    setMethodForm(null);
+    setMethodMenu(false);
+    setMethodFields({ fullName: '', phone: '', bankName: '', accountName: '', accountNumber: '' });
+    toast.success('Payment method saved');
   };
 
   if (loading) {
@@ -144,7 +167,6 @@ export const SubscriptionView: React.FC<{
   // what they would start on - so it is marked current rather than offered,
   // which the server would refuse anyway.
   const current = profile.plan ?? profile.plans.find((p) => !p.paid) ?? null;
-  const pending = asks.filter((a) => a.status === 'asked');
   const { usage, remaining, user } = profile;
   const usedAttendees = usage?.attendees ?? 0;
   const totalSessionCapacity = current?.limits.events === null
@@ -162,6 +184,12 @@ export const SubscriptionView: React.FC<{
 
   const capText = (cap: number | null) =>
     cap === null ? t({ ne: 'असीमित', en: 'Unlimited' }) : num(cap);
+
+  const planPrice = (usd: number | null) => {
+    if (usd === null) return 'Custom';
+    if (currency === 'USD') return `$${usd}`;
+    return `रू ${Math.round(usd * NPR_PER_USD).toLocaleString('en-IN')}`;
+  };
 
   /**
    * Every plan, and the way to ask for one.
@@ -192,26 +220,28 @@ export const SubscriptionView: React.FC<{
           </button>
         </div>
         <p className="text-[12px] text-subtle leading-4">
-          {t({
-            ne: 'यहाँ भुक्तानी लिइँदैन। अनुरोध दर्ता हुन्छ र सञ्चालकले योजना लागू गर्छ।',
-            en: 'No payment is taken here. Your request is recorded and an operator applies the plan.',
-          })}
+          {t({ ne: 'योजना छान्नुहोस् र सुरक्षित रूपमा किन्नुहोस्।', en: 'Choose a plan and buy it securely.' })}
         </p>
-        {pending.length > 0 && (
-          <p className="text-[12px] text-subtle leading-4">
-            {t({
-              ne: `${pending[0].plan_name} को अनुरोध प्रतीक्षामा छ।`,
-              en: `Your request for ${pending[0].plan_name} is waiting.`,
-            })}
-          </p>
-        )}
+        <div className="self-start inline-flex gap-1 p-1 bg-[#F3F6FA] border border-line rounded-full" role="group" aria-label="Currency">
+          {(['USD', 'NPR'] as const).map((unit) => (
+            <button
+              key={unit}
+              type="button"
+              onClick={() => setCurrency(unit)}
+              aria-pressed={currency === unit}
+              className={`px-3 py-1 rounded-full text-[12px] ${currency === unit ? 'bg-navy-800 text-white font-medium' : 'text-subtle'}`}
+            >
+              {unit === 'USD' ? 'USD ($)' : 'NPR (रू)'}
+            </button>
+          ))}
+        </div>
         <div
           className="grid gap-3"
           style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))' }}
         >
           {profile.plans.map((plan) => {
             const mine = current?.id === plan.id;
-            const waiting = pending.some((a) => a.plan === plan.id);
+            const copy = PLAN_COPY[plan.id] ?? PLAN_COPY.enterprise;
             return (
               <SectionCard
                 key={plan.id}
@@ -223,6 +253,9 @@ export const SubscriptionView: React.FC<{
                   </h4>
                   {mine && <Chip tone="ok">{t({ ne: 'हालको', en: 'Current' })}</Chip>}
                 </div>
+                <p className="text-[12px] text-subtle min-h-[32px]">{copy.description}</p>
+                <p className="text-[21px] font-bold text-head">{planPrice(copy.usd)}</p>
+                <p className="text-[11px] text-faint">{copy.period}</p>
                 <dl className="flex flex-col gap-1.5 text-[12.5px]">
                   {(
                     [
@@ -246,24 +279,13 @@ export const SubscriptionView: React.FC<{
                   >
                     {t({ ne: 'यही चलिरहेको छ', en: 'In use' })}
                   </button>
-                ) : waiting ? (
-                  <button
-                    disabled
-                    className="w-full rounded-[8px] border-[0.6px] border-line px-3 py-1.5
-                      text-[14px] leading-5 text-subtle"
-                  >
-                    {t({ ne: 'अनुरोध पठाइएको', en: 'Requested' })}
-                  </button>
                 ) : (
                   <button
-                    disabled={sending === plan.id}
-                    onClick={() => ask(plan)}
+                    onClick={() => { setBuyingPlan(plan.name); setChoosing(false); }}
                     className="w-full rounded-[8px] bg-navy-800 hover:bg-navy-700 px-3 py-1.5
-                      text-[14px] leading-5 text-white disabled:opacity-50"
+                      text-[14px] leading-5 text-white"
                   >
-                    {sending === plan.id
-                      ? t({ ne: 'पठाउँदै…', en: 'Sending…' })
-                      : t({ ne: 'यो योजना माग्ने', en: 'Ask for this plan' })}
+                    {t({ ne: 'किन्नुहोस्', en: 'Buy' })}
                   </button>
                 )}
               </SectionCard>
@@ -279,8 +301,8 @@ export const SubscriptionView: React.FC<{
       <SettingsHeading
         title={{ ne: 'बिलिङ र योजना', en: 'Billing & subscription' }}
         lede={{
-          ne: 'तपाईंको योजना, बिलिङ विवरण र अनुरोधहरू।',
-          en: 'Manage your plan, billing information and requests.',
+          ne: 'तपाईंको योजना, बिलिङ विवरण र भुक्तानी।',
+          en: 'Manage your plan, billing information and payments.',
         }}
       />
 
@@ -305,12 +327,9 @@ export const SubscriptionView: React.FC<{
                     : t({ ne: 'निःशुल्क परीक्षण', en: 'Free trial' })}
                 </p>
                 <p className="pt-2 text-[12px] text-[#f5f5f5] leading-4">
-                  {/* No card is charged, so there is no renewal date to
-                      print. Saying how the plan actually changes is the
-                      true version of the same line. */}
                   {t({
-                    ne: 'योजना सञ्चालकले लागू गर्छ — यहाँ भुक्तानी लिइँदैन।',
-                    en: 'An operator applies your plan — no payment is taken here.',
+                    ne: 'OnePG वा QR बाट योजना किन्नुहोस्।',
+                    en: 'Buy this plan through OnePG or the merchant QR.',
                   })}
                 </p>
               </div>
@@ -394,15 +413,48 @@ export const SubscriptionView: React.FC<{
             {t({ ne: 'भुक्तानीको तरिका', en: 'Payment method' })}
           </SectionHeading>
           <SectionCard className="px-5 py-4">
-            <p className="text-[14px] text-subtle leading-5">
-              {t({ ne: 'देखाउन केही छैन।', en: 'Nothing to show.' })}
-            </p>
-            <p className="pt-1 text-[12px] text-faint leading-4">
-              {t({
-                ne: 'यहाँ भुक्तानी लिइँदैन, त्यसैले कुनै कार्ड राखिएको छैन।',
-                en: 'No payment is taken here, so no card is held.',
-              })}
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-[14px] text-subtle leading-5">
+                {methods.length === 0 ? 'Nothing to show.' : `${methods.length} saved payment method${methods.length === 1 ? '' : 's'}`}
+              </p>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setMethodMenu((open) => !open)}
+                  className="text-[13px] text-navy-800 font-medium"
+                >
+                  + Add
+                </button>
+                {methodMenu && (
+                  <div className="absolute right-0 top-7 z-10 w-36 bg-white border border-line rounded-[8px] shadow-lg p-1">
+                    <button type="button" onClick={() => { setMethodForm('bank'); setMethodMenu(false); }} className="w-full text-left px-3 py-2 text-[13px] hover:bg-[#EEF3FA]">Add bank</button>
+                    <button type="button" onClick={() => { setMethodForm('wallet'); setMethodMenu(false); }} className="w-full text-left px-3 py-2 text-[13px] hover:bg-[#EEF3FA]">Add wallet</button>
+                  </div>
+                )}
+              </div>
+            </div>
+            {methods.length > 0 && (
+              <div className="mt-3 flex flex-col gap-2">
+                {methods.map((method) => (
+                  <div key={method.id} className="border border-line rounded-[10px] px-3 py-2.5 flex items-start gap-3 text-[13px] text-body">
+                    <PaymentMethodIcon kind={method.kind} />
+                    {method.kind === 'wallet' ? (
+                      <div className="min-w-0">
+                        <p><span className="text-subtle">Wallet</span> <b className="font-medium text-head">{method.wallet}</b></p>
+                        <p className="text-subtle">{method.fullName}</p>
+                        <p className="text-subtle tabular-nums">{method.phone}</p>
+                      </div>
+                    ) : (
+                      <div className="min-w-0">
+                        <p><span className="text-subtle">Bank</span> <b className="font-medium text-head">{method.bankName}</b></p>
+                        <p className="text-subtle">{method.accountName}</p>
+                        <p className="text-subtle tabular-nums">{method.accountNumber}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </SectionCard>
         </div>
 
@@ -480,6 +532,62 @@ export const SubscriptionView: React.FC<{
       </div>
 
       {choosing && plans}
+      {methodForm && (
+        <div className="fixed inset-0 z-[80] grid place-items-center p-4 bg-[#0b1220]/50">
+          <form
+            onSubmit={(event) => { event.preventDefault(); saveMethod(); }}
+            className="bg-white rounded-[12px] w-full max-w-[420px] p-6 shadow-2xl flex flex-col gap-4"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-[17px] font-semibold text-head">{methodForm === 'wallet' ? 'Add wallet' : 'Add bank'}</h3>
+              <button type="button" onClick={() => setMethodForm(null)} className="text-[13px] text-subtle">Close</button>
+            </div>
+            {methodForm === 'wallet' ? (
+              <>
+                <label className="text-[12px] font-medium text-body">Wallet
+                  <select value={wallet} onChange={(e) => setWallet(e.target.value as typeof wallet)} className="mt-1 w-full border border-line rounded-[8px] px-3 py-2 text-[14px]">
+                    <option>eSewa</option><option>Khalti</option><option>IME Pay</option>
+                  </select>
+                </label>
+                <label className="text-[12px] font-medium text-body">Full name
+                  <input required value={methodFields.fullName} onChange={(e) => setMethodFields({ ...methodFields, fullName: e.target.value })} className="mt-1 w-full border border-line rounded-[8px] px-3 py-2 text-[14px]" />
+                </label>
+                <label className="text-[12px] font-medium text-body">Phone number
+                  <input required value={methodFields.phone} onChange={(e) => setMethodFields({ ...methodFields, phone: e.target.value })} className="mt-1 w-full border border-line rounded-[8px] px-3 py-2 text-[14px]" />
+                </label>
+              </>
+            ) : (
+              <>
+                <label className="text-[12px] font-medium text-body">Bank name
+                  <input required value={methodFields.bankName} onChange={(e) => setMethodFields({ ...methodFields, bankName: e.target.value })} className="mt-1 w-full border border-line rounded-[8px] px-3 py-2 text-[14px]" />
+                </label>
+                <label className="text-[12px] font-medium text-body">Account name
+                  <input required value={methodFields.accountName} onChange={(e) => setMethodFields({ ...methodFields, accountName: e.target.value })} className="mt-1 w-full border border-line rounded-[8px] px-3 py-2 text-[14px]" />
+                </label>
+                <label className="text-[12px] font-medium text-body">Account number
+                  <input required value={methodFields.accountNumber} onChange={(e) => setMethodFields({ ...methodFields, accountNumber: e.target.value })} className="mt-1 w-full border border-line rounded-[8px] px-3 py-2 text-[14px]" />
+                </label>
+              </>
+            )}
+            <button type="submit" className="bg-navy-800 hover:bg-navy-700 text-white rounded-[8px] px-4 py-2 text-[13px] font-medium">Save</button>
+          </form>
+        </div>
+      )}
+      {buyingPlan && (
+        <div className="fixed inset-0 z-[80] grid place-items-center p-4 bg-[#0b1220]/50" onClick={(event) => { if (event.target === event.currentTarget) setBuyingPlan(''); }}>
+          <div className="bg-white rounded-[12px] w-full max-w-[760px] max-h-[92vh] overflow-auto p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-[18px] font-semibold text-head">Buy {buyingPlan}</h3>
+              <button type="button" onClick={() => setBuyingPlan('')} className="text-[13px] text-subtle">Close</button>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 mb-5">
+              <SectionCard className="p-4"><h4 className="text-[14px] font-semibold text-head">Billing information</h4><div className="mt-3 flex flex-col gap-1.5"><BillingLine label="Name">{user.name || user.email}</BillingLine><BillingLine label="Email">{user.email}</BillingLine><BillingLine label="Address">{user.billing_address || 'Not given'}</BillingLine></div></SectionCard>
+              <SectionCard className="p-4"><h4 className="text-[14px] font-semibold text-head">Saved payment methods</h4><div className="mt-3 flex flex-col gap-2">{methods.length ? methods.map((method) => <div key={method.id} className="flex items-start gap-2 text-[13px] text-body"><PaymentMethodIcon kind={method.kind} /><span>{method.kind === 'wallet' ? <><b className="font-medium text-head">Wallet</b> {method.wallet}<br />{method.fullName}<br />{method.phone}</> : <><b className="font-medium text-head">Bank</b> {method.bankName}<br />{method.accountName}<br />{method.accountNumber}</>}</span></div>) : <span className="text-[13px] text-subtle">Nothing to show.</span>}</div></SectionCard>
+            </div>
+            <PaymentCheckout planName={buyingPlan} />
+          </div>
+        </div>
+      )}
     </SettingsSheet>
   );
 };

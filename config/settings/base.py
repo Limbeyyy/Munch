@@ -72,6 +72,7 @@ INSTALLED_APPS = [
     'src.apps.recordings',
     'src.apps.organizations',
     'src.apps.realtime',
+    'src.apps.payments',
 ]
 
 MIDDLEWARE = [
