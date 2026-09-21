@@ -196,14 +196,22 @@ describe('opening one event from the grid', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows the sessions and the people on the one screen', async () => {
+  /**
+   * The register is the whole of the screen. The bars said what a column
+   * of the table says, and the notes around it explained a table that
+   * reads itself.
+   */
+  it('is the register and nothing around it', async () => {
     await open();
+    // Wait for the register itself, or the absences below pass by simply
+    // being asked before anything has rendered.
+    await screen.findByText('Nobody attended this event.');
 
-    // The register lands a tick after the screen, once the roll is read.
-    expect(
-      await screen.findByRole('heading', { name: 'Sessions' })
-    ).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Who came' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Sessions' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Who came' })).toBeNull();
+    expect(screen.queryByLabelText('Search a name')).toBeNull();
+    expect(screen.queryByText(/Click a row/)).toBeNull();
+    expect(screen.queryByText(/counts as having attended/)).toBeNull();
   });
 
   it('offers no tabs to read the same register three ways', async () => {
@@ -228,6 +236,15 @@ describe('opening one event from the grid', () => {
     expect(
       screen.getByRole('button', { name: 'Export to Sheets' })
     ).toBeInTheDocument();
+  });
+
+  /** A card exports its own event, so the grid needs no export of its own. */
+  it('leaves the grid without one of its own', async () => {
+    show();
+    await screen.findByText('Disaster Management Review');
+
+    expect(screen.queryByRole('button', { name: 'Export to Sheets' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Export' })).toBeInTheDocument();
   });
 
   it('leaves the grid behind, and a way back to it', async () => {

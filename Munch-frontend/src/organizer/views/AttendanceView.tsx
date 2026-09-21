@@ -4,13 +4,10 @@ import { apiClient } from '../../services/api';
 import { AttendanceReport, Event, Session, SessionAttendanceRow } from '../../types';
 import { useOrganizer } from '../i18n';
 import { openAsSheet } from '../sheets';
-import { BarRow, Btn, Card, Chip, Empty, Head } from '../ui';
+import { Btn, Card, Chip, Empty, Head } from '../ui';
 import {
-  EVENT_STATE_LABEL, EVENT_STATE_TONE, EventState, eventState, sessionState,
+  EVENT_STATE_LABEL, EVENT_STATE_TONE, EventState, eventState,
 } from '../sessionState';
-
-const clock = (iso: string) =>
-  new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 /** The day and the room, on one line under the title. */
 const whenAndWhere = (event: Event) => [
@@ -56,8 +53,6 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
   const [eventId, setEventId] = useState('');
   const [rolls, setRolls] = useState<EventRoll[]>([]);
   const [loading, setLoading] = useState(true);
-  const [query, setQuery] = useState('');
-  const [openSessions, setOpenSessions] = useState<Record<string, boolean>>({});
   /** The grid is the landing; an event's own roll is opened from a card. */
   const [opened, setOpened] = useState('');
   const [cards, setCards] = useState<Record<string, AttendanceReport>>({});
@@ -184,11 +179,9 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
         byPerson[p.id].events.add(roll.event.id);
       })
     );
-    const q = query.trim().toLowerCase();
     return Object.values(byPerson)
-      .filter((p) => !q || p.name.toLowerCase().includes(q))
       .sort((a, b) => b.sessions.size - a.sessions.size);
-  }, [rolls, query]);
+  }, [rolls]);
 
   const totalSessions = rolls.reduce((n, r) => n + r.sessions.length, 0);
 
@@ -222,19 +215,6 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
     openAsSheet('attendance', [head, ...rows], { subject: one.title, t });
   };
 
-  const nameChip = (p: Person) => (
-    <span
-      key={p.id}
-      className="inline-flex items-center gap-2 bg-white border border-navy-800/15 rounded-full ps-1 pe-3 py-1"
-    >
-      <span className="w-6 h-6 rounded-full bg-navy-700 text-white grid place-items-center text-[11px] font-semibold">
-        {p.name.charAt(0).toUpperCase()}
-      </span>
-      <span className="text-[13px]">{p.name}</span>
-      {p.isGuest && <Chip>{t({ ne: 'पाहुना', en: 'Guest' })}</Chip>}
-    </span>
-  );
-
   const heading = (
     <Head
         title={{ ne: 'उपस्थिति', en: 'Attendance' }}
@@ -242,11 +222,8 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
           ne: 'कुन सत्रमा को थियो, र बैठकभरि कति जना आए।',
           en: 'Who was at each session, and who came to the event at all.',
         }}
-      actions={
-        <Btn onClick={exportSheet} disabled={across.length === 0}>
-          {t({ ne: 'गुगल शीटमा निकाल्नुहोस्', en: 'Export to Sheets' })}
-        </Btn>
-      }
+      /* No export here: a card exports its own event, which is the only
+         scope this page has now that it opens on one at a time. */
     />
   );
 
@@ -440,116 +417,11 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
             ) : (
               rolls.map((roll) => (
                 <div key={roll.event.id} className="flex flex-col gap-5">
-                  {/* Which sessions ran, and who sat through each. */}
+                  {/* Who came, and what they sat through. The register is
+                      the whole of the screen now: the bars said the same
+                      thing a column of it says, and the notes around it
+                      explained a table that reads itself. */}
                   <section className="flex flex-col">
-                    <h2 className="text-[16px] font-semibold text-head leading-5 pb-1">
-                      {t({ ne: 'सत्र अनुसार', en: 'Sessions' })}
-                    </h2>
-                    {roll.sessions.length === 0 ? (
-                      <Empty>
-                        {t({ ne: 'यो बैठकमा सत्र छैन।', en: 'No sessions in this event.' })}
-                      </Empty>
-                    ) : (
-                      <>
-                        {roll.sessions.map((session) => {
-                          const rows = roll.bySession[session.id] ?? [];
-                          // Measured against the people who came to this
-                          // event at all: it says who stayed for what.
-                          const came = Math.max(1, roll.people.length);
-                          const pct = Math.round((rows.length / came) * 100);
-                          const shown = !!openSessions[session.id];
-
-                          return (
-                            <div
-                              key={session.id}
-                              className="border-b border-navy-800/[.08] last:border-0 py-1.5"
-                            >
-                              <button
-                                onClick={() =>
-                                  setOpenSessions((v) => ({ ...v, [session.id]: !shown }))
-                                }
-                                className="w-full text-start"
-                              >
-                                <BarRow
-                                  label={`${clock(session.starts_at)}  ${session.title}`}
-                                  pct={pct}
-                                  right={`${num(rows.length)}/${num(roll.people.length)}`}
-                                />
-                              </button>
-
-                              {shown && (
-                                <div className="ps-2 pb-2">
-                                  {rows.length === 0 ? (
-                                    <p className="text-[12.5px] text-[#6E7C8E]">
-                                      {(() => {
-                                        const state = sessionState(session);
-                                        if (state === 'finished') {
-                                          return t({
-                                            ne: 'यो सत्रमा कोही दर्ता भएन।',
-                                            en: 'Nobody was recorded at this session.',
-                                          });
-                                        }
-                                        if (state === 'never-started') {
-                                          return t({
-                                            ne: 'यो सत्र सुरु नै भएन।',
-                                            en: 'This session never started.',
-                                          });
-                                        }
-                                        return t({
-                                          ne: 'सत्र सकिएपछि दर्ता हुन्छ।',
-                                          en: 'Recorded when the session ends.',
-                                        });
-                                      })()}
-                                    </p>
-                                  ) : (
-                                    <div className="flex flex-wrap gap-2">
-                                      {rows.map((row) =>
-                                        nameChip({
-                                          id: row.person_id || row.id,
-                                          name: row.name,
-                                          isGuest: row.is_guest,
-                                          sessions: new Set(),
-                                        })
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                        <p className="text-[12.5px] text-[#6E7C8E] pt-2.5">
-                          {t({
-                            ne: 'पङ्क्तिमा क्लिक गर्दा त्यो सत्रमा को थिए भन्ने देखिन्छ।',
-                            en: 'Click a row to see who was at that session.',
-                          })}
-                        </p>
-                      </>
-                    )}
-                  </section>
-
-                  {/* And who came at all, with what they sat through. */}
-                  <section className="flex flex-col">
-                    <div className="flex items-center justify-between gap-3 flex-wrap pb-2">
-                      <h2 className="text-[16px] font-semibold text-head leading-5">
-                        {t({ ne: 'आएका मानिस', en: 'Who came' })}
-                      </h2>
-                      <input
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        placeholder={t({ ne: 'नाम खोज्नुहोस्', en: 'Search a name' })}
-                        aria-label={t({ ne: 'नाम खोज्नुहोस्', en: 'Search a name' })}
-                        className="border border-line rounded-[8px] px-3 py-1.5 text-[13px]
-                          min-w-[200px]"
-                      />
-                    </div>
-                    <p className="text-[12.5px] text-[#6E7C8E] pb-2.5">
-                      {t({
-                        ne: `${num(roll.sessions.length)} सत्रमध्ये एउटामा भए पनि उपस्थित भएका सबै यहाँ गनिन्छन्।`,
-                        en: `Anyone present at even one of the ${roll.sessions.length} sessions counts as having attended.`,
-                      })}
-                    </p>
-
                     {across.length === 0 ? (
                       <Empty>
                         {t({ ne: 'यो बैठकमा कोही आएन।', en: 'Nobody attended this event.' })}
