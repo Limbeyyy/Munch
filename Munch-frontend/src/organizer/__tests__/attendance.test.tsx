@@ -286,3 +286,62 @@ describe('opening one event from the grid', () => {
     expect(screen.queryByLabelText('Which event')).toBeNull();
   });
 });
+
+/**
+ * The register fills as the day runs.
+ *
+ * A session's own register is written when that session ends, so during
+ * an event there were no rows at all - and the table came out empty
+ * while the card beside it said 40% had come. The report knows who is in
+ * the room now; the session rows say which parts they sat through.
+ */
+describe('attendance while the event is still running', () => {
+  const live = () => event({
+    id: 'e1', status: 'active', started_at: new Date().toISOString(),
+    sessions: [{
+      id: 's1', title: 'Opening', starts_at: new Date().toISOString(),
+      duration_minutes: 30, status: 'live',
+    }],
+  });
+
+  const openLive = async () => {
+    api.listEvents.mockResolvedValue([live()] as any);
+    api.getAttendance.mockResolvedValue(report({
+      attended: [
+        { type: 'user', name: 'Sarah Sharma', email: 'sarah@example.com',
+          phone: null, role: 'host', joined_at: '', left_at: null,
+          is_active: true, was_invited: true },
+        { type: 'guest', name: 'Rahul Ingnam', email: null, phone: null,
+          role: 'guest', joined_at: '', left_at: null,
+          is_active: true, was_invited: false },
+      ],
+    }) as any);
+    // Nothing has closed, so no session has a register yet.
+    api.getSessionAttendance.mockResolvedValue([] as any);
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: 'View attendance' }));
+    return screen.findByRole('heading', { level: 1, name: 'Attendance' });
+  };
+
+  it('names who is in the room, before any session has closed', async () => {
+    await openLive();
+
+    expect(await screen.findByText('Sarah Sharma')).toBeInTheDocument();
+    expect(screen.getByText('Rahul Ingnam')).toBeInTheDocument();
+  });
+
+  it('counts a guest as a guest', async () => {
+    await openLive();
+    await screen.findByText('Rahul Ingnam');
+
+    expect(screen.getAllByText('Guest').length).toBeGreaterThan(0);
+  });
+
+  /** Nothing has closed, so nobody has sat through anything yet. */
+  it('says none of the sessions are sat through yet', async () => {
+    await openLive();
+    await screen.findByText('Sarah Sharma');
+
+    expect(screen.getAllByText('0/1').length).toBe(2);
+  });
+});
