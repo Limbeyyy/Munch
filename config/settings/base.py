@@ -31,7 +31,30 @@ SECRET_KEY = env('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool('DEBUG', default=True)
 
-ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
+_default_hosts = ['localhost', '127.0.0.1', '0.0.0.0']
+_allowed_hosts = env.list('ALLOWED_HOSTS', default=_default_hosts)
+_allowed_hosts = [host.strip() for host in _allowed_hosts if host and host.strip()]
+
+# Allow the machine's LAN addresses during local development so Android /
+# browser clients can reach the API over the wired or Wi‑Fi network.
+for _lan_host in ['192.168.10.130', '192.168.1.8', '192.168.1.6', '10.0.2.2']:
+    if _lan_host not in _allowed_hosts:
+        _allowed_hosts.append(_lan_host)
+
+ALLOWED_HOSTS = list(dict.fromkeys(_allowed_hosts))
+
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+    'http://0.0.0.0:8000',
+    'http://192.168.10.130:8000',
+    'http://192.168.1.8:8000',
+    'http://192.168.1.6:8000',
+    'http://10.0.2.2:8000',
+    'https://localhost:8000',
+    'https://127.0.0.1:8000',
+    'https://192.168.10.130:8000',
+]
 
 # Application definition
 INSTALLED_APPS = [
