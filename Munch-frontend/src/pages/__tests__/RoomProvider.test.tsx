@@ -625,15 +625,77 @@ describe('the running order inside the room', () => {
  */
 describe('the room without a chat', () => {
   it('offers no chat beside the room', async () => {
-    await open();
+    showRoom();
+    await screen.findByRole('navigation', { name: 'Event controls' });
 
     expect(screen.queryByRole('button', { name: /^Chat/ })).toBeNull();
   });
 
+  it('still offers the three that are left', async () => {
+    showRoom();
+    const bar = await screen.findByRole('navigation', { name: 'Event controls' });
+
+    for (const label of ['Questions', 'Resources', 'Participants']) {
+      expect(within(bar).getByRole('button', { name: new RegExp(label) }))
+        .toBeInTheDocument();
+    }
+  });
+
   it('has no switch for who may write to whom', async () => {
-    await open();
+    showRoom();
+    await screen.findByRole('navigation', { name: 'Event controls' });
 
     expect(screen.queryByText(/direct messages/i)).toBeNull();
+  });
+});
+
+/**
+ * A guest at the door.
+ *
+ * Moderation used to carry a queue of them; it does not any more, so
+ * these two are the whole of how somebody is let in - this popup, and
+ * the Join Request card on live control. Both call the same endpoint.
+ */
+describe('letting a guest in from the room', () => {
+  const knocking = {
+    id: 'g9', full_name: 'Rahul Ingnam', phone: null,
+    status: 'pending', created_at: new Date().toISOString(), decided_at: null,
+  };
+
+  const withGuest = async () => {
+    // Only the host is shown somebody at the door.
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
+    api.getGuests.mockResolvedValue([knocking] as any);
+    api.admitGuest.mockResolvedValue({} as any);
+    showRoom();
+    return screen.findByLabelText('Rahul Ingnam is asking to join');
+  };
+
+  it('shows who is asking, without being gone in a moment', async () => {
+    await withGuest();
+
+    expect(screen.getByText('Asking to come in (1)')).toBeInTheDocument();
+  });
+
+  it('lets them in', async () => {
+    await withGuest();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Let in' }));
+
+    await waitFor(() =>
+      expect(api.admitGuest).toHaveBeenCalledWith('m1', 'g9', 'admit')
+    );
+  });
+
+  it('turns them away', async () => {
+    await withGuest();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
+
+    await waitFor(() =>
+      expect(api.admitGuest).toHaveBeenCalledWith('m1', 'g9', 'deny')
+    );
   });
 });
 
