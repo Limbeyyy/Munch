@@ -372,8 +372,17 @@ describe('the subscription page', () => {
 
       expect(screen.getAllByText('Billing information').length).toBeGreaterThan(0);
       expect(screen.getByText('Saved payment methods')).toBeInTheDocument();
-      expect(screen.getByText('Wallet eSewa')).toBeInTheDocument();
-      expect(screen.getByText('Bank Global IME Bank')).toBeInTheDocument();
+      expect(screen.getAllByText('Wallet eSewa').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Bank Global IME Bank').length).toBeGreaterThan(0);
+    });
+
+    it('states the billing details back in the boxes they were typed into', async () => {
+      await openCheckout();
+
+      expect(screen.getByDisplayValue('Sabina Rai')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('sabina@example.org')).toBeInTheDocument();
+      // Written elsewhere, so they are shown and not asked for again.
+      expect(screen.getByDisplayValue('Sabina Rai')).toHaveAttribute('readonly');
     });
 
     it('lets one of the two be chosen, and fills the order from it', async () => {
@@ -384,26 +393,24 @@ describe('the subscription page', () => {
 
       expect(bank).toBeChecked();
       expect(screen.getByRole('radio', { name: /eSewa/ })).not.toBeChecked();
-      // Read back under Payment method rather than asked for again.
-      expect(
-        screen.getByText(/Bank Global IME Bank · Rahul Ingnam/)
-      ).toBeInTheDocument();
     });
 
     it('carries an order id and the amount the plan costs', async () => {
       await openCheckout();
 
-      expect(screen.getByText('Order ID')).toBeInTheDocument();
-      expect(screen.getByText(/^MUNCH-/)).toBeInTheDocument();
+      expect((screen.getByLabelText('Order ID') as HTMLInputElement).value)
+        .toMatch(/^MUNCH-/);
       expect(screen.getByText('Amount (NPR)')).toBeInTheDocument();
     });
 
     it('offers the two ways to pay, and a way back', async () => {
       await openCheckout();
 
-      expect(screen.getByRole('tab', { name: 'Online Payment' })).toBeInTheDocument();
-      expect(screen.getByRole('tab', { name: 'Scan QR' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Pay Online' })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Pay via QR' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Continue to Payment' })
+      ).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument();
     });
 
@@ -415,7 +422,7 @@ describe('the subscription page', () => {
       } as any);
 
       fireEvent.click(screen.getByRole('radio', { name: /Global IME Bank/ }));
-      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Continue to Payment' }));
 
       await waitFor(() => expect(api.initiatePayment).toHaveBeenCalled());
       expect(api.initiatePayment.mock.calls[0][2]).toBe('banking');
@@ -427,7 +434,7 @@ describe('the subscription page', () => {
         response: { data: { error: 'Nepal Payment gateway credentials are not configured' } },
       });
 
-      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Continue to Payment' }));
 
       await waitFor(() => expect(toast.error).toHaveBeenCalledWith(
         'Nepal Payment gateway credentials are not configured'
@@ -461,11 +468,11 @@ describe('the subscription page', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Manage subscription' }));
       fireEvent.click((await screen.findAllByRole('button', { name: 'Buy' }))[0]);
       await screen.findByText('Upgrade Plans');
-      fireEvent.click(screen.getByRole('tab', { name: 'Scan QR' }));
+      fireEvent.click(screen.getByRole('tab', { name: 'Pay via QR' }));
       fireEvent.change(screen.getByLabelText(/Reference number/), {
         target: { value: 'TXN-90210' },
       });
-      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Submit for verification' }));
       // Named twice: the dialog's own title, and the bill inside it.
       return screen.findAllByRole('heading', { name: 'Invoice' });
     };
@@ -480,6 +487,7 @@ describe('the subscription page', () => {
     it('names who it is billed to', async () => {
       await payByQr();
 
+      // Named on the bill, and again in the saved details above it.
       expect(screen.getAllByText('Sabina Rai').length).toBeGreaterThan(0);
       expect(screen.getAllByText('sabina@example.org').length).toBeGreaterThan(0);
     });

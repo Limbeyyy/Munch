@@ -50,6 +50,41 @@ const Line: React.FC<{ label: string; children: React.ReactNode }> = ({
   </div>
 );
 
+/** A value that was written elsewhere, shown in the box it belongs in. */
+const ReadOnlyField: React.FC<{
+  label: string;
+  value: string;
+  mono?: boolean;
+}> = ({ label, value, mono }) => (
+  <label className="block text-[12px] font-medium text-body">
+    {label}
+    <input
+      value={value}
+      readOnly
+      className={`mt-1 w-full border border-line rounded-[8px] px-3 py-2 text-[13px]
+        text-head bg-[#F9FAFB] ${mono ? 'font-mono' : ''}`}
+    />
+  </label>
+);
+
+/** The mark beside a saved method, so a wallet reads as one at a glance. */
+const MethodIcon: React.FC<{ kind: SavedMethod['kind'] }> = ({ kind }) => (
+  <span
+    aria-hidden
+    className="w-8 h-8 rounded-[8px] bg-[#EEF3FA] text-navy-800 grid place-items-center
+      flex-none"
+  >
+    <svg
+      width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+    >
+      {kind === 'wallet'
+        ? <><rect x="3" y="5" width="18" height="15" rx="2" /><path d="M3 9h18M16 14h3" /></>
+        : <path d="M3 10h18M5 10v8M9 10v8M15 10v8M19 10v8M3 21h18M2 10l10-7 10 7" />}
+    </svg>
+  </span>
+);
+
 const Block: React.FC<{ title: string; children: React.ReactNode }> = ({
   title, children,
 }) => (
@@ -125,7 +160,7 @@ export const PaymentCheckout: React.FC<{
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Who the bill is for, and which saved method pays it. */}
+      {/* Who the bill is for, and what is saved to pay it with. */}
       <div className="grid gap-4 md:grid-cols-2">
         <Block title="Billing information">
           <div className="flex flex-col gap-1.5">
@@ -141,109 +176,139 @@ export const PaymentCheckout: React.FC<{
               Nothing saved yet. Add a wallet or a bank account first.
             </p>
           ) : (
-            <div
-              className="flex flex-col gap-3"
-              role="radiogroup"
-              aria-label="Saved payment methods"
-            >
+            <ul className="flex flex-col gap-3">
               {savedMethods.slice(0, MAX_SAVED_METHODS).map((method) => (
-                <label
-                  key={method.id}
-                  className="flex items-start gap-2.5 text-[13px] leading-5 cursor-pointer"
-                >
-                  <input
-                    type="radio"
-                    name="saved-payment-method"
-                    className="mt-1 accent-navy-800"
-                    checked={chosen?.id === method.id}
-                    onChange={() => setSelectedMethod(method.id)}
-                  />
-                  <span className="min-w-0">
+                <li key={method.id} className="flex items-start gap-2.5">
+                  <MethodIcon kind={method.kind} />
+                  <span className="min-w-0 text-[13px] leading-5">
                     <span className="block font-medium text-head">{method.label}</span>
                     <span className="block text-body whitespace-pre-line">
                       {method.detail}
                     </span>
                   </span>
-                </label>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </Block>
       </div>
 
-      {/* The order itself, filled in from the two above and the plan. */}
-      <section className="border border-line rounded-[12px] p-5 flex flex-col gap-5">
-        <div>
-          <h4 className="text-[16px] font-semibold text-head">Payment options</h4>
-          <div className="pt-2 flex items-center gap-4" role="tablist">
-            {([
-              ['gateway', 'Online Payment'],
-              ['qr', 'Scan QR'],
-            ] as const).map(([id, label], at) => (
-              <React.Fragment key={id}>
-                {at > 0 && <span className="text-line" aria-hidden>|</span>}
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={path === id}
-                  onClick={() => setPath(id)}
-                  className={`text-[14px] leading-5 ${
-                    path === id
-                      ? 'text-navy-800 font-medium underline underline-offset-4'
-                      : 'text-subtle hover:text-body'
-                  }`}
+      {/* The order, on whichever of the two paths is chosen. */}
+      <section className="border border-line rounded-[12px] p-5">
+        <h4 className="text-[16px] font-semibold text-head">Payment options</h4>
+        <p className="pt-1 text-[13px] text-body leading-5">
+          {planName
+            ? `Choose the Payment Type for ${planName} Plan to complete the purchase.`
+            : 'Choose the payment path you want to complete the purchase.'}
+        </p>
+
+        <div className="mt-4 flex gap-2 border-b border-line" role="tablist">
+          {([
+            ['gateway', 'Pay Online'],
+            ['qr', 'Pay via QR'],
+          ] as const).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={path === id}
+              onClick={() => setPath(id)}
+              className={`px-3 py-2 text-[13px] border-b-2 -mb-px ${
+                path === id
+                  ? 'border-navy-800 text-navy-800 font-medium'
+                  : 'border-transparent text-subtle hover:text-body'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {path === 'gateway' ? (
+          <div className="pt-5 flex flex-col gap-3">
+            {/* Stated back in the boxes they were typed into elsewhere, so
+                what is about to be charged can be read before it is. */}
+            <div className="border border-line rounded-[10px] p-4 flex flex-col gap-3">
+              <ReadOnlyField label="Order ID" value={orderId} mono />
+              <ReadOnlyField label="Name" value={billing?.name || ''} />
+              <ReadOnlyField label="Email" value={billing?.email || ''} />
+              <ReadOnlyField label="Address" value={billing?.address || 'Not given'} />
+            </div>
+
+            <div className="border border-line rounded-[10px] p-4">
+              <p className="text-[12px] font-medium text-body pb-2">Payment method</p>
+              {savedMethods.length === 0 ? (
+                <p className="text-[13px] text-subtle">No saved payments yet.</p>
+              ) : (
+                <div
+                  className="flex flex-col gap-2.5"
+                  role="radiogroup"
+                  aria-label="Payment method"
                 >
-                  {label}
-                </button>
-              </React.Fragment>
-            ))}
+                  {savedMethods.slice(0, MAX_SAVED_METHODS).map((method) => (
+                    <label
+                      key={method.id}
+                      className="flex items-start gap-2.5 text-[13px] leading-5 cursor-pointer"
+                    >
+                      <input
+                        type="radio"
+                        name="saved-payment-method"
+                        className="mt-1 accent-navy-800"
+                        checked={chosen?.id === method.id}
+                        onChange={() => setSelectedMethod(method.id)}
+                      />
+                      <span className="min-w-0">
+                        <span className="block font-medium text-head">{method.label}</span>
+                        <span className="block text-subtle whitespace-pre-line">
+                          {method.detail}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <p className="pt-2 text-[12px] text-subtle leading-4">
+                Up to {MAX_SAVED_METHODS} saved payments at a time.
+              </p>
+            </div>
+
+            <div className="border border-line rounded-[10px] p-4">
+              <p className="text-[12px] font-medium text-body">Amount (NPR)</p>
+              <p className="mt-1 text-[16px] font-semibold text-head tabular-nums">
+                रू {Number(amount || 0).toLocaleString('en-IN')}
+              </p>
+            </div>
+
+            <form onSubmit={start} className="flex gap-3 pt-1">
+              <button
+                type="submit"
+                disabled={busy || !amount || !chosen}
+                className="bg-navy-800 hover:bg-navy-700 text-white rounded-[8px]
+                  px-4 py-2 text-[13px] font-medium disabled:opacity-50"
+              >
+                {busy ? 'Starting…' : 'Continue to Payment'}
+              </button>
+              <button
+                type="button"
+                onClick={onBack}
+                className="border border-line rounded-[8px] px-4 py-2 text-[13px]
+                  text-body hover:border-navy-800"
+              >
+                Back
+              </button>
+            </form>
           </div>
-        </div>
-
-        <div>
-          <p className="text-[12px] font-medium text-body leading-4">Order ID</p>
-          <p className="pt-1 font-mono text-[13px] text-head break-all">{orderId}</p>
-        </div>
-
-        <div>
-          <p className="text-[12px] font-medium text-body leading-4 pb-1.5">
-            Billing information
-          </p>
-          <div className="flex flex-col gap-1.5">
-            <Line label="Name">{billing?.name || '—'}</Line>
-            <Line label="Email">{billing?.email || '—'}</Line>
-            <Line label="Address">{billing?.address || 'Not given'}</Line>
-          </div>
-        </div>
-
-        <div>
-          <p className="text-[12px] font-medium text-body leading-4">Payment method</p>
-          <p className="pt-1 text-[14px] text-head leading-5">
-            {methodName || (
-              <span className="text-subtle">No saved payment method chosen</span>
-            )}
-          </p>
-          <p className="pt-1 text-[12px] text-subtle leading-4">
-            Chosen above. Up to {MAX_SAVED_METHODS} saved payments at a time.
-          </p>
-        </div>
-
-        <div>
-          <p className="text-[12px] font-medium text-body leading-4">Amount (NPR)</p>
-          <p className="pt-1 text-[18px] font-semibold text-head leading-6 tabular-nums">
-            रू {Number(amount || 0).toLocaleString('en-IN')}
-          </p>
-          {planName && (
-            <p className="pt-1 text-[12px] text-subtle leading-4">
-              From the {planName} plan.
-            </p>
-          )}
-        </div>
-
-        {path === 'qr' && (
-          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_180px] items-start">
-            <form onSubmit={submitReference} className="flex flex-col gap-2" id="manch-qr">
-              <label className="text-[12px] font-medium text-body leading-4">
+        ) : (
+          <div className="pt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_200px] items-start">
+            <form
+              onSubmit={submitReference}
+              className="flex flex-col gap-3 border border-line rounded-[10px] p-4"
+            >
+              <p className="text-[13px] text-body leading-5">
+                Scan the merchant QR, pay the exact amount, then enter the wallet or
+                bank transaction reference.
+              </p>
+              <label className="text-[12px] font-medium text-body">
                 Reference number / TXN ID
                 <input
                   value={reference}
@@ -254,52 +319,40 @@ export const PaymentCheckout: React.FC<{
                     text-[14px] text-head"
                 />
               </label>
-              <p className="text-[12px] text-subtle leading-4">
-                Scan the merchant QR, pay the exact amount, then enter the reference
-                the wallet or bank gave you.
-              </p>
+              <div className="flex gap-3">
+                <button
+                  type="submit"
+                  disabled={busy || !reference.trim()}
+                  className="bg-navy-800 hover:bg-navy-700 text-white rounded-[8px]
+                    px-4 py-2 text-[13px] font-medium disabled:opacity-50"
+                >
+                  {busy ? 'Submitting…' : 'Submit for verification'}
+                </button>
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="border border-line rounded-[8px] px-4 py-2 text-[13px]
+                    text-body hover:border-navy-800"
+                >
+                  Back
+                </button>
+              </div>
             </form>
-            <img
-              src="/merchant-payment-qr.png"
-              alt="Merchant payment QR code"
-              className="w-full max-w-[180px] aspect-square object-contain rounded-[8px]
-                border border-line bg-[#F5F7FA]"
-            />
+
+            <div className="border border-line rounded-[10px] p-3 flex flex-col
+              items-center gap-2">
+              <img
+                src="/merchant-payment-qr.png"
+                alt="Merchant payment QR code"
+                className="w-full max-w-[180px] aspect-square object-contain rounded-[8px]
+                  border border-line bg-[#F5F7FA]"
+              />
+              <p className="text-[11px] text-subtle text-center">
+                Scan to Pay Manch Plans
+              </p>
+            </div>
           </div>
         )}
-
-        <div className="flex gap-3 pt-1">
-          {path === 'gateway' ? (
-            <form onSubmit={start}>
-              <button
-                type="submit"
-                disabled={busy || !amount || !chosen}
-                className="bg-navy-800 hover:bg-navy-700 text-white rounded-[8px]
-                  px-6 py-2 text-[14px] font-medium disabled:opacity-50"
-              >
-                {busy ? 'Starting…' : 'Continue'}
-              </button>
-            </form>
-          ) : (
-            <button
-              type="submit"
-              form="manch-qr"
-              disabled={busy || !reference.trim()}
-              className="bg-navy-800 hover:bg-navy-700 text-white rounded-[8px]
-                px-6 py-2 text-[14px] font-medium disabled:opacity-50"
-            >
-              {busy ? 'Submitting…' : 'Continue'}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onBack}
-            className="border border-line rounded-[8px] px-6 py-2 text-[14px] text-body
-              hover:border-navy-800"
-          >
-            Back
-          </button>
-        </div>
 
         {gateway && (
           <form ref={gatewayForm} method="post" action={gateway.gateway_url} className="hidden">
