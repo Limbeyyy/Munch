@@ -44,18 +44,6 @@ const person = (over: any = {}) => ({
   ...over,
 });
 
-/**
- * A guest, as the roster projects one: no account, and a role of their
- * own. This is the row that took the page down.
- */
-const guest = (over: any = {}) => person({
-  id: 'g1',
-  user: { id: 'g1', email: 'Bishnu Prasad', first_name: 'Bishnu Prasad', last_name: '' },
-  role: 'guest',
-  is_guest: true,
-  ...over,
-});
-
 const show = () =>
   render(
     <OrganizerProvider>
@@ -76,67 +64,34 @@ beforeEach(() => {
   api.listContactRequests.mockResolvedValue([] as any);
 });
 
-const openTeam = async () => {
-  show();
-  fireEvent.click(await screen.findByRole('tab', { name: /Team/ }));
-};
+/**
+ * What the page offers.
+ *
+ * Team and Roles were two more ways of listing people who are listed on
+ * an event's own People tab, so the page is the speakers it is named
+ * after, and the requests to reach them.
+ */
+describe('the speakers and team page', () => {
+  it('offers the speakers and the contact requests', async () => {
+    show();
 
-describe('a guest in the roster', () => {
-  it('is named rather than taking the page down', async () => {
-    // The roster projects guests into the same shape with a role of their
-    // own. The label list did not know that role, and an unnamed label is
-    // not a bad string - it is a crash.
-    api.getParticipants.mockResolvedValue([guest()] as any);
-
-    await openTeam();
-
-    expect(await screen.findByText('Bishnu Prasad')).toBeInTheDocument();
-    expect(screen.getByText('Guest')).toBeInTheDocument();
+    expect(await screen.findByRole('tab', { name: /Speakers/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Contact requests/ })).toBeInTheDocument();
   });
 
-  it('is not offered a role to be changed to', async () => {
-    // There is no account to give a role to.
-    api.getParticipants.mockResolvedValue([guest()] as any);
+  it('offers no team roster and no role grants', async () => {
+    show();
+    await screen.findByRole('tab', { name: /Speakers/ });
 
-    await openTeam();
-
-    await screen.findByText('Bishnu Prasad');
-    expect(screen.getByText('A guest holds no role')).toBeInTheDocument();
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Team/ })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /Roles/ })).toBeNull();
   });
 
-  it('sits beside the people who do hold roles', async () => {
-    api.getParticipants.mockResolvedValue([person(), guest()] as any);
+  /** Nothing reads the roster now, so nothing should go asking for it. */
+  it('does not go asking for a roster it no longer shows', async () => {
+    show();
+    await screen.findByRole('tab', { name: /Speakers/ });
 
-    await openTeam();
-
-    // Scoped to each row: "Attendee" is also one of the options in the
-    // role picker on the row beside it.
-    const attendeeRow = (await screen.findByText('Sabina Rai')).closest('tr')!;
-    const guestRow = screen.getByText('Bishnu Prasad').closest('tr')!;
-
-    expect(attendeeRow).toHaveTextContent('Attendee');
-    expect(guestRow).toHaveTextContent('Guest');
-    expect(guestRow).toHaveTextContent('A guest holds no role');
-  });
-
-  it('does not crash on a role nobody has heard of either', async () => {
-    // Whatever the server adds next, the page should read oddly rather
-    // than disappear.
-    api.getParticipants.mockResolvedValue([
-      guest({ role: 'stenographer', is_guest: false, id: 'x1' }),
-    ] as any);
-
-    await openTeam();
-
-    expect(await screen.findByText('stenographer')).toBeInTheDocument();
-  });
-
-  it('still asks for everyone who was there, not just who is', async () => {
-    // A finished event has an empty room; its team is not empty.
-    await openTeam();
-
-    await waitFor(() => expect(api.getParticipants).toHaveBeenCalled());
-    expect(api.getParticipants).toHaveBeenCalledWith('m1', true);
+    expect(api.getParticipants).not.toHaveBeenCalled();
   });
 });
