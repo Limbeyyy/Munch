@@ -23,7 +23,7 @@ const roles = (over: Partial<UserRoles> = {}): UserRoles => ({
   plan: { id: 'free', name: 'Free', paid: false, limits: {
     events: 2, sessions_per_event: 2, attendees: 100,
   } },
-  usage: { events: 0, sessions: 0 },
+  usage: { events: 0, sessions: 0, attendees: 0 },
   subscription: null,
   ...over,
 });

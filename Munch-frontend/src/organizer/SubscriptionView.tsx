@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
 import { ProfileSummary } from '../types';
-import { PaymentCheckout } from '../components/PaymentCheckout';
+import { MAX_SAVED_METHODS, PaymentCheckout } from '../components/PaymentCheckout';
+import { Invoice as InvoiceSheet } from '../components/Invoice';
 import { Pair, useOrganizer } from './i18n';
 import { Chip, Empty } from './ui';
 import {
@@ -151,6 +152,14 @@ export const SubscriptionView: React.FC<{
       return;
     }
 
+    // Two, which is what the sketch says: one wallet and one bank is the
+    // whole of how anybody here pays, and a longer list is a list
+    // somebody picks the wrong row from.
+    if (methods.length >= MAX_SAVED_METHODS) {
+      toast.error(`Only ${MAX_SAVED_METHODS} saved payments at a time. Remove one first.`);
+      return;
+    }
+
     const next: SavedPaymentMethod = methodForm === 'wallet'
       ? { id: crypto.randomUUID(), kind: 'wallet', wallet, phone: methodFields.phone, fullName: methodFields.fullName }
       : { id: crypto.randomUUID(), kind: 'bank', bankName: methodFields.bankName, accountName: methodFields.accountName, accountNumber: methodFields.accountNumber };
@@ -215,8 +224,18 @@ export const SubscriptionView: React.FC<{
     ? ''
     : String(Math.round(buyingPlanCopy.usd * NPR_PER_USD));
   const savedMethodChoices = methods.map((method) => method.kind === 'wallet'
-    ? { id: method.id, kind: method.kind, label: method.wallet, detail: `${method.fullName} · ${method.phone}` }
-    : { id: method.id, kind: method.kind, label: method.bankName, detail: `${method.accountName} · ${method.accountNumber}` });
+    ? {
+        id: method.id,
+        kind: method.kind,
+        label: `Wallet ${method.wallet}`,
+        detail: `${method.fullName}\n${method.phone}`,
+      }
+    : {
+        id: method.id,
+        kind: method.kind,
+        label: `Bank ${method.bankName}`,
+        detail: `${method.accountName}\n${method.accountNumber}`,
+      });
 
   /**
    * Every plan, and the way to ask for one.
@@ -610,61 +629,92 @@ export const SubscriptionView: React.FC<{
         </div>
       )}
       {buyingPlan && (
-        <div className="fixed inset-0 z-[80] grid place-items-center p-4 bg-[#0b1220]/50" onClick={(event) => { if (event.target === event.currentTarget) setBuyingPlan(''); }}>
-          <div className="bg-white rounded-[12px] w-full max-w-[760px] max-h-[92vh] overflow-auto p-6 shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-[18px] font-semibold text-head">Buy {buyingPlan}</h3>
-              <button type="button" onClick={() => setBuyingPlan('')} className="text-[13px] text-subtle">Close</button>
+        <div
+          className="fixed inset-0 z-[80] grid place-items-center p-4 bg-[#0b1220]/50"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) { setBuyingPlan(''); setPaidInvoice(null); }
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-label={paidInvoice ? 'Invoice' : 'Upgrade Plans'}
+        >
+          <div className="bg-white rounded-[12px] w-full max-w-[820px] max-h-[92vh]
+            overflow-auto p-6 shadow-2xl flex flex-col gap-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[20px] font-semibold text-head">
+                {paidInvoice ? 'Invoice' : 'Upgrade Plans'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => { setBuyingPlan(''); setPaidInvoice(null); }}
+                className="text-[13px] text-subtle hover:text-head"
+              >
+                Close
+              </button>
             </div>
-            <div className="grid gap-4 md:grid-cols-2 mb-5">
-              <SectionCard className="p-4"><h4 className="text-[14px] font-semibold text-head">Billing information</h4><div className="mt-3 flex flex-col gap-1.5"><BillingLine label="Name">{user.name || user.email}</BillingLine><BillingLine label="Email">{user.email}</BillingLine><BillingLine label="Address">{user.billing_address || 'Not given'}</BillingLine></div></SectionCard>
-              <SectionCard className="p-4"><h4 className="text-[14px] font-semibold text-head">Saved payment methods</h4><div className="mt-3 flex flex-col gap-2">{methods.length ? methods.map((method) => <div key={method.id} className="flex items-start gap-2 text-[13px] text-body"><PaymentMethodIcon kind={method.kind} /><span>{method.kind === 'wallet' ? <><b>{method.wallet}</b><br />{method.fullName}<br />{method.phone}</> : <> <b>{method.bankName}</b><br />{method.accountName}<br />{method.accountNumber}</>}</span></div>) : <span className="text-[13px] text-subtle">Nothing to show.</span>}</div></SectionCard>
-            </div>
+
             {paidInvoice ? (
-              <div className="border border-line rounded-[12px] bg-white p-6">
-                <div className="flex items-start justify-between gap-4 border-b border-[#c9c4b0] pb-4">
-                  <h4 className="text-[42px] font-bold tracking-tight text-head">Invoice</h4>
-                  <div className="text-right text-[11px] text-body">
-                    {new Date().toLocaleDateString()}<br />
-                    <b>Invoice No. {paidInvoice.orderId.slice(-8)}</b>
-                  </div>
+              <>
+                <InvoiceSheet
+                  details={{
+                    number: paidInvoice.orderId.slice(-8).toUpperCase(),
+                    issuedAt: new Date().toISOString(),
+                    billedTo: {
+                      name: user.name || user.email,
+                      email: user.email,
+                      phone: user.phone || undefined,
+                      address: user.billing_address || undefined,
+                    },
+                    lines: [{
+                      description: `${buyingPlan} plan · ${
+                        PLAN_COPY[buyingPlanData?.id ?? '']?.period ?? 'per month'
+                      }`,
+                      rate: `रू ${Number(paidInvoice.amount).toLocaleString('en-IN')}`,
+                      quantity: 1,
+                      amount: Number(paidInvoice.amount),
+                    }],
+                    // Nothing charges tax here yet, and a line saying 0%
+                    // is the honest way to show that.
+                    taxRate: 0,
+                    paidWith: paidInvoice.method,
+                    orderId: paidInvoice.orderId,
+                    seller: {
+                      name: 'Manch',
+                      email: 'billing@manch.app',
+                      address: 'Kathmandu, Nepal',
+                    },
+                  }}
+                />
+                <div className="flex gap-3 print:hidden">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="bg-navy-800 hover:bg-navy-700 text-white rounded-[8px]
+                      px-6 py-2 text-[14px] font-medium"
+                  >
+                    Print or save as PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setBuyingPlan(''); setPaidInvoice(null); }}
+                    className="border border-line rounded-[8px] px-6 py-2 text-[14px]
+                      text-body hover:border-navy-800"
+                  >
+                    Done
+                  </button>
                 </div>
-
-                <div className="py-4 border-b border-[#c9c4b0] text-[12px] text-body">
-                  <b>Billed to:</b><br />
-                  {user.name || user.email}<br />
-                  {user.email}<br />
-                  {user.billing_address || 'Not provided'}
-                </div>
-
-                <div className="py-5 grid grid-cols-[1fr_auto] gap-y-2 text-[12px] text-body">
-                  <span>Description</span>
-                  <span>Amount</span>
-                  <span>{buyingPlan || 'Plan upgrade'}</span>
-                  <span>रू {Number(paidInvoice.amount).toLocaleString('en-IN')}</span>
-                  <b>Total</b>
-                  <b>रू {Number(paidInvoice.amount).toLocaleString('en-IN')}</b>
-                </div>
-
-                <div className="pt-4 border-t border-[#c9c4b0] grid grid-cols-2 gap-4 text-[12px] text-body">
-                  <div>
-                    <b>Payment information</b><br />
-                    {paidInvoice.method}<br />
-                    Order: {paidInvoice.orderId}
-                  </div>
-                  <div>
-                    <b>{user.name || user.email}</b><br />
-                    {user.email}<br />
-                    {user.billing_address || 'Not provided'}
-                  </div>
-                </div>
-              </div>
+              </>
             ) : (
               <PaymentCheckout
                 planName={buyingPlan}
                 initialAmount={buyingAmount}
-                billing={{ name: user.name || user.email, email: user.email, address: user.billing_address || 'Not provided' }}
+                billing={{
+                  name: user.name || user.email,
+                  email: user.email,
+                  address: user.billing_address || 'Not given',
+                }}
                 savedMethods={savedMethodChoices}
+                onBack={() => setBuyingPlan('')}
                 onSuccess={setPaidInvoice}
               />
             )}
