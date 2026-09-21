@@ -39,6 +39,15 @@ interface Props {
    * open can say how much has arrived behind it.
    */
   onNews?: (many: number) => void;
+  /**
+   * Put something to the host, from the tab it would appear on.
+   *
+   * Nothing written here is on the board yet. It waits in the host's
+   * requests until they put it up as a question or a suggestion, or
+   * decline it - and anything still waiting when the session ends is
+   * thrown away rather than kept.
+   */
+  onAsk?: (body: string, topic: 'faq' | 'suggestion') => Promise<void> | void;
 }
 
 /**
@@ -58,7 +67,7 @@ interface Props {
  * decision, taken where it happens.
  */
 export const RoomQuestions: React.FC<Props> = ({
-  eventId, guestToken, refreshMs, canSort, waiting: alsoWaiting, onNews,
+  eventId, guestToken, refreshMs, canSort, waiting: alsoWaiting, onNews, onAsk,
 }) => {
   const { t, num } = useOrganizer();
   const [board, setBoard] = useState<EventBoard | null>(null);
@@ -67,6 +76,8 @@ export const RoomQuestions: React.FC<Props> = ({
   const [settled, setSettled] = useState<string[]>([]);
   const [tab, setTab] = useState<Tab>('faq');
   const [busy, setBusy] = useState<string | null>(null);
+  const [writing, setWriting] = useState('');
+  const [sending, setSending] = useState(false);
 
   /** How much was on the board when it was last read. */
   const wasOnBoard = useRef<number | null>(null);
@@ -331,6 +342,25 @@ export const RoomQuestions: React.FC<Props> = ({
           en: 'No suggestions up yet.',
         });
 
+  /** Say it, and wait for the host to put it up. */
+  const ask = async () => {
+    const said = writing.trim();
+    if (!said || !onAsk || tab === 'requests') return;
+    try {
+      setSending(true);
+      await onAsk(said, tab === 'faq' ? 'faq' : 'suggestion');
+      setWriting('');
+      toast.success(t({
+        ne: 'पठाइयो। आयोजकले राखेपछि बोर्डमा देखिन्छ।',
+        en: 'Sent. It appears on the board once the host puts it up.',
+      }));
+    } catch (e: any) {
+      toast.error(errorText(e, t({ ne: 'पठाउन सकिएन', en: 'Could not send it' })));
+    } finally {
+      setSending(false);
+    }
+  };
+
   return (
     <div className="flex flex-col">
       <div className="flex border-b border-[#e3e8ef]" role="tablist">
@@ -360,6 +390,53 @@ export const RoomQuestions: React.FC<Props> = ({
             ? <li className="text-[13px] text-[#656565] px-2">{nothingYet}</li>
             : rows.map(entryRow)}
       </ul>
+
+      {/* What anybody in the room can put to the host, on the board it
+          would appear on. There is nowhere else to write now: a message
+          is either put up for everybody or it is not kept at all. */}
+      {onAsk && tab !== 'requests' && (
+        <div className="border-t border-[#e3e8ef] px-3 py-3 flex flex-col gap-1.5">
+          <div className="flex items-center gap-2">
+            <input
+              value={writing}
+              onChange={(e) => setWriting(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') ask(); }}
+              disabled={sending}
+              aria-label={tab === 'faq'
+                ? t({ ne: 'प्रश्न लेख्नुहोस्', en: 'Write your question' })
+                : t({ ne: 'सुझाव लेख्नुहोस्', en: 'Write your suggestion' })}
+              placeholder={t({
+                ne: 'यहाँ लेख्नुहोस्', en: 'Write your message here',
+              })}
+              className="flex-1 min-w-0 bg-[#f7f9fc] border border-[#e3e8ef] rounded-full
+                px-4 py-2 text-[14px] text-[#24262b] placeholder:text-[#8b93a3]
+                focus:outline-none focus:border-navy-800 disabled:opacity-60"
+            />
+            <button
+              onClick={ask}
+              disabled={sending || !writing.trim()}
+              aria-label={t({ ne: 'पठाउनुहोस्', en: 'Send' })}
+              title={t({ ne: 'पठाउनुहोस्', en: 'Send' })}
+              className="flex-none w-9 h-9 grid place-items-center text-navy-800
+                disabled:opacity-40"
+            >
+              <svg
+                width="20" height="20" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
+                strokeLinejoin="round" aria-hidden
+              >
+                <path d="M3 11.5L21 3l-8.5 18-2.5-7.5L3 11.5z" />
+              </svg>
+            </button>
+          </div>
+          <p className="text-[12px] text-[#8b93a3] leading-4">
+            {t({
+              ne: 'आयोजकले राखेपछि मात्र सबैले देख्छन्।',
+              en: 'Everybody sees it once the host puts it up.',
+            })}
+          </p>
+        </div>
+      )}
     </div>
   );
 };

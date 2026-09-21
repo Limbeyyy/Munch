@@ -12,7 +12,6 @@ import toast from 'react-hot-toast';
 import { ShareEventDialog } from '../components/ShareEventDialog';
 import { ResourceControls } from '../organizer/ResourceVisibility';
 import { PhotoUploads } from '../organizer/Photos';
-import { RoomChat } from '../organizer/RoomChat';
 import { RoomQuestions } from '../organizer/RoomQuestions';
 import { FigmaIcon } from '../assets/icons';
 import { RoomAgenda } from '../organizer/RoomAgenda';
@@ -21,7 +20,7 @@ import { OrganizerProvider } from '../organizer/i18n';
 
 
 /** The only things allowed to sit beside the room. */
-type SidePanelId = 'chat' | 'resources' | 'questions' | 'participants';
+type SidePanelId = 'resources' | 'questions' | 'participants';
 
 const formatFileSize = (bytes?: number | null): string => {
   if (!bytes) return '—';
@@ -57,15 +56,13 @@ const EventRoomInner: React.FC = () => {
   const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Chat
-  const [showChat, setShowChat] = useState(false);
+  // What people write, which is only ever an offer for the board now.
+  const [showChat] = useState(false);
   const [chatSettings, setChatSettings] = useState<ChatSettings>({
     chat_enabled: false,
     direct_messages_enabled: false,
   });
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [unread, setUnread] = useState(0);
-  const [savingSettings, setSavingSettings] = useState(false);
   const [pending, setPending] = useState<ChatMessage[]>([]);
   const [waitingGuests, setWaitingGuests] = useState<GuestAttendee[]>([]);
   const [decidingGuest, setDecidingGuest] = useState<string | null>(null);
@@ -208,7 +205,6 @@ const EventRoomInner: React.FC = () => {
     // The register is only re-read for somebody actually looking at it.
     showAttendanceRef.current =
       side.includes('participants') && peopleTab === 'attendance';
-    if (showChat) setUnread(0);
     // Opening a panel is reading it.
     setUnseen((was) => ({
       questions: side.includes('questions') ? 0 : was.questions,
@@ -233,9 +229,6 @@ const EventRoomInner: React.FC = () => {
    * left over from a event that had a public thread stays out of the
    * way rather than appearing with nobody to have received it.
    */
-  const visibleMessages = messages.filter((m) => m.is_direct);
-  const myRole = (participants as EventParticipant[])
-    .find((p) => p.user?.id === user?.id)?.role;
 
   /**
    * Who can be written to privately.
@@ -329,23 +322,6 @@ const EventRoomInner: React.FC = () => {
     }
   }, []);
 
-  const toggleChatSetting = async (patch: Partial<ChatSettings>) => {
-    const id = eventIdRef.current;
-    if (!id) return;
-    try {
-      setSavingSettings(true);
-      const updated = await apiClient.updateChatSettings(id, patch);
-      setChatSettings(updated);
-      if (updated.chat_enabled) {
-        setMessages(await apiClient.getChatMessages(id));
-      }
-    } catch (error: any) {
-      toast.error(error.response?.data?.error ?? 'Could not update chat settings');
-    } finally {
-      setSavingSettings(false);
-    }
-  };
-
   const loadPending = useCallback(async () => {
     const id = eventIdRef.current;
     if (!id) return;
@@ -408,6 +384,23 @@ const EventRoomInner: React.FC = () => {
       message: body,
       recipient_id: to,
     }));
+  };
+
+  /**
+   * Put something to whoever runs the room.
+   *
+   * There is no chat any more, so there is only one thing a message can
+   * be: something offered for the board. It goes to the host over the
+   * same socket frame as before and waits in their requests until they
+   * put it up or decline it.
+   */
+  const askHost = (body: string) => {
+    const host = organizers.find((p) => p.role === 'host') ?? organizers[0];
+    if (!host?.user?.id) {
+      toast.error('Nobody is here to receive it yet');
+      return;
+    }
+    sendTo(host.user.id, body);
   };
 
   /**
@@ -529,7 +522,6 @@ const EventRoomInner: React.FC = () => {
             recipient_is_guest: !!data.recipient_is_guest,
           }];
         });
-        if (!showChatRef.current) setUnread((n) => n + 1);
       } else if (data.type === 'chat_pending') {
         setPending((prev) =>
           prev.some((m) => m.id === data.message_id) ? prev : [...prev, {
@@ -547,9 +539,8 @@ const EventRoomInner: React.FC = () => {
             recipient_is_guest: !!data.recipient_is_guest,
           }]
         );
-        if (!showChatRef.current) setUnread((n) => n + 1);
-        // Something written to the host is a request to sort, and that
-        // lives in the questions panel.
+        // Something written to the host is an offer for the board, and
+        // that is the questions panel's business.
         noteUnseen('questions');
       } else if (data.type === 'chat_moderated') {
         setMessages((prev) =>
@@ -1259,27 +1250,6 @@ const EventRoomInner: React.FC = () => {
           </RoomCard>
 
                 )}
-                {panel === 'chat' && (
-          <RoomCard>
-            <RoomChat
-              people={dmTargets.map((who) => ({
-                id: who.id,
-                name: who.label,
-              }))}
-              messages={visibleMessages}
-              meId={user?.id}
-              directEnabled={chatSettings.direct_messages_enabled}
-              canSwitch={isHost}
-              switching={savingSettings}
-              onSwitch={(on) =>
-                toggleChatSetting({ direct_messages_enabled: on })
-              }
-              reviewed={!isHost && myRole === 'attendee'}
-              onSend={(to, body) => sendTo(to, body)}
-              onClose={() => closeSide('chat')}
-            />
-          </RoomCard>
-                )}
                 {panel === 'participants' && (
           <RoomCard>
             <SidePanelHead
@@ -1448,6 +1418,7 @@ const EventRoomInner: React.FC = () => {
                 canSort={canOrganize}
                 waiting={pending}
                 onNews={(many) => noteUnseen('questions', many)}
+                onAsk={canOrganize ? undefined : (body) => askHost(body)}
               />
             )}
           </RoomCard>
@@ -1471,13 +1442,6 @@ const EventRoomInner: React.FC = () => {
             label={`Participants${participants.length ? ` (${participants.length})` : ''}`}
             open={side.includes('participants')}
             onClick={() => toggleSide('participants')}
-          />
-          <RoomBarButton
-            icon="chat"
-            label="Chat"
-            badge={unread}
-            open={side.includes('chat')}
-            onClick={() => { setShowChat(true); toggleSide('chat'); }}
           />
           <RoomBarButton
             icon="questions"

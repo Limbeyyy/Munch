@@ -163,14 +163,14 @@ describe('the room as the design lays it out', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Live Transcript' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Resources' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Chat' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Participants' })).not.toBeInTheDocument();
   });
 
   it('carries the controls along its foot', async () => {
     showRoom();
 
     const bar = await screen.findByRole('navigation', { name: 'Event controls' });
-    for (const label of ['Chat', 'Questions', 'Resources', 'Share', 'Leave']) {
+    for (const label of ['Questions', 'Resources', 'Participants', 'Share', 'Leave']) {
       expect(
         within(bar).getByRole('button', { name: new RegExp(label) })
       ).toBeInTheDocument();
@@ -257,9 +257,9 @@ describe('the room as the design lays it out', () => {
   it('opens what the bar asks for, beside the room', async () => {
     showRoom();
 
-    await openSide('Chat');
+    await openSide('Participants');
 
-    expect(await screen.findByRole('heading', { name: 'Chat' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Participants' })).toBeInTheDocument();
   });
 
   it('stacks them in the order they were asked for', async () => {
@@ -268,25 +268,25 @@ describe('the room as the design lays it out', () => {
     showRoom();
 
     await openSide('Resources');
-    await openSide('Chat');
+    await openSide('Participants');
 
     const headings = screen
       .getAllByRole('heading')
       .map((h) => h.textContent?.replace(/\s+/g, ' ').trim())
-      .filter((text) => text === 'Resources' || text?.startsWith('Chat'));
+      .filter((text) => text === 'Resources' || text?.startsWith('Participants'));
     expect(headings[0]).toBe('Resources');
 
     // Asked for the other way round, they stack the other way round.
     await openSide('Resources');
-    await openSide('Chat');
-    await openSide('Chat');
+    await openSide('Participants');
+    await openSide('Participants');
     await openSide('Resources');
 
     const reversed = screen
       .getAllByRole('heading')
       .map((h) => h.textContent?.replace(/\s+/g, ' ').trim())
-      .filter((text) => text === 'Resources' || text?.startsWith('Chat'));
-    expect(reversed[0]?.startsWith('Chat')).toBe(true);
+      .filter((text) => text === 'Resources' || text?.startsWith('Participants'));
+    expect(reversed[0]?.startsWith('Participants')).toBe(true);
   });
 
   it('holds two beside the room, and the third pushes out the first', async () => {
@@ -295,7 +295,7 @@ describe('the room as the design lays it out', () => {
     // the same first-in-first-out the order already follows.
     showRoom();
 
-    await openSide('Chat');
+    await openSide('Participants');
     await openSide('Resources');
     await openSide('Questions');
 
@@ -304,41 +304,41 @@ describe('the room as the design lays it out', () => {
         .getAllByRole('heading')
         .map((h) => h.textContent?.replace(/\s+/g, ' ').trim())
         .filter((text) =>
-          text === 'Resources' || text === 'Questions' || text?.startsWith('Chat')
+          text === 'Resources' || text === 'Questions' || text?.startsWith('Participants')
         );
 
-    // Chat was first in, so Chat is first out; the other two keep their order.
+    // Participants was first in, so it is first out; the other two keep their order.
     expect(beside()).toEqual(['Resources', 'Questions']);
   });
 
   it('lets the one that was pushed out come back, in its turn', async () => {
     showRoom();
 
-    await openSide('Chat');
+    await openSide('Participants');
     await openSide('Resources');
     await openSide('Questions');
-    await openSide('Chat');
+    await openSide('Participants');
 
     const beside = screen
       .getAllByRole('heading')
       .map((h) => h.textContent?.replace(/\s+/g, ' ').trim())
       .filter((text) =>
-        text === 'Resources' || text === 'Questions' || text?.startsWith('Chat')
+        text === 'Resources' || text === 'Questions' || text?.startsWith('Participants')
       );
 
-    // Resources is now the oldest, so it makes way for Chat.
-    expect(beside).toEqual(['Questions', 'Chat']);
+    // Resources is now the oldest, so it makes way for Participants.
+    expect(beside).toEqual(['Questions', 'Participants']);
   });
 
   it('sends a panel away when its control is pressed again', async () => {
     showRoom();
 
-    await openSide('Chat');
-    expect(await screen.findByRole('heading', { name: 'Chat' })).toBeInTheDocument();
+    await openSide('Participants');
+    expect(await screen.findByRole('heading', { name: 'Participants' })).toBeInTheDocument();
 
-    await openSide('Chat');
+    await openSide('Participants');
     await waitFor(() =>
-      expect(screen.queryByRole('heading', { name: 'Chat' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Participants' })).not.toBeInTheDocument()
     );
   });
 
@@ -371,7 +371,7 @@ describe('the room as the design lays it out', () => {
 
     const bar = await screen.findByRole('navigation', { name: 'Event controls' });
     const leave = within(bar).getByRole('button', { name: /Leave/ });
-    const group = within(bar).getByRole('button', { name: /Chat/ }).parentElement!;
+    const group = within(bar).getByRole('button', { name: /Questions/ }).parentElement!;
 
     expect(group.className).toContain('justify-center');
     expect(group).not.toContainElement(leave);
@@ -615,154 +615,28 @@ describe('the running order inside the room', () => {
 });
 
 /**
- * Nothing in the room is said to the room.
+ * Nothing in the room is said to one person.
  *
- * There is no public thread on either side of it: what people have to say
- * goes to the host or to the speaker. So the panel is a list of people
- * rather than a box with a dropdown over it - a conversation with somebody
- * has a face, a name and a last line.
+ * There is no chat on either side of it. What somebody has to say is put
+ * to the host, who either puts it up on the board for everybody or does
+ * not - and what is not put up is not kept. So the composer lives on the
+ * board it would appear on, and there is no panel of conversations and
+ * no switch governing who may write to whom.
  */
-describe('the room chat', () => {
-  const openChat = async () => {
-    await openSide('Chat');
-    return screen.findByRole('heading', { name: 'Chat' });
-  };
+describe('the room without a chat', () => {
+  it('offers no chat beside the room', async () => {
+    await open();
 
-  beforeEach(() => {
-    api.getParticipants.mockResolvedValue([
-      { id: 'p1', role: 'presenter', is_active: true,
-        user: { id: 'u5', email: 'speaker@example.com' } },
-    ] as any);
+    expect(screen.queryByRole('button', { name: /^Chat/ })).toBeNull();
   });
 
-  it('has no room-wide thread to write into', async () => {
-    showRoom();
-    await openChat();
+  it('has no switch for who may write to whom', async () => {
+    await open();
 
-    expect(screen.queryByRole('tab', { name: /Room/ })).toBeNull();
-    expect(screen.queryByText(/Everyone in the event can see these/)).toBeNull();
-  });
-
-  it('offers the people there are to write to, by name', async () => {
-    showRoom();
-    await openChat();
-
-    expect(await screen.findByText('Chats')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /speaker@example.com/ }))
-      .toBeInTheDocument();
-    // The dropdown it replaces is gone.
-    expect(screen.queryByLabelText('Who to write to')).toBeNull();
-  });
-
-  it('opens a conversation with whoever is chosen', async () => {
-    showRoom();
-    await openChat();
-
-    fireEvent.click(await screen.findByRole('button', { name: /speaker@example.com/ }));
-
-    expect(await screen.findByPlaceholderText('Write your message here'))
-      .toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Back to chats' })).toBeInTheDocument();
-  });
-
-  it('sends what is written to the person it is open with', async () => {
-    showRoom();
-    await openChat();
-
-    // The socket the room itself opened, not one left over from before.
-    const sent: any[] = [];
-    (window as any).__roomSocket.send = (raw: string) => sent.push(JSON.parse(raw));
-
-    fireEvent.click(await screen.findByRole('button', { name: /speaker@example.com/ }));
-
-    const box = await screen.findByPlaceholderText('Write your message here');
-    fireEvent.change(box, { target: { value: 'A question' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-
-    expect(sent).toContainEqual({
-      type: 'chat_message', message: 'A question', recipient_id: 'u5',
-    });
+    expect(screen.queryByText(/direct messages/i)).toBeNull();
   });
 });
 
-/**
- * The room is open; whether anybody may write in it is the host's.
- *
- * "Room open to everyone" went with the public thread it described. What
- * is left is one switch, and until it is on there is nothing to send with.
- */
-describe('the one chat switch', () => {
-  const asHost = () => {
-    const { useAuthStore } = require('../../store/authStore');
-    useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
-  };
-
-  afterEach(() => {
-    const { useAuthStore } = require('../../store/authStore');
-    useAuthStore.setState({ user: null });
-  });
-
-  it('has nothing to say about opening the room', async () => {
-    asHost();
-    showRoom();
-    await openSide('Chat');
-
-    expect(await screen.findByRole('heading', { name: 'Chat' })).toBeInTheDocument();
-    expect(screen.queryByText('Room open to everyone')).toBeNull();
-  });
-
-  it('is a switch, and the host is the one who has it', async () => {
-    asHost();
-    api.updateChatSettings.mockResolvedValue(
-      { chat_enabled: true, direct_messages_enabled: false } as any
-    );
-    showRoom();
-    await openSide('Chat');
-
-    const control = await screen.findByRole('switch', { name: 'Allow direct messages' });
-    expect(control).toHaveAttribute('aria-checked', 'true');
-
-    fireEvent.click(control);
-
-    await waitFor(() => expect(api.updateChatSettings).toHaveBeenCalledWith(
-      'm1', { direct_messages_enabled: false }
-    ));
-  });
-
-  it('nobody else has it', async () => {
-    showRoom();
-    await openSide('Chat');
-
-    await screen.findByRole('heading', { name: 'Chat' });
-    expect(screen.queryByRole('switch')).toBeNull();
-  });
-
-  it('and until it is on, there is nothing to send with', async () => {
-    api.getChatSettings.mockResolvedValue(
-      { chat_enabled: true, direct_messages_enabled: false } as any
-    );
-    api.getParticipants.mockResolvedValue([
-      { id: 'p1', role: 'presenter', is_active: true,
-        user: { id: 'u5', email: 'speaker@example.com' } },
-    ] as any);
-
-    showRoom();
-    await openSide('Chat');
-    fireEvent.click(await screen.findByRole('button', { name: /speaker@example.com/ }));
-
-    const sent: any[] = [];
-    (window as any).__roomSocket.send = (raw: string) => sent.push(JSON.parse(raw));
-
-    const box = await screen.findByPlaceholderText(/has not opened messages/);
-    expect(box).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
-
-    // And pressing it anyway writes nothing down the socket.
-    fireEvent.change(box, { target: { value: 'A question' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-    expect(sent).toEqual([]);
-  });
-});
 
 /**
  * The running order, live, inside the room.
@@ -1165,60 +1039,6 @@ describe('a summary on the agenda', () => {
 
     await screen.findByRole('list', { name: 'Running order' });
     expect(screen.queryByText('Summary ready')).toBeNull();
-  });
-});
-
-/**
- * One face per person in the chat.
- *
- * A guest arrives in two lists at once - the roster projects them as a
- * participant under the guest's own id, and the guest list carries them
- * again under the same id. Both are the same seat, and showing it twice
- * put the same face in the chat over and over.
- */
-describe('who there is to write to', () => {
-  const asHost = () => {
-    const { useAuthStore } = require('../../store/authStore');
-    useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
-  };
-
-  afterEach(() => {
-    const { useAuthStore } = require('../../store/authStore');
-    useAuthStore.setState({ user: null });
-  });
-
-  it('lists a guest once, not once per list they turn up in', async () => {
-    asHost();
-    api.getParticipants.mockResolvedValue([
-      { id: 'p1', role: 'host', is_active: true,
-        user: { id: 'u1', email: 'host@example.com' } },
-      { id: 'g1', role: 'guest', is_active: true, is_guest: true,
-        user: { id: 'g1', email: 'Rahul Ingnam' } },
-    ] as any);
-    api.getGuests.mockResolvedValue([
-      { id: 'g1', full_name: 'Rahul Ingnam', status: 'admitted' },
-    ] as any);
-
-    showRoom();
-    await openSide('Chat');
-
-    const faces = await screen.findAllByRole('button', { name: /Rahul Ingnam/ });
-    expect(faces).toHaveLength(1);
-  });
-
-  it('and never offers the reader themselves', async () => {
-    asHost();
-    api.getParticipants.mockResolvedValue([
-      { id: 'p1', role: 'host', is_active: true,
-        user: { id: 'u1', email: 'host@example.com' } },
-    ] as any);
-    api.getGuests.mockResolvedValue([] as any);
-
-    showRoom();
-    await openSide('Chat');
-
-    await screen.findByText('Chats');
-    expect(screen.queryByRole('button', { name: /host@example.com/ })).toBeNull();
   });
 });
 
