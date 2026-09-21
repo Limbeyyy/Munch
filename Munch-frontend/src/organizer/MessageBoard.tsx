@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
 import { BoardEntry, EventBoard } from '../types';
+import { FigmaIcon } from '../assets/icons';
 import { Pair, useOrganizer } from './i18n';
 import { Btn, Chip, Empty, Panel, Tabs } from './ui';
 import { Modal } from './OrganizerShell';
@@ -258,22 +259,28 @@ export const MessageBoard: React.FC<Props> = ({
           shown.map((entry) => (
             <div
               key={entry.id}
-              className="flex gap-3 py-3 border-b border-navy-800/[.08] last:border-0"
+              className="flex flex-col gap-[7px] py-3 border-b border-navy-800/[.08]
+                last:border-0"
             >
-              <Vote entry={entry} busy={voting === entry.id} onVote={(v) => vote(entry, v)} />
-              <div className="min-w-0 flex-1">
-              <p className="text-[13.5px] text-ink font-read">{entry.body}</p>
-              <p className="text-[12px] text-[#6E7C8E] mt-1 flex items-center gap-1.5 flex-wrap">
+              {/* 479-664: the mark, the question, and the arrows under
+                  it. The same card the room reads, so the host is
+                  looking at what everybody else is. */}
+              <div className="flex gap-3 items-start">
+                <FigmaIcon name="asked" size={24} />
+                <p className="flex-1 min-w-0 text-[14px] leading-5 text-[#24262b]">
+                  {entry.body}
+                </p>
+              </div>
+
+              <div className="ps-9">
+                <Vote entry={entry} busy={voting === entry.id} onVote={(v) => vote(entry, v)} />
+              </div>
+
+              <div className="min-w-0 flex-1 ps-9">
+              <p className="text-[12px] text-[#6E7C8E] flex items-center gap-1.5 flex-wrap">
                 <span>{entry.asked_by}</span>
                 {entry.asker_is_guest && <Chip>{t({ ne: 'पाहुना', en: 'Guest' })}</Chip>}
                 <span className="tabular-nums">· {clock(entry.created_at)}</span>
-                {entry.was_direct && (
-                  <Chip tone="draft">
-                    {entry.sent_to
-                      ? t({ ne: `सिधा — ${entry.sent_to} लाई`, en: `direct — to ${entry.sent_to}` })
-                      : t({ ne: 'सिधा सन्देशबाट', en: 'from a direct message' })}
-                  </Chip>
-                )}
               </p>
 
               {entry.answer ? (

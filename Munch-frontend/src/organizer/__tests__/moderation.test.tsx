@@ -1,17 +1,13 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { OrganizerProvider } from '../i18n';
 import { ModerationView } from '../views/ModerationView';
 import { apiClient } from '../../services/api';
 
 jest.mock('../../services/api', () => ({
   apiClient: {
-    listEvents: jest.fn(),
-    getPendingMessages: jest.fn(),
-    getGuests: jest.fn(),
-    getReviewedMessages: jest.fn(),
     getEventBoard: jest.fn(),
-    getPhotos: jest.fn(),
+    voteOnBoard: jest.fn(),
     hasSession: jest.fn(() => false),
   },
 }));
@@ -23,37 +19,28 @@ jest.mock('react-hot-toast', () => ({
 
 const api = apiClient as jest.Mocked<typeof apiClient>;
 
-const event = {
+const event = (over: any = {}) => ({
   id: 'm1', title: 'Wedding Preparation', code: 'IRL-NH7',
   status: 'active',
   scheduled_start: '2026-09-08T03:30:00Z',
   scheduled_end: '2026-09-08T09:00:00Z',
-} as any;
+  ...over,
+}) as any;
 
-const message = (over: any = {}) => ({
-  id: 'x1',
+const entry = (over: any = {}) => ({
+  id: 'q1',
   body: 'when is the reception?',
-  created_at: '2026-09-08T04:00:00Z',
-  is_direct: true,
-  sender_id: 'g1',
-  sender_name: 'Suman Dhungana',
-  sender_email: '',
-  sender_is_guest: true,
-  recipient_id: 'u9',
-  recipient_name: 'tithighadi@gmail.com',
-  recipient_is_guest: false,
-  moderation_status: 'pending',
-  topic: 'not_required',
+  asked_by: 'Suman Dhungana',
+  asker_is_guest: true,
+  was_direct: false,
+  sent_to: null,
+  score: 12,
+  my_vote: 0,
   answer: '',
+  answered_by: '',
+  created_at: '2026-09-08T04:00:00Z',
   ...over,
 });
-
-const show = () =>
-  render(
-    <OrganizerProvider>
-      <ModerationView events={[event]} />
-    </OrganizerProvider>
-  );
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -61,233 +48,123 @@ beforeEach(() => {
   window.localStorage.setItem(
     'manch.organizer.prefs', JSON.stringify({ lang: 'en', a11y: {} })
   );
-  api.listEvents.mockResolvedValue([]);
-  api.getGuests.mockResolvedValue([]);
-  api.getReviewedMessages.mockResolvedValue({ from_users: [], from_guests: [] } as any);
-  api.getPendingMessages.mockResolvedValue([]);
-  api.getPhotos.mockResolvedValue({
-    event_id: 'm1', code: 'IRL-NH7', event_title: 'Wedding Preparation',
-    event_is_finished: false, can_upload: false, is_a_photographer: true,
-    can_arrange: true, folders: [], photos: [],
-  } as any);
+  api.getEventBoard.mockResolvedValue({ faq: [entry()], suggestions: [] } as any);
 });
 
-describe('which queue a message belongs in', () => {
-  it("keeps a guest's message out of the messages tab", async () => {
-    // It arrived through the guest door, so it is the guest queue's
-    // business wherever it is in its life.
-    api.getPendingMessages.mockResolvedValue([message()] as any);
+const show = (events = [event()]) =>
+  render(
+    <OrganizerProvider>
+      <ModerationView events={events} />
+    </OrganizerProvider>
+  );
 
+/**
+ * The screen is the board.
+ *
+ * It used to be three: a queue of messages waiting to be let through, a
+ * queue of guests waiting at the door, and the board. The first two
+ * belonged to a chat, and there is no chat - what somebody writes is put
+ * to the host inside the room, and the host either puts it up there or
+ * does not.
+ */
+describe('the moderation screen', () => {
+  it('shows what the host has put up', async () => {
     show();
 
-    // Wait for the queue to have landed somewhere before saying where it
-    // is not: a negative assertion made too early passes on its own.
-    await screen.findByRole('tab', { name: 'Guests (1)' });
-    expect(screen.getByRole('tab', { name: 'Messages (0)' })).toBeInTheDocument();
-    expect(screen.queryByText('when is the reception?')).not.toBeInTheDocument();
-  });
-
-  it('shows it under guests instead', async () => {
-    api.getPendingMessages.mockResolvedValue([message()] as any);
-
-    show();
-
-    fireEvent.click(await screen.findByRole('tab', { name: /Guests/ }));
     expect(await screen.findByText('when is the reception?')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Questions/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Suggestions/ })).toBeInTheDocument();
   });
 
-  it('counts it against the guests tab', async () => {
-    api.getPendingMessages.mockResolvedValue([message(), message({ id: 'x2' })] as any);
-
+  it('offers no queue of messages and no queue of guests', async () => {
     show();
+    await screen.findByText('when is the reception?');
 
-    expect(await screen.findByRole('tab', { name: 'Guests (2)' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Messages (0)' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Messages/ })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /Guests/ })).toBeNull();
   });
 
-  it("leaves an account holder's message where it was", async () => {
-    api.getPendingMessages.mockResolvedValue([
-      message({
-        id: 'u1', sender_is_guest: false, sender_name: 'Sabina Rai',
-        sender_email: 'sabina@example.org', body: 'will slides be shared?',
-      }),
-    ] as any);
-
+  /** The halves were the queue's; the queue is gone. */
+  it('has no permissions and transfers either', async () => {
     show();
+    await screen.findByText('when is the reception?');
 
-    expect(await screen.findByText('will slides be shared?')).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Messages (1)' })).toBeInTheDocument();
+    expect(screen.queryByText(/Permissions/)).toBeNull();
+    expect(screen.queryByText(/Transfers/)).toBeNull();
   });
 
-  it('sorts a mixed queue into the two tabs', async () => {
-    api.getPendingMessages.mockResolvedValue([
-      message({ id: 'g', body: 'from a guest' }),
-      message({ id: 'u', sender_is_guest: false, body: 'from an attendee' }),
-    ] as any);
+  it('says so plainly where there is no event to moderate', () => {
+    show([]);
 
-    show();
+    expect(screen.getByText('No events.')).toBeInTheDocument();
+  });
 
-    await screen.findByRole('tab', { name: 'Guests (1)' });
-    expect(screen.getByText('from an attendee')).toBeInTheDocument();
-    expect(screen.queryByText('from a guest')).not.toBeInTheDocument();
+  it('picks which event to read, where there is more than one', async () => {
+    show([event(), event({ id: 'm2', title: 'Budget Hearing' })]);
 
-    fireEvent.click(screen.getByRole('tab', { name: /Guests/ }));
-    expect(await screen.findByText('from a guest')).toBeInTheDocument();
-    expect(screen.queryByText('from an attendee')).not.toBeInTheDocument();
+    expect(await screen.findByLabelText('Which event')).toBeInTheDocument();
+  });
+
+  it('asks for one board rather than all of them at once', async () => {
+    show([event(), event({ id: 'm2', title: 'Budget Hearing' })]);
+    await screen.findByText('when is the reception?');
+
+    expect(api.getEventBoard).toHaveBeenCalledWith('m1');
+    expect(api.getEventBoard).not.toHaveBeenCalledWith('m2');
   });
 });
 
-describe('what belongs under the photographs', () => {
-  it('does not put the passed-on record beneath them', async () => {
+/**
+ * The card, as 479-664 draws it: the mark, the question, and the arrows
+ * under it - the same card the room reads, so the host is looking at
+ * what everybody else is.
+ */
+describe('a question on the board', () => {
+  it('carries the room\'s vote on it', async () => {
     show();
+    await screen.findByText('when is the reception?');
 
-    fireEvent.click(await screen.findByRole('tab', { name: 'Photos' }));
-
-    await waitFor(() => expect(api.getPhotos).toHaveBeenCalled());
-    // The record names itself by what it says when empty; its heading is
-    // the tab now.
-    expect(screen.queryByText(/passed on yet/)).not.toBeInTheDocument();
-    expect(screen.queryByRole('tab', { name: /Transfers/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upvote' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Downvote' })).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
   });
 
-  it('still keeps that record under the two queues', async () => {
+  it('offers the host a way to answer it', async () => {
     show();
+    await screen.findByText('when is the reception?');
 
-    fireEvent.click(await screen.findByRole('tab', { name: /Transfers/ }));
-    expect(
-      await screen.findByText('No direct message has been passed on yet.')
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('tab', { name: /Guests/ }));
-    fireEvent.click(screen.getByRole('tab', { name: /Transfers/ }));
-    expect(
-      await screen.findByText('No direct message from a guest has been passed on yet.')
-    ).toBeInTheDocument();
-  });
-});
-
-describe('where the pieces of the page sit', () => {
-  it('keeps the queue inside the card that names it', async () => {
-    // The complaint was that these were scattered: a card with the
-    // queue's name and its two halves, and then the queue itself floating
-    // below it in cards of its own.
-    api.getPendingMessages.mockResolvedValue([
-      message({ sender_is_guest: false, body: 'will slides be shared?' }),
-    ] as any);
-
-    show();
-
-    const heading = await screen.findByRole('heading', { name: 'Messages' });
-    const card = heading.closest('div.rounded-xl') as HTMLElement;
-    expect(card).not.toBeNull();
-    expect(card).toContainElement(await screen.findByText('will slides be shared?'));
-    expect(card).toContainElement(screen.getByRole('tab', { name: /Permissions/ }));
+    expect(screen.getByRole('button', { name: 'Answer' })).toBeInTheDocument();
   });
 
-  it('puts the event and the search above that card', async () => {
+  /** There are no direct messages, so nothing came from one. */
+  it('does not say a question arrived privately', async () => {
+    api.getEventBoard.mockResolvedValue({
+      faq: [entry({ was_direct: true, sent_to: 'host@example.com' })],
+      suggestions: [],
+    } as any);
     show();
+    await screen.findByText('when is the reception?');
 
-    const heading = await screen.findByRole('heading', { name: 'Messages' });
-    const card = heading.closest('div.rounded-xl') as HTMLElement;
-    const picker = screen.getByLabelText('Which event');
-    const search = screen.getByPlaceholderText(/Search event, code/);
-
-    // They govern both halves, so they belong above rather than inside.
-    expect(card).not.toContainElement(picker);
-    expect(card).not.toContainElement(search);
-    for (const above of [picker, search]) {
-      expect(
-        above.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING
-      ).toBeTruthy();
-    }
-  });
-});
-
-describe('the two halves of a queue', () => {
-  const passedOn = (over: any = {}) => ({
-    ...message({ id: 'p1', moderation_status: 'approved', topic: 'faq' }),
-    eventId: 'm1',
-    ...over,
+    expect(screen.queryByText(/direct/i)).toBeNull();
   });
 
-  it('opens on the deciding half', async () => {
-    api.getPendingMessages.mockResolvedValue([
-      message({ sender_is_guest: false, body: 'will slides be shared?' }),
-    ] as any);
-
+  it('still names who asked, and when', async () => {
     show();
+    await screen.findByText('when is the reception?');
 
-    // Wait for the queue itself, then say which half is showing it.
-    expect(await screen.findByText('will slides be shared?')).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /Permissions/ })).toHaveAttribute(
-      'aria-selected', 'true'
+    expect(screen.getByText('Suman Dhungana')).toBeInTheDocument();
+    expect(screen.getByText('Guest')).toBeInTheDocument();
+  });
+
+  it('sends a vote and takes the board back', async () => {
+    api.voteOnBoard.mockResolvedValue(
+      { faq: [entry({ score: 13, my_vote: 1 })], suggestions: [] } as any
     );
-    expect(screen.queryByText('Passed on')).not.toBeInTheDocument();
-  });
-
-  it('counts each half on its own tab', async () => {
-    api.getPendingMessages.mockResolvedValue([
-      message({ sender_is_guest: false }),
-      message({ id: 'x2', sender_is_guest: false }),
-    ] as any);
-    api.getReviewedMessages.mockResolvedValue({
-      from_users: [passedOn()], from_guests: [],
-    } as any);
-
     show();
+    await screen.findByText('when is the reception?');
 
-    expect(await screen.findByRole('tab', { name: 'Permissions (2)' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Transfers (1)' })).toBeInTheDocument();
-  });
+    fireEvent.click(screen.getByRole('button', { name: 'Upvote' }));
 
-  it('shows what was passed on under transfers, and the queue not at all', async () => {
-    api.getPendingMessages.mockResolvedValue([
-      message({ sender_is_guest: false, body: 'still waiting on this' }),
-    ] as any);
-    api.getReviewedMessages.mockResolvedValue({
-      from_users: [passedOn({ body: 'already passed on' })], from_guests: [],
-    } as any);
-
-    show();
-
-    fireEvent.click(await screen.findByRole('tab', { name: /Transfers/ }));
-
-    expect(await screen.findByText('already passed on')).toBeInTheDocument();
-    expect(screen.queryByText('still waiting on this')).not.toBeInTheDocument();
-  });
-
-  it('gives the guests queue its own pair', async () => {
-    api.getReviewedMessages.mockResolvedValue({
-      from_users: [], from_guests: [passedOn({ body: 'from a guest, passed on' })],
-    } as any);
-
-    show();
-
-    fireEvent.click(await screen.findByRole('tab', { name: /Guests/ }));
-    fireEvent.click(await screen.findByRole('tab', { name: 'Transfers (1)' }));
-
-    expect(await screen.findByText('from a guest, passed on')).toBeInTheDocument();
-  });
-
-  it('names the queue above its halves', async () => {
-    show();
-
-    // "Messages" as the heading, with Permissions and Transfers beneath.
-    expect(
-      await screen.findByRole('heading', { name: 'Messages' })
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('tab', { name: /Guests/ }));
-    expect(screen.getByRole('heading', { name: 'Guests' })).toBeInTheDocument();
-  });
-
-  it('has no such halves on the board or the photographs', async () => {
-    show();
-
-    fireEvent.click(await screen.findByRole('tab', { name: /Questions/ }));
-    expect(screen.queryByRole('tab', { name: /Permissions/ })).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Photos' }));
-    expect(screen.queryByRole('tab', { name: /Transfers/ })).not.toBeInTheDocument();
+    expect(await screen.findByText('13')).toBeInTheDocument();
   });
 });
