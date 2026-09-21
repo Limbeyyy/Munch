@@ -18,6 +18,8 @@ jest.mock('../../services/api', () => ({
     logout: jest.fn(),
     getUpgradeRequests: jest.fn(),
     requestUpgrade: jest.fn(),
+    initiatePayment: jest.fn(),
+    submitManualQrPayment: jest.fn(),
     getReminders: jest.fn(),
     markRemindersRead: jest.fn(),
     // OrganizerShell reaches the auth store, which asks this on import.
@@ -199,17 +201,6 @@ describe('the profile page', () => {
 });
 
 describe('the subscription page', () => {
-  it('says plainly that no payment is taken here', async () => {
-    api.getProfileSummary.mockResolvedValue(profile() as any);
-    api.getUpgradeRequests.mockResolvedValue({ requests: [] } as any);
-
-    show(<SubscriptionView />);
-
-    expect(
-      (await screen.findAllByText(/no payment is taken here/i)).length
-    ).toBeGreaterThan(0);
-  });
-
   /**
    * The shelf of every plan is a thing a host goes looking for once, so
    * it is behind the banner's own button rather than laid down the page
@@ -222,13 +213,13 @@ describe('the subscription page', () => {
     show(<SubscriptionView />);
     await screen.findByText('This month');
 
-    expect(screen.queryByRole('button', { name: 'Ask for this plan' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Buy' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Manage subscription' }));
 
     expect(
-      await screen.findByRole('button', { name: 'Ask for this plan' })
-    ).toBeInTheDocument();
+      (await screen.findAllByRole('button', { name: 'Buy' })).length
+    ).toBeGreaterThan(0);
   });
 
   it('marks the plan in use and does not offer it again', async () => {
@@ -346,30 +337,175 @@ describe('the subscription page', () => {
     expect(screen.queryByText('Requests')).toBeNull();
   });
 
-  it('records the ask and then stops offering that plan', async () => {
-    api.getProfileSummary.mockResolvedValue(profile() as any);
-    // Held as state rather than a call queue: the page may read the list
-    // more than once while the language preference settles.
-    let requests: any[] = [];
-    api.getUpgradeRequests.mockImplementation(async () => ({ requests }) as any);
-    api.requestUpgrade.mockImplementation(async () => {
-      requests = [{
-        id: 'q1', plan: 'enterprise', plan_name: 'Enterprise',
-        from_plan: 'free', status: 'asked', note: '',
-        created_at: new Date().toISOString(),
-      }];
-      return {} as any;
+  /**
+   * Paying for a plan.
+   *
+   * One dialog, read top to bottom: who the bill is for, which saved
+   * method pays it, and the order with everything already filled in from
+   * the two above.
+   */
+  describe('buying a plan', () => {
+    const openCheckout = async () => {
+      // Enterprise is "contact us" and so has no price to charge; the
+      // checkout needs a plan that costs something.
+      api.getProfileSummary.mockResolvedValue(profile({
+        plans: [FREE, {
+          id: 'starter', name: 'Starter', paid: true,
+          limits: { events: 25, sessions_per_event: 10, attendees: 30 },
+        }],
+      }) as any);
+      api.getUpgradeRequests.mockResolvedValue({ requests: [] } as any);
+      window.localStorage.setItem('manch.payment.methods', JSON.stringify([
+        { id: 'w1', kind: 'wallet', wallet: 'eSewa',
+          fullName: 'Rahul Ingnam', phone: '9849411140' },
+        { id: 'b1', kind: 'bank', bankName: 'Global IME Bank',
+          accountName: 'Rahul Ingnam', accountNumber: '0976154257653432234' },
+      ]));
+      show(<SubscriptionView />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Manage subscription' }));
+      fireEvent.click((await screen.findAllByRole('button', { name: 'Buy' }))[0]);
+      return screen.findByText('Upgrade Plans');
+    };
+
+    it('opens on the billing details and the saved methods', async () => {
+      await openCheckout();
+
+      expect(screen.getAllByText('Billing information').length).toBeGreaterThan(0);
+      expect(screen.getByText('Saved payment methods')).toBeInTheDocument();
+      expect(screen.getByText('Wallet eSewa')).toBeInTheDocument();
+      expect(screen.getByText('Bank Global IME Bank')).toBeInTheDocument();
     });
 
-    show(<SubscriptionView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Manage subscription' }));
+    it('lets one of the two be chosen, and fills the order from it', async () => {
+      await openCheckout();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Ask for this plan' }));
+      const bank = screen.getByRole('radio', { name: /Global IME Bank/ });
+      fireEvent.click(bank);
 
-    await waitFor(() => expect(api.requestUpgrade).toHaveBeenCalledWith('enterprise'));
-    // Asking closes the chooser, so it is opened again to read it back.
-    fireEvent.click(await screen.findByRole('button', { name: 'Manage subscription' }));
-    expect(await screen.findByRole('button', { name: 'Requested' })).toBeDisabled();
+      expect(bank).toBeChecked();
+      expect(screen.getByRole('radio', { name: /eSewa/ })).not.toBeChecked();
+      // Read back under Payment method rather than asked for again.
+      expect(
+        screen.getByText(/Bank Global IME Bank · Rahul Ingnam/)
+      ).toBeInTheDocument();
+    });
+
+    it('carries an order id and the amount the plan costs', async () => {
+      await openCheckout();
+
+      expect(screen.getByText('Order ID')).toBeInTheDocument();
+      expect(screen.getByText(/^MUNCH-/)).toBeInTheDocument();
+      expect(screen.getByText('Amount (NPR)')).toBeInTheDocument();
+    });
+
+    it('offers the two ways to pay, and a way back', async () => {
+      await openCheckout();
+
+      expect(screen.getByRole('tab', { name: 'Online Payment' })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Scan QR' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument();
+    });
+
+    it('starts the payment through the channel the chosen method uses', async () => {
+      await openCheckout();
+      api.initiatePayment.mockResolvedValue({
+        order_id: 'o1', transaction_id: 't1',
+        gateway_url: 'https://gateway.example/', payload: {},
+      } as any);
+
+      fireEvent.click(screen.getByRole('radio', { name: /Global IME Bank/ }));
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+      await waitFor(() => expect(api.initiatePayment).toHaveBeenCalled());
+      expect(api.initiatePayment.mock.calls[0][2]).toBe('banking');
+    });
+
+    it('says what went wrong rather than leaving the button spinning', async () => {
+      await openCheckout();
+      api.initiatePayment.mockRejectedValue({
+        response: { data: { error: 'Nepal Payment gateway credentials are not configured' } },
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith(
+        'Nepal Payment gateway credentials are not configured'
+      ));
+    });
+  });
+
+  /**
+   * The bill for a payment that went through.
+   *
+   * A receipt is a record, so it is laid out to be read on paper: one
+   * column, the total spelled out, and who it was billed to.
+   */
+  describe('the invoice', () => {
+    const payByQr = async () => {
+      // Enterprise is "contact us" and so has no price to charge; the
+      // checkout needs a plan that costs something.
+      api.getProfileSummary.mockResolvedValue(profile({
+        plans: [FREE, {
+          id: 'starter', name: 'Starter', paid: true,
+          limits: { events: 25, sessions_per_event: 10, attendees: 30 },
+        }],
+      }) as any);
+      api.getUpgradeRequests.mockResolvedValue({ requests: [] } as any);
+      api.submitManualQrPayment.mockResolvedValue({ order_id: 'o1', status: 'ok' } as any);
+      window.localStorage.setItem('manch.payment.methods', JSON.stringify([
+        { id: 'w1', kind: 'wallet', wallet: 'eSewa',
+          fullName: 'Rahul Ingnam', phone: '9849411140' },
+      ]));
+      show(<SubscriptionView />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Manage subscription' }));
+      fireEvent.click((await screen.findAllByRole('button', { name: 'Buy' }))[0]);
+      await screen.findByText('Upgrade Plans');
+      fireEvent.click(screen.getByRole('tab', { name: 'Scan QR' }));
+      fireEvent.change(screen.getByLabelText(/Reference number/), {
+        target: { value: 'TXN-90210' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      // Named twice: the dialog's own title, and the bill inside it.
+      return screen.findAllByRole('heading', { name: 'Invoice' });
+    };
+
+    it('is drawn once the payment has gone through', async () => {
+      await payByQr();
+
+      expect(screen.getByText('Billed to:')).toBeInTheDocument();
+      expect(screen.getByText(/Invoice No\./)).toBeInTheDocument();
+    });
+
+    it('names who it is billed to', async () => {
+      await payByQr();
+
+      expect(screen.getAllByText('Sabina Rai').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('sabina@example.org').length).toBeGreaterThan(0);
+    });
+
+    it('totals the line it charged for, and says the tax is nought', async () => {
+      await payByQr();
+
+      expect(screen.getByText('Subtotal')).toBeInTheDocument();
+      expect(screen.getByText('Tax (0%)')).toBeInTheDocument();
+      expect(screen.getByText('Total')).toBeInTheDocument();
+    });
+
+    it('says what paid it, and which order it was', async () => {
+      await payByQr();
+
+      expect(screen.getByText('Payment Information')).toBeInTheDocument();
+      expect(screen.getByText(/Order MUNCH-/)).toBeInTheDocument();
+    });
+
+    it('offers it on paper, since a receipt is a record', async () => {
+      await payByQr();
+
+      expect(
+        screen.getByRole('button', { name: /Print or save as PDF/ })
+      ).toBeInTheDocument();
+    });
   });
 });
 
