@@ -114,6 +114,7 @@ export const SubscriptionView: React.FC<{
   const [loading, setLoading] = useState(true);
   const [choosing, setChoosing] = useState(false);
   const [buyingPlan, setBuyingPlan] = useState('');
+  const [paidInvoice, setPaidInvoice] = useState<{ orderId: string; amount: string; method: string } | null>(null);
   const [currency, setCurrency] = useState<'USD' | 'NPR'>('NPR');
   const [methodMenu, setMethodMenu] = useState(false);
   const [methodForm, setMethodForm] = useState<'bank' | 'wallet' | null>(null);
@@ -140,6 +141,16 @@ export const SubscriptionView: React.FC<{
   }, []);
 
   const saveMethod = () => {
+    if (methodForm === 'wallet' && methods.some((method) => method.kind === 'wallet')) {
+      toast.error('Only one wallet allowed at once');
+      return;
+    }
+
+    if (methodForm === 'bank' && methods.some((method) => method.kind === 'bank')) {
+      toast.error('Only one bank allowed at once');
+      return;
+    }
+
     const next: SavedPaymentMethod = methodForm === 'wallet'
       ? { id: crypto.randomUUID(), kind: 'wallet', wallet, phone: methodFields.phone, fullName: methodFields.fullName }
       : { id: crypto.randomUUID(), kind: 'bank', bankName: methodFields.bankName, accountName: methodFields.accountName, accountNumber: methodFields.accountNumber };
@@ -150,6 +161,13 @@ export const SubscriptionView: React.FC<{
     setMethodMenu(false);
     setMethodFields({ fullName: '', phone: '', bankName: '', accountName: '', accountNumber: '' });
     toast.success('Payment method saved');
+  };
+
+  const removeMethod = (methodId: string) => {
+    const updated = methods.filter((method) => method.id !== methodId);
+    setMethods(updated);
+    localStorage.setItem('manch.payment.methods', JSON.stringify(updated));
+    toast.success('Payment method removed');
   };
 
   if (loading) {
@@ -190,6 +208,15 @@ export const SubscriptionView: React.FC<{
     if (currency === 'USD') return `$${usd}`;
     return `रू ${Math.round(usd * NPR_PER_USD).toLocaleString('en-IN')}`;
   };
+
+  const buyingPlanData = profile.plans.find((plan) => plan.name === buyingPlan);
+  const buyingPlanCopy = buyingPlanData ? PLAN_COPY[buyingPlanData.id] : undefined;
+  const buyingAmount = buyingPlanCopy?.usd === null || buyingPlanCopy?.usd === undefined
+    ? ''
+    : String(Math.round(buyingPlanCopy.usd * NPR_PER_USD));
+  const savedMethodChoices = methods.map((method) => method.kind === 'wallet'
+    ? { id: method.id, kind: method.kind, label: method.wallet, detail: `${method.fullName} · ${method.phone}` }
+    : { id: method.id, kind: method.kind, label: method.bankName, detail: `${method.accountName} · ${method.accountNumber}` });
 
   /**
    * Every plan, and the way to ask for one.
@@ -415,7 +442,7 @@ export const SubscriptionView: React.FC<{
           <SectionCard className="px-5 py-4">
             <div className="flex items-start justify-between gap-3">
               <p className="text-[14px] text-subtle leading-5">
-                {methods.length === 0 ? 'Nothing to show.' : `${methods.length} saved payment method${methods.length === 1 ? '' : 's'}`}
+                {methods.length === 0 ? 'Nothing to show.' : `${methods.length} Saved Payments${methods.length === 1 ? '' : 's'}`}
               </p>
               <div className="relative">
                 <button
@@ -436,21 +463,30 @@ export const SubscriptionView: React.FC<{
             {methods.length > 0 && (
               <div className="mt-3 flex flex-col gap-2">
                 {methods.map((method) => (
-                  <div key={method.id} className="border border-line rounded-[10px] px-3 py-2.5 flex items-start gap-3 text-[13px] text-body">
-                    <PaymentMethodIcon kind={method.kind} />
-                    {method.kind === 'wallet' ? (
-                      <div className="min-w-0">
-                        <p><span className="text-subtle">Wallet</span> <b className="font-medium text-head">{method.wallet}</b></p>
+                  <div key={method.id} className="border border-line rounded-[10px] px-3 py-2.5 flex items-start justify-between gap-3 text-[13px] text-body">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <PaymentMethodIcon kind={method.kind} />
+                      {method.kind === 'wallet' ? (
+                        <div className="min-w-0">
+                        <p><b className="font-medium text-head">{method.wallet}</b></p>
                         <p className="text-subtle">{method.fullName}</p>
                         <p className="text-subtle tabular-nums">{method.phone}</p>
                       </div>
                     ) : (
                       <div className="min-w-0">
-                        <p><span className="text-subtle">Bank</span> <b className="font-medium text-head">{method.bankName}</b></p>
-                        <p className="text-subtle">{method.accountName}</p>
-                        <p className="text-subtle tabular-nums">{method.accountNumber}</p>
-                      </div>
-                    )}
+                        <p><b className="font-medium text-head">{method.bankName}</b></p>
+                          <p className="text-subtle">{method.accountName}</p>
+                          <p className="text-subtle tabular-nums">{method.accountNumber}</p>
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeMethod(method.id)}
+                      className="text-[12px] text-[#B42318] hover:underline whitespace-nowrap"
+                    >
+                      Remove
+                    </button>
                   </div>
                 ))}
               </div>
@@ -544,15 +580,15 @@ export const SubscriptionView: React.FC<{
             </div>
             {methodForm === 'wallet' ? (
               <>
-                <label className="text-[12px] font-medium text-body">Wallet
+                <label className="text-[12px] font-medium text-body">Wallet: 
                   <select value={wallet} onChange={(e) => setWallet(e.target.value as typeof wallet)} className="mt-1 w-full border border-line rounded-[8px] px-3 py-2 text-[14px]">
                     <option>eSewa</option><option>Khalti</option><option>IME Pay</option>
                   </select>
                 </label>
-                <label className="text-[12px] font-medium text-body">Full name
+                <label className="text-[12px] font-medium text-body">Full Name
                   <input required value={methodFields.fullName} onChange={(e) => setMethodFields({ ...methodFields, fullName: e.target.value })} className="mt-1 w-full border border-line rounded-[8px] px-3 py-2 text-[14px]" />
                 </label>
-                <label className="text-[12px] font-medium text-body">Phone number
+                <label className="text-[12px] font-medium text-body">Phone Number
                   <input required value={methodFields.phone} onChange={(e) => setMethodFields({ ...methodFields, phone: e.target.value })} className="mt-1 w-full border border-line rounded-[8px] px-3 py-2 text-[14px]" />
                 </label>
               </>
@@ -582,9 +618,56 @@ export const SubscriptionView: React.FC<{
             </div>
             <div className="grid gap-4 md:grid-cols-2 mb-5">
               <SectionCard className="p-4"><h4 className="text-[14px] font-semibold text-head">Billing information</h4><div className="mt-3 flex flex-col gap-1.5"><BillingLine label="Name">{user.name || user.email}</BillingLine><BillingLine label="Email">{user.email}</BillingLine><BillingLine label="Address">{user.billing_address || 'Not given'}</BillingLine></div></SectionCard>
-              <SectionCard className="p-4"><h4 className="text-[14px] font-semibold text-head">Saved payment methods</h4><div className="mt-3 flex flex-col gap-2">{methods.length ? methods.map((method) => <div key={method.id} className="flex items-start gap-2 text-[13px] text-body"><PaymentMethodIcon kind={method.kind} /><span>{method.kind === 'wallet' ? <><b className="font-medium text-head">Wallet</b> {method.wallet}<br />{method.fullName}<br />{method.phone}</> : <><b className="font-medium text-head">Bank</b> {method.bankName}<br />{method.accountName}<br />{method.accountNumber}</>}</span></div>) : <span className="text-[13px] text-subtle">Nothing to show.</span>}</div></SectionCard>
+              <SectionCard className="p-4"><h4 className="text-[14px] font-semibold text-head">Saved payment methods</h4><div className="mt-3 flex flex-col gap-2">{methods.length ? methods.map((method) => <div key={method.id} className="flex items-start gap-2 text-[13px] text-body"><PaymentMethodIcon kind={method.kind} /><span>{method.kind === 'wallet' ? <><b>{method.wallet}</b><br />{method.fullName}<br />{method.phone}</> : <> <b>{method.bankName}</b><br />{method.accountName}<br />{method.accountNumber}</>}</span></div>) : <span className="text-[13px] text-subtle">Nothing to show.</span>}</div></SectionCard>
             </div>
-            <PaymentCheckout planName={buyingPlan} />
+            {paidInvoice ? (
+              <div className="border border-line rounded-[12px] bg-white p-6">
+                <div className="flex items-start justify-between gap-4 border-b border-[#c9c4b0] pb-4">
+                  <h4 className="text-[42px] font-bold tracking-tight text-head">Invoice</h4>
+                  <div className="text-right text-[11px] text-body">
+                    {new Date().toLocaleDateString()}<br />
+                    <b>Invoice No. {paidInvoice.orderId.slice(-8)}</b>
+                  </div>
+                </div>
+
+                <div className="py-4 border-b border-[#c9c4b0] text-[12px] text-body">
+                  <b>Billed to:</b><br />
+                  {user.name || user.email}<br />
+                  {user.email}<br />
+                  {user.billing_address || 'Not provided'}
+                </div>
+
+                <div className="py-5 grid grid-cols-[1fr_auto] gap-y-2 text-[12px] text-body">
+                  <span>Description</span>
+                  <span>Amount</span>
+                  <span>{buyingPlan || 'Plan upgrade'}</span>
+                  <span>रू {Number(paidInvoice.amount).toLocaleString('en-IN')}</span>
+                  <b>Total</b>
+                  <b>रू {Number(paidInvoice.amount).toLocaleString('en-IN')}</b>
+                </div>
+
+                <div className="pt-4 border-t border-[#c9c4b0] grid grid-cols-2 gap-4 text-[12px] text-body">
+                  <div>
+                    <b>Payment information</b><br />
+                    {paidInvoice.method}<br />
+                    Order: {paidInvoice.orderId}
+                  </div>
+                  <div>
+                    <b>{user.name || user.email}</b><br />
+                    {user.email}<br />
+                    {user.billing_address || 'Not provided'}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <PaymentCheckout
+                planName={buyingPlan}
+                initialAmount={buyingAmount}
+                billing={{ name: user.name || user.email, email: user.email, address: user.billing_address || 'Not provided' }}
+                savedMethods={savedMethodChoices}
+                onSuccess={setPaidInvoice}
+              />
+            )}
           </div>
         </div>
       )}
