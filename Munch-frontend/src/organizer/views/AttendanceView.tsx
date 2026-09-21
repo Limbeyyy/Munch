@@ -149,6 +149,29 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
 
         const report = await apiClient.getAttendance(event.id).catch(() => undefined);
 
+        /*
+         * Everybody the event counted, whether a session has closed yet
+         * or not.
+         *
+         * A session's register is written when that session ends, so
+         * during the event there are no rows at all and the table came
+         * out empty while the card beside it said 40%. The report knows
+         * who is in the room now; the session rows say which parts they
+         * sat through. The roll is both, so it fills as the day runs
+         * rather than all at once when it is over.
+         */
+        (report?.attended ?? []).forEach((row) => {
+          const key = row.email || row.name;
+          if (!byPerson[key]) {
+            byPerson[key] = {
+              id: key,
+              name: row.name,
+              isGuest: row.type === 'guest',
+              sessions: new Set(),
+            };
+          }
+        });
+
         return {
           event,
           sessions,
