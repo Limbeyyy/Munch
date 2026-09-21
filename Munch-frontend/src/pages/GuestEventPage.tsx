@@ -8,11 +8,10 @@ import { TranscriptionSegment } from '../types';
 import { RoomQuestions } from '../organizer/RoomQuestions';
 import { OrganizerProvider } from '../organizer/i18n';
 import { RoomAgenda } from '../organizer/RoomAgenda';
-import { RoomChat } from '../organizer/RoomChat';
 import { RoomBarButton, RoomCard, RoomPortrait, SidePanelHead } from './roomChrome';
 
 /** The only three things allowed to sit beside a guest's room. */
-type GuestPanel = 'chat' | 'questions' | 'resources';
+type GuestPanel = 'questions' | 'resources';
 
 const API_BASE = (
   process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1'
@@ -64,16 +63,14 @@ export const GuestEventPage: React.FC = () => {
 
   // Chat
   const wsRef = useRef<WebSocket | null>(null);
-  const [showChat, setShowChat] = useState(false);
-  const showChatRef = useRef(false);
-  const [chatSettings, setChatSettings] = useState<ChatSettings>({
+  const [showChat] = useState(false);
+  const [, setChatSettings] = useState<ChatSettings>({
     chat_enabled: false,
     direct_messages_enabled: false,
   });
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [people, setPeople] = useState<ChatPerson[]>([]);
-  const [unread, setUnread] = useState(0);
-  const [myGuestId, setMyGuestId] = useState<string | null>(null);
+  const [, setMyGuestId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   // Shared files
@@ -95,13 +92,6 @@ export const GuestEventPage: React.FC = () => {
     });
   const closeSide = (panel: GuestPanel) =>
     setSide((open) => open.filter((x) => x !== panel));
-
-  // "The chat is open" is now "the chat is one of the two beside the
-  // room". The socket reads it through a ref to decide whether a message
-  // arriving counts as unread, so it follows the column rather than a
-  // second switch that could disagree with it.
-  const chatBeside = side.includes('chat');
-  useEffect(() => { setShowChat(chatBeside); }, [chatBeside]);
 
   useEffect(() => { sideRef.current = side; }, [side]);
 
@@ -156,11 +146,6 @@ export const GuestEventPage: React.FC = () => {
     sessionStorage.clear();
     navigate('/login');
   }, [token, navigate]);
-
-  useEffect(() => {
-    showChatRef.current = showChat;
-    if (showChat) setUnread(0);
-  }, [showChat]);
 
   const loadChat = useCallback(async () => {
     if (!token) return;
@@ -266,7 +251,6 @@ export const GuestEventPage: React.FC = () => {
             recipient_is_guest: !!data.recipient_is_guest,
           }]
         );
-        if (!showChatRef.current) setUnread((n) => n + 1);
       } else if (data.type === 'event_started') {
         setStartedAt(data.started_at);
       } else if (data.type === 'event_ended') {
@@ -335,12 +319,6 @@ export const GuestEventPage: React.FC = () => {
     return () => clearInterval(id);
   }, [loadResources]);
 
-  /*
-   * Everything a guest writes goes to somebody: the host, or the speaker.
-   * There is no room-wide thread on either side of the room any more.
-   */
-  const visibleMessages = messages.filter((m) => m.is_direct);
-
   const sendTo = (to: string, body: string) => {
     if (!body || !to) return;
     const socket = wsRef.current;
@@ -353,6 +331,22 @@ export const GuestEventPage: React.FC = () => {
       message: body,
       recipient_id: to,
     }));
+  };
+
+  /**
+   * Put something to whoever runs the room.
+   *
+   * There is no chat any more, so a guest's message is only ever an
+   * offer for the board: it goes to the host and waits there until they
+   * put it up or decline it.
+   */
+  const askHost = (body: string) => {
+    const host = people.find((one) => one.role === 'host') ?? people[0];
+    if (!host?.id) {
+      toast.error('Nobody is here to receive it yet');
+      return;
+    }
+    sendTo(host.id, body);
   };
 
   useEffect(() => {
@@ -622,6 +616,7 @@ export const GuestEventPage: React.FC = () => {
                       <RoomQuestions
                         guestToken={token}
                         refreshMs={20000}
+                        onAsk={(body) => askHost(body)}
                         onNews={(many) =>
                           setUnseen((was) =>
                             sideRef.current.includes('questions')
@@ -634,24 +629,6 @@ export const GuestEventPage: React.FC = () => {
                   </RoomCard>
                 )}
 
-                {panel === 'chat' && (
-                  <RoomCard>
-                    <RoomChat
-                      people={people.map((person) => ({
-                        id: person.id,
-                        name: person.name,
-                        role: person.role,
-                      }))}
-                      messages={visibleMessages}
-                      meId={myGuestId}
-                      meIsGuest
-                      directEnabled={chatSettings.direct_messages_enabled}
-                      reviewed
-                      onSend={(to, body) => sendTo(to, body)}
-                      onClose={() => closeSide('chat')}
-                    />
-                  </RoomCard>
-                )}
               </React.Fragment>
             ))}
           </div>
@@ -666,13 +643,6 @@ export const GuestEventPage: React.FC = () => {
         aria-label="Event controls"
       >
         <div className="flex items-center justify-center gap-2 sm:gap-[38px] overflow-x-auto">
-          <RoomBarButton
-            icon="chat"
-            label="Chat"
-            badge={side.includes('chat') ? 0 : unread}
-            open={side.includes('chat')}
-            onClick={() => toggleSide('chat')}
-          />
           <RoomBarButton
             icon="questions"
             label="Questions"
