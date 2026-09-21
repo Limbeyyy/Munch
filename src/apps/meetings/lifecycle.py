@@ -130,6 +130,30 @@ def clear_room(event, now=None):
     return left + sent_home
 
 
+def discard_unpublished(event):
+    """Throw away everything the host never put on the board.
+
+    A message is written to be put up. If the host puts it up it becomes
+    a question or a suggestion and belongs to the event's record; if they
+    decline it, or simply never get to it before the day is over, there
+    is nothing to keep - it was never read by anybody but them, and this
+    system does not hold private messages.
+
+    So what survives an event is exactly what is on its board. Called
+    when the event ends, after the register is taken.
+    """
+    from src.apps.meetings.models import ChatMessage
+
+    gone, _ = ChatMessage.objects.filter(
+        event=event
+    ).exclude(
+        topic__in=[ChatMessage.Topic.FAQ, ChatMessage.Topic.SUGGESTION]
+    ).delete()
+    if gone:
+        logger.info(f"Discarded {gone} unpublished messages from {event.code}")
+    return gone
+
+
 def record_guest_attendance(event, name, when=None):
     """Write a guest's name on the event's own register.
 

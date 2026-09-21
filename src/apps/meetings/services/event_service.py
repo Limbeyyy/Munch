@@ -156,7 +156,9 @@ class EventService:
             # a session ends, so clearing the room before taking it records
             # nobody - which is how a session everybody sat through came
             # out empty when the host ended the event early.
-            from src.apps.meetings.lifecycle import clear_room, close_session
+            from src.apps.meetings.lifecycle import (
+                clear_room, close_session, discard_unpublished,
+            )
             from src.apps.meetings.models import Session
 
             for running in event.sessions.filter(status=Session.Status.LIVE):
@@ -169,6 +171,10 @@ class EventService:
             # Now that the register is taken, empty the room. One definition
             # of that, shared with every other way a event can end.
             clear_room(event, event.ended_at)
+
+            # And throw away whatever was never put on the board. What
+            # survives an event is exactly what its board says.
+            discard_unpublished(event)
 
             EventLogEntry.objects.create(
                 event=event,

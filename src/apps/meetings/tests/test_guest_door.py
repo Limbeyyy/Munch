@@ -472,13 +472,17 @@ class OneSeatPerGuestTests(TestCase):
 
 
 class WhatAGuestLeavesBehindTests(TestCase):
-    """What was written survives the person being forgotten.
+    """What was put on the board survives the person being forgotten.
 
     A guest's row goes when the event ends - that is the whole point of
-    them being guests - but a question asked from the floor belongs to the
-    event. It used to go with them: the link cascaded, so the host who
-    went to put a question on the board was told there was no such
-    message, and anything already on the board vanished from it.
+    them being guests - and what they wrote used to go with them: the
+    link cascaded, so anything already on the board vanished from it.
+    The board keeps it, and keeps their name on it.
+
+    What was never put up does not survive, and is not meant to. A
+    message is written to be put up; one the host declined or never got
+    to was read by nobody else, and this system holds no private
+    messages once the day is over.
     """
 
     def setUp(self):
@@ -498,10 +502,12 @@ class WhatAGuestLeavesBehindTests(TestCase):
         )
         from src.apps.meetings.models import ChatMessage
 
+        # Put up by the host, which is what makes it part of the record.
         self.asked = ChatMessage.objects.create(
             event=self.event, guest_sender=self.guest, recipient=self.host,
             body='What is this event about?',
-            moderation_status=ChatMessage.Moderation.PENDING,
+            moderation_status=ChatMessage.Moderation.APPROVED,
+            topic=ChatMessage.Topic.FAQ,
         )
 
     def end_it(self):
@@ -526,47 +532,51 @@ class WhatAGuestLeavesBehindTests(TestCase):
         self.assertIsNone(message.guest_sender_id)
         self.assertEqual(message.sender_label, 'Rahul Ingnam')
 
-    def test_the_host_can_still_put_it_on_the_board(self):
+    def test_it_is_still_on_the_board_after_the_day(self):
         from django.test import Client
         from rest_framework_simplejwt.tokens import AccessToken
 
         self.end_it()
         client = Client(HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(self.host)}')
 
-        approved = client.post(
-            f'{API}/events/{self.event.id}/moderate_message/',
-            {'message_id': str(self.asked.id), 'decision': 'approve', 'topic': 'faq'},
-            content_type='application/json',
-        )
-
-        self.assertEqual(approved.status_code, 200)
         board = client.get(f'{API}/events/{self.event.id}/board/').json()
+
         self.assertEqual(
             [q['body'] for q in board['faq']], ['What is this event about?']
         )
+
+    def test_one_the_host_never_put_up_does_not_outlive_the_day(self):
+        from src.apps.meetings.models import ChatMessage
+
+        waiting = ChatMessage.objects.create(
+            event=self.event, guest_sender=self.guest, recipient=self.host,
+            body='Is there parking?',
+            moderation_status=ChatMessage.Moderation.PENDING,
+        )
+
+        self.end_it()
+
+        self.assertFalse(ChatMessage.objects.filter(id=waiting.id).exists())
 
     def test_and_the_board_still_names_the_asker(self):
         from django.test import Client
         from rest_framework_simplejwt.tokens import AccessToken
 
         client = Client(HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(self.host)}')
-        client.post(
-            f'{API}/events/{self.event.id}/moderate_message/',
-            {'message_id': str(self.asked.id), 'decision': 'approve', 'topic': 'faq'},
-            content_type='application/json',
-        )
 
         self.end_it()
 
         board = client.get(f'{API}/events/{self.event.id}/board/').json()
         self.assertEqual([q['asked_by'] for q in board['faq']], ['Rahul Ingnam'])
 
-    def test_a_reply_to_them_survives_as_well(self):
+    def test_a_reply_put_up_beside_it_keeps_their_name_too(self):
         from src.apps.meetings.models import ChatMessage
 
         answered = ChatMessage.objects.create(
             event=self.event, sender=self.host, guest_recipient=self.guest,
             body='It is about the budget.',
+            moderation_status=ChatMessage.Moderation.APPROVED,
+            topic=ChatMessage.Topic.FAQ,
         )
 
         self.end_it()
