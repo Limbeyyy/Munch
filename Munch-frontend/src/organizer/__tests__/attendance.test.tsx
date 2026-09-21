@@ -175,23 +175,59 @@ describe('the attendance grid', () => {
 });
 
 /**
- * The roll is still the roll.
+ * One event's attendance, on one screen.
  *
- * The grid is a landing, not a replacement: an event's own attendance -
- * by session, by event, by person - is what a card opens onto.
+ * It used to be three tabs over a strip of totals - by session, by
+ * event, by person - which is three ways of reading one register, and a
+ * reader had to try each to find the one they wanted.
  */
 describe('opening one event from the grid', () => {
   const open = async () => {
     show();
     fireEvent.click(await screen.findByRole('button', { name: 'View attendance' }));
-    return screen.findByRole('tab', { name: 'By session' });
+    return screen.findByRole('heading', { level: 1, name: 'Attendance' });
   };
 
-  it('opens on that event, with the tabs it always had', async () => {
+  it('names the event, when it ran and where', async () => {
     await open();
 
-    expect(screen.getByRole('tab', { name: 'By event' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'By person' })).toBeInTheDocument();
+    expect(
+      screen.getByText(/Disaster Management Review · .*City Hall, Room 201/)
+    ).toBeInTheDocument();
+  });
+
+  it('shows the sessions and the people on the one screen', async () => {
+    await open();
+
+    // The register lands a tick after the screen, once the roll is read.
+    expect(
+      await screen.findByRole('heading', { name: 'Sessions' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Who came' })).toBeInTheDocument();
+  });
+
+  it('offers no tabs to read the same register three ways', async () => {
+    await open();
+
+    expect(screen.queryByRole('tab', { name: 'By session' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'By event' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'By person' })).toBeNull();
+  });
+
+  /** The figures are on the card that opened this; twice is once too many. */
+  it('does not repeat the figures the card already gave', async () => {
+    await open();
+
+    expect(screen.queryByText('In the room now')).toBeNull();
+    expect(screen.queryByText('Came')).toBeNull();
+  });
+
+  it('keeps the export where the heading is', async () => {
+    await open();
+
+    expect(
+      screen.getByRole('button', { name: 'Export to Sheets' })
+    ).toBeInTheDocument();
   });
 
   it('leaves the grid behind, and a way back to it', async () => {
