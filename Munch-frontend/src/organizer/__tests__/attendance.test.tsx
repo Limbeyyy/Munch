@@ -41,18 +41,18 @@ const event = (over: any = {}) => ({
 });
 
 const report = (over: any = {}) => ({
-  expected_from_invites: 10,
+  expected_from_invites: 4,
   expected_total: 10,
   absent_count: 2,
   walked_in_uninvited: 0,
   session_attendance_total: 8,
   sessions: [],
-  attended_count: 8,
+  attended_count: 9,
   active_count: 0,
   inactive_count: 8,
   invited_who_attended: 8,
   invited_who_did_not: 2,
-  guests_admitted: 0,
+  guests_admitted: 5,
   attended: [],
   did_not_attend: [],
   ...over,
@@ -91,19 +91,38 @@ describe('the attendance grid', () => {
     expect(screen.getByText('City Hall, Room 201', { exact: false })).toBeInTheDocument();
   });
 
-  it('counts the invited, the ones who came, and the ones who did not', async () => {
+  /**
+   * Everybody the day counted, and the two ways they got there: an
+   * invitation, or the door.
+   */
+  it('counts the total, the invited and the guests', async () => {
     show();
     await screen.findByText('Disaster Management Review');
 
     // The figures land a tick after the card, once the report is back.
     await waitFor(() => expect(screen.getByText('10')).toBeInTheDocument());
+    expect(screen.getByText('Total')).toBeInTheDocument();
     expect(screen.getByText('Invited')).toBeInTheDocument();
-    expect(screen.getByText('Attended')).toBeInTheDocument();
-    expect(screen.getByText('No-show')).toBeInTheDocument();
-    expect(screen.getByText('8')).toBeInTheDocument();
-    // Invited less attended: the figure and the bar agree by construction.
-    expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText('80%')).toBeInTheDocument();
+    expect(screen.getByText('Guests')).toBeInTheDocument();
+    expect(screen.getByText('4')).toBeInTheDocument();
+    expect(screen.getByText('5')).toBeInTheDocument();
+  });
+
+  it('reads the share who came against the total, not the invitations', async () => {
+    show();
+    await screen.findByText('Disaster Management Review');
+
+    // Nine of the ten counted, though only four were invited.
+    await waitFor(() => expect(screen.getByText('90%')).toBeInTheDocument());
+  });
+
+  /** The old reading, which said nothing about anyone who walked in. */
+  it('no longer counts attended and no-show', async () => {
+    show();
+    await waitFor(() => expect(screen.getByText('Total')).toBeInTheDocument());
+
+    expect(screen.queryByText('Attended')).toBeNull();
+    expect(screen.queryByText('No-show')).toBeNull();
   });
 
   it('says how the event stands', async () => {
@@ -188,11 +207,15 @@ describe('opening one event from the grid', () => {
     return screen.findByRole('heading', { level: 1, name: 'Attendance' });
   };
 
-  it('names the event, when it ran and where', async () => {
+  /** The name is the thing being read; the day and the room sit under it. */
+  it('names the event on a line of its own, above when and where', async () => {
     await open();
 
+    const name = screen.getAllByText('Disaster Management Review').at(-1)!;
+    expect(name.className).toMatch(/font-semibold/);
+    expect(name.textContent).toBe('Disaster Management Review');
     expect(
-      screen.getByText(/Disaster Management Review · .*City Hall, Room 201/)
+      screen.getByText(/City Hall, Room 201/)
     ).toBeInTheDocument();
   });
 

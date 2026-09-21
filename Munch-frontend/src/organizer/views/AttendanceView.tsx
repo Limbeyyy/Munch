@@ -285,10 +285,16 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
               style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))' }}>
               {shown.map((one) => {
                 const report = cards[one.id];
-                const invited = report?.expected_total ?? 0;
+                // Everybody the day counted, and the two ways they got
+                // there: an invitation, or the door. The total is neither
+                // one plus the other - somebody can be counted without
+                // being either - so it is read from the server rather
+                // than added up here.
+                const total = report?.expected_total ?? 0;
+                const invited = report?.expected_from_invites ?? 0;
+                const guests = report?.guests_admitted ?? 0;
                 const attended = report?.attended_count ?? 0;
-                const missing = Math.max(0, invited - attended);
-                const pct = invited > 0 ? Math.round((attended / invited) * 100) : 0;
+                const pct = total > 0 ? Math.round((attended / total) * 100) : 0;
                 const state = eventState(one);
                 return (
                   <article
@@ -315,16 +321,16 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
                       <div className="flex items-end justify-between gap-4">
                         <div className="flex gap-4">
                           <Figure
+                            label={t({ ne: 'जम्मा', en: 'Total' })}
+                            value={num(total)}
+                          />
+                          <Figure
                             label={t({ ne: 'निम्तो', en: 'Invited' })}
                             value={num(invited)}
                           />
                           <Figure
-                            label={t({ ne: 'आएका', en: 'Attended' })}
-                            value={num(attended)}
-                          />
-                          <Figure
-                            label={t({ ne: 'आएनन्', en: 'No-show' })}
-                            value={num(missing)}
+                            label={t({ ne: 'पाहुना', en: 'Guests' })}
+                            value={num(guests)}
                           />
                         </div>
                         <span className="text-[18px] font-semibold text-head leading-7
@@ -405,9 +411,14 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
             </div>
 
             {event && (
-              <p className="text-[14px] text-subtle leading-5">
-                {event.title} · {whenAndWhere(event)}
-              </p>
+              <div className="flex flex-col">
+                <p className="text-[14px] font-semibold text-head leading-5">
+                  {event.title}
+                </p>
+                <p className="text-[14px] text-subtle leading-5">
+                  {whenAndWhere(event)}
+                </p>
+              </div>
             )}
 
             {loading ? (
