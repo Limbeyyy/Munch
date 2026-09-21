@@ -120,6 +120,21 @@ export const RoomQuestions: React.FC<Props> = ({
     return () => clearInterval(id);
   }, [load, refreshMs]);
 
+  /** One vote each. The room decides what most wants answering. */
+  const vote = async (entry: BoardEntry, value: 1 | -1) => {
+    try {
+      setBusy(entry.id);
+      const updated = guestToken
+        ? await apiClient.guestVoteOnBoard(guestToken, entry.id, value)
+        : eventId
+        ? await apiClient.voteOnBoard(eventId, entry.id, value)
+        : null;
+      if (updated) setBoard(updated);
+    } catch (e: any) {
+      toast.error(errorText(e, t({ ne: 'भोट दिन सकिएन', en: 'Could not vote' })));
+    } finally { setBusy(null); }
+  };
+
   /**
    * What the host does with something written to them.
    *
@@ -187,7 +202,7 @@ export const RoomQuestions: React.FC<Props> = ({
       : []),
   ];
 
-  /** One question, with any answer beneath it. */
+  /** One question, with the room's vote on it. */
   const entryRow = (entry: BoardEntry) => (
     <li key={entry.id} className="flex flex-col gap-[7px] px-2 py-1">
       <div className="flex gap-3 items-start">
@@ -195,6 +210,47 @@ export const RoomQuestions: React.FC<Props> = ({
         <p className="flex-1 min-w-0 text-[14px] leading-5 text-[#24262b]">
           {entry.body}
         </p>
+      </div>
+
+      {/* Indented to the question, not centred under it: the arrows
+          belong to the words above them, and a row of its own in the
+          middle of the card reads as something else entirely. */}
+      <div className="flex gap-[19px] items-center ps-9">
+        <button
+          onClick={() => vote(entry, 1)}
+          disabled={busy === entry.id}
+          aria-label={t({ ne: 'माथि भोट', en: 'Vote up' })}
+          aria-pressed={entry.my_vote === 1}
+          className="flex gap-1 items-center disabled:opacity-50"
+        >
+          <FigmaIcon name={entry.my_vote === 1 ? 'voteUpCast' : 'voteUp'} size={24} />
+          {entry.score > 0 && (
+            <span className={`text-[14px] font-medium leading-5 tabular-nums ${
+              entry.my_vote === 1 ? 'text-[#1a478b]' : 'text-[#656565]'
+            }`}>
+              {num(entry.score)}
+            </span>
+          )}
+        </button>
+
+        <span className="text-[14px] text-[#383838] leading-5">
+          {t({ ne: 'भोट', en: 'Vote' })}
+        </span>
+
+        <button
+          onClick={() => vote(entry, -1)}
+          disabled={busy === entry.id}
+          aria-label={t({ ne: 'तल भोट', en: 'Vote down' })}
+          aria-pressed={entry.my_vote === -1}
+          className="flex gap-1 items-center disabled:opacity-50"
+        >
+          <FigmaIcon name="voteDown" size={24} />
+          {entry.score < 0 && (
+            <span className="text-[14px] font-medium leading-5 tabular-nums text-[#656565]">
+              {num(Math.abs(entry.score))}
+            </span>
+          )}
+        </button>
       </div>
 
       {entry.answer && (
