@@ -233,7 +233,9 @@ describe('opening one event from the grid', () => {
   it('gives the register the columns the design asks for', async () => {
     await open();
 
-    for (const head of ['Name', 'Email', 'Status', 'Joined', 'Left', 'Duration']) {
+    for (const head of [
+      'Name', 'Email', 'Role', 'Status', 'Sessions', 'Joined', 'Left', 'Duration',
+    ]) {
       expect(screen.getByRole('columnheader', { name: head })).toBeInTheDocument();
     }
   });
@@ -246,6 +248,60 @@ describe('opening one event from the grid', () => {
     expect(within(came).getByText('Attended')).toBeInTheDocument();
     const missed = screen.getByText('deepak@example.com').closest('tr') as HTMLElement;
     expect(within(missed).getByText('No-show')).toBeInTheDocument();
+  });
+
+  it('says what each person was here as', async () => {
+    api.getAttendance.mockResolvedValue(report({
+      attended: [
+        someone({ role: 'host', name: 'Sarah Sharma', email: 'sarah@example.com' }),
+        someone({ role: 'co_host', name: 'Bina Rai', email: 'bina@example.com' }),
+        someone({ role: 'guest', name: 'Rahul Ingnam', email: null }),
+      ],
+      did_not_attend: [],
+    }) as any);
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: 'View attendance' }));
+    await screen.findByText('Sarah Sharma');
+
+    expect(
+      within(screen.getByText('Sarah Sharma').closest('tr') as HTMLElement)
+        .getByText('Host')
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByText('Bina Rai').closest('tr') as HTMLElement)
+        .getByText('Co-host')
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByText('Rahul Ingnam').closest('tr') as HTMLElement)
+        .getByText('Guest')
+    ).toBeInTheDocument();
+  });
+
+  /** Out of the whole event, not out of what has run so far. */
+  it('counts the sessions somebody sat through, out of the event', async () => {
+    api.listEvents.mockResolvedValue([event({
+      sessions: [
+        { id: 's1', title: 'One', starts_at: '', duration_minutes: 30, status: 'done' },
+        { id: 's2', title: 'Two', starts_at: '', duration_minutes: 30, status: 'done' },
+      ],
+    })] as any);
+    api.getSessionAttendance.mockImplementation(async (id: string) =>
+      (id === 's1'
+        ? [{ id: 'a1', session: 's1', person_id: 'p1', name: 'Suman Karki',
+             is_guest: false, marked_manually: false, recorded_at: '' }]
+        : []) as any
+    );
+    await open();
+
+    const row = screen.getByText('Suman Karki').closest('tr') as HTMLElement;
+    expect(within(row).getByText('1/2')).toBeInTheDocument();
+  });
+
+  it('counts nothing against somebody who never came', async () => {
+    await open();
+
+    const row = screen.getByText('deepak@example.com').closest('tr') as HTMLElement;
+    expect(within(row).queryByText(/\/\d/)).toBeNull();
   });
 
   it('says how long somebody stayed', async () => {
@@ -349,6 +405,8 @@ describe('attendance while the event is still running', () => {
 
     const row = screen.getByText('Sarah Sharma').closest('tr') as HTMLElement;
     expect(within(row).getByText('Attended')).toBeInTheDocument();
-    expect(within(row).getAllByText('—').length).toBe(1);
+    // The hour they left, and nothing else: the event has no sessions
+    // in this fixture, so that column is a dash too.
+    expect(within(row).getAllByText('—').length).toBe(2);
   });
 });
