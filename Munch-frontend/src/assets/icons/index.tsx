@@ -2,7 +2,9 @@ import React from 'react';
 
 import appSavedObjects from './app-saved-objects.svg';
 import arrowRight from './arrow-right.svg';
+import caretRight from './caret-right.svg';
 import chatLeftDots from './chat-left-dots.svg';
+import checkFill from './check-fill.svg';
 import chevronDown from './chevron-down.svg';
 import exitStroke from './exit-stroke.svg';
 import fileCopy from './file-copy.svg';
@@ -48,6 +50,10 @@ export const FIGMA_ICON = {
   voteUp,
   voteUpCast,
   voteDown,
+  /** The tick inside the filter the moderation screen is showing. */
+  checkFill,
+  /** The arrow on an agenda's header, turned down when it is open. */
+  caretRight,
 } as const;
 
 export type FigmaIconName = keyof typeof FIGMA_ICON;

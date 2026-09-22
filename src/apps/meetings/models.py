@@ -216,6 +216,19 @@ class ChatMessage(models.Model):
         related_name='received_chat_messages', null=True, blank=True,
     )
     guest_recipient_name = models.CharField(max_length=120, blank=True, default='')
+    #: Which part of the running order was on stage when this was written.
+    #:
+    #: A question belongs to the talk it was asked during - that is how
+    #: the host reads a queue, and how the board sorts itself afterwards.
+    #: Null where nothing was on stage, which is a question asked of the
+    #: event at large rather than of any one talk.
+    session = models.ForeignKey(
+        'Session',
+        on_delete=models.SET_NULL,
+        related_name='chat_messages',
+        null=True,
+        blank=True,
+    )
     body = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
 
