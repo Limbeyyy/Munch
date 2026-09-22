@@ -130,11 +130,36 @@ describe('a question on the board', () => {
     expect(screen.getByText('12')).toBeInTheDocument();
   });
 
-  it('offers the host a way to answer it', async () => {
+  /**
+   * The question and what the room made of it, and nothing else. Who
+   * asked and when were the moderator's business, and the board is what
+   * everybody reads.
+   */
+  it('names nobody, and gives no hour', async () => {
     show();
     await screen.findByText('when is the reception?');
 
-    expect(screen.getByRole('button', { name: 'Answer' })).toBeInTheDocument();
+    expect(screen.queryByText('Suman Dhungana')).toBeNull();
+    expect(screen.queryByText('Guest')).toBeNull();
+    expect(screen.queryByText(/07:50|09:4/)).toBeNull();
+  });
+
+  it('offers no way to answer from here', async () => {
+    show();
+    await screen.findByText('when is the reception?');
+
+    expect(screen.queryByRole('button', { name: /Answer/ })).toBeNull();
+  });
+
+  /** An answer already given is still shown; only the writing of one went. */
+  it('still shows an answer that was given', async () => {
+    api.getEventBoard.mockResolvedValue({
+      faq: [entry({ answer: 'At five sharp.', answered_by: 'Rahul' })],
+      suggestions: [],
+    } as any);
+    show();
+
+    expect(await screen.findByText(/At five sharp/)).toBeInTheDocument();
   });
 
   /** There are no direct messages, so nothing came from one. */
@@ -147,14 +172,6 @@ describe('a question on the board', () => {
     await screen.findByText('when is the reception?');
 
     expect(screen.queryByText(/direct/i)).toBeNull();
-  });
-
-  it('still names who asked, and when', async () => {
-    show();
-    await screen.findByText('when is the reception?');
-
-    expect(screen.getByText('Suman Dhungana')).toBeInTheDocument();
-    expect(screen.getByText('Guest')).toBeInTheDocument();
   });
 
   it('sends a vote and takes the board back', async () => {
