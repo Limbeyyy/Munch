@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { OrganizerProvider } from '../i18n';
 import { MessageBoard } from '../MessageBoard';
 import { apiClient } from '../../services/api';
@@ -54,12 +54,22 @@ beforeEach(() => {
   api.getEventBoard.mockResolvedValue(board() as any);
 });
 
+/**
+ * The vote, as 479-664 draws it.
+ *
+ * An arrow each way with the word between them, laid along the line
+ * under the question rather than stacked into a pill beside it. The same
+ * control the room reads, so the host is looking at what everybody else
+ * is - it used to be a second drawing of the same thing, which is how
+ * one of them ended up stretched across the card.
+ */
 describe('voting on a question', () => {
   it('shows the tally between two arrows a reader can name', async () => {
     show();
 
-    expect(await screen.findByRole('button', { name: 'Upvote' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Downvote' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Vote up' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Vote down' })).toBeInTheDocument();
+    expect(screen.getByText('Vote')).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
   });
 
@@ -68,50 +78,55 @@ describe('voting on a question', () => {
 
     show();
 
-    expect(await screen.findByRole('button', { name: 'Upvote' })).toHaveAttribute(
+    expect(await screen.findByRole('button', { name: 'Vote up' })).toHaveAttribute(
       'aria-pressed', 'true'
     );
-    expect(screen.getByRole('button', { name: 'Downvote' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Vote down' })).toHaveAttribute(
       'aria-pressed', 'false'
     );
   });
 
-  it('marks the chosen arrow rather than only tinting its outline', async () => {
-    // At this size a change of text colour is easy to miss, so the arrow
-    // is filled.
-    api.getEventBoard.mockResolvedValue(board({ faq: [entry({ my_vote: 1 })] }) as any);
-
+  /**
+   * Along the line, not down it.
+   *
+   * The control the host had was a pill built to stand in a flex row
+   * beside the question. Put under the question instead it had nothing
+   * to hug, and stretched the width of the card with the arrows stacked
+   * inside it.
+   */
+  it('lays the arrows along one line under the question', async () => {
     show();
 
-    const up = await screen.findByRole('button', { name: 'Upvote' });
-    expect(up.className).toContain('bg-amber');
-    expect(screen.getByRole('button', { name: 'Downvote' }).className)
-      .not.toContain('bg-navy-700');
-  });
-
-  it('keeps a downvote off the colour that means live or lost', async () => {
-    api.getEventBoard.mockResolvedValue(board({ faq: [entry({ my_vote: -1 })] }) as any);
-
-    show();
-
-    const down = await screen.findByRole('button', { name: 'Downvote' });
-    expect(down.className).toContain('bg-navy-700');
-    expect(down.className).not.toContain('live');
-  });
-
-  it('hugs its contents rather than stretching down the entry', async () => {
-    // The row is a flex row, so without this the pill grows to the height
-    // of the question and its answer and trails a column of empty tint.
-    api.getEventBoard.mockResolvedValue(board({
-      faq: [entry({ answer: 'Reception is at 5 PM sharp.', answered_by: 'Rahul' })],
-    }) as any);
-
-    show();
-
-    const pill = (await screen.findByRole('button', { name: 'Upvote' }))
+    const row = (await screen.findByRole('button', { name: 'Vote up' }))
       .parentElement as HTMLElement;
-    expect(pill.className).toContain('self-start');
-    expect(pill.className).not.toContain('h-full');
+    expect(row.className).toContain('flex');
+    expect(row.className).not.toContain('flex-col');
+    // The word and the other arrow are its neighbours on that line.
+    expect(within(row).getByText('Vote')).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Vote down' }))
+      .toBeInTheDocument();
+  });
+
+  /** The tally belongs to whichever arrow earned it. */
+  it('puts a negative tally against the down arrow', async () => {
+    api.getEventBoard.mockResolvedValue(
+      board({ faq: [entry({ score: -4, my_vote: -1 })] }) as any
+    );
+
+    show();
+
+    const down = await screen.findByRole('button', { name: 'Vote down' });
+    expect(within(down).getByText('4')).toBeInTheDocument();
+  });
+
+  /** Nought is not a number anybody wrote, so it is not shown. */
+  it('shows no tally at all on a question nobody has voted on', async () => {
+    api.getEventBoard.mockResolvedValue(board({ faq: [entry({ score: 0 })] }) as any);
+
+    show();
+    await screen.findByRole('button', { name: 'Vote up' });
+
+    expect(screen.queryByText('0')).toBeNull();
   });
 
   it('sends the vote and takes the answer back', async () => {
@@ -120,7 +135,7 @@ describe('voting on a question', () => {
     );
 
     show();
-    fireEvent.click(await screen.findByRole('button', { name: 'Upvote' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Vote up' }));
 
     await waitFor(() => expect(api.voteOnBoard).toHaveBeenCalledWith('m1', 'q1', 1));
     expect(await screen.findByText('3')).toBeInTheDocument();

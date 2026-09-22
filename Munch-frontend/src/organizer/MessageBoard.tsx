@@ -3,120 +3,22 @@ import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
 import { BoardEntry, EventBoard } from '../types';
 import { FigmaIcon } from '../assets/icons';
+import { BoardVote } from './BoardVote';
 import { Pair, useOrganizer } from './i18n';
 import { Btn, Chip, Empty, Panel, Tabs } from './ui';
 import { Modal } from './OrganizerShell';
 import { errorText } from './errors';
 
-/**
- * How somebody votes on one entry.
- *
- * The same shape and the same rule as the hub: pressing the same arrow
- * twice takes the vote back, and the count is the server's answer rather
- * than a guess made here, so two people voting at once cannot drift.
- */
-/**
- * A caret, drawn rather than typed.
- *
- * The arrows were text glyphs, which a font renders at whatever weight
- * and baseline it likes - thin, slightly off-centre, and different on
- * every machine. A stroked path is the same everywhere and lines up with
- * the count between them.
- */
-const Caret: React.FC<{ up?: boolean }> = ({ up }) => (
-  <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-    <path
-      d={up ? 'M2 7.5L6 3.5l4 4' : 'M2 4.5L6 8.5l4-4'}
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
-/**
- * What the room thinks of a question, and this reader's part in it.
- *
- * Kept in the palette the rest of the platform uses: amber is the stage
- * light, so it marks the vote that pushes something towards being
- * answered, and navy - which carries everything institutional here -
- * marks the one that pushes it away. Red is reserved for what is live or
- * about to be lost, and a downvote is neither.
- *
- * A chosen arrow is filled rather than merely tinted: at this size a
- * change of text colour is easy to miss, and somebody should be able to
- * see how they voted without hovering to find out.
- */
-const Vote: React.FC<{
-  entry: BoardEntry;
-  busy: boolean;
-  onVote: (value: 1 | -1) => void;
-}> = ({ entry, busy, onVote }) => {
-  const { num } = useOrganizer();
-  const chosen = entry.my_vote;
-
-  const arrow = (value: 1 | -1, label: string) => {
-    const mine = chosen === value;
-    return (
-      <button
-        type="button"
-        disabled={busy}
-        aria-label={label}
-        aria-pressed={mine}
-        title={label}
-        onClick={() => onVote(value)}
-        className={`w-[26px] h-[21px] grid place-items-center rounded-[7px]
-          transition-colors disabled:opacity-40 disabled:cursor-not-allowed
-          ${mine
-            ? value === 1
-              ? 'bg-amber text-white shadow-[0_1px_2px_rgba(201,122,18,.35)]'
-              : 'bg-navy-700 text-white shadow-[0_1px_2px_rgba(10,37,80,.3)]'
-            : 'text-[#8A97A8] hover:text-navy-800 hover:bg-navy-800/[.07]'}`}
-      >
-        <Caret up={value === 1} />
-      </button>
-    );
-  };
-
-  return (
-    <div
-      /*
-       * `self-start` is doing real work: the row around this is a flex
-       * row, so without it the pill stretches to whatever height the
-       * question and its answer come to and leaves a column of empty
-       * tint below the arrows. It hugs its own contents and sits beside
-       * the question it belongs to.
-       */
-      className={`flex flex-col items-center gap-[3px] rounded-[11px] border
-        px-1 py-[3px] flex-none self-start transition-colors ${
-        chosen === 1
-          ? 'border-amber/70 bg-amber/[.10]'
-          : chosen === -1
-          ? 'border-navy-500/45 bg-navy-500/[.07]'
-          : 'border-navy-800/[.12] bg-cream/70'
-      }`}
-    >
-      {arrow(1, 'Upvote')}
-      <span
-        className={`text-[13px] leading-none tabular-nums font-semibold ${
-          entry.score > 0
-            ? 'text-navy-900'
-            : entry.score < 0
-            ? 'text-[#6E7C8E]'
-            : 'text-[#98A3B3]'
-        }`}
-      >
-        {num(entry.score)}
-      </span>
-      {arrow(-1, 'Downvote')}
-    </div>
-  );
-};
-
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+/**
+ * The board, as the host reads it.
+ *
+ * Pressing the same arrow twice takes the vote back, and the count is
+ * the server's answer rather than a guess made here, so two people
+ * voting at once cannot drift.
+ */
 interface Props {
   /** Read as an account holder. */
   eventId?: string;
@@ -273,7 +175,11 @@ export const MessageBoard: React.FC<Props> = ({
               </div>
 
               <div className="ps-9">
-                <Vote entry={entry} busy={voting === entry.id} onVote={(v) => vote(entry, v)} />
+                <BoardVote
+                  entry={entry}
+                  busy={voting === entry.id}
+                  onVote={(v) => vote(entry, v)}
+                />
               </div>
 
               <div className="min-w-0 flex-1 ps-9">

@@ -124,8 +124,9 @@ describe('a question on the board', () => {
     show();
     await screen.findByText('when is the reception?');
 
-    expect(screen.getByRole('button', { name: 'Upvote' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Downvote' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Vote up' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Vote down' })).toBeInTheDocument();
+    expect(screen.getByText('Vote')).toBeInTheDocument();
     expect(screen.getByText('12')).toBeInTheDocument();
   });
 
@@ -163,7 +164,7 @@ describe('a question on the board', () => {
     show();
     await screen.findByText('when is the reception?');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Upvote' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Vote up' }));
 
     expect(await screen.findByText('13')).toBeInTheDocument();
   });
