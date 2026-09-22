@@ -5,12 +5,8 @@ import { BoardEntry, EventBoard } from '../types';
 import { FigmaIcon } from '../assets/icons';
 import { BoardVote } from './BoardVote';
 import { Pair, useOrganizer } from './i18n';
-import { Btn, Chip, Empty, Panel, Tabs } from './ui';
-import { Modal } from './OrganizerShell';
+import { Empty, Panel, Tabs } from './ui';
 import { errorText } from './errors';
-
-const clock = (iso: string) =>
-  new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 /**
  * The board, as the host reads it.
@@ -43,9 +39,6 @@ export const MessageBoard: React.FC<Props> = ({
   const { t, num } = useOrganizer();
   const [board, setBoard] = useState<EventBoard | null>(null);
   const [tab, setTab] = useState('faq');
-  const [answering, setAnswering] = useState<BoardEntry | null>(null);
-  const [draft, setDraft] = useState('');
-  const [saving, setSaving] = useState(false);
   const [voting, setVoting] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -75,23 +68,6 @@ export const MessageBoard: React.FC<Props> = ({
    * Whenever it suits: from the front of the room while the question is
    * live, or days later once somebody has actually found out.
    */
-  const saveAnswer = async () => {
-    if (!answering || !eventId) return;
-    try {
-      setSaving(true);
-      await apiClient.answerBoardMessage(eventId, answering.id, draft.trim());
-      toast.success(
-        draft.trim()
-          ? t({ ne: 'जवाफ राखियो', en: 'Answer posted' })
-          : t({ ne: 'जवाफ हटाइयो', en: 'Answer removed' })
-      );
-      setAnswering(null);
-      await load();
-    } catch (e: any) {
-      toast.error(errorText(e, t({ ne: 'राख्न सकिएन', en: 'Could not post it' })));
-    } finally { setSaving(false); }
-  };
-
   /** One vote each. The room decides what most wants answering. */
   const vote = async (entry: BoardEntry, value: 1 | -1) => {
     try {
@@ -183,12 +159,6 @@ export const MessageBoard: React.FC<Props> = ({
               </div>
 
               <div className="min-w-0 flex-1 ps-9">
-              <p className="text-[12px] text-[#6E7C8E] flex items-center gap-1.5 flex-wrap">
-                <span>{entry.asked_by}</span>
-                {entry.asker_is_guest && <Chip>{t({ ne: 'पाहुना', en: 'Guest' })}</Chip>}
-                <span className="tabular-nums">· {clock(entry.created_at)}</span>
-              </p>
-
               {entry.answer ? (
                 <div className="mt-2 bg-cream rounded-lg px-3 py-2.5">
                   <p className="text-[12px] font-semibold text-navy-900">
@@ -203,58 +173,12 @@ export const MessageBoard: React.FC<Props> = ({
                 </div>
               ) : null}
 
-              {canAnswer && (
-                <div className="mt-2">
-                  <Btn
-                    sm
-                    tone={entry.answer ? 'plain' : 'solid'}
-                    onClick={() => { setAnswering(entry); setDraft(entry.answer); }}
-                  >
-                    {entry.answer
-                      ? t({ ne: 'जवाफ सम्पादन', en: 'Edit the answer' })
-                      : t({ ne: 'जवाफ दिनुहोस्', en: 'Answer' })}
-                  </Btn>
-                </div>
-              )}
               </div>
             </div>
           ))
         )}
       </div>
 
-      {answering && (
-        <Modal
-          open
-          onClose={() => setAnswering(null)}
-          title={t({ ne: 'जवाफ', en: 'Answer' })}
-          lede={answering.body}
-          footer={
-            <>
-              <Btn onClick={() => setAnswering(null)}>{t({ ne: 'रद्द', en: 'Cancel' })}</Btn>
-              <Btn tone="solid" disabled={saving} onClick={saveAnswer}>
-                {t({ ne: 'राख्नुहोस्', en: 'Post it' })}
-              </Btn>
-            </>
-          }
-        >
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            rows={5}
-            placeholder={t({
-              ne: 'जवाफ — सबैले पढ्न सक्छन्।',
-              en: 'Your answer. Everyone in the event reads it.',
-            })}
-            className="w-full border border-navy-800/15 rounded-lg px-3 py-2 text-[14px] font-read leading-relaxed"
-          />
-          <p className="mt-2 text-[12px] text-[#6E7C8E]">
-            {t({
-              ne: 'खाली छोडे जवाफ हट्छ।',
-              en: 'Leaving it empty takes the answer back off.',
-            })}
-          </p>
-        </Modal>
-      )}
     </Panel>
   );
 };
