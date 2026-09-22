@@ -319,7 +319,9 @@ export const GuestEventPage: React.FC = () => {
     return () => clearInterval(id);
   }, [loadResources]);
 
-  const sendTo = (to: string, body: string) => {
+  const sendTo = (
+    to: string, body: string, topic: 'faq' | 'suggestion' | null = null
+  ) => {
     if (!body || !to) return;
     const socket = wsRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -330,6 +332,9 @@ export const GuestEventPage: React.FC = () => {
       type: 'chat_message',
       message: body,
       recipient_id: to,
+      // Which board it was written under. The host decides whether it
+      // goes up; they should not also have to decide what it is.
+      topic,
     }));
   };
 
@@ -340,13 +345,13 @@ export const GuestEventPage: React.FC = () => {
    * offer for the board: it goes to the host and waits there until they
    * put it up or decline it.
    */
-  const askHost = (body: string) => {
+  const askHost = (body: string, topic: 'faq' | 'suggestion') => {
     const host = people.find((one) => one.role === 'host') ?? people[0];
     if (!host?.id) {
       toast.error('Nobody is here to receive it yet');
       return;
     }
-    sendTo(host.id, body);
+    sendTo(host.id, body, topic);
   };
 
   useEffect(() => {
@@ -616,7 +621,7 @@ export const GuestEventPage: React.FC = () => {
                       <RoomQuestions
                         guestToken={token}
                         refreshMs={20000}
-                        onAsk={(body) => askHost(body)}
+                        onAsk={(body, topic) => askHost(body, topic)}
                         onNews={(many) =>
                           setUnseen((was) =>
                             sideRef.current.includes('questions')

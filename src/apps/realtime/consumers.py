@@ -209,6 +209,16 @@ class EventConsumer(AsyncWebsocketConsumer):
             return
 
         recipient_id = data.get('recipient_id') or None
+
+        # What the writer offered it as. The composer in the room sits
+        # under either the questions board or the suggestions board, so
+        # the writer has already said which of the two they meant; the
+        # host then decides whether it goes up, not what it is. Anything
+        # else, including nothing, is left unsorted.
+        topic = data.get('topic')
+        if topic not in (ChatMessage.Topic.FAQ, ChatMessage.Topic.SUGGESTION):
+            topic = ChatMessage.Topic.NONE
+
         settings_ = await self.get_chat_settings()
 
         # The room itself is not a thing to be opened any more. There is no
@@ -220,7 +230,7 @@ class EventConsumer(AsyncWebsocketConsumer):
             return
 
         me = self._identity
-        saved = await self.save_chat_message(message, recipient_id)
+        saved = await self.save_chat_message(message, recipient_id, topic)
         if saved is None:
             await self._send_chat_error('Could not send message')
             return
@@ -451,7 +461,7 @@ class EventConsumer(AsyncWebsocketConsumer):
         }
 
     @database_sync_to_async
-    def save_chat_message(self, body, recipient_id=None):
+    def save_chat_message(self, body, recipient_id=None, topic=None):
         """Persist a message and decide whether the host must review it.
 
         Sender and recipient may each be an account holder or a guest.
@@ -536,13 +546,27 @@ class EventConsumer(AsyncWebsocketConsumer):
             if sender_is_attendee:
                 moderation = ChatMessage.Moderation.PENDING
 
+        # Only something waiting for review carries what it was offered
+        # as. A message that was never held is not an offer for the board,
+        # and letting it name its own topic would put it up unreviewed.
+        offered = topic or ChatMessage.Topic.NONE
+        if moderation != ChatMessage.Moderation.PENDING:
+            offered = ChatMessage.Topic.NONE
+
+        # Whatever is on stage owns the question, the same way it owns a
+        # file shared during it. Nothing on stage means it was asked of
+        # the event at large.
+        live_session = event.sessions.filter(status='live').first()
+
         message = ChatMessage.objects.create(
             event=event,
+            session=live_session,
             sender=None if is_guest_sender else self.user,
             guest_sender_id=self.guest['id'] if is_guest_sender else None,
             recipient=recipient_user,
             guest_recipient=recipient_guest,
             body=body,
+            topic=offered,
             moderation_status=moderation,
         )
         return {

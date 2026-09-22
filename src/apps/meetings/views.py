@@ -992,6 +992,59 @@ class EventRoomViewSet(viewsets.ModelViewSet):
             ],
         })
 
+    @action(detail=True, methods=['get'], url_path='moderation_queue')
+    def moderation_queue(self, request, pk=None):
+        """Everything offered for the board, and what became of it. Host only.
+
+        The moderation screen reads one event at a time and shows three
+        piles of it: what is waiting, what went up, and what was turned
+        down. They are three states of the same thing, so they are one
+        query and one endpoint rather than three that could disagree.
+
+        Each entry carries the agenda item that was on stage when it was
+        written, because that is how the screen groups them - a question
+        belongs to the talk it was asked during.
+        """
+        event = self.get_object()
+
+        if str(request.user.id) != str(event.host_id):
+            return Response(
+                {'error': 'Only the host reviews messages'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        piles = {
+            'pending': ChatMessage.Moderation.PENDING,
+            'approved': ChatMessage.Moderation.APPROVED,
+            'rejected': ChatMessage.Moderation.DECLINED,
+        }
+
+        held = ChatMessage.objects.filter(
+            event=event, moderation_status__in=piles.values()
+        ).exclude(
+            # An organizer talking to another organizer is not an offer
+            # for the board, and neither is the host's own message.
+            sender=request.user
+        ).select_related(
+            'sender', 'guest_sender', 'session', 'moderated_by'
+        ).order_by('-created_at')
+
+        rows = ChatMessageSerializer(held, many=True).data
+        by_state = {name: [] for name in piles}
+        for row, message in zip(rows, held):
+            for name, state in piles.items():
+                if message.moderation_status == state:
+                    by_state[name].append(row)
+
+        return Response({
+            **by_state,
+            'sessions': [
+                {'id': str(one.id), 'title': one.title,
+                 'speaker': one.speaker_name or ''}
+                for one in event.sessions.all().order_by('starts_at', 'position')
+            ],
+        })
+
     @action(detail=True, methods=['post'], url_path='moderate_message')
     def moderate_message(self, request, pk=None):
         """Approve, decline or remove a held message. Host only.

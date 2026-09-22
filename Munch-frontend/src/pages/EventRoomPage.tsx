@@ -370,7 +370,9 @@ const EventRoomInner: React.FC = () => {
     }
   }, []);
 
-  const sendTo = (to: string, body: string) => {
+  const sendTo = (
+    to: string, body: string, topic: 'faq' | 'suggestion' | null = null
+  ) => {
     if (!body || !to) return;
 
     const socket = wsRef.current;
@@ -383,6 +385,9 @@ const EventRoomInner: React.FC = () => {
       type: 'chat_message',
       message: body,
       recipient_id: to,
+      // Which board it was written under. The host decides whether it
+      // goes up; they should not also have to decide what it is.
+      topic,
     }));
   };
 
@@ -394,13 +399,13 @@ const EventRoomInner: React.FC = () => {
    * same socket frame as before and waits in their requests until they
    * put it up or decline it.
    */
-  const askHost = (body: string) => {
+  const askHost = (body: string, topic: 'faq' | 'suggestion') => {
     const host = organizers.find((p) => p.role === 'host') ?? organizers[0];
     if (!host?.user?.id) {
       toast.error('Nobody is here to receive it yet');
       return;
     }
-    sendTo(host.user.id, body);
+    sendTo(host.user.id, body, topic);
   };
 
   /**
@@ -1418,7 +1423,7 @@ const EventRoomInner: React.FC = () => {
                 canSort={canOrganize}
                 waiting={pending}
                 onNews={(many) => noteUnseen('questions', many)}
-                onAsk={canOrganize ? undefined : (body) => askHost(body)}
+                onAsk={canOrganize ? undefined : (body, topic) => askHost(body, topic)}
               />
             )}
           </RoomCard>

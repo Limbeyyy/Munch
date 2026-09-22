@@ -104,6 +104,10 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     recipient_name = serializers.SerializerMethodField()
     recipient_is_guest = serializers.SerializerMethodField()
     is_direct = serializers.BooleanField(read_only=True)
+    session_title = serializers.CharField(source='session.title', default=None)
+    #: Who put it up or turned it down, and when - the queue says so
+    #: against anything already decided.
+    moderated_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = ChatMessage
@@ -112,8 +116,13 @@ class ChatMessageSerializer(serializers.ModelSerializer):
             'sender_id', 'sender_name', 'sender_email', 'sender_is_guest',
             'recipient_id', 'recipient_name', 'recipient_is_guest',
             'moderation_status', 'topic', 'answer',
+            'session', 'session_title', 'moderated_by_name', 'moderated_at',
         ]
         read_only_fields = fields
+
+    def get_moderated_by_name(self, obj):
+        who = obj.moderated_by
+        return (who.display_name or who.email) if who else None
 
     def get_sender_id(self, obj):
         return str(obj.guest_sender_id or obj.sender_id)

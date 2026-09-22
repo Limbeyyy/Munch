@@ -391,6 +391,32 @@ export interface ChatMessage {
   recipient_is_guest: boolean;
   /** Where the host filed it: on the board as a question, a suggestion, or not at all. */
   topic?: MessageTopic;
+  /** Which agenda item was on stage when it was written, if any. */
+  session?: string | null;
+  session_title?: string | null;
+  /** Who put it up or turned it down, and when. */
+  moderated_by_name?: string | null;
+  moderated_at?: string | null;
+}
+
+/** One agenda item, as the moderation screen groups entries under it. */
+export interface ModerationAgenda {
+  id: string;
+  title: string;
+  speaker: string;
+}
+
+/**
+ * Everything offered for one event's board, and what became of it.
+ *
+ * Three states of the same thing, read together so they cannot disagree
+ * about which pile an entry is in.
+ */
+export interface ModerationQueue {
+  pending: ChatMessage[];
+  approved: ChatMessage[];
+  rejected: ChatMessage[];
+  sessions: ModerationAgenda[];
 }
 
 export interface ChatPerson {
