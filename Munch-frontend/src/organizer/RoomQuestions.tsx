@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
 import { BoardEntry, ChatMessage, EventBoard } from '../types';
 import { FigmaIcon } from '../assets/icons';
+import { BoardVote } from './BoardVote';
 import { errorText } from './errors';
 import { useOrganizer } from './i18n';
 
@@ -226,42 +227,12 @@ export const RoomQuestions: React.FC<Props> = ({
       {/* Indented to the question, not centred under it: the arrows
           belong to the words above them, and a row of its own in the
           middle of the card reads as something else entirely. */}
-      <div className="flex gap-[19px] items-center ps-9">
-        <button
-          onClick={() => vote(entry, 1)}
-          disabled={busy === entry.id}
-          aria-label={t({ ne: 'माथि भोट', en: 'Vote up' })}
-          aria-pressed={entry.my_vote === 1}
-          className="flex gap-1 items-center disabled:opacity-50"
-        >
-          <FigmaIcon name={entry.my_vote === 1 ? 'voteUpCast' : 'voteUp'} size={24} />
-          {entry.score > 0 && (
-            <span className={`text-[14px] font-medium leading-5 tabular-nums ${
-              entry.my_vote === 1 ? 'text-[#1a478b]' : 'text-[#656565]'
-            }`}>
-              {num(entry.score)}
-            </span>
-          )}
-        </button>
-
-        <span className="text-[14px] text-[#383838] leading-5">
-          {t({ ne: 'भोट', en: 'Vote' })}
-        </span>
-
-        <button
-          onClick={() => vote(entry, -1)}
-          disabled={busy === entry.id}
-          aria-label={t({ ne: 'तल भोट', en: 'Vote down' })}
-          aria-pressed={entry.my_vote === -1}
-          className="flex gap-1 items-center disabled:opacity-50"
-        >
-          <FigmaIcon name="voteDown" size={24} />
-          {entry.score < 0 && (
-            <span className="text-[14px] font-medium leading-5 tabular-nums text-[#656565]">
-              {num(Math.abs(entry.score))}
-            </span>
-          )}
-        </button>
+      <div className="ps-9">
+        <BoardVote
+          entry={entry}
+          busy={busy === entry.id}
+          onVote={(value) => vote(entry, value)}
+        />
       </div>
 
       {entry.answer && (
