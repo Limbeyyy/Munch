@@ -4,7 +4,7 @@ import { apiClient } from '../../services/api';
 import { AttendanceReport, Event, Session, SessionAttendanceRow } from '../../types';
 import { Pair, useOrganizer } from '../i18n';
 import { openAsSheet } from '../sheets';
-import { Card, Chip, Empty, Head } from '../ui';
+import { Card, Chip, Empty } from '../ui';
 import {
   EVENT_STATE_LABEL, EVENT_STATE_TONE, EventState, eventState,
 } from '../sessionState';
@@ -351,22 +351,8 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
     openAsSheet('attendance', [head, ...rows], { subject: one.title, t });
   };
 
-  const heading = (
-    <Head
-        title={{ ne: 'उपस्थिति', en: 'Attendance' }}
-        lede={{
-          ne: 'कुन सत्रमा को थियो, र बैठकभरि कति जना आए।',
-          en: 'Who was at each session, and who came to the event at all.',
-        }}
-      /* No export here: a card exports its own event, which is the only
-         scope this page has now that it opens on one at a time. */
-    />
-  );
-
   return (
     <>
-      {!opened && heading}
-
       {events.length === 0 && !loading ? (
         <Card className="text-center py-10">
           <p className="text-[#6E7C8E]">
@@ -376,8 +362,23 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
       ) : !opened ? (
         <>
           {/* What is being looked for, narrowed and ordered. */}
+          {/* What the page is, and the two things done to the events on
+              it, in one card rather than a title floating over them. */}
           <div className="bg-[#f9fafb] border border-line rounded-[12px] p-4 mb-5
-            flex gap-3 flex-wrap items-center">
+            flex flex-col gap-4">
+            <div>
+              <h1 className="text-[24px] font-medium text-head leading-[1.2]">
+                {t({ ne: 'उपस्थिति', en: 'Attendance' })}
+              </h1>
+              <p className="pt-2 text-[14px] text-body leading-[1.5]">
+                {t({
+                  ne: 'कुन सत्रमा को थियो, र बैठकभरि कति जना आए।',
+                  en: 'Who was at each session, and who came to the event at all.',
+                })}
+              </p>
+            </div>
+
+            <div className="flex gap-3 flex-wrap items-center">
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -408,6 +409,7 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
               <option value="newest">{t({ ne: 'नयाँ पहिले', en: 'Newest' })}</option>
               <option value="oldest">{t({ ne: 'पुरानो पहिले', en: 'Oldest' })}</option>
             </select>
+            </div>
           </div>
 
           {shown.length === 0 ? (
