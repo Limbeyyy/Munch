@@ -84,6 +84,21 @@ const show = () =>
  * the events go - was answered one event at a time.
  */
 describe('the attendance grid', () => {
+  /** The page's name belongs in the card the controls are in. */
+  it('names the page inside the card that searches it', async () => {
+    show();
+    await screen.findByText('Disaster Management Review');
+
+    const card = screen.getByLabelText('Search events').closest('div')!
+      .parentElement!.parentElement as HTMLElement;
+    expect(
+      within(card).getByRole('heading', { name: 'Attendance' })
+    ).toBeInTheDocument();
+    expect(
+      within(card).getByText(/Who was at each session/)
+    ).toBeInTheDocument();
+  });
+
   it('gives each event a card with how it went', async () => {
     show();
 
