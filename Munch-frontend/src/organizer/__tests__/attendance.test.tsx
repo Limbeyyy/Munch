@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { OrganizerProvider } from '../i18n';
 import { AttendanceView } from '../views/AttendanceView';
 import { apiClient } from '../../services/api';
@@ -194,80 +194,101 @@ describe('the attendance grid', () => {
 });
 
 /**
- * One event's attendance, on one screen.
+ * One event's register, as 607-7613 draws it.
  *
- * It used to be three tabs over a strip of totals - by session, by
- * event, by person - which is three ways of reading one register, and a
- * reader had to try each to find the one they wanted.
+ * The event on a grey ground with the two things done to its register -
+ * search it, or take it away - and under that a line per person: who
+ * they are, whether they came, and the hours they kept.
  */
 describe('opening one event from the grid', () => {
-  const open = async () => {
+  const someone = (over: any = {}) => ({
+    type: 'user', name: 'Suman Karki', email: 'suman@example.com', phone: null,
+    role: 'attendee',
+    joined_at: '2026-09-05T08:01:00Z',
+    left_at: '2026-09-05T10:05:00Z',
+    is_active: false, was_invited: true,
+    ...over,
+  });
+
+  const open = async (over: any = {}) => {
+    api.getAttendance.mockResolvedValue(report({
+      attended: [someone()],
+      did_not_attend: [{ email: 'deepak@example.com', invited_at: '' }],
+      ...over,
+    }) as any);
     show();
     fireEvent.click(await screen.findByRole('button', { name: 'View attendance' }));
-    return screen.findByRole('heading', { level: 1, name: 'Attendance' });
+    return screen.findByText('suman@example.com');
   };
 
-  /** The name is the thing being read; the day and the room sit under it. */
-  it('names the event on a line of its own, above when and where', async () => {
-    await open();
-
-    const name = screen.getAllByText('Disaster Management Review').at(-1)!;
-    expect(name.className).toMatch(/font-semibold/);
-    expect(name.textContent).toBe('Disaster Management Review');
-    expect(
-      screen.getByText(/City Hall, Room 201/)
-    ).toBeInTheDocument();
-  });
-
-  /**
-   * The register is the whole of the screen. The bars said what a column
-   * of the table says, and the notes around it explained a table that
-   * reads itself.
-   */
-  it('is the register and nothing around it', async () => {
-    await open();
-    // Wait for the register itself, or the absences below pass by simply
-    // being asked before anything has rendered.
-    await screen.findByText('Nobody attended this event.');
-
-    expect(screen.queryByRole('heading', { name: 'Sessions' })).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'Who came' })).toBeNull();
-    expect(screen.queryByLabelText('Search a name')).toBeNull();
-    expect(screen.queryByText(/Click a row/)).toBeNull();
-    expect(screen.queryByText(/counts as having attended/)).toBeNull();
-  });
-
-  it('offers no tabs to read the same register three ways', async () => {
-    await open();
-
-    expect(screen.queryByRole('tab', { name: 'By session' })).toBeNull();
-    expect(screen.queryByRole('tab', { name: 'By event' })).toBeNull();
-    expect(screen.queryByRole('tab', { name: 'By person' })).toBeNull();
-  });
-
-  /** The figures are on the card that opened this; twice is once too many. */
-  it('does not repeat the figures the card already gave', async () => {
-    await open();
-
-    expect(screen.queryByText('In the room now')).toBeNull();
-    expect(screen.queryByText('Came')).toBeNull();
-  });
-
-  it('keeps the export where the heading is', async () => {
+  it('names the event over its register', async () => {
     await open();
 
     expect(
-      screen.getByRole('button', { name: 'Export to Sheets' })
+      screen.getByRole('heading', { name: 'Disaster Management Review' })
     ).toBeInTheDocument();
+    expect(screen.getByText(/City Hall, Room 201/)).toBeInTheDocument();
   });
 
-  /** A card exports its own event, so the grid needs no export of its own. */
-  it('leaves the grid without one of its own', async () => {
-    show();
-    await screen.findByText('Disaster Management Review');
+  it('gives the register the columns the design asks for', async () => {
+    await open();
 
-    expect(screen.queryByRole('button', { name: 'Export to Sheets' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Export' })).toBeInTheDocument();
+    for (const head of ['Name', 'Email', 'Status', 'Joined', 'Left', 'Duration']) {
+      expect(screen.getByRole('columnheader', { name: head })).toBeInTheDocument();
+    }
+  });
+
+  it('marks who came, and who did not', async () => {
+    await open();
+
+    // Named on the chip and again in the status filter, hence the row.
+    const came = screen.getByText('suman@example.com').closest('tr') as HTMLElement;
+    expect(within(came).getByText('Attended')).toBeInTheDocument();
+    const missed = screen.getByText('deepak@example.com').closest('tr') as HTMLElement;
+    expect(within(missed).getByText('No-show')).toBeInTheDocument();
+  });
+
+  it('says how long somebody stayed', async () => {
+    await open();
+
+    // Four minutes past two hours, between the two times above.
+    expect(screen.getByText('2h 4m')).toBeInTheDocument();
+  });
+
+  /** Nobody arrived, so there are no hours to give. */
+  it('leaves the hours blank for somebody who never came', async () => {
+    await open();
+
+    const row = screen.getByText('deepak@example.com').closest('tr') as HTMLElement;
+    expect(within(row).getAllByText('—').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('narrows the register to what is searched for', async () => {
+    await open();
+
+    fireEvent.change(screen.getByLabelText('Search Attendees'), {
+      target: { value: 'deepak' },
+    });
+
+    expect(screen.getByText('deepak@example.com')).toBeInTheDocument();
+    expect(screen.queryByText('suman@example.com')).toBeNull();
+  });
+
+  it('narrows it to those who came, or those who did not', async () => {
+    await open();
+
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'no-show' } });
+
+    expect(screen.getByText('deepak@example.com')).toBeInTheDocument();
+    expect(screen.queryByText('suman@example.com')).toBeNull();
+  });
+
+  it('offers the register on a sheet', async () => {
+    await open();
+
+    expect(
+      screen.getByRole('button', { name: /Export attendance/ })
+    ).toBeInTheDocument();
   });
 
   it('leaves the grid behind, and a way back to it', async () => {
@@ -292,56 +313,42 @@ describe('opening one event from the grid', () => {
  *
  * A session's own register is written when that session ends, so during
  * an event there were no rows at all - and the table came out empty
- * while the card beside it said 40% had come. The report knows who is in
- * the room now; the session rows say which parts they sat through.
+ * while the card beside it said 40% had come.
  */
 describe('attendance while the event is still running', () => {
-  const live = () => event({
-    id: 'e1', status: 'active', started_at: new Date().toISOString(),
-    sessions: [{
-      id: 's1', title: 'Opening', starts_at: new Date().toISOString(),
-      duration_minutes: 30, status: 'live',
-    }],
-  });
-
   const openLive = async () => {
-    api.listEvents.mockResolvedValue([live()] as any);
+    api.listEvents.mockResolvedValue([event({
+      status: 'active', started_at: new Date().toISOString(),
+    })] as any);
     api.getAttendance.mockResolvedValue(report({
       attended: [
         { type: 'user', name: 'Sarah Sharma', email: 'sarah@example.com',
-          phone: null, role: 'host', joined_at: '', left_at: null,
-          is_active: true, was_invited: true },
+          phone: null, role: 'host', joined_at: new Date().toISOString(),
+          left_at: null, is_active: true, was_invited: true },
         { type: 'guest', name: 'Rahul Ingnam', email: null, phone: null,
-          role: 'guest', joined_at: '', left_at: null,
+          role: 'guest', joined_at: new Date().toISOString(), left_at: null,
           is_active: true, was_invited: false },
       ],
+      did_not_attend: [],
     }) as any);
-    // Nothing has closed, so no session has a register yet.
     api.getSessionAttendance.mockResolvedValue([] as any);
     show();
     fireEvent.click(await screen.findByRole('button', { name: 'View attendance' }));
-    return screen.findByRole('heading', { level: 1, name: 'Attendance' });
+    return screen.findByText('Sarah Sharma');
   };
 
   it('names who is in the room, before any session has closed', async () => {
     await openLive();
 
-    expect(await screen.findByText('Sarah Sharma')).toBeInTheDocument();
     expect(screen.getByText('Rahul Ingnam')).toBeInTheDocument();
   });
 
-  it('counts a guest as a guest', async () => {
+  /** Still in the room, so there is no hour they left. */
+  it('gives no leaving time for somebody still there', async () => {
     await openLive();
-    await screen.findByText('Rahul Ingnam');
 
-    expect(screen.getAllByText('Guest').length).toBeGreaterThan(0);
-  });
-
-  /** Nothing has closed, so nobody has sat through anything yet. */
-  it('says none of the sessions are sat through yet', async () => {
-    await openLive();
-    await screen.findByText('Sarah Sharma');
-
-    expect(screen.getAllByText('0/1').length).toBe(2);
+    const row = screen.getByText('Sarah Sharma').closest('tr') as HTMLElement;
+    expect(within(row).getByText('Attended')).toBeInTheDocument();
+    expect(within(row).getAllByText('—').length).toBe(1);
   });
 });

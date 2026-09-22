@@ -4,7 +4,7 @@ import { apiClient } from '../../services/api';
 import { AttendanceReport, Event, Session, SessionAttendanceRow } from '../../types';
 import { useOrganizer } from '../i18n';
 import { openAsSheet } from '../sheets';
-import { Btn, Card, Chip, Empty, Head } from '../ui';
+import { Card, Chip, Empty, Head } from '../ui';
 import {
   EVENT_STATE_LABEL, EVENT_STATE_TONE, EventState, eventState,
 } from '../sessionState';
@@ -16,6 +16,35 @@ const whenAndWhere = (event: Event) => [
   }),
   event.venue,
 ].filter(Boolean).join(' · ');
+
+/** One line of an event's register, as the table reads it. */
+interface RegisterRow {
+  key: string;
+  name: string;
+  email: string | null;
+  came: boolean;
+  joined: string | null;
+  left: string | null;
+  /** How long they were there, already written out. */
+  duration: string | null;
+}
+
+const clock = (iso: string) =>
+  new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+/** How long between two moments, in the hours and minutes of it. */
+const spanOf = (from: string, to: string) => {
+  const minutes = Math.max(0, Math.round((+new Date(to) - +new Date(from)) / 60000));
+  const hours = Math.floor(minutes / 60);
+  return hours > 0 ? `${hours}h ${minutes % 60}m` : `${minutes}m`;
+};
+
+/** The two letters an avatar falls back to. */
+const initialsOf = (who: string) => {
+  const parts = who.trim().split(/[\s@.]+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return (parts[0] ?? '?').slice(0, 2).toUpperCase();
+};
 
 /** One figure of the three, with its name over it. */
 const Figure: React.FC<{ label: string; value: string }> = ({ label, value }) => (
@@ -59,6 +88,8 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | EventState>('all');
   const [order, setOrder] = useState<'newest' | 'oldest'>('newest');
+  const [query, setQuery] = useState('');
+  const [cameFilter, setCameFilter] = useState<'all' | 'attended' | 'no-show'>('all');
 
   useEffect(() => {
     apiClient
@@ -97,6 +128,55 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
     });
     return () => { live = false; };
   }, [events]);
+
+  /**
+   * One line of the register: who, and what the day did with them.
+   *
+   * Built from the report rather than from each session's own list,
+   * because the report knows who is in the room now - a session's list
+   * is only written when that session closes, and during an event none
+   * has.
+   */
+  const register = useMemo(() => {
+    const report = rolls[0]?.report;
+    if (!report) return [] as RegisterRow[];
+
+    const came: RegisterRow[] = report.attended.map((row) => ({
+      key: `came-${row.email ?? row.name}`,
+      name: row.name,
+      email: row.email,
+      came: true,
+      joined: row.joined_at || null,
+      // Somebody still in the room has not left; the clock runs to now.
+      left: row.left_at,
+      duration: row.joined_at
+        ? spanOf(row.joined_at, row.left_at ?? new Date().toISOString())
+        : null,
+    }));
+
+    const missing: RegisterRow[] = report.did_not_attend.map((row) => ({
+      key: `missed-${row.email}`,
+      name: '',
+      email: row.email,
+      came: false,
+      joined: null,
+      left: null,
+      duration: null,
+    }));
+
+    return [...came, ...missing];
+  }, [rolls]);
+
+  /** What the search and the status filter leave of it. */
+  const shownRegister = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return register
+      .filter((row) => cameFilter === 'all'
+        || (cameFilter === 'attended' ? row.came : !row.came))
+      .filter((row) => !q
+        || row.name.toLowerCase().includes(q)
+        || (row.email ?? '').toLowerCase().includes(q));
+  }, [register, query, cameFilter]);
 
   /** The events the toolbar leaves on screen, in the order it asks for. */
   const shown = useMemo(() => {
@@ -190,24 +270,6 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
 
   useEffect(() => { load(); }, [load]);
 
-  /** Everyone across the event, with what they sat through. */
-  const across = useMemo(() => {
-    const byPerson: Record<string, Person & { events: Set<string> }> = {};
-    rolls.forEach((roll) =>
-      roll.people.forEach((p) => {
-        if (!byPerson[p.id]) {
-          byPerson[p.id] = { ...p, sessions: new Set(), events: new Set() };
-        }
-        p.sessions.forEach((s) => byPerson[p.id].sessions.add(s));
-        byPerson[p.id].events.add(roll.event.id);
-      })
-    );
-    return Object.values(byPerson)
-      .sort((a, b) => b.sessions.size - a.sessions.size);
-  }, [rolls]);
-
-  const totalSessions = rolls.reduce((n, r) => n + r.sessions.length, 0);
-
   /**
    * The register, in the host's own Google Sheets.
    *
@@ -216,9 +278,16 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
    * host's own Drive rather than ours.
    */
   const exportSheet = () => {
-    const head = ['person', 'guest', 'events_attended', 'sessions_attended', 'of_sessions'];
-    const rows = across.map((p) => [
-      p.name, p.isGuest ? 'yes' : 'no', p.events.size, p.sessions.size, totalSessions,
+    // The sheet says what the table says: a register read on a screen and
+    // one handed to a board should not be two different documents.
+    const head = ['name', 'email', 'status', 'joined', 'left', 'duration'];
+    const rows = shownRegister.map((row) => [
+      row.name,
+      row.email ?? '',
+      row.came ? 'attended' : 'no-show',
+      row.joined ? clock(row.joined) : '',
+      row.left ? clock(row.left) : '',
+      row.duration ?? '',
     ]);
     openAsSheet('attendance', [head, ...rows], { subject: event?.title ?? '', t });
   };
@@ -416,109 +485,152 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
 
           <div className="bg-white border border-line-soft rounded-[12px] p-5 sm:p-6
             flex flex-col gap-5">
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div className="min-w-0">
-                <h1 className="text-[24px] font-medium text-head leading-[1.2]">
-                  {t({ ne: 'उपस्थिति', en: 'Attendance' })}
-                </h1>
-                <p className="pt-2 text-[14px] text-body leading-[1.5]">
-                  {t({
-                    ne: 'कुन सत्रमा को थियो, र बैठकभरि कति जना आए।',
-                    en: 'Who was at each session, and who came to the event at all.',
-                  })}
-                </p>
+            {/* The event, and the two things done to its register: search
+                it, or take it away. */}
+            <div className="bg-[#f9fafb] rounded-[12px] p-5 flex flex-col gap-4">
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div className="min-w-0">
+                  <p className="text-[14px] text-faint leading-5">
+                    {t({ ne: 'उपस्थिति', en: 'Attendance' })}
+                  </p>
+                  <h1 className="pt-1 text-[24px] font-semibold text-head leading-[1.2]">
+                    {event?.title}
+                  </h1>
+                  <p className="pt-1.5 text-[14px] text-subtle leading-5">
+                    {event ? whenAndWhere(event) : ''}
+                  </p>
+                </div>
+                <button
+                  onClick={exportSheet}
+                  disabled={register.length === 0}
+                  className="flex-none flex items-center gap-2 bg-navy-800 hover:bg-navy-700
+                    disabled:opacity-50 rounded-[8px] px-3 py-2 text-[14px] text-white
+                    leading-5"
+                >
+                  <svg
+                    width="18" height="18" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
+                    strokeLinejoin="round" aria-hidden
+                  >
+                    <path d="M12 16V4M12 4L8 8M12 4l4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+                  </svg>
+                  {t({ ne: 'उपस्थिति निकाल्नुहोस्', en: 'Export attendance' })}
+                </button>
               </div>
-              <Btn onClick={exportSheet} disabled={across.length === 0}>
-                {t({ ne: 'गुगल शीटमा निकाल्नुहोस्', en: 'Export to Sheets' })}
-              </Btn>
-            </div>
 
-            {event && (
-              <div className="flex flex-col">
-                <p className="text-[14px] font-semibold text-head leading-5">
-                  {event.title}
-                </p>
-                <p className="text-[14px] text-subtle leading-5">
-                  {whenAndWhere(event)}
-                </p>
+              <div className="flex gap-3 flex-wrap">
+                <div className="flex-1 min-w-[220px] max-w-[417px] h-10 bg-white
+                  border-[0.6px] border-line rounded-[8px] px-2.5 flex items-center gap-1
+                  shadow-[0px_1.5px_4px_-1px_rgba(10,9,11,0.07)]">
+                  <svg
+                    width="18" height="18" viewBox="0 0 24 24" fill="none"
+                    stroke="#7f7d83" strokeWidth="1.8" strokeLinecap="round"
+                    strokeLinejoin="round" aria-hidden
+                  >
+                    <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
+                  </svg>
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    aria-label={t({ ne: 'सहभागी खोज्नुहोस्', en: 'Search Attendees' })}
+                    placeholder={t({ ne: 'सहभागी खोज्नुहोस्', en: 'Search Attendees' })}
+                    className="flex-1 min-w-0 text-[14px] text-head placeholder:text-[#7f7d83]
+                      focus:outline-none bg-transparent"
+                  />
+                </div>
+                <select
+                  value={cameFilter}
+                  onChange={(e) => setCameFilter(e.target.value as typeof cameFilter)}
+                  aria-label={t({ ne: 'अवस्था', en: 'Status' })}
+                  className="h-10 bg-white border-[0.6px] border-line rounded-[8px] px-3
+                    text-[14px] text-head"
+                >
+                  <option value="all">{t({ ne: 'सबै अवस्था', en: 'All statuses' })}</option>
+                  <option value="attended">{t({ ne: 'आएका', en: 'Attended' })}</option>
+                  <option value="no-show">{t({ ne: 'आएनन्', en: 'No-show' })}</option>
+                </select>
               </div>
-            )}
+            </div>
 
             {loading ? (
               <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>
-            ) : rolls.length === 0 ? (
-              <Empty>{t({ ne: 'कुनै बैठक छैन।', en: 'No events.' })}</Empty>
+            ) : shownRegister.length === 0 ? (
+              <Empty>
+                {register.length === 0
+                  ? t({ ne: 'यो बैठकमा कोही आएन।', en: 'Nobody attended this event.' })
+                  : t({ ne: 'कोही भेटिएन।', en: 'Nobody matched.' })}
+              </Empty>
             ) : (
-              rolls.map((roll) => (
-                <div key={roll.event.id} className="flex flex-col gap-5">
-                  {/* Who came, and what they sat through. The register is
-                      the whole of the screen now: the bars said the same
-                      thing a column of it says, and the notes around it
-                      explained a table that reads itself. */}
-                  <section className="flex flex-col">
-                    {across.length === 0 ? (
-                      <Empty>
-                        {t({ ne: 'यो बैठकमा कोही आएन।', en: 'Nobody attended this event.' })}
-                      </Empty>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full border-collapse min-w-[460px]">
-                          <thead>
-                            <tr className="bg-[#FBFAF6]">
-                              {[
-                                { ne: 'नाम', en: 'Name' },
-                                { ne: 'कति सत्र', en: 'Sessions attended' },
-                                { ne: 'कुन सत्र', en: 'Which' },
-                                { ne: 'अवस्था', en: 'Status' },
-                              ].map((h, i) => (
-                                <th
-                                  key={i}
-                                  className="text-left text-xs text-[#6E7C8E] font-medium
-                                    px-3 py-2 border-b border-navy-800/15"
-                                >
-                                  {t(h)}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {across.map((p) => (
-                              <tr key={p.id} className="hover:bg-[#FBFAF6]">
-                                <td className="px-3 py-2 border-b border-navy-800/[.08]
-                                  text-[13.5px] font-medium">
-                                  {p.name}
-                                </td>
-                                <td className="px-3 py-2 border-b border-navy-800/[.08]
-                                  text-[13px] tabular-nums">
-                                  {num(p.sessions.size)}/{num(roll.sessions.length)}
-                                </td>
-                                <td className="px-3 py-2 border-b border-navy-800/[.08]">
-                                  <span className="inline-flex gap-1">
-                                    {roll.sessions.map((one) => (
-                                      <i
-                                        key={one.id}
-                                        title={one.title}
-                                        className={`w-2.5 h-2.5 rounded-sm block ${
-                                          p.sessions.has(one.id) ? 'bg-ok' : 'bg-[#E3D9C6]'
-                                        }`}
-                                      />
-                                    ))}
-                                  </span>
-                                </td>
-                                <td className="px-3 py-2 border-b border-navy-800/[.08]">
-                                  {p.isGuest
-                                    ? <Chip>{t({ ne: 'पाहुना', en: 'Guest' })}</Chip>
-                                    : <Chip tone="ok">{t({ ne: 'सहभागी', en: 'Participant' })}</Chip>}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </section>
-                </div>
-              ))
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse min-w-[720px]">
+                  <thead>
+                    <tr className="bg-[#f9fafb]">
+                      {[
+                        { ne: 'नाम', en: 'Name' },
+                        { ne: 'इमेल', en: 'Email' },
+                        { ne: 'अवस्था', en: 'Status' },
+                        { ne: 'आएको', en: 'Joined' },
+                        { ne: 'गएको', en: 'Left' },
+                        { ne: 'अवधि', en: 'Duration' },
+                      ].map((head) => (
+                        <th
+                          key={head.en}
+                          className="text-left text-[12px] font-medium text-subtle
+                            border-b-[0.6px] border-[#f3f4f6] px-4 py-2.5"
+                        >
+                          {t(head)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shownRegister.map((row) => (
+                      <tr key={row.key} className="border-b-[0.6px] border-[#f9fafb]">
+                        <td className="px-4 py-3">
+                          <span className="flex items-center gap-2">
+                            <span
+                              aria-hidden
+                              className="w-6 h-6 rounded-full border-[0.6px] border-line
+                                grid place-items-center text-[12px] font-medium text-body
+                                flex-none"
+                            >
+                              {initialsOf(row.name || row.email || '?')}
+                            </span>
+                            <span className="text-[14px] font-medium text-head leading-5">
+                              {row.name || '—'}
+                            </span>
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-[14px] text-subtle leading-5">
+                          {row.email || '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          {row.came ? (
+                            <span className="inline-flex items-center bg-[#f0fdf4] rounded-[4px]
+                              px-2 py-0.5 text-[12px] font-medium text-[#008236] leading-4">
+                              {t({ ne: 'आए', en: 'Attended' })}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center bg-[#f3f4f6] rounded-[4px]
+                              px-2 py-0.5 text-[12px] font-medium text-subtle leading-4">
+                              {t({ ne: 'आएनन्', en: 'No-show' })}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-[14px] text-subtle leading-5 tabular-nums">
+                          {row.joined ? clock(row.joined) : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-[14px] text-subtle leading-5 tabular-nums">
+                          {row.left ? clock(row.left) : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-[14px] text-subtle leading-5 tabular-nums">
+                          {row.duration ?? '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>
