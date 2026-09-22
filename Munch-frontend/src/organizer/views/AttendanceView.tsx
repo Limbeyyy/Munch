@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { AttendanceReport, Event, Session, SessionAttendanceRow } from '../../types';
-import { useOrganizer } from '../i18n';
+import { Pair, useOrganizer } from '../i18n';
 import { openAsSheet } from '../sheets';
 import { Card, Chip, Empty, Head } from '../ui';
 import {
@@ -22,12 +22,25 @@ interface RegisterRow {
   key: string;
   name: string;
   email: string | null;
+  /** What they were here as: host, co-host, presenter, attendee, guest. */
+  role: string;
   came: boolean;
+  /** How many of the event's sessions they sat through. */
+  sessions: number;
   joined: string | null;
   left: string | null;
   /** How long they were there, already written out. */
   duration: string | null;
 }
+
+/** What to call a role. Anything unfamiliar is shown as it came. */
+const ROLE_LABEL: Record<string, Pair> = {
+  host: { ne: 'आयोजक', en: 'Host' },
+  co_host: { ne: 'सह-आयोजक', en: 'Co-host' },
+  presenter: { ne: 'प्रस्तोता', en: 'Presenter' },
+  attendee: { ne: 'सहभागी', en: 'Attendee' },
+  guest: { ne: 'पाहुना', en: 'Guest' },
+};
 
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -138,14 +151,33 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
    * has.
    */
   const register = useMemo(() => {
-    const report = rolls[0]?.report;
+    const roll = rolls[0];
+    const report = roll?.report;
     if (!report) return [] as RegisterRow[];
+
+    /*
+     * How many sessions each person sat through.
+     *
+     * The session registers carry a name and the report carries a name,
+     * and that is the only thing the two have in common - a session's
+     * row has no address on it. So they are joined on it, which is also
+     * why somebody is counted at a session only once however many rows
+     * that session has for them.
+     */
+    const satThrough: Record<string, Set<string>> = {};
+    Object.entries(roll.bySession).forEach(([sessionId, rows]) => {
+      rows.forEach((row) => {
+        (satThrough[row.name] ??= new Set()).add(sessionId);
+      });
+    });
 
     const came: RegisterRow[] = report.attended.map((row) => ({
       key: `came-${row.email ?? row.name}`,
       name: row.name,
       email: row.email,
+      role: row.role,
       came: true,
+      sessions: satThrough[row.name]?.size ?? 0,
       joined: row.joined_at || null,
       // Somebody still in the room has not left; the clock runs to now.
       left: row.left_at,
@@ -158,7 +190,10 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
       key: `missed-${row.email}`,
       name: '',
       email: row.email,
+      // Never came, so there is nothing they were here as.
+      role: '',
       came: false,
+      sessions: 0,
       joined: null,
       left: null,
       duration: null,
@@ -166,6 +201,9 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
 
     return [...came, ...missing];
   }, [rolls]);
+
+  /** How many sessions the open event has, for the column to count out of. */
+  const sessionCount = rolls[0]?.sessions.length ?? 0;
 
   /** What the search and the status filter leave of it. */
   const shownRegister = useMemo(() => {
@@ -280,11 +318,17 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
   const exportSheet = () => {
     // The sheet says what the table says: a register read on a screen and
     // one handed to a board should not be two different documents.
-    const head = ['name', 'email', 'status', 'joined', 'left', 'duration'];
+    const head = [
+      'name', 'email', 'role', 'status', 'sessions_attended', 'of_sessions',
+      'joined', 'left', 'duration',
+    ];
     const rows = shownRegister.map((row) => [
       row.name,
       row.email ?? '',
+      row.role,
       row.came ? 'attended' : 'no-show',
+      row.came ? row.sessions : '',
+      row.came ? sessionCount : '',
       row.joined ? clock(row.joined) : '',
       row.left ? clock(row.left) : '',
       row.duration ?? '',
@@ -568,7 +612,9 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
                       {[
                         { ne: 'नाम', en: 'Name' },
                         { ne: 'इमेल', en: 'Email' },
+                        { ne: 'भूमिका', en: 'Role' },
                         { ne: 'अवस्था', en: 'Status' },
+                        { ne: 'सत्र', en: 'Sessions' },
                         { ne: 'आएको', en: 'Joined' },
                         { ne: 'गएको', en: 'Left' },
                         { ne: 'अवधि', en: 'Duration' },
@@ -604,6 +650,11 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
                         <td className="px-4 py-3 text-[14px] text-subtle leading-5">
                           {row.email || '—'}
                         </td>
+                        <td className="px-4 py-3 text-[14px] text-subtle leading-5">
+                          {row.role
+                            ? t(ROLE_LABEL[row.role] ?? { ne: row.role, en: row.role })
+                            : '—'}
+                        </td>
                         <td className="px-4 py-3">
                           {row.came ? (
                             <span className="inline-flex items-center bg-[#f0fdf4] rounded-[4px]
@@ -616,6 +667,14 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
                               {t({ ne: 'आएनन्', en: 'No-show' })}
                             </span>
                           )}
+                        </td>
+                        <td className="px-4 py-3 text-[14px] text-subtle leading-5 tabular-nums">
+                          {/* Out of the whole event, not out of what has
+                              run: a register is read after the day as
+                              well as during it. */}
+                          {row.came && sessionCount > 0
+                            ? `${num(row.sessions)}/${num(sessionCount)}`
+                            : '—'}
                         </td>
                         <td className="px-4 py-3 text-[14px] text-subtle leading-5 tabular-nums">
                           {row.joined ? clock(row.joined) : '—'}
