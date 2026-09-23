@@ -146,7 +146,7 @@ describe('where the first agenda item starts', () => {
     fireEvent.click(screen.getByRole('button', { name: /Create event/ }));
     // Wait for step two itself; the call going out is a tick earlier
     // than the step it advances to.
-    const create = await screen.findByRole('button', { name: /Create New Sessions/ });
+    const create = await screen.findByRole('button', { name: /Create New Agendas/ });
 
     fireEvent.click(create);
 

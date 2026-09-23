@@ -12,14 +12,19 @@ import { BackLink, EventHeading, PlusGlyph, Sheet, Stepper } from './chrome';
 import { CoHostDialog, Field, inputClass } from './CoHostDialog';
 import { AddAgendaDialog } from './AddAgendaDialog';
 import { AgendaBoard } from './AgendaBoard';
+import { SpeakersStep } from './SpeakersStep';
 import { PeopleEmpty, PeopleHeading, PersonRow, initialsOf } from './people';
 import { whenLine } from './EventsDashboard';
 
 const STEPS: Pair[] = [
   { ne: 'कार्यक्रमको विवरण', en: 'Event Details' },
-  { ne: 'सत्रहरू', en: 'Sessions' },
+  { ne: 'कार्यसूची', en: 'Agendas' },
+  { ne: 'वक्ताहरू', en: 'Speakers' },
   { ne: 'मानिस', en: 'Peoples' },
 ];
+
+/** The last step, which is the one that finishes rather than continues. */
+const LAST = STEPS.length - 1;
 
 /**
  * The two actions every step ends on.
@@ -137,7 +142,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
   }, []);
 
   useEffect(() => {
-    if (step === 2 && saved) loadPeople(saved.id);
+    if (step === LAST && saved) loadPeople(saved.id);
   }, [step, saved, loadPeople]);
 
   /** Step one: the event itself. Nothing else can exist before it does. */
@@ -251,7 +256,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
   latest.current = { step, saved };
   useEffect(() => () => {
     const { step: at, saved: made } = latest.current;
-    if (finished.current || at !== 2 || !made || made.status !== 'scheduled') return;
+    if (finished.current || at !== LAST || !made || made.status !== 'scheduled') return;
     apiClient.updateEvent(made.id, { status: 'draft' }).catch(() => {});
   }, []);
 
@@ -307,10 +312,10 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
     }
   };
 
-  const skip = step < 2 && saved
+  const skip = step < LAST && saved
     ? (
       <button
-        onClick={() => (step === 2 ? leave() : setStep(step + 1))}
+        onClick={() => (step === LAST ? leave() : setStep(step + 1))}
         className="text-[14px] text-tagink underline hover:no-underline"
       >
         {t({ ne: 'छोड्नुहोस्', en: 'Skip' })}
@@ -324,7 +329,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
         <div className="flex items-center gap-4">
           <BackLink
             label={{ ne: 'कार्यक्रम', en: 'Event' }}
-            onClick={() => (step === 2 ? leave() : onClose())}
+            onClick={() => (step === LAST ? leave() : onClose())}
           />
           {skip && <span className="ml-auto">{skip}</span>}
         </div>
@@ -332,7 +337,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
         <EventHeading
           title={title || t({ ne: 'नयाँ कार्यक्रम', en: 'New event' })}
           under={saved ? [whenLine(saved), saved.venue].filter(Boolean).join(' · ')
-                       : t({ ne: 'तीन चरणमा तयार गर्नुहोस्', en: 'Set it up in three steps' })}
+                       : t({ ne: 'तीन चरणमा तयार गर्नुहोस्', en: 'Set it up in four steps' })}
         />
 
         <Stepper
@@ -340,7 +345,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
           at={step}
           onGo={(i) => {
             if (!saved || i === step) return;
-            if (step === 2) asDraft();
+            if (step === LAST) asDraft();
             setStep(i);
           }}
         />
@@ -451,12 +456,12 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
               <h2 className="text-[20px] font-medium text-head">
-                {t({ ne: 'सत्रहरू', en: 'Sessions' })}
+                {t({ ne: 'कार्यसूची', en: 'Agendas' })}
               </h2>
               <p className="text-[14px] text-body mt-1">
                 {t({
-                  ne: 'यो कार्यक्रमका सत्र र वक्ता मिलाउनुहोस्।',
-                  en: 'Organize the sessions and speakers for this event.',
+                  ne: 'यो कार्यक्रमका कार्यसूची र वक्ता मिलाउनुहोस्।',
+                  en: 'Organize the agendas and speakers for this event.',
                 })}
               </p>
             </div>
@@ -467,7 +472,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
                 onClick={() => setDrafting(true)}
               >
                 <PlusGlyph />
-                {t({ ne: 'नयाँ सत्र बनाउनुहोस्', en: 'Create New Sessions' })}
+                {t({ ne: 'नयाँ कार्यसूची बनाउनुहोस्', en: 'Create New Agendas' })}
               </Btn>
             )}
           </div>
@@ -525,6 +530,26 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
       )}
 
       {step === 2 && saved && (
+        <div className="flex flex-col gap-5">
+          <SpeakersStep
+            event={saved}
+            sessions={saved.sessions ?? []}
+            onChanged={async () => {
+              const fresh = await apiClient.getEvent(saved.id);
+              setSaved(fresh);
+              await onSaved();
+            }}
+          />
+          <Actions
+            cancel={t({ ne: 'रद्द', en: 'Cancel' })}
+            go={t({ ne: 'जारी राख्नुहोस्', en: 'Continue' })}
+            onCancel={onClose}
+            onGo={() => setStep(3)}
+          />
+        </div>
+      )}
+
+      {step === 3 && saved && (
         <div className="flex flex-col gap-5">
           <div>
             <h2 className="text-[20px] font-medium text-head">

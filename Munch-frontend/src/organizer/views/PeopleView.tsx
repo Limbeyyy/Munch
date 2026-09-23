@@ -20,6 +20,8 @@ interface Speaker {
   name: string;
   email: string;
   phone: string;
+  /** Their photograph, where the profile written for them has one. */
+  photo: string | null;
   slots: Slot[];
   visibility: 'public' | 'private' | 'mixed';
 }
@@ -92,6 +94,11 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
         name,
         email: first.speaker_contact?.email ?? '',
         phone: first.speaker_contact?.phone ?? '',
+        // From whichever of their talks carries it: a profile is put on
+        // the talks a speaker gives, and one of them naming it is enough.
+        photo: rows
+          .map((r) => r.session.speaker_photo_url)
+          .find(Boolean) ?? null,
         slots: rows,
         // Held public on one session and private on another is neither:
         // the card says so rather than picking one at random.
@@ -265,7 +272,7 @@ const SpeakerCard: React.FC<{
   onSetVisibility: (visibility: 'public' | 'private') => void;
 }> = ({ speaker, busy, onSetVisibility }) => {
   const { t, num } = useOrganizer();
-  const { name, email, phone, slots, visibility } = speaker;
+  const { name, email, phone, photo, slots, visibility } = speaker;
 
   const CHOICES: { id: 'public' | 'private'; label: Pair }[] = [
     { id: 'public', label: { ne: 'सार्वजनिक', en: 'Public' } },
@@ -275,8 +282,11 @@ const SpeakerCard: React.FC<{
   return (
     <Card className="flex flex-col gap-3">
       <div className="flex gap-3 items-center">
-        <span className="w-12 h-12 rounded-full bg-navy-700 text-white grid place-items-center text-[17px] font-bold flex-none">
-          {name.charAt(0).toUpperCase()}
+        <span className="w-12 h-12 rounded-full bg-navy-700 text-white grid
+          place-items-center text-[17px] font-bold flex-none overflow-hidden">
+          {photo
+            ? <img src={photo} alt="" className="w-full h-full object-cover" />
+            : name.charAt(0).toUpperCase()}
         </span>
         <div className="min-w-0">
           <h3 className="text-[16px] font-semibold truncate">{name}</h3>

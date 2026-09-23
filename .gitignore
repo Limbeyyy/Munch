@@ -226,3 +226,4 @@ Munch-frontend/.eslintcache
 config/logs/
 celerybeat-schedule*
 *.sock
+media/

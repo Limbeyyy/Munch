@@ -263,6 +263,16 @@ FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:3000')
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
+# Where uploaded images live.
+#
+# A speaker's photograph is small, is shown on every screen that names
+# them, and has to be there before the event exists - so it is not put
+# through the host's Drive the way the day's photographs are. Drive
+# needs the host to have connected it, and a profile picture that fails
+# to upload because of that would be a strange thing to explain.
+MEDIA_URL = 'media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

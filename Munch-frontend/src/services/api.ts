@@ -1,8 +1,31 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
-import { User, Event, AuthTokens, Transcript, TranscriptSummary, Artifact, Recording, Organization, Team, OrganizationMember, OrganizationInvite, SubscriptionData, Invoice, PaymentMethod, DriveFile, DriveSyncStatus, OrganizationAnalytics, ChatSettings, ChatMessage, EventParticipant, GuestAttendee, GuestSession, EventInviteList, AttendanceReport, ChatPerson, GuestResource, TranscriptionSegment, EventDraft, Session, SessionDraft, SessionAttendanceRow, SpeakerContact, ContactRequestRow, UserRoles, ProfileSummary, ReminderPage, EventPhoto, PhotoFolder, PhotoPage, ConclusionAction, ConclusionPage, SchedulingPrefs, SheetExport, UpgradeRequestRow, ResourceVisibility, HubBoard, HubKind, HubPost, SessionSummary, EventBoard, MessageTopic, ModerationQueue, ProgrammeRoles, RoleGrantRow, RoleScope } from '../types';
+import { User, Event, AuthTokens, Transcript, TranscriptSummary, Artifact, Recording, Organization, Team, OrganizationMember, OrganizationInvite, SubscriptionData, Invoice, PaymentMethod, DriveFile, DriveSyncStatus, OrganizationAnalytics, ChatSettings, ChatMessage, EventParticipant, GuestAttendee, GuestSession, EventInviteList, AttendanceReport, ChatPerson, GuestResource, TranscriptionSegment, EventDraft, Session, SessionDraft, SessionAttendanceRow, SpeakerContact, ContactRequestRow, UserRoles, ProfileSummary, ReminderPage, EventPhoto, PhotoFolder, PhotoPage, ConclusionAction, ConclusionPage, SchedulingPrefs, SheetExport, UpgradeRequestRow, ResourceVisibility, HubBoard, HubKind, HubPost, SessionSummary, EventBoard, MessageTopic, ModerationQueue, ProgrammeRoles, Speaker, SpeakerDraft, RoleGrantRow, RoleScope } from '../types';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
 const PAYMENT_API_ROOT = API_BASE_URL.replace(/\/api\/v1\/?$/, '');
+
+/**
+ * A speaker profile as a form, so the photograph can ride with it.
+ *
+ * Empty strings are sent rather than dropped: clearing a position is a
+ * change, and a field left out of a PATCH means "leave it alone".
+ */
+const speakerForm = (draft: SpeakerDraft, photo?: File | null): FormData => {
+  const body = new FormData();
+  Object.entries(draft).forEach(([field, value]) => {
+    if (value === undefined) return;
+    if (field === 'session_ids') {
+      // Repeated rather than joined: the server reads them with
+      // getlist, and a comma in a value would otherwise split it.
+      (value as string[]).forEach((one) => body.append('session_ids', one));
+      if ((value as string[]).length === 0) body.append('session_ids', '');
+      return;
+    }
+    body.append(field, String(value));
+  });
+  if (photo) body.append('photo', photo);
+  return body;
+};
 
 class ApiClient {
   private client: AxiosInstance;
@@ -396,6 +419,49 @@ class ApiClient {
   async getUpgradeRequests(): Promise<{ requests: UpgradeRequestRow[] }> {
     const response = await this.client.get('/users/upgrade/');
     return response.data;
+  }
+
+  // -- Speakers of one event -------------------------------------------
+
+  /** The speaker profiles written for this event. */
+  async getSpeakers(eventId: string): Promise<Speaker[]> {
+    const response = await this.client.get(`/events/${eventId}/speakers/`);
+    const body = response.data;
+    return Array.isArray(body) ? body : (body?.results ?? []);
+  }
+
+  /**
+   * Write one, with its photograph if there is one.
+   *
+   * Sent as a form rather than JSON because of the photograph: one
+   * request carrying the profile and the picture, so a speaker is never
+   * half-created because the second call failed.
+   */
+  async createSpeaker(
+    eventId: string, draft: SpeakerDraft, photo?: File | null
+  ): Promise<Speaker> {
+    const response = await this.client.post(
+      `/events/${eventId}/speakers/`,
+      speakerForm(draft, photo),
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    return response.data;
+  }
+
+  async updateSpeaker(
+    eventId: string, speakerId: string, draft: SpeakerDraft,
+    photo?: File | null
+  ): Promise<Speaker> {
+    const response = await this.client.patch(
+      `/events/${eventId}/speakers/${speakerId}/`,
+      speakerForm(draft, photo),
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    return response.data;
+  }
+
+  async deleteSpeaker(eventId: string, speakerId: string): Promise<void> {
+    await this.client.delete(`/events/${eventId}/speakers/${speakerId}/`);
   }
 
   /** The interval this host keeps between sessions. */

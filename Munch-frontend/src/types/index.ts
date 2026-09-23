@@ -518,6 +518,10 @@ export interface Session {
   speaker_name: string;
   /** What they do, as it reads under their name on the running order. */
   speaker_role?: string;
+  /** The profile this talk is given by, where one has been made. */
+  speaker?: string | null;
+  /** Their photograph, so any screen naming them can show them. */
+  speaker_photo_url?: string | null;
   /** Whether attendees may simply read the speaker's details, or must ask. */
   speaker_visibility: 'public' | 'private';
   /**
@@ -540,6 +544,41 @@ export interface Session {
 export type EventStatus = 'draft' | 'scheduled' | 'active' | 'ended' | 'cancelled';
 
 /** A session as typed into the create form, before it exists. */
+/**
+ * Somebody giving a talk, as a profile rather than a name on a talk.
+ *
+ * The session keeps its own copy of the name, so a running order reads
+ * the same whether or not a profile was ever filled in.
+ */
+export interface Speaker {
+  id: string;
+  event: string;
+  full_name: string;
+  position: string;
+  organization: string;
+  photo_url: string | null;
+  linkedin_url: string;
+  website_url: string;
+  email: string;
+  phone: string;
+  /** The talks this profile gives. */
+  sessions: { id: string; title: string }[];
+  created_at: string;
+}
+
+/** What the add-speaker form sends. */
+export interface SpeakerDraft {
+  full_name: string;
+  position?: string;
+  organization?: string;
+  linkedin_url?: string;
+  website_url?: string;
+  email?: string;
+  phone?: string;
+  /** The talks to put them on. Left out, the assignment is not touched. */
+  session_ids?: string[];
+}
+
 export interface SessionDraft {
   title: string;
   speaker_name?: string;
