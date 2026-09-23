@@ -120,83 +120,6 @@ describe('the questions panel', () => {
   });
 });
 
-/**
- * The tab that is the reason this exists.
- *
- * Every message in the room is written to the host or to the speaker, and
- * somebody has to say which are questions the room should see and which
- * are suggestions. That could only be done from the moderation screen -
- * which means leaving the event the queue belongs to.
- */
-describe('sorting what people write, from inside the room', () => {
-  it("is the host's tab, and nobody else's", async () => {
-    show({ canSort: false });
-    await screen.findByText(/purpose of spending/);
-
-    expect(screen.queryByRole('tab', { name: /Requests/ })).toBeNull();
-    expect(api.getPendingMessages).not.toHaveBeenCalled();
-  });
-
-  it('shows the host what is waiting, and who it was written to', async () => {
-    show({ canSort: true });
-
-    fireEvent.click(await screen.findByRole('tab', { name: /Requests \(1\)/ }));
-
-    expect(await screen.findByText(/slow down the transcript/)).toBeInTheDocument();
-    expect(screen.getByText(/Dr Darpan Pandey/)).toBeInTheDocument();
-  });
-
-  it('puts one up as a question, in one press', async () => {
-    api.moderateMessage.mockResolvedValue({} as any);
-    show({ canSort: true });
-    fireEvent.click(await screen.findByRole('tab', { name: /Requests/ }));
-
-    fireEvent.click(await screen.findByRole('button', { name: 'To questions' }));
-
-    await waitFor(() => expect(api.moderateMessage).toHaveBeenCalledWith(
-      'm1', 'm1', 'approve', 'faq'
-    ));
-  });
-
-  it('or as a suggestion, which is the other half of the choice', async () => {
-    api.moderateMessage.mockResolvedValue({} as any);
-    show({ canSort: true });
-    fireEvent.click(await screen.findByRole('tab', { name: /Requests/ }));
-
-    fireEvent.click(await screen.findByRole('button', { name: 'To suggestions' }));
-
-    await waitFor(() => expect(api.moderateMessage).toHaveBeenCalledWith(
-      'm1', 'm1', 'approve', 'suggestion'
-    ));
-  });
-
-  it('or keeps it between the two of them', async () => {
-    api.moderateMessage.mockResolvedValue({} as any);
-    show({ canSort: true });
-    fireEvent.click(await screen.findByRole('tab', { name: /Requests/ }));
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Decline' }));
-
-    await waitFor(() => expect(api.moderateMessage).toHaveBeenCalledWith(
-      'm1', 'm1', 'decline', undefined
-    ));
-  });
-
-  it('takes it out of the queue once it has been dealt with', async () => {
-    api.moderateMessage.mockResolvedValue({} as any);
-    api.getPendingMessages.mockResolvedValueOnce([held()] as any)
-      .mockResolvedValue([] as any);
-    show({ canSort: true });
-    fireEvent.click(await screen.findByRole('tab', { name: /Requests/ }));
-    await screen.findByText(/slow down the transcript/);
-
-    fireEvent.click(screen.getByRole('button', { name: 'To questions' }));
-
-    await waitFor(() =>
-      expect(screen.queryByText(/slow down the transcript/)).toBeNull()
-    );
-  });
-});
 
 describe('a guest reading the same board', () => {
   it('reads it with the token they hold, and sorts nothing', async () => {
@@ -216,118 +139,28 @@ describe('a guest reading the same board', () => {
 });
 
 /**
- * The queue is watched while a talk runs, so it has to be live.
+ * The queue that used to live here has a container of its own.
  *
- * It is fetched on a timer, which suits a list that changes every few
- * minutes and not one somebody is looking at during a event. The room's
- * socket already hears each message arrive; this is the room passing that
- * on, so a question asked at the front is sortable now rather than in
- * twenty seconds.
+ * Every message in the room is written to the host, and somebody has to
+ * decide whether it goes up. That decision is made on the Message
+ * Request card in live control - a place dedicated to it - and having a
+ * second copy of the same queue inside the questions panel meant two
+ * lists of the same thing, each able to go stale while the other was
+ * acted on.
  */
-describe('what the socket heard arrive', () => {
-  it('is in the queue without waiting for the next read', async () => {
-    api.getPendingMessages.mockResolvedValue([] as any);
-    show({
-      canSort: true,
-      waiting: [held({ id: 'live1', body: 'Asked just now' })],
-    });
-
-    fireEvent.click(await screen.findByRole('tab', { name: /Requests \(1\)/ }));
-
-    expect(await screen.findByText('Asked just now')).toBeInTheDocument();
-  });
-
-  it('is not counted twice when the read catches up with it', async () => {
-    api.getPendingMessages.mockResolvedValue([held({ id: 'live1' })] as any);
-    show({ canSort: true, waiting: [held({ id: 'live1' })] });
-
-    expect(await screen.findByRole('tab', { name: /Requests \(1\)/ }))
-      .toBeInTheDocument();
-  });
-
-  it('does not come back once it has been dealt with', async () => {
-    // The poll still has it - it was in flight when the host pressed - and
-    // the socket copy is still in the room's own list. Neither should put
-    // a sorted message back in the queue.
-    api.moderateMessage.mockResolvedValue({} as any);
-    api.getPendingMessages.mockResolvedValue([held({ id: 'live1' })] as any);
-    show({ canSort: true, waiting: [held({ id: 'live1' })] });
-    fireEvent.click(await screen.findByRole('tab', { name: /Requests/ }));
-
-    fireEvent.click(await screen.findByRole('button', { name: 'To questions' }));
-
-    await waitFor(() =>
-      expect(screen.queryByText(/slow down the transcript/)).toBeNull()
-    );
-  });
-});
-
-/**
- * A message that reached its reader and was never given a place.
- *
- * Letting one through says it may be read; it does not say what it is. One
- * approved with no topic is on nobody's board and in nobody's queue - it
- * has disappeared into having been read, which is where a question put to
- * the host used to go. It is still unanswered, so it is still a request.
- */
-describe('what was let through but never filed', () => {
-  const seen = (over: any = {}) => held({
-    id: 'seen1',
-    body: 'What is this event agendas?',
-    moderation_status: 'approved',
-    topic: 'none',
-    ...over,
-  });
-
-  it('is in the queue with everything else waiting', async () => {
-    api.getPendingMessages.mockResolvedValue([] as any);
-    api.getReviewedMessages.mockResolvedValue(
-      { from_users: [], from_guests: [seen()] } as any
-    );
+describe('what is waiting for the host', () => {
+  it('is not a tab in here', async () => {
     show({ canSort: true });
+    await screen.findByText(/purpose of spending/);
 
-    fireEvent.click(await screen.findByRole('tab', { name: /Requests \(1\)/ }));
-
-    expect(await screen.findByText('What is this event agendas?')).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Requests/ })).toBeNull();
   });
 
-  it('is given its place without being approved a second time', async () => {
-    api.getPendingMessages.mockResolvedValue([] as any);
-    api.getReviewedMessages.mockResolvedValue(
-      { from_users: [], from_guests: [seen()] } as any
-    );
-    api.sortMessage.mockResolvedValue({} as any);
-    show({ canSort: true });
-    fireEvent.click(await screen.findByRole('tab', { name: /Requests/ }));
+  it('leaves the two boards, and the composer under them', async () => {
+    show({ canSort: true, onAsk: jest.fn() });
+    await screen.findByText(/purpose of spending/);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'To questions' }));
-
-    await waitFor(() =>
-      expect(api.sortMessage).toHaveBeenCalledWith('m1', 'seen1', 'faq')
-    );
-    expect(api.moderateMessage).not.toHaveBeenCalled();
-  });
-
-  it('offers no Decline, having already been read', async () => {
-    api.getPendingMessages.mockResolvedValue([] as any);
-    api.getReviewedMessages.mockResolvedValue(
-      { from_users: [], from_guests: [seen()] } as any
-    );
-    show({ canSort: true });
-    fireEvent.click(await screen.findByRole('tab', { name: /Requests/ }));
-    await screen.findByText('What is this event agendas?');
-
-    expect(screen.queryByRole('button', { name: 'Decline' })).toBeNull();
-  });
-
-  it('leaves alone one that already has a place', async () => {
-    api.getPendingMessages.mockResolvedValue([] as any);
-    api.getReviewedMessages.mockResolvedValue(
-      { from_users: [seen({ id: 'filed', topic: 'faq' })], from_guests: [] } as any
-    );
-    show({ canSort: true });
-
-    expect(await screen.findByRole('tab', { name: /Requests \(0\)/ }))
-      .toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Questions/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Suggestions/ })).toBeInTheDocument();
   });
 });

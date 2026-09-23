@@ -395,6 +395,13 @@ class GuestAttendee(models.Model):
     )
     decided_at = models.DateTimeField(null=True, blank=True)
 
+    #: The last time this guest did anything in the room, and when the
+    #: room stopped counting them. A guest holds a socket open exactly the
+    #: way an account holder does, so the same rule applies: presence is
+    #: what somebody does, not whether their tab is still open.
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    left_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

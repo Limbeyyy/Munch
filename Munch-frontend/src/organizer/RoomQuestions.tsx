@@ -7,7 +7,7 @@ import { BoardVote } from './BoardVote';
 import { errorText } from './errors';
 import { useOrganizer } from './i18n';
 
-type Tab = 'faq' | 'suggestions' | 'requests';
+type Tab = 'faq' | 'suggestions';
 
 interface Props {
   /** Read as an account holder. */
@@ -74,7 +74,14 @@ export const RoomQuestions: React.FC<Props> = ({
   const [board, setBoard] = useState<EventBoard | null>(null);
   const [fetched, setFetched] = useState<ChatMessage[]>([]);
   /** What has been dealt with here, so a poll cannot bring it back. */
-  const [settled, setSettled] = useState<string[]>([]);
+  /**
+   * Ones this screen has already dealt with.
+   *
+   * Kept because the queue is polled: a message decided a moment ago
+   * comes back in the next answer until the server catches up, and the
+   * count against the tab should not flicker back up in the meantime.
+   */
+  const [settled] = useState<string[]>([]);
   const [tab, setTab] = useState<Tab>('faq');
   const [busy, setBusy] = useState<string | null>(null);
   const [writing, setWriting] = useState('');
@@ -147,42 +154,6 @@ export const RoomQuestions: React.FC<Props> = ({
     } finally { setBusy(null); }
   };
 
-  /**
-   * What the host does with something written to them.
-   *
-   * Putting it up as a question or as a suggestion lets it through and
-   * files it in one movement, which is the same thing the moderation
-   * screen does in two. Declining keeps it between the two of them.
-   */
-  const sort = async (
-    message: ChatMessage,
-    decision: 'approve' | 'decline',
-    topic?: 'faq' | 'suggestion'
-  ) => {
-    if (!eventId) return;
-    try {
-      setBusy(message.id);
-      // One that has already been let through is not approved again; it
-      // is simply given the place it never got.
-      if (message.moderation_status !== 'pending' && topic) {
-        await apiClient.sortMessage(eventId, message.id, topic);
-      } else {
-        await apiClient.moderateMessage(eventId, message.id, decision, topic);
-      }
-      setSettled((done) => [...done, message.id]);
-      toast.success(
-        topic === 'faq'
-          ? t({ ne: 'प्रश्नमा राखियो', en: 'Up as a question' })
-          : topic === 'suggestion'
-          ? t({ ne: 'सुझावमा राखियो', en: 'Up as a suggestion' })
-          : t({ ne: 'अस्वीकृत', en: 'Declined' })
-      );
-      await load();
-    } catch (e: any) {
-      toast.error(errorText(e, t({ ne: 'गर्न सकिएन', en: 'That did not work' })));
-    } finally { setBusy(null); }
-  };
-
   /*
    * The queue: what the last read found, plus whatever has arrived over
    * the socket since, minus anything already dealt with here.
@@ -205,13 +176,6 @@ export const RoomQuestions: React.FC<Props> = ({
       label: t({ ne: 'सुझाव', en: 'Suggestions' }),
       count: board?.suggestions.length ?? 0,
     },
-    ...(canSort
-      ? [{
-          id: 'requests' as Tab,
-          label: t({ ne: 'अनुरोध', en: 'Requests' }),
-          count: waiting.length,
-        }]
-      : []),
   ];
 
   /** One question, with the room's vote on it. */
@@ -244,66 +208,8 @@ export const RoomQuestions: React.FC<Props> = ({
     </li>
   );
 
-  /** One thing written to the front of the room, waiting for a place. */
-  const requestRow = (message: ChatMessage) => (
-    <li
-      key={message.id}
-      className="flex flex-col gap-2 px-2 py-2.5 border-b border-[#e3e8ef] last:border-0"
-    >
-      <div className="flex gap-3 items-start">
-        <FigmaIcon name="asked" size={24} />
-        <p className="flex-1 min-w-0 text-[14px] leading-5 text-[#24262b]">
-          {message.body}
-        </p>
-      </div>
-
-      {/* The decision, under what was written: which board it belongs on. */}
-      <div className="flex gap-2 ps-9">
-        <button
-          onClick={() => sort(message, 'approve', 'faq')}
-          disabled={busy === message.id}
-          className="flex-1 bg-navy-800 hover:bg-navy-700 text-white rounded-[8px]
-            px-3 py-1.5 text-[13px] font-medium disabled:opacity-50"
-        >
-          {t({ ne: 'प्रश्नमा', en: 'To questions' })}
-        </button>
-        <button
-          onClick={() => sort(message, 'approve', 'suggestion')}
-          disabled={busy === message.id}
-          className="flex-1 border border-navy-800/25 hover:bg-cream rounded-[8px]
-            px-3 py-1.5 text-[13px] font-medium disabled:opacity-50"
-        >
-          {t({ ne: 'सुझावमा', en: 'To suggestions' })}
-        </button>
-      </div>
-
-      <div className="flex items-center gap-2 ps-9">
-        <p className="flex-1 min-w-0 text-[12px] text-[#656565] truncate">
-          {message.sender_name}
-          {message.sender_is_guest && ` · ${t({ ne: 'पाहुना', en: 'guest' })}`}
-          {message.recipient_name &&
-            ` · ${t({ ne: 'लाई', en: 'to' })} ${message.recipient_name}`}
-        </p>
-        {message.moderation_status === 'pending' && (
-          <button
-            onClick={() => sort(message, 'decline')}
-            disabled={busy === message.id}
-            className="flex-none text-[12px] text-live hover:underline disabled:opacity-50"
-          >
-            {t({ ne: 'अस्वीकार', en: 'Decline' })}
-          </button>
-        )}
-      </div>
-    </li>
-  );
-
   const nothingYet =
-    tab === 'requests'
-      ? t({
-          ne: 'पर्खिरहेको केही छैन। कसैले सिधा लेखेपछि यहाँ आउँछ।',
-          en: 'Nothing waiting. What people write to you or the speaker arrives here.',
-        })
-      : tab === 'faq'
+    tab === 'faq'
       ? t({
           ne: 'अझै कुनै प्रश्न राखिएको छैन।',
           en: 'No questions up yet.',
@@ -316,7 +222,7 @@ export const RoomQuestions: React.FC<Props> = ({
   /** Say it, and wait for the host to put it up. */
   const ask = async () => {
     const said = writing.trim();
-    if (!said || !onAsk || tab === 'requests') return;
+    if (!said || !onAsk) return;
     try {
       setSending(true);
       await onAsk(said, tab === 'faq' ? 'faq' : 'suggestion');
@@ -353,19 +259,15 @@ export const RoomQuestions: React.FC<Props> = ({
       </div>
 
       <ul className="flex flex-col gap-[13px] px-2 py-3 max-h-[441px] overflow-y-auto">
-        {tab === 'requests'
-          ? waiting.length === 0
-            ? <li className="text-[13px] text-[#656565] px-2">{nothingYet}</li>
-            : waiting.map(requestRow)
-          : rows.length === 0
-            ? <li className="text-[13px] text-[#656565] px-2">{nothingYet}</li>
-            : rows.map(entryRow)}
+        {rows.length === 0
+          ? <li className="text-[13px] text-[#656565] px-2">{nothingYet}</li>
+          : rows.map(entryRow)}
       </ul>
 
       {/* What anybody in the room can put to the host, on the board it
           would appear on. There is nowhere else to write now: a message
           is either put up for everybody or it is not kept at all. */}
-      {onAsk && tab !== 'requests' && (
+      {onAsk && (
         <div className="border-t border-[#e3e8ef] px-3 py-3 flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
             <input

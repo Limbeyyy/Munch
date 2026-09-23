@@ -197,6 +197,44 @@ def guest_knock(request):
             status=status.HTTP_200_OK
         )
 
+    # Somebody who has been at this door before under this name is that
+    # same person as far as the register is concerned, so their row is
+    # reused rather than a second one written for the same afternoon.
+    # Two rows for one name make the headcount wrong and the register
+    # say somebody attended twice.
+    #
+    # Reusing the row is not reusing the admission. A name is not proof
+    # of anything - anybody who knows it could type it - so a join that
+    # arrives without the token goes back to the host to be let in
+    # again. That is the whole difference between this and the token
+    # path above, which does prove who is asking.
+    again = GuestAttendee.objects.filter(
+        event=event, full_name__iexact=data['full_name'].strip()
+    ).order_by('created_at').first()
+
+    if again is not None:
+        if again.status == GuestAttendee.Status.DENIED:
+            return Response(
+                {'error': 'The host declined your request to join this event'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        again.status = GuestAttendee.Status.PENDING
+        again.left_at = None
+        again.save(update_fields=['status', 'left_at', 'updated_at'])
+        notify_host_of_guest(again)
+        logger.info(
+            f"Guest {again.full_name} asked to rejoin {event.code} by name"
+        )
+        return Response(
+            {
+                'guest_token': make_guest_token(again),
+                'guest': GuestAttendeeSerializer(again).data,
+                'event': {'code': event.code, 'title': event.title},
+                'rejoined': False,
+            },
+            status=status.HTTP_200_OK
+        )
+
     guest = GuestAttendee.objects.create(
         event=event,
         full_name=data['full_name'],

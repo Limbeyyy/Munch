@@ -765,6 +765,16 @@ class EventRoomViewSet(viewsets.ModelViewSet):
                 status=GuestAttendee.Status.ADMITTED
             ).values_list('full_name', flat=True)
         )
+        # When the room stopped counting each of them, for the guests it
+        # has stopped counting. A guest let go for going quiet has a
+        # leaving time like anybody else, and the register should say so
+        # rather than leaving the column blank.
+        went = {
+            name: at
+            for name, at in event.guests.exclude(
+                left_at__isnull=True
+            ).values_list('full_name', 'left_at')
+        }
         attended_guests = [
             {
                 'type': 'guest',
@@ -775,7 +785,7 @@ class EventRoomViewSet(viewsets.ModelViewSet):
                 'phone': None,
                 'role': 'guest',
                 'joined_at': g['at'],
-                'left_at': None,
+                'left_at': went.get(g['name']),
                 'is_active': g['name'] in in_the_room,
                 'was_invited': False,
             }

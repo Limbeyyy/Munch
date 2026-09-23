@@ -285,16 +285,45 @@ class GuestsAreNotKeptTests(TestCase):
     def test_a_name_alone_does_not_walk_in_on_somebody_elses_approval(self):
         # The old rule looked guests up by what they typed, so anybody who
         # knew an admitted guest's details was admitted as them. A name is
-        # not a credential.
+        # not a credential: the row is theirs again, the admission is not.
         self.admit(GuestAttendee.objects.create(
             event=self.event, full_name='Bishnu Prasad',
         ))
 
         response = self.knock('Bishnu Prasad')
 
-        self.assertEqual(response.status_code, 201)
         self.assertFalse(response.json()['rejoined'])
         self.assertEqual(response.json()['guest']['status'], 'pending')
+
+    def test_and_the_same_name_does_not_become_a_second_guest(self):
+        """The gap this closes.
+
+        Somebody who lost their token and typed their name again became a
+        second row with the same name on it, so the headcount counted them
+        twice and the register said they attended twice.
+        """
+        self.admit(GuestAttendee.objects.create(
+            event=self.event, full_name='Bishnu Prasad',
+        ))
+
+        self.knock('bishnu prasad')
+
+        self.assertEqual(
+            GuestAttendee.objects.filter(event=self.event).count(), 1
+        )
+
+    def test_somebody_the_host_turned_away_is_still_turned_away(self):
+        GuestAttendee.objects.create(
+            event=self.event, full_name='Bishnu Prasad',
+            status=GuestAttendee.Status.DENIED,
+        )
+
+        response = self.knock('Bishnu Prasad')
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            GuestAttendee.objects.filter(event=self.event).count(), 1
+        )
 
     # -- and afterwards ---------------------------------------------------
 
