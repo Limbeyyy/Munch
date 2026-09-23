@@ -153,6 +153,8 @@ export interface Artifact {
   visibility?: ResourceVisibility;
   /** Where it sits in the order attendees see. */
   position?: number;
+  /** Who shared it, by the name the room would recognise. */
+  uploaded_by_name?: string | null;
   created_at: string;
 }
 

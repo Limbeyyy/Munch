@@ -264,9 +264,11 @@ export const Modal: React.FC<{
   title: string;
   lede?: string;
   wide?: boolean;
+  /** A rule between the body and the buttons, where the design draws one. */
+  divided?: boolean;
   children: React.ReactNode;
   footer?: React.ReactNode;
-}> = ({ open, onClose, title, lede, wide, children, footer }) => {
+}> = ({ open, onClose, title, lede, wide, divided, children, footer }) => {
   if (!open) return null;
   return (
     <div
@@ -290,7 +292,13 @@ export const Modal: React.FC<{
           </button>
         </div>
         <div className="px-6 py-5">{children}</div>
-        {footer && <div className="flex gap-3 px-6 pb-5 justify-end">{footer}</div>}
+        {footer && (
+          <div className={`flex gap-3 px-6 pb-5 justify-end ${
+            divided ? 'border-t border-line pt-4' : ''
+          }`}>
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );

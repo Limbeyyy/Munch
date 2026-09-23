@@ -400,6 +400,9 @@ Participants:
             metadata={
                 'uploaded_by_id': str(uploader.id),
                 'uploaded_by_email': uploader.email,
+                # Written down at the time, so a list of files does not
+                # have to go and look up a name for every row.
+                'uploaded_by_name': uploader.display_name or uploader.email,
             },
         )
 

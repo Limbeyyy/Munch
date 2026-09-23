@@ -242,6 +242,20 @@ class ApiClient {
   }
 
   /**
+   * Take a published summary back off, leaving the words as they are.
+   *
+   * The counterpart of publishing. Editing one also sends it back for
+   * approval, but that means changing it; noticing a mistake is not the
+   * same as having the correction ready.
+   */
+  async unpublishSessionSummary(sessionId: string): Promise<SessionSummary> {
+    const response = await this.client.post(
+      `/sessions/${sessionId}/unpublish_summary/`
+    );
+    return response.data;
+  }
+
+  /**
    * Direct messages the host has let through, split by who sent them.
    *
    * The record of what was passed on: account holders are answered in one

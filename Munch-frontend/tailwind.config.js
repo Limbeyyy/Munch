@@ -10,6 +10,9 @@ module.exports = {
           900: '#0A2550',
           800: '#12386E',
           700: '#1A4784',
+          // Manch/Primary/500 in the file: the blue a link or a quiet
+          // outlined button is written in, lighter than the filled navy.
+          600: '#194D97',
           500: '#2C63AE',
         },
         amber: {

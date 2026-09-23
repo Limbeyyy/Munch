@@ -84,6 +84,21 @@ class AgendaDocumentTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertIsNone(Artifact.objects.get().session_id)
 
+    def test_it_says_who_shared_it(self):
+        """A file on a list beside a name reads as somebody's doing.
+
+        The row shows its size, who put it there and when. Who put it
+        there was recorded but never sent, so the list could only say
+        that a file existed.
+        """
+        self.upload(self.host, {'file': a_file()})
+
+        row = signed_in(self.host).get(self.url).json()[0]
+
+        self.assertEqual(
+            row['uploaded_by_name'], self.host.display_name or self.host.email
+        )
+
     def test_a_session_from_another_event_is_refused(self):
         elsewhere = make_event(self.host, start=timezone.now())
         theirs = make_session(elsewhere, timezone.now(), 30, 'Theirs')
