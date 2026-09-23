@@ -4,7 +4,7 @@ import { apiClient } from '../../services/api';
 import { AttendanceReport, Event, Session, SessionAttendanceRow } from '../../types';
 import { Pair, useOrganizer } from '../i18n';
 import { openAsSheet } from '../sheets';
-import { Card, Chip, Empty } from '../ui';
+import { Card, Chip, Empty, Ic } from '../ui';
 import {
   EVENT_STATE_LABEL, EVENT_STATE_TONE, EventState, eventState,
 } from '../sessionState';
@@ -518,15 +518,6 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
          * sessions ran, who was at each, and who came at all.
          */
         <div className="flex flex-col gap-4">
-          <button
-            onClick={() => setOpened('')}
-            className="self-start w-fit flex items-center gap-2 text-[14px] text-head
-              hover:text-navy-800"
-          >
-            <span aria-hidden>‹</span>
-            {t({ ne: 'उपस्थिति', en: 'Attendance' })}
-          </button>
-
           <div className="bg-white border border-line-soft rounded-[12px] p-5 sm:p-6
             flex flex-col gap-5">
             {/* The event, and the two things done to its register: search
@@ -534,9 +525,18 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
             <div className="bg-[#f9fafb] rounded-[12px] p-5 flex flex-col gap-4">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div className="min-w-0">
-                  <p className="text-[14px] text-faint leading-5">
+                  {/* The way back is the section's own name with a chevron
+                      on it, inside the block it belongs to. Outside the
+                      card it read as a control on the page rather than on
+                      the event, and left the card with no head to it. */}
+                  <button
+                    onClick={() => setOpened('')}
+                    className="w-fit flex items-center gap-2 text-[14px] text-head
+                      hover:text-navy-800"
+                  >
+                    <Ic d="M15 18l-6-6 6-6" size={18} />
                     {t({ ne: 'उपस्थिति', en: 'Attendance' })}
-                  </p>
+                  </button>
                   <h1 className="pt-1 text-[24px] font-semibold text-head leading-[1.2]">
                     {event?.title}
                   </h1>
