@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { Artifact, Event } from '../../types';
+import { Artifact, Event, Session } from '../../types';
 import { errorText } from '../errors';
 import { useOrganizer } from '../i18n';
 import { useSessionGap } from '../sessionGap';
@@ -66,6 +66,23 @@ interface Props {
  * talk on stage belongs to the room and to live control, where whoever
  * does it is watching the room at the time.
  */
+/**
+ * Whether this talk can still be rewritten.
+ *
+ * A talk that has started or run cannot: attendance was taken against
+ * the hour it actually ran at and for the speaker who actually gave it,
+ * so changing either afterwards makes the record say something that was
+ * never true. The server refuses it, and the buttons say so rather than
+ * opening a form whose save will fail.
+ *
+ * What it produced is a different matter and stays open - its summary,
+ * its files, its photographs all arrive after the fact by design.
+ */
+const hasRun = (session: { status: Session['status'] }): boolean =>
+  session.status === 'live'
+  || session.status === 'done'
+  || session.status === 'skipped';
+
 export const AgendaBoard: React.FC<Props> = ({ event, onChanged, onAdd, onEdit }) => {
   const { t, num } = useOrganizer();
   const gapMinutes = useSessionGap();
@@ -311,7 +328,7 @@ export const AgendaBoard: React.FC<Props> = ({ event, onChanged, onAdd, onEdit }
                   )}
                   {/* The speaker is written on the same form the talk is,
                       so this is a way into it rather than a second one. */}
-                  {onEdit && (
+                  {onEdit && !hasRun(one) && (
                     <button
                       onClick={() => onEdit(one.id)}
                       className="pt-1.5 text-[12px] leading-4 text-[#155DFC] hover:underline"
@@ -380,13 +397,19 @@ export const AgendaBoard: React.FC<Props> = ({ event, onChanged, onAdd, onEdit }
 
               <div className="flex-none flex items-center gap-2">
                 {onEdit && (
-                  <button
-                    onClick={() => onEdit(one.id)}
-                    className="bg-white border-[0.6px] border-[#5B94E4] rounded-[8px]
-                      px-3 py-1.5 text-[12px] leading-4 text-navy-800 hover:bg-tagbg"
-                  >
-                    {t({ ne: 'सम्पादन', en: 'Edit' })}
-                  </button>
+                  hasRun(one) ? (
+                    <span className="text-[12px] leading-4 text-faint">
+                      {t({ ne: 'सकिएको — बदल्न मिल्दैन', en: 'Run — cannot be changed' })}
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => onEdit(one.id)}
+                      className="bg-white border-[0.6px] border-[#5B94E4] rounded-[8px]
+                        px-3 py-1.5 text-[12px] leading-4 text-navy-800 hover:bg-tagbg"
+                    >
+                      {t({ ne: 'सम्पादन', en: 'Edit' })}
+                    </button>
+                  )
                 )}
                 {/* The only way off the running order, so it asks first
                     and says what else goes with it. */}

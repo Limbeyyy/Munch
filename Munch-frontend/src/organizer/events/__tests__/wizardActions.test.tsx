@@ -262,3 +262,44 @@ describe('leaving the people step', () => {
     expect(draftedIt()).toBe(false);
   });
 });
+
+/**
+ * The hour of an event that has opened.
+ *
+ * It stops being a plan the moment people arrive at it: the register is
+ * timed from it and the running order was laid out against it, so moving
+ * it rewrites both after the fact. The server refuses, and the field
+ * says so rather than letting somebody type a new one and be told no on
+ * save.
+ */
+describe('the start time once an event has opened', () => {
+  const starts = () =>
+    screen.getByLabelText(/Starts/) as HTMLInputElement;
+
+  it('is closed while it is running', () => {
+    open({ ...made, status: 'active', started_at: '2026-09-18T09:30:00' });
+
+    expect(starts()).toBeDisabled();
+    expect(
+      screen.getByText(/already started, so its start time cannot be moved/)
+    ).toBeInTheDocument();
+  });
+
+  it('is closed once it has finished', () => {
+    open({ ...made, status: 'ended', started_at: '2026-09-18T09:30:00' });
+
+    expect(starts()).toBeDisabled();
+  });
+
+  it('is open on one that has not', () => {
+    open(made);
+
+    expect(starts()).not.toBeDisabled();
+  });
+
+  it('is open on a new one', () => {
+    open();
+
+    expect(starts()).not.toBeDisabled();
+  });
+});

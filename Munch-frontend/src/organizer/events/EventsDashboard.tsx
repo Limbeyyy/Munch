@@ -129,7 +129,11 @@ const CompletedCard: React.FC<{
   const rate = invited > 0 ? Math.round((came / invited) * 100) : 0;
 
   return (
-    <div className="bg-white border-[0.6px] border-line rounded-[12px] p-5
+    // Washed the colour of its state, like every other card on this
+    // screen. The design draws it plain, but on a page where upcoming is
+    // blue and live is red a finished event reading as white made it the
+    // one state you had to stop and read the word for.
+    <div className="bg-[#e1faea] border-[0.6px] border-[#c1f4d4] rounded-[12px] p-5
       shadow-[0px_4px_3px_rgba(0,0,0,0.04),0px_2px_2px_rgba(0,0,0,0.03)]">
       <div className="flex gap-4 items-start">
         <div className="flex-1 min-w-0">
