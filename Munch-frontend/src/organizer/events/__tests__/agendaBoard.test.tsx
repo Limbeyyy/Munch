@@ -485,3 +485,87 @@ describe('the documents on a card', () => {
     expect(rowOf('Kataho')).toBeInTheDocument();
   });
 });
+
+/**
+ * What can no longer be rewritten.
+ *
+ * Attendance for a talk was taken against the hour it actually ran at
+ * and for the speaker who actually gave it, so changing either
+ * afterwards makes the record say something that was never true. The
+ * server refuses it; the board says so rather than opening a form whose
+ * save will fail.
+ */
+describe('a talk that has already run', () => {
+  const withStatuses = (first: string, second: string) => event([
+    session({ id: 's1', title: 'Kataho', starts_at: at('10:30'), status: first }),
+    session({
+      id: 's2', title: 'Addressgraph', starts_at: at('12:00'),
+      speaker_name: 'Sumin', status: second,
+    }),
+  ]);
+
+  const editOn = (title: string) =>
+    within(rowOf(title)).queryByRole('button', { name: 'Edit' });
+
+  it('offers no way in, and says why', () => {
+    render(
+      <OrganizerProvider>
+        <AgendaBoard
+          event={withStatuses('done', 'scheduled')}
+          onChanged={jest.fn()}
+          onEdit={jest.fn()}
+        />
+      </OrganizerProvider>
+    );
+
+    expect(editOn('Kataho')).toBeNull();
+    expect(
+      within(rowOf('Kataho')).getByText('Run — cannot be changed')
+    ).toBeInTheDocument();
+  });
+
+  it('leaves the one still to come alone', () => {
+    render(
+      <OrganizerProvider>
+        <AgendaBoard
+          event={withStatuses('done', 'scheduled')}
+          onChanged={jest.fn()}
+          onEdit={jest.fn()}
+        />
+      </OrganizerProvider>
+    );
+
+    expect(editOn('Addressgraph')).toBeInTheDocument();
+  });
+
+  it.each(['live', 'done', 'skipped'])('closes a %s talk', (status) => {
+    render(
+      <OrganizerProvider>
+        <AgendaBoard
+          event={withStatuses(status, 'scheduled')}
+          onChanged={jest.fn()}
+          onEdit={jest.fn()}
+        />
+      </OrganizerProvider>
+    );
+
+    expect(editOn('Kataho')).toBeNull();
+  });
+
+  /** The speaker is written on the same form, so that way in closes too. */
+  it('offers no way to change the speaker either', () => {
+    render(
+      <OrganizerProvider>
+        <AgendaBoard
+          event={withStatuses('done', 'scheduled')}
+          onChanged={jest.fn()}
+          onEdit={jest.fn()}
+        />
+      </OrganizerProvider>
+    );
+
+    expect(
+      within(rowOf('Kataho')).queryByRole('button', { name: /speaker/i })
+    ).toBeNull();
+  });
+});

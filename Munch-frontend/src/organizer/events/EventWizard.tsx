@@ -90,6 +90,20 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
   const [title, setTitle] = useState(event?.title ?? '');
   const [venue, setVenue] = useState(event?.venue ?? '');
   const [description, setDescription] = useState(event?.description ?? '');
+  /**
+   * Whether this event's hour is still a plan.
+   *
+   * Once it has opened it is not: people came at it, the register is
+   * timed from it, and the running order was laid out against it. The
+   * server refuses to move it, so the field says so rather than letting
+   * somebody type a new one and be told no on save.
+   */
+  const hasOpened = !!event && (
+    !!event.started_at
+    || event.status === 'active'
+    || event.status === 'ended'
+  );
+
   const [startsAt, setStartsAt] = useState(
     event?.scheduled_start ? toLocalInput(new Date(event.scheduled_start)) : defaultStart
   );
@@ -362,6 +376,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
               <input
                 type="datetime-local"
                 value={startsAt}
+                disabled={hasOpened}
                 onChange={(e) => {
                   setStartsAt(e.target.value);
                   // Keep the end ahead of the start rather than letting
@@ -370,8 +385,18 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
                     setEndsAt(plusAnHour(e.target.value));
                   }
                 }}
-                className={inputClass}
+                className={`${inputClass} ${
+                  hasOpened ? 'bg-[#f5f5f5] text-subtle cursor-not-allowed' : ''
+                }`}
               />
+              {hasOpened && (
+                <p className="pt-1 text-[12px] text-subtle">
+                  {t({
+                    ne: 'कार्यक्रम सुरु भइसक्यो, त्यसैले सुरुको समय बदल्न मिल्दैन।',
+                    en: 'This event has already started, so its start time cannot be moved.',
+                  })}
+                </p>
+              )}
             </Field>
             <Field label={t({ ne: 'अन्त्य', en: 'Ends' })}>
               <input

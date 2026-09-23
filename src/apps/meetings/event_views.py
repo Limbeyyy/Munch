@@ -70,6 +70,26 @@ class EventViewSet(EventRoomViewSet):
         """
         from src.apps.meetings.scheduling import realign_running_order
 
+        # An event that has opened cannot be told it opens later. Its
+        # hour is not a plan any more - people came at it, the register
+        # is timed from it, and the running order was laid out against
+        # it. Moving it would rewrite all three after the fact.
+        before = self.get_object()
+        if before.started_at or before.status in (
+            Event.Status.ACTIVE, Event.Status.ENDED
+        ):
+            wanted = serializer.validated_data.get('scheduled_start')
+            if wanted is not None and wanted != before.scheduled_start:
+                from rest_framework.exceptions import ValidationError
+
+                raise ValidationError({
+                    'scheduled_start': (
+                        'This event has already started, so its start time '
+                        'cannot be moved.'
+                    ),
+                    'code': 'already_started',
+                })
+
         event = serializer.save()
         realign_running_order(event)
 
@@ -507,6 +527,35 @@ class SessionViewSet(viewsets.ModelViewSet):
             from rest_framework.exceptions import PermissionDenied
 
             raise PermissionDenied('Only the host can change the running order')
+
+        # A talk that has happened cannot be rewritten. Its attendance was
+        # taken against the hour it actually ran at, people were in the
+        # room for the speaker who actually gave it, and a summary quotes
+        # it - so changing the speaker or the time afterwards makes the
+        # record say something that was never true.
+        #
+        # What it produced is a different matter and stays open: its
+        # summary, the files shared at it and the photographs of it all
+        # arrive after the fact by their own endpoints, and are meant to.
+        if session.started_at or session.status in (
+            Session.Status.DONE, Session.Status.SKIPPED
+        ):
+            changing = {
+                field
+                for field, value in serializer.validated_data.items()
+                if getattr(session, field, None) != value
+            }
+            if changing:
+                from rest_framework.exceptions import ValidationError
+
+                raise ValidationError({
+                    'error': (
+                        'This agenda has already run, so its details cannot '
+                        'be changed. Its summary, files and photographs can.'
+                    ),
+                    'code': 'already_ran',
+                    'fields': sorted(changing),
+                })
 
         from src.apps.meetings.scheduling import reschedule
 

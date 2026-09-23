@@ -119,6 +119,10 @@ describe('the colour a card carries', () => {
     })]);
 
     const read = screen.getByRole('button', { name: 'View Summary' });
+    // Washed the colour of its state, like every other card here.
+    expect(
+      (read.parentElement!.parentElement!.parentElement as HTMLElement).className
+    ).toContain('bg-[#e1faea]');
     // 'Completed' is also the deck's own tab, so the word is looked for
     // inside the card rather than anywhere on the page.
     const card = read.parentElement!.parentElement!.parentElement as HTMLElement;
