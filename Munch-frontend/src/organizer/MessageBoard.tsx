@@ -150,13 +150,21 @@ export const MessageBoard: React.FC<Props> = ({
                 </p>
               </div>
 
-              <div className="ps-9">
-                <BoardVote
-                  entry={entry}
-                  busy={voting === entry.id}
-                  onVote={(v) => vote(entry, v)}
-                />
-              </div>
+              {/* Only on the questions.
+                  A vote sorts a queue: it says which question the room
+                  most wants answered, and the host works down from the
+                  top. A suggestion is not queued and nobody answers it in
+                  order, so a tally against one measures nothing and
+                  invites the room to bury an unpopular idea. */}
+              {tab === 'faq' && (
+                <div className="ps-9">
+                  <BoardVote
+                    entry={entry}
+                    busy={voting === entry.id}
+                    onVote={(v) => vote(entry, v)}
+                  />
+                </div>
+              )}
 
               <div className="min-w-0 flex-1 ps-9">
               {entry.answer ? (

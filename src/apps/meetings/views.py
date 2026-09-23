@@ -1247,10 +1247,16 @@ class EventRoomViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='vote_board')
     def vote_board(self, request, pk=None):
-        """Vote a question or suggestion up or down, or take the vote back.
+        """Vote a question up or down, or take the vote back.
 
         Everybody in the event gets one. The room deciding what most
         wants answering is the point of a board.
+
+        Questions only. A vote sorts a queue - it says which question the
+        room most wants answered, and the host works down from the top.
+        Nobody works down a list of suggestions in order, so a tally
+        against one measures nothing, and the down arrow gives the room a
+        way to bury an idea it does not like.
         """
         from src.apps.meetings.board import board_for, cast
 
@@ -1270,6 +1276,14 @@ class EventRoomViewSet(viewsets.ModelViewSet):
             return Response(
                 {'error': 'Nothing on the board with that id'},
                 status=status.HTTP_404_NOT_FOUND,
+            )
+        if message.topic != ChatMessage.Topic.FAQ:
+            return Response(
+                {
+                    'error': 'Suggestions are not voted on.',
+                    'code': 'not_a_question',
+                },
+                status=status.HTTP_409_CONFLICT,
             )
 
         cast(message, value, user=request.user)

@@ -385,6 +385,13 @@ def guest_vote_board(request):
             {'error': 'Nothing on the board with that id'},
             status=status.HTTP_404_NOT_FOUND
         )
+    # Questions only, the same as for anybody with an account. A vote
+    # sorts a queue, and a suggestion is not queued.
+    if message.topic != ChatMessage.Topic.FAQ:
+        return Response(
+            {'error': 'Suggestions are not voted on.', 'code': 'not_a_question'},
+            status=status.HTTP_409_CONFLICT
+        )
 
     from src.apps.meetings.board import board_for, cast
 

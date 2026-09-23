@@ -190,14 +190,19 @@ export const RoomQuestions: React.FC<Props> = ({
 
       {/* Indented to the question, not centred under it: the arrows
           belong to the words above them, and a row of its own in the
-          middle of the card reads as something else entirely. */}
-      <div className="ps-9">
-        <BoardVote
-          entry={entry}
-          busy={busy === entry.id}
-          onVote={(value) => vote(entry, value)}
-        />
-      </div>
+          middle of the card reads as something else entirely.
+
+          Only on the questions: a vote sorts a queue, and a suggestion
+          is not queued. */}
+      {tab === 'faq' && (
+        <div className="ps-9">
+          <BoardVote
+            entry={entry}
+            busy={busy === entry.id}
+            onVote={(value) => vote(entry, value)}
+          />
+        </div>
+      )}
 
       {entry.answer && (
         <p className="ms-9 text-[13px] leading-5 text-[#1B7F58] bg-[#1B7F58]/[.07]
