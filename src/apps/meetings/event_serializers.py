@@ -18,14 +18,28 @@ from src.apps.meetings.models import (
 
 
 def _require_speaker_details(attrs):
-    """A session must say who is speaking and how to reach them.
+    """Who is speaking, and how to reach them - once anybody is named.
 
-    The details are collected once, when the running order is written,
-    because chasing them down after the event is how they never get
-    recorded at all.
+    This used to be demanded of every session, because chasing the
+    details down after the event is how they never get recorded at all.
+    That was the right rule while the running order was the only place a
+    speaker existed.
+
+    It is not any more. A speaker is a profile now, written on its own
+    step and put on the talks they give, so a talk is often written
+    before anybody has been assigned to it - and refusing to write the
+    running order until each line has an email is refusing the ordinary
+    order of work.
+
+    So the rule narrows rather than goes: a session that names somebody
+    must still say how to reach them. A session that names nobody yet is
+    a slot in the day, and waits.
     """
+    if not (attrs.get('speaker_name') or '').strip():
+        return attrs
+
     missing = [
-        field for field in ('speaker_name', 'speaker_email', 'speaker_phone')
+        field for field in ('speaker_email', 'speaker_phone')
         if not (attrs.get(field) or '').strip()
     ]
     if missing:

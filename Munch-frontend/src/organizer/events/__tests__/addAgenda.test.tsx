@@ -57,9 +57,6 @@ const type = (placeholder: string, value: string) =>
 
 const fillIn = () => {
   type('Emergency Response Overview', 'Opening');
-  type('Name *', 'Sarah Sharma');
-  type('Email', 'sarah@example.com');
-  type('Phone', '9800000001');
 };
 
 /**
@@ -87,7 +84,6 @@ describe('adding one agenda item', () => {
   it('writes the session against the event, on the event\'s own day', async () => {
     const { added } = show();
     fillIn();
-    type('Position', 'Director, Emergency Services');
 
     fireEvent.click(screen.getByRole('button', { name: 'Add agenda' }));
 
@@ -95,7 +91,6 @@ describe('adding one agenda item', () => {
     const sent = api.createSession.mock.calls[0][0];
     expect(sent.event).toBe('e1');
     expect(sent.title).toBe('Opening');
-    expect(sent.speaker_role).toBe('Director, Emergency Services');
     expect(sent.duration_minutes).toBe(30);
     // The time typed is on the event's day, not on today.
     expect(new Date(sent.starts_at).toDateString())
@@ -105,9 +100,6 @@ describe('adding one agenda item', () => {
 
   it('will not write one with no name', async () => {
     show();
-    type('Name *', 'Sarah Sharma');
-    type('Email', 'sarah@example.com');
-    type('Phone', '9800000001');
 
     fireEvent.click(screen.getByRole('button', { name: 'Add agenda' }));
 
@@ -116,20 +108,19 @@ describe('adding one agenda item', () => {
   });
 
   /**
-   * The server will not take a speaker it cannot reach afterwards, and
-   * says so field by field. Catching it here spares a round trip - and a
-   * form that looked as though it had saved.
+   * Who is speaking is not asked here any more.
+   *
+   * A speaker is a profile now, written on its own step and put on the
+   * talks they give - so this form writes the slot and leaves the person
+   * to that step. Asking twice meant two places to correct a name.
    */
-  it('will not write one the server would refuse for want of a phone', async () => {
+  it('asks nothing about the speaker', () => {
     show();
-    type('Emergency Response Overview', 'Opening');
-    type('Name *', 'Sarah Sharma');
-    type('Email', 'sarah@example.com');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add agenda' }));
-
-    expect(api.createSession).not.toHaveBeenCalled();
-    expect(toast.error).toHaveBeenCalled();
+    expect(screen.queryByPlaceholderText('Name *')).toBeNull();
+    expect(screen.queryByPlaceholderText('Email')).toBeNull();
+    expect(screen.queryByPlaceholderText('Phone')).toBeNull();
+    expect(screen.queryByPlaceholderText('Position')).toBeNull();
   });
 
   it('closes without writing anything', () => {
@@ -182,16 +173,22 @@ describe('editing an agenda item', () => {
     expect(screen.getByDisplayValue('Session Kataho')).toBeInTheDocument();
     expect(screen.getByDisplayValue('09:30')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Notes so far')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Prabhat Karmacharya')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Director')).toBeInTheDocument();
     expect(screen.getByRole('combobox')).toHaveValue('30');
   });
 
-  it('reads the speaker back from the field the host is given them in', () => {
+  /**
+   * Not even on an edit.
+   *
+   * The speaker already written on this talk is not shown here to be
+   * corrected: the profile is the one place they are edited, and a
+   * second one would be a second thing to keep in step.
+   */
+  it('does not offer the speaker back for editing', () => {
     showEdit();
 
-    expect(screen.getByDisplayValue('prabhat@example.com')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('9811111111')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Prabhat Karmacharya')).toBeNull();
+    expect(screen.queryByDisplayValue('prabhat@example.com')).toBeNull();
+    expect(screen.queryByDisplayValue('9811111111')).toBeNull();
   });
 
   it('says it is an edit, not another session', () => {
@@ -392,5 +389,64 @@ describe('the documents on an agenda item that exists', () => {
 
     await waitFor(() => expect(api.deleteResource).toHaveBeenCalledWith('e1', 'a2'));
     await waitFor(() => expect(screen.queryByText('Contact List.xlsx')).toBeNull());
+  });
+});
+
+/**
+ * Which day of the event a slot sits on.
+ *
+ * An event running over more than one day has a running order per day
+ * rather than one long list: a talk at nine belongs to the morning of a
+ * particular day, and a time alone cannot say which. One day and there
+ * is nothing to choose between, so the field does not appear.
+ */
+describe('choosing the day', () => {
+  const showOn = (days?: string[]) =>
+    render(
+      <OrganizerProvider>
+        <AddAgendaDialog
+          eventId="e1"
+          day="2026-09-15"
+          days={days}
+          suggestedStart="11:30"
+          onClose={jest.fn()}
+          onAdded={jest.fn()}
+        />
+      </OrganizerProvider>
+    );
+
+  it('is not asked where the event runs one day', () => {
+    showOn(['2026-09-15']);
+
+    expect(screen.queryByLabelText(/Select Day/)).toBeNull();
+  });
+
+  it('is asked where it runs over several', () => {
+    showOn(['2026-09-15', '2026-09-16', '2026-09-17']);
+
+    const picker = screen.getByLabelText(/Select Day/);
+    expect(picker).toBeInTheDocument();
+    expect(within(picker).getByText('Day 3')).toBeInTheDocument();
+  });
+
+  it('opens on the day the form was opened from', () => {
+    showOn(['2026-09-14', '2026-09-15', '2026-09-16']);
+
+    expect(screen.getByLabelText(/Select Day/)).toHaveValue('2026-09-15');
+  });
+
+  it('writes the slot onto the day that was chosen', async () => {
+    showOn(['2026-09-15', '2026-09-16']);
+    type('Emergency Response Overview', 'Second morning');
+    fireEvent.change(screen.getByLabelText(/Select Day/), {
+      target: { value: '2026-09-16' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add agenda' }));
+
+    await waitFor(() => expect(api.createSession).toHaveBeenCalled());
+    const sent = api.createSession.mock.calls[0][0];
+    expect(new Date(sent.starts_at).toDateString())
+      .toBe(new Date('2026-09-16T11:30').toDateString());
   });
 });

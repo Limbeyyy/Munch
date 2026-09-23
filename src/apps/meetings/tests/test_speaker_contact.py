@@ -321,3 +321,68 @@ class VisibilityToggleTests(TestCase):
             f'{API}/sessions/{self.first.id}/request_contact/'
         )
         self.assertEqual(response.status_code, 400)
+
+
+class WhenTheDetailsAreDemandedTests(TestCase):
+    """Who is speaking, and how to reach them - once anybody is named.
+
+    This was demanded of every session, because chasing the details down
+    after the event is how they never get recorded at all. That was right
+    while the running order was the only place a speaker existed.
+
+    A speaker is a profile now, written on its own step and put on the
+    talks they give, so a talk is often written before anybody has been
+    assigned to it. The rule narrows rather than goes: a session naming
+    somebody must still say how to reach them.
+    """
+
+    def setUp(self):
+        self.host = make_host('host@example.com')
+        self.start = timezone.now() + timezone.timedelta(days=1)
+        self.event = make_event(self.host, start=self.start, minutes=120)
+        self.client = signed_in(self.host)
+
+    def write(self, **over):
+        body = {
+            'event': str(self.event.id),
+            'title': 'Opening',
+            'starts_at': self.start.isoformat(),
+            'duration_minutes': 30,
+        }
+        body.update(over)
+        return self.client.post(f'{API}/sessions/', body, format='json')
+
+    def test_a_slot_with_nobody_named_is_written(self):
+        """The gap this closes.
+
+        Refusing the running order until each line has an email refuses
+        the ordinary order of work: the day is laid out first and the
+        speakers are assigned afterwards.
+        """
+        got = self.write()
+
+        self.assertEqual(got.status_code, 201)
+
+    def test_but_naming_somebody_still_asks_how_to_reach_them(self):
+        got = self.write(speaker_name='Anjelika Sah')
+
+        self.assertEqual(got.status_code, 400)
+        self.assertIn('speaker_email', got.data)
+        self.assertIn('speaker_phone', got.data)
+
+    def test_and_is_taken_once_it_does(self):
+        got = self.write(
+            speaker_name='Anjelika Sah',
+            speaker_email='her@example.com',
+            speaker_phone='9800000000',
+        )
+
+        self.assertEqual(got.status_code, 201)
+
+    def test_half_the_details_is_still_refused(self):
+        got = self.write(
+            speaker_name='Anjelika Sah', speaker_email='her@example.com'
+        )
+
+        self.assertEqual(got.status_code, 400)
+        self.assertIn('speaker_phone', got.data)

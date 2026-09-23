@@ -33,8 +33,15 @@ const BOX =
 
 interface Props {
   eventId: string;
-  /** The day the event runs, so a time alone is enough to place a session. */
+  /** The day being added to, so a time alone is enough to place a session. */
   day: string;
+  /**
+   * Every day the event runs, earliest first.
+   *
+   * One of them and the dropdown is pointless, so it is left off: there
+   * is nothing to select between.
+   */
+  days?: string[];
   /** Where the running order has reached, offered as the next start. */
   suggestedStart?: string;
   /**
@@ -57,7 +64,7 @@ interface Props {
  * runs, who is giving it, and what they are handing out.
  */
 export const AddAgendaDialog: React.FC<Props> = ({
-  eventId, day, suggestedStart, session, onClose, onAdded,
+  eventId, day, days, suggestedStart, session, onClose, onAdded,
 }) => {
   const { t, num } = useOrganizer();
   const editing = !!session;
@@ -74,13 +81,10 @@ export const AddAgendaDialog: React.FC<Props> = ({
   const [startTime, setStartTime] = useState(storedTime ?? suggestedStart ?? '10:00');
   const [minutes, setMinutes] = useState(session?.duration_minutes ?? 30);
   const [details, setDetails] = useState(session?.description ?? '');
-  const [speaker, setSpeaker] = useState(session?.speaker_name ?? '');
-  const [role, setRole] = useState(session?.speaker_role ?? '');
-  // The address and number are written but never read back with the
-  // session: the host reads their own through `speaker_contact`, and
-  // nobody else reads them here at all.
-  const [email, setEmail] = useState(session?.speaker_contact?.email ?? '');
-  const [phone, setPhone] = useState(session?.speaker_contact?.phone ?? '');
+  /** Which day of the event this slot sits on. */
+  const [onDay, setOnDay] = useState(
+    session?.starts_at ? session.starts_at.slice(0, 10) : day
+  );
   const [busy, setBusy] = useState(false);
 
   /** What the speaker has already handed in, as the server holds it. */
@@ -159,26 +163,13 @@ export const AddAgendaDialog: React.FC<Props> = ({
       toast.error(t({ ne: 'सुरु हुने समय दिनुहोस्', en: 'Give it a start time' }));
       return;
     }
-    // The server asks for all three when a session is written, so the
-    // speaker can be reached after the day - and leaves them alone on a
-    // patch. This follows that, so an edit is not held up by details
-    // that were never collected in the first place.
-    if (!editing && (!speaker.trim() || !email.trim() || !phone.trim())) {
-      toast.error(t({
-        ne: 'वक्ताको नाम, इमेल र फोन चाहिन्छ',
-        en: 'A speaker name, email and phone are needed',
-      }));
-      return;
-    }
-
+    // Who is speaking is not asked here any more: a speaker is a profile
+    // written on its own step and put on the talks they give, so this
+    // form writes the slot and leaves the person to that step.
     const written = {
       title: title.trim(),
       description: details.trim(),
-      speaker_name: speaker.trim(),
-      speaker_role: role.trim(),
-      speaker_email: email.trim(),
-      speaker_phone: phone.trim(),
-      starts_at: new Date(`${day}T${startTime}`).toISOString(),
+      starts_at: new Date(`${onDay}T${startTime}`).toISOString(),
       duration_minutes: minutes,
     };
 
@@ -324,6 +315,24 @@ export const AddAgendaDialog: React.FC<Props> = ({
             </Row>
           </div>
 
+          {(days?.length ?? 0) > 1 && (
+            <div className="grid grid-cols-2 gap-3">
+              <Row label={t({ ne: 'दिन छान्नुहोस्', en: 'Select Day' })}>
+                <select
+                  value={onDay}
+                  onChange={(e) => setOnDay(e.target.value)}
+                  className={`${BOX} bg-white`}
+                >
+                  {days!.map((one, i) => (
+                    <option key={one} value={one}>
+                      {t({ ne: `दिन ${num(i + 1)}`, en: `Day ${i + 1}` })}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+            </div>
+          )}
+
           <Row label={t({ ne: 'एजेन्डाको विवरण', en: 'Agenda details' })}>
             <textarea
               rows={2}
@@ -337,51 +346,13 @@ export const AddAgendaDialog: React.FC<Props> = ({
             />
           </Row>
 
-          <div className="flex flex-col items-start w-full">
-            <span className="text-[12px] font-medium text-body leading-4">
-              {t({ ne: 'वक्ता', en: 'Speaker' })}
-            </span>
-            <div className="w-full pt-1.5">
-              <div className="border-[0.6px] border-line rounded-[8px] p-3 flex flex-col gap-2">
-                <input
-                  value={speaker}
-                  onChange={(e) => setSpeaker(e.target.value)}
-                  placeholder={t({ ne: 'नाम *', en: 'Name *' })}
-                  className={BOX}
-                />
-                <input
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  placeholder={t({ ne: 'पद', en: 'Position' })}
-                  className={BOX}
-                />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder={t({ ne: 'इमेल', en: 'Email' })}
-                  className={BOX}
-                />
-                {/* Not in the drawing, and it cannot be left out: the server
-                    will not take a speaker it has no way of reaching after
-                    the day, which is a rule this project asked for. */}
-                <input
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder={t({ ne: 'फोन', en: 'Phone' })}
-                  className={BOX}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* What the speaker is handing out, filed against this talk
-              rather than against the event at large. */}
+          {/* What is handed out at this talk, filed against it rather
+              than against the event at large. */}
           <div className="flex flex-col items-start w-full">
             <div className="flex items-center justify-between w-full">
               <span className="text-[12px] leading-4">
                 <span className="font-medium text-body">
-                  {t({ ne: 'वक्ताका कागजात', en: 'Speaker documents' })}
+                  {t({ ne: 'कार्यसूचीका कागजात', en: 'Agenda documents' })}
                 </span>
                 <span className="text-faint">
                   {t({
