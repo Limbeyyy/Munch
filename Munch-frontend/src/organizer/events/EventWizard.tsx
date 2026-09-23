@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
@@ -13,6 +13,7 @@ import { CoHostDialog, Field, inputClass } from './CoHostDialog';
 import { AddAgendaDialog } from './AddAgendaDialog';
 import { AgendaBoard } from './AgendaBoard';
 import { SpeakersStep } from './SpeakersStep';
+import { dayOfSession, daysOf } from './days';
 import { PeopleEmpty, PeopleHeading, PersonRow, initialsOf } from './people';
 import { whenLine } from './EventsDashboard';
 
@@ -264,6 +265,19 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
   const sessionCount = saved?.sessions?.length ?? 0;
 
   /**
+   * The days the event runs over, and which one is being worked on.
+   *
+   * An event that spans more than one day has a running order per day
+   * rather than one long list: a talk at nine belongs to the morning of
+   * a particular day, and a form that only knows a time cannot say
+   * which. One day and there is nothing to choose between, so the tabs
+   * do not appear at all.
+   */
+  const days = useMemo(() => (saved ? daysOf(saved) : []), [saved]);
+  const [onDay, setOnDay] = useState('');
+  const currentDay = onDay && days.includes(onDay) ? onDay : (days[0] ?? '');
+
+  /**
    * Where the running order has reached, offered as the next start.
    *
    * The dialog asks for a time rather than working one out, so it is
@@ -477,6 +491,38 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
             )}
           </div>
 
+          {/* Which day is being laid out. Only where there is more than
+              one: a single-day event has nothing to choose between. */}
+          {saved && days.length > 1 && (
+            <div role="tablist" className="flex gap-1 border-b border-line flex-wrap">
+              {days.map((one, i) => {
+                const on = one === currentDay;
+                const count = (saved.sessions ?? [])
+                  .filter((s) => dayOfSession(s) === one).length;
+                return (
+                  <button
+                    key={one}
+                    role="tab"
+                    aria-selected={on}
+                    onClick={() => setOnDay(one)}
+                    className={`flex items-center gap-2 px-4 py-2.5 -mb-px border-b-2
+                      text-[14px] font-medium whitespace-nowrap ${
+                        on
+                          ? 'border-head text-head'
+                          : 'border-transparent text-subtle hover:text-body'
+                      }`}
+                  >
+                    {t({ ne: `दिन ${num(i + 1)}`, en: `Day ${i + 1}` })}
+                    <span className="bg-[#F3F4F6] rounded-full px-1.5 text-[12px]
+                      font-medium leading-[19px] text-[#364153]">
+                      {num(count)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {/* What is already in the running order, and arranging it. */}
           {saved && sessionCount > 0 && (
             <section className="bg-wash rounded-[12px] p-5">
@@ -488,7 +534,13 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
                 })}
               </h2>
               <AgendaBoard
-                event={saved}
+                event={days.length > 1
+                  ? {
+                      ...saved,
+                      sessions: (saved.sessions ?? [])
+                        .filter((one) => dayOfSession(one) === currentDay),
+                    }
+                  : saved}
                 onChanged={async () => {
                   const fresh = await apiClient.getEvent(saved.id);
                   setSaved(fresh);
@@ -513,7 +565,12 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
           {(drafting || editing) && saved && (
             <AddAgendaDialog
               eventId={saved.id}
-              day={saved.event_date ?? toLocalInput(new Date(saved.scheduled_start)).slice(0, 10)}
+              // The day whose tab is open, so what is created lands where
+              // the host is looking rather than always on the first day.
+              day={currentDay
+                || saved.event_date
+                || toLocalInput(new Date(saved.scheduled_start)).slice(0, 10)}
+              days={days}
               session={editing ?? undefined}
               suggestedStart={nextFreeTime}
               onClose={() => { setDrafting(false); setEditing(null); }}

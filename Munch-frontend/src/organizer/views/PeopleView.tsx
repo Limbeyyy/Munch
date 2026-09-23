@@ -2,15 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { QUEUE_POLL_MS } from '../../services/polling';
-import { Event, Session } from '../../types';
-import { Pair, useOrganizer } from '../i18n';
+import { Event, Session, Speaker as SpeakerProfile } from '../../types';
+import { useOrganizer } from '../i18n';
 import { ContactRequests } from '../ContactRequests';
 import { groupBySpeaker } from '../speakers';
-import { Card, Chip, Head, Tabs } from '../ui';
-import { SESSION_STATE_LABEL, SESSION_STATE_TONE, sessionState } from '../sessionState';
+import { Card, Head, Tabs } from '../ui';
+import { SpeakerFace } from '../events/SpeakersStep';
 
-const clock = (iso: string) =>
-  new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 interface Slot { session: Session; event: Event; }
 
@@ -44,6 +42,18 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
   const [settingVisibility, setSettingVisibility] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState(0);
   const [loading, setLoading] = useState(true);
+  /** The profiles written for the chosen event, and what is typed. */
+  const [profiles, setProfiles] = useState<SpeakerProfile[]>([]);
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    if (!eventId) { setProfiles([]); return; }
+    let alive = true;
+    apiClient.getSpeakers(eventId)
+      .then((rows) => { if (alive) setProfiles(rows); })
+      .catch(() => { if (alive) setProfiles([]); });
+    return () => { alive = false; };
+  }, [eventId]);
 
   useEffect(() => {
     apiClient
@@ -106,6 +116,51 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
       };
     });
   }, [event]);
+
+  /**
+   * Everybody speaking at this event, however they were written down.
+   *
+   * A profile is the first-class thing now, so it is what a card is made
+   * from. But a name typed straight onto a talk is still a speaker -
+   * every event written before profiles existed has them - so those are
+   * kept alongside, minus anyone a profile already covers.
+   */
+  const shown = useMemo(() => {
+    const byName = new Map(
+      speakers.map((one) => [one.name.trim().toLowerCase(), one])
+    );
+    const fromProfiles = profiles.map((one) => ({
+      key: `profile-${one.id}`,
+      name: one.full_name,
+      position: one.position,
+      organization: one.organization,
+      photo: one.photo_url,
+      agendas: one.sessions.map((s) => s.title),
+      // The profile has no visibility of its own: who may read a
+      // speaker's details is a property of the talk they give, which is
+      // where the rule has always lived.
+      onSessions: byName.get(one.full_name.trim().toLowerCase()) ?? null,
+    }));
+    const covered = new Set(
+      profiles.map((one) => one.full_name.trim().toLowerCase())
+    );
+    const fromSessions = speakers
+      .filter((one) => !covered.has(one.name.trim().toLowerCase()))
+      .map((one) => ({
+        key: one.key,
+        name: one.name,
+        position: '',
+        organization: '',
+        photo: one.photo,
+        agendas: one.slots.map((slot) => slot.session.title),
+        onSessions: one,
+      }));
+
+    const wanted = search.trim().toLowerCase();
+    return [...fromProfiles, ...fromSessions].filter((one) =>
+      one.name.toLowerCase().includes(wanted)
+    );
+  }, [profiles, speakers, search]);
 
   const unnamed = useMemo(() => {
     if (!event) return [];
@@ -172,24 +227,47 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
         </Card>
       ) : (
         <>
-          {events.length > 1 && (
-            <div className="mb-4">
-              <label className="block text-[12.5px] text-[#6E7C8E] mb-1.5">
-                {t({ ne: 'कुन कार्यक्रम', en: 'Which event' })}
-              </label>
-              <select
-                value={eventId}
-                onChange={(e) => setEventId(e.target.value)}
-                className="w-full max-w-md border border-navy-800/15 rounded-[9px] px-3 py-2 bg-white text-[14px]"
-              >
-                {events.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.title} · {new Date(e.event_date ?? e.scheduled_start).toLocaleDateString()}
-                  </option>
-                ))}
-              </select>
+          {/* What is being looked for, and which event's speakers to
+              look in. Side by side, as 686-27690 draws them. */}
+          <div className="mb-4 flex gap-4 items-center flex-wrap">
+            <div className="bg-white border border-line rounded-[8px] h-10 px-2.5
+              flex gap-1 items-center w-full max-w-[348px]">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
+                <circle cx="8" cy="8" r="5.5" stroke="#7f7d83" strokeWidth="1.3" />
+                <path d="M12.5 12.5 L16 16" stroke="#7f7d83" strokeWidth="1.3"
+                  strokeLinecap="round" />
+              </svg>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t({ ne: 'वक्ता खोज्नुहोस्', en: 'Search Speakers' })}
+                aria-label={t({ ne: 'वक्ता खोज्नुहोस्', en: 'Search Speakers' })}
+                className="flex-1 min-w-0 bg-transparent text-[14px] text-head
+                  placeholder:text-[#7f7d83] outline-none"
+              />
             </div>
-          )}
+            {events.length > 1 && (
+              <div className="flex gap-1.5 items-center">
+                <label
+                  htmlFor="manch-speakers-event"
+                  className="text-[16px] text-black"
+                >
+                  {t({ ne: 'कार्यक्रम', en: 'Events' })}
+                </label>
+                <select
+                  id="manch-speakers-event"
+                  value={eventId}
+                  onChange={(e) => setEventId(e.target.value)}
+                  className="bg-white border-[0.6px] border-line rounded-[8px]
+                    h-10 px-3 w-[280px] text-[14px] text-black"
+                >
+                  {events.map((e) => (
+                    <option key={e.id} value={e.id}>{e.title}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
 
           <Tabs
             active={tab}
@@ -211,24 +289,78 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
             <ContactRequests eventId={eventId || undefined} refreshMs={QUEUE_POLL_MS} />
           ) : (
             <>
-              {speakers.length === 0 ? (
+              {shown.length === 0 ? (
                 <Card className="text-center py-10">
                   <p className="text-[#6E7C8E] max-w-md mx-auto">
                     {t({
-                      ne: 'कुनै सत्रमा वक्ता तोकिएको छैन। सत्रहरू पानाबाट नाम राख्नुहोस्।',
-                      en: 'No session names a speaker yet. Add them from the Sessions page.',
+                      ne: 'कुनै वक्ता छैन। कार्यक्रमको तेस्रो चरणबाट थप्नुहोस्।',
+                      en: 'No speakers yet. Add them on the Speakers step of the event.',
                     })}
                   </p>
                 </Card>
               ) : (
-                <div className="grid gap-3.5" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))' }}>
-                  {speakers.map((speaker) => (
-                    <SpeakerCard
-                      key={speaker.key}
-                      speaker={speaker}
-                      busy={settingVisibility === speaker.key}
-                      onSetVisibility={(v) => setVisibility(speaker, v)}
-                    />
+                <div className="grid gap-5"
+                  style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))' }}>
+                  {shown.map((one) => (
+                    <article
+                      key={one.key}
+                      className="bg-white border-[0.6px] border-line rounded-[12px] p-4
+                        flex flex-col
+                        shadow-[0px_4px_3px_rgba(0,0,0,0.04),0px_2px_2px_rgba(0,0,0,0.03)]"
+                    >
+                      <SpeakerFace
+                        name={one.name}
+                        src={one.photo}
+                        className="rounded-[8px] w-full aspect-square text-[36px]"
+                      />
+                      <p className="pt-3 text-[14px] font-medium text-head text-center">
+                        {one.name}
+                      </p>
+                      {one.position && (
+                        <p className="text-[12px] text-[#c2410c] text-center">
+                          {one.position}
+                        </p>
+                      )}
+                      {one.organization && (
+                        <p className="text-[12px] text-subtle text-center">
+                          {one.organization}
+                        </p>
+                      )}
+                      <p className="mt-3 bg-[#f3f4f6] rounded-[6px] px-2 py-1
+                        text-[11px] text-subtle text-center truncate">
+                        {one.agendas.length === 0
+                          ? t({ ne: 'कुनै कार्यसूची छैन', en: 'No agenda assigned' })
+                          : one.agendas.join(', ')}
+                      </p>
+
+                      {/* Whether an attendee may simply read this speaker's
+                          details, or must ask. Kept on the card because it
+                          is the only place it is decided, and the card it
+                          used to live on has gone. */}
+                      {one.onSessions && (
+                        <div className="mt-2 flex gap-1 justify-center">
+                          {(['public', 'private'] as const).map((which) => (
+                            <button
+                              key={which}
+                              type="button"
+                              disabled={settingVisibility === one.onSessions!.key}
+                              onClick={() => setVisibility(one.onSessions!, which)}
+                              aria-pressed={one.onSessions!.visibility === which}
+                              className={`rounded-full px-2.5 py-0.5 text-[11px]
+                                disabled:opacity-50 ${
+                                one.onSessions!.visibility === which
+                                  ? 'bg-navy-800 text-white'
+                                  : 'bg-[#e3ecfd] text-[#393939]'
+                              }`}
+                            >
+                              {which === 'public'
+                                ? t({ ne: 'सार्वजनिक', en: 'Public' })
+                                : t({ ne: 'निजी', en: 'Private' })}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </article>
                   ))}
                 </div>
               )}
@@ -256,124 +388,3 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
 };
 
 
-/**
- * One speaker, with what the organizer knows about them.
- *
- * The card carries this speaker's own details - name, how to reach them,
- * the sessions they hold - drawn from their own sessions rather than from
- * anything shared with the card next to it.
- *
- * The visibility control is a single choice with two values, not two
- * switches, so "both at once" is not a state the interface can reach.
- */
-const SpeakerCard: React.FC<{
-  speaker: Speaker;
-  busy: boolean;
-  onSetVisibility: (visibility: 'public' | 'private') => void;
-}> = ({ speaker, busy, onSetVisibility }) => {
-  const { t, num } = useOrganizer();
-  const { name, email, phone, photo, slots, visibility } = speaker;
-
-  const CHOICES: { id: 'public' | 'private'; label: Pair }[] = [
-    { id: 'public', label: { ne: 'सार्वजनिक', en: 'Public' } },
-    { id: 'private', label: { ne: 'निजी', en: 'Private' } },
-  ];
-
-  return (
-    <Card className="flex flex-col gap-3">
-      <div className="flex gap-3 items-center">
-        <span className="w-12 h-12 rounded-full bg-navy-700 text-white grid
-          place-items-center text-[17px] font-bold flex-none overflow-hidden">
-          {photo
-            ? <img src={photo} alt="" className="w-full h-full object-cover" />
-            : name.charAt(0).toUpperCase()}
-        </span>
-        <div className="min-w-0">
-          <h3 className="text-[16px] font-semibold truncate">{name}</h3>
-          <p className="text-[12.5px] text-[#6E7C8E]">
-            {t({
-              ne: `${num(slots.length)} सत्र`,
-              en: `${slots.length} session${slots.length === 1 ? '' : 's'}`,
-            })}
-          </p>
-        </div>
-      </div>
-
-      {(email || phone) && (
-        <div className="text-[12.5px] text-ink-2 leading-relaxed">
-          {email && <div className="truncate" title={email}>{email}</div>}
-          {phone && <div className="tabular-nums">{phone}</div>}
-        </div>
-      )}
-
-      <div>
-        <p className="text-[11.5px] text-[#6E7C8E] mb-1.5">
-          {t({ ne: 'सम्पर्क कसले देख्ने', en: 'Contact visibility' })}
-        </p>
-        <div className="inline-flex rounded-lg border border-navy-800/15 overflow-hidden">
-          {CHOICES.map((choice) => {
-            const on = visibility === choice.id;
-            return (
-              <button
-                key={choice.id}
-                type="button"
-                disabled={busy}
-                aria-pressed={on}
-                onClick={() => onSetVisibility(choice.id)}
-                className={`px-3 py-1.5 text-[12.5px] transition disabled:opacity-60 ${
-                  on
-                    ? 'bg-navy-700 text-white font-medium'
-                    : 'bg-white text-ink-2 hover:bg-cream'
-                }`}
-              >
-                {t(choice.label)}
-              </button>
-            );
-          })}
-        </div>
-
-        <p className="text-[11.5px] text-[#6E7C8E] mt-1.5">
-          {visibility === 'public'
-            ? t({
-                ne: 'सत्र सकिएपछि सहभागीहरूले सम्पर्क देख्न सक्छन्।',
-                en: 'Attendees can see the contact once the session is over.',
-              })
-            : visibility === 'private'
-            ? t({
-                ne: 'सहभागीले अनुरोध गर्नुपर्छ, र तपाईंले अनुमति दिनुपर्छ।',
-                en: 'Attendees must ask, and you decide.',
-              })
-            : t({
-                ne: 'यिनका सत्रहरूमा फरक-फरक छ — कुनै एउटा छान्नुहोस्।',
-                en: 'Their sessions disagree — pick one to settle them.',
-              })}
-        </p>
-      </div>
-
-      {slots.map(({ session, event }) => (
-        <div key={session.id} className="bg-cream rounded-lg px-3 py-2 text-[12.5px] text-ink-2">
-          <span className="tabular-nums">{clock(session.starts_at)}</span>
-          {' · '}
-          {session.title}
-          <span className="block text-[11.5px] text-[#6E7C8E] mt-0.5">
-            {event.title}
-            <span className="ms-1.5">
-              <Chip tone={SESSION_STATE_TONE[sessionState(session)]}>
-                {t(SESSION_STATE_LABEL[sessionState(session)])}
-              </Chip>
-            </span>
-            {visibility === 'mixed' && (
-              <span className="ms-1.5">
-                <Chip tone={session.speaker_visibility === 'public' ? 'ok' : 'draft'}>
-                  {session.speaker_visibility === 'public'
-                    ? t({ ne: 'सार्वजनिक', en: 'Public' })
-                    : t({ ne: 'निजी', en: 'Private' })}
-                </Chip>
-              </span>
-            )}
-          </span>
-        </div>
-      ))}
-    </Card>
-  );
-};
