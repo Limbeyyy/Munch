@@ -179,14 +179,15 @@ export const LiveView: React.FC<Props> = ({ events, onChanged, onNavigate }) => 
     try {
       await apiClient.moderateMessage(current.id, message.id, action, topic);
       setPending((prev) => prev.filter((m) => m.id !== message.id));
+      const board = topic ?? message.topic;
       toast.success(
-        topic === 'faq'
-          ? t({ ne: 'प्रश्नमा राखियो', en: 'Up as a question' })
-          : topic === 'suggestion'
+        action !== 'approve'
+          ? t({ ne: 'सन्देश अस्वीकृत', en: 'Message rejected' })
+          : board === 'suggestion'
           ? t({ ne: 'सुझावमा राखियो', en: 'Up as a suggestion' })
-          : action === 'approve'
-          ? t({ ne: 'सन्देश पठाइयो', en: 'Message delivered' })
-          : t({ ne: 'सन्देश अस्वीकृत', en: 'Message declined' })
+          : board === 'faq'
+          ? t({ ne: 'प्रश्नमा राखियो', en: 'Up as a question' })
+          : t({ ne: 'सन्देश पठाइयो', en: 'Message delivered' })
       );
     } catch {
       toast.error(t({ ne: 'गर्न सकिएन', en: 'That did not work' }));
@@ -314,17 +315,22 @@ export const LiveView: React.FC<Props> = ({ events, onChanged, onNavigate }) => 
               under={m.sender_name}
               actions={
                 <>
+                  {/* Which board it belongs on is not a question for the
+                      host: the person who wrote it chose it, under the
+                      questions board or the suggestions board, and it has
+                      carried that choice ever since. All that is left to
+                      decide is whether it goes up. */}
                   <RequestButton
                     tone="accept"
-                    onClick={() => moderate(m, 'approve', 'faq')}
+                    onClick={() => moderate(m, 'approve')}
                   >
-                    {t({ ne: 'प्रश्न', en: 'Question' })}
+                    {t({ ne: 'स्वीकृत', en: 'Approve' })}
                   </RequestButton>
                   <RequestButton
                     tone="quiet"
-                    onClick={() => moderate(m, 'approve', 'suggestion')}
+                    onClick={() => moderate(m, 'decline')}
                   >
-                    {t({ ne: 'सुझाव', en: 'Suggestions' })}
+                    {t({ ne: 'अस्वीकार', en: 'Reject' })}
                   </RequestButton>
                 </>
               }

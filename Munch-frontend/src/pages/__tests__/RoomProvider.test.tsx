@@ -224,7 +224,13 @@ describe('the room as the design lays it out', () => {
     expect(screen.getByRole('tab', { name: /Suggestions/ })).toBeInTheDocument();
   });
 
-  it('lets the host sort what people wrote without leaving the room', async () => {
+  /**
+   * What is waiting is decided on the Message Request card in live
+   * control, which is a place dedicated to it. A second copy of the
+   * same queue in here meant two lists of the same thing, each able to
+   * go stale while the other was acted on.
+   */
+  it('does not carry a second copy of the queue', async () => {
     const { useAuthStore } = require('../../store/authStore');
     useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
     api.getPendingMessages.mockResolvedValue([{
@@ -235,11 +241,9 @@ describe('the room as the design lays it out', () => {
 
     showRoom();
     await openSide('Questions');
-    fireEvent.click(await screen.findByRole('tab', { name: /Requests \(1\)/ }));
 
-    expect(await screen.findByText('Please slow down')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'To questions' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'To suggestions' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Requests/ })).toBeNull();
+    expect(screen.queryByText('Please slow down')).toBeNull();
     useAuthStore.setState({ user: null });
   });
 

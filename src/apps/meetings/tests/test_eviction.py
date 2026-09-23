@@ -192,12 +192,14 @@ class EvictionTests(TransactionTestCase):
         )
 
     async def test_ending_the_last_session_leaves_the_room_standing(self):
-        """The room is the event's, and it outlives every talk in it.
+        """The room has nothing left to be open for, so it closes.
 
-        Ending a session ends the session - its transcript, its chat and
-        its resources are closed off and belong to it. The room goes on,
-        offering the host another one to start. Only the host ending the
-        event empties it.
+        Ending a session ends the session and the room goes on, offering
+        the host the next one - but when there is no next one there is
+        nothing to offer. Leaving it open meant a host had to end the
+        session and then end the event as two separate acts, and a room
+        stood open with an event reading as live for hours after its last
+        talk had finished.
         """
         comm = await joined(self.event, self.attendee)
         await comm.receive_json_from()
@@ -213,13 +215,8 @@ class EvictionTests(TransactionTestCase):
 
         response = await database_sync_to_async(end_session)()
         self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.json()['event_ended'])
-        self.assertEqual(response.json()['event_status'], Event.Status.ACTIVE)
-
-        # The room hears the session go off stage, and nothing else.
-        said = await comm.receive_json_from()
-        self.assertEqual(said['type'], 'state_update')
-        self.assertTrue(said['state'].get('session_ended'))
+        self.assertTrue(response.json()['event_ended'])
+        self.assertEqual(response.json()['event_status'], Event.Status.ENDED)
         await comm.disconnect()
 
         still_in = await database_sync_to_async(
@@ -227,7 +224,7 @@ class EvictionTests(TransactionTestCase):
                 event=self.event, is_active=True
             ).count()
         )()
-        self.assertEqual(still_in, 1)
+        self.assertEqual(still_in, 0)
 
     def test_the_meeting_stays_open_while_a_session_is_still_to_come(self):
         # Ending the first of two is not ending the event.
@@ -252,7 +249,15 @@ class EvictionTests(TransactionTestCase):
 
     def test_the_register_is_taken_without_emptying_the_room(self):
         # Attendance for the talk is settled the moment it closes; the
-        # people it counted are still in the room for the next one.
+        # people it counted are still in the room for the next one. Driven
+        # with a session still to come, because the room only stays open
+        # while the day has somewhere left to go.
+        make_session(
+            self.event,
+            timezone.now() + timezone.timedelta(hours=1),
+            60,
+            'Sagun',
+        )
         from src.apps.meetings.models import SessionAttendance
         from django.test import Client
 

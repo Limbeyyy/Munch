@@ -19,7 +19,7 @@ from src.apps.realtime.routing import websocket_urlpatterns
 from src.apps.accounts.models import HostAccount
 from src.apps.accounts.tokens import issue_tokens
 from src.apps.meetings.idle import evict_idle, timeout_for
-from src.apps.meetings.models import Event, EventParticipant
+from src.apps.meetings.models import Event, EventParticipant, GuestAttendee
 from src.apps.meetings.tests.factories import make_event, make_host
 
 API = '/api/v1'
@@ -306,3 +306,74 @@ class SayingSoOverTheSocketTests(TransactionTestCase):
 
         self.assertIsNotNone(said['left_at'])
         await comm.disconnect()
+
+
+class LettingGoOfIdleGuestsTests(TestCase):
+    """The same rule for somebody who came in by the door.
+
+    A guest holds a socket open exactly the way an account holder does,
+    so counting one as present and not the other would make the register
+    say two different things about the same afternoon.
+    """
+
+    def setUp(self):
+        self.host = make_host('host@example.com')
+        start = timezone.now() - timezone.timedelta(hours=1)
+        self.event = make_event(self.host, start=start, minutes=180)
+        self.event.status = Event.Status.ACTIVE
+        self.event.started_at = start
+        self.event.save()
+        self.guest = GuestAttendee.objects.create(
+            event=self.event, full_name='Bishnu Prasad',
+            status=GuestAttendee.Status.ADMITTED,
+        )
+
+    def seen(self, minutes_ago):
+        self.guest.last_seen_at = (
+            timezone.now() - timezone.timedelta(minutes=minutes_ago)
+        )
+        self.guest.save(update_fields=['last_seen_at'])
+        return self.guest.last_seen_at
+
+    def test_a_quiet_guest_is_let_go(self):
+        self.seen(40)
+
+        self.assertEqual(evict_idle(self.event), 1)
+
+        self.guest.refresh_from_db()
+        self.assertEqual(self.guest.status, GuestAttendee.Status.LEFT)
+
+    def test_the_hour_written_down_is_when_they_went_quiet_plus_the_grace(self):
+        went_quiet = self.seen(40)
+
+        evict_idle(self.event)
+
+        self.guest.refresh_from_db()
+        self.assertEqual(
+            self.guest.left_at, went_quiet + timezone.timedelta(minutes=15)
+        )
+
+    def test_a_guest_who_has_just_done_something_is_left_alone(self):
+        self.seen(2)
+
+        self.assertEqual(evict_idle(self.event), 0)
+
+    def test_somebody_still_waiting_at_the_door_is_not_swept(self):
+        """They are not in the room yet, so there is nothing to let go of."""
+        self.guest.status = GuestAttendee.Status.PENDING
+        self.guest.save(update_fields=['status'])
+        self.seen(600)
+
+        self.assertEqual(evict_idle(self.event), 0)
+
+    def test_the_register_says_when_they_went(self):
+        self.seen(40)
+        evict_idle(self.event)
+
+        client = signed_in(self.host)
+        report = client.get(f'{API}/events/{self.event.id}/attendance/').data
+
+        theirs = next(
+            row for row in report['attended'] if row['name'] == 'Bishnu Prasad'
+        )
+        self.assertIsNotNone(theirs['left_at'])

@@ -20,6 +20,7 @@ from src.apps.meetings.event_serializers import (
 )
 from src.apps.meetings.lifecycle import (
     broadcast as _broadcast,
+    broadcast_event_ended,
     close_session as _close_session,
     session_is_over as _session_is_over,
 )
@@ -416,6 +417,23 @@ class EventViewSet(EventRoomViewSet):
         )
 
 
+def _anything_left(event) -> bool:
+    """Whether the day still has a talk to give.
+
+    Skipped counts as finished: the host has already said it is not
+    happening, so a programme whose remaining items were all skipped is
+    a programme that is over. An event with no running order at all is
+    not ended by this - there was never a last session to finish, and
+    closing the room out from under a host who is using it as a room
+    would be a surprise.
+    """
+    if not event.sessions.exists():
+        return True
+    return event.sessions.exclude(
+        status__in=[Session.Status.DONE, Session.Status.SKIPPED]
+    ).exists()
+
+
 class SessionViewSet(viewsets.ModelViewSet):
     """Segments of the running order inside a event."""
     serializer_class = SessionSerializer
@@ -674,22 +692,34 @@ class SessionViewSet(viewsets.ModelViewSet):
 
         broadcast_attendance_changed(session.event)
 
-        # The event is the room, and the room is not one talk. Ending a
-        # session ends the session: its transcript, its chat and its
-        # resources are closed off and belong to it, and the room stays
-        # open for the host to start the next one. Only the host ending the
-        # event - or its window running out - shuts the door.
-        session.event.refresh_from_db()
+        # The event is the room, and the room is not one talk: ending a
+        # session closes that session and leaves the room open for the
+        # next. But when there is no next one the room has nothing left
+        # to be open for, and asking the host to end the event as a
+        # separate act only leaves rooms standing open after everybody
+        # has gone home - and an event reading as live for hours after
+        # its last talk finished.
+        event = session.event
+        event.refresh_from_db()
+
+        ended_here = False
+        if event.status == Event.Status.ACTIVE and not _anything_left(event):
+            from src.apps.meetings.services.event_service import EventService
+
+            EventService.end_event(str(event.id))
+            event.refresh_from_db()
+            ended_here = True
+            broadcast_event_ended(event, reason='last_session')
 
         return Response({
             **SessionSerializer(session).data,
             'attendance_recorded': recorded,
-            'event_status': session.event.status,
-            'event_ended': False,
+            'event_status': event.status,
+            'event_ended': ended_here,
             'sessions_moved': [str(s.id) for s in moved],
             'event_scheduled_end': (
-                session.event.scheduled_end.isoformat()
-                if session.event.scheduled_end else None
+                event.scheduled_end.isoformat()
+                if event.scheduled_end else None
             ),
         })
 

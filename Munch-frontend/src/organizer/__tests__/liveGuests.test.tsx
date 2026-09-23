@@ -52,6 +52,7 @@ beforeEach(() => {
     'manch.organizer.prefs', JSON.stringify({ lang: 'en', a11y: {} })
   );
   api.getPendingMessages.mockResolvedValue([] as any);
+  api.moderateMessage = jest.fn().mockResolvedValue({} as any);
   api.getGuests.mockResolvedValue([knocking] as any);
   api.listSessions.mockResolvedValue([] as any);
   api.admitGuest.mockResolvedValue({} as any);
@@ -173,5 +174,62 @@ describe('the live dashboard', () => {
     await screen.findByText('Rahul Ingnam');
 
     expect(screen.queryByText('Chat rules')).toBeNull();
+  });
+});
+
+
+/**
+ * What is waiting for the host, and the one decision left on it.
+ *
+ * Which board a message belongs on is not the host's to choose: the
+ * person who wrote it chose, under the questions board or the
+ * suggestions board, and it has carried that choice ever since. Asking
+ * the host to pick again meant two people deciding one thing, and the
+ * second one guessing.
+ */
+describe('the message request queue', () => {
+  const waiting = (over: any = {}) => ({
+    id: 'q9', body: 'who is prabhat?', created_at: new Date().toISOString(),
+    is_direct: true, moderation_status: 'pending', sender_id: 'g1',
+    sender_name: 'Rahul Ingnam', sender_is_guest: true,
+    recipient_name: 'The host', topic: 'faq',
+    ...over,
+  });
+
+  it('offers approving and rejecting, not two boards', async () => {
+    api.getPendingMessages.mockResolvedValue([waiting()] as any);
+    show();
+
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Question' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Suggestions' })).toBeNull();
+  });
+
+  /** Approving files it where the asker said, without being told again. */
+  it('puts one up without naming a board', async () => {
+    api.getPendingMessages.mockResolvedValue([waiting()] as any);
+    show();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+
+    await waitFor(() =>
+      expect(api.moderateMessage).toHaveBeenCalledWith(
+        'm1', 'q9', 'approve', undefined
+      )
+    );
+  });
+
+  it('turns one down', async () => {
+    api.getPendingMessages.mockResolvedValue([waiting()] as any);
+    show();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+
+    await waitFor(() =>
+      expect(api.moderateMessage).toHaveBeenCalledWith(
+        'm1', 'q9', 'decline', undefined
+      )
+    );
   });
 });

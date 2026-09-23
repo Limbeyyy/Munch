@@ -74,9 +74,58 @@ def evict_idle(event, now=None) -> int:
 
         _tell_them(event, person)
 
+    let_go += _let_go_of_guests(event, cutoff, grace)
+
     if let_go:
         logger.info(f"Let go of {let_go} idle attendee(s) in {event.code}")
     return let_go
+
+
+def _let_go_of_guests(event, cutoff, grace) -> int:
+    """The same rule for somebody who came in by the door.
+
+    A guest holds a socket open exactly the way an account holder does,
+    so counting one as present and not the other would make the register
+    say two different things about the same afternoon.
+    """
+    from src.apps.meetings.models import GuestAttendee
+
+    let_go = 0
+    quiet = event.guests.filter(status=GuestAttendee.Status.ADMITTED)
+    for guest in quiet:
+        since = guest.last_seen_at or guest.created_at
+        if since is None or since > cutoff:
+            continue
+
+        guest.status = GuestAttendee.Status.LEFT
+        guest.left_at = since + grace
+        guest.save(update_fields=['status', 'left_at', 'updated_at'])
+        let_go += 1
+        _tell_guest(event, guest)
+
+    return let_go
+
+
+def _tell_guest(event, guest) -> None:
+    """Say so down the guest's own channel."""
+    from asgiref.sync import async_to_sync
+    from channels.layers import get_channel_layer
+
+    layer = get_channel_layer()
+    if layer is None:
+        return
+
+    try:
+        async_to_sync(layer.group_send)(
+            f'event_{event.code}_guest_{guest.id}',
+            {
+                'type': 'idle_evicted',
+                'reason': 'idle',
+                'left_at': guest.left_at.isoformat(),
+            },
+        )
+    except Exception:
+        logger.debug(f"Could not reach guest {guest.id} to say they were let go")
 
 
 def _tell_them(event, person) -> None:

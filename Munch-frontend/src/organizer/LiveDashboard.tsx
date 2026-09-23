@@ -169,15 +169,14 @@ export const LiveDashboard: React.FC<Props> = ({
             })}
           </p>
         </div>
+        {/* Navy, like every other way into somewhere in this product.
+            The orange read as a warning on a screen where the warnings
+            are red. */}
         <button
           onClick={onBackToRoom}
-          className="border border-[#e7e9ef] rounded-[8px] px-3 py-2 flex items-center gap-1.5
-            text-[14px] font-medium text-white leading-[1.5] flex-none"
-          style={{
-            backgroundImage:
-              'linear-gradient(180deg, rgb(247,140,93) 7.29%, rgba(247,140,93,0.05) 65.63%),'
-              + ' linear-gradient(90deg, rgb(245,108,65) 0%, rgb(245,108,65) 100%)',
-          }}
+          className="bg-navy-800 hover:bg-navy-900 border border-navy-800 rounded-[8px]
+            px-3 py-2 flex items-center gap-1.5 text-[14px] font-medium text-white
+            leading-[1.5] flex-none"
         >
           <FigmaIcon name="layoutGrid" size={14} />
           {t({ ne: 'लाइभ कोठामा फर्कनुहोस्', en: 'Back to Live Room' })}
@@ -267,7 +266,14 @@ export const LiveDashboard: React.FC<Props> = ({
               {tab === 'questions' && (
                 <RoomQuestions eventId={event.id} canSort />
               )}
-              {tab === 'photos' && <PhotoAlbums eventRef={event.code} />}
+              {/* The albums draw their own filters and folders flush to
+                  the edge, which is right in a panel of their own and too
+                  close to the rule here. */}
+              {tab === 'photos' && (
+                <div className="px-4 py-3">
+                  <PhotoAlbums eventRef={event.code} />
+                </div>
+              )}
             </div>
           </Card>
 

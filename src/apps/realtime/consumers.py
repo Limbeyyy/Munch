@@ -117,6 +117,11 @@ class EventConsumer(AsyncWebsocketConsumer):
             # Guests may chat, but have no participant row to change state on.
             try:
                 data = json.loads(text_data)
+                # A guest is present on the same terms as anybody else:
+                # by doing something, not by holding a socket open.
+                await self.mark_seen()
+                if data.get('type') == 'heartbeat':
+                    return
                 if data.get('type') == 'chat_message':
                     await self.handle_chat_message(data)
             except json.JSONDecodeError:
@@ -477,18 +482,27 @@ class EventConsumer(AsyncWebsocketConsumer):
     def mark_seen(self):
         """Write down that this person has just done something.
 
-        Guests have no participant row, so there is nothing to stamp;
-        they are admitted and removed by the host rather than swept.
+        A guest has a row of their own rather than a participant row, so
+        which one gets stamped depends on how they came in - but the rule
+        is the same for both.
         """
+        now = timezone.now()
+
         if getattr(self, 'guest_group_name', None):
+            from src.apps.meetings.models import GuestAttendee
+
+            GuestAttendee.objects.filter(
+                id=self.guest['id'], status=GuestAttendee.Status.ADMITTED
+            ).update(last_seen_at=now)
             return
+
         try:
             event = Event.objects.get(code=self.code)
         except Event.DoesNotExist:
             return
         EventParticipant.objects.filter(
             event=event, user=self.user, is_active=True
-        ).update(last_seen_at=timezone.now())
+        ).update(last_seen_at=now)
 
     async def idle_evicted(self, message):
         """Tell this person the room has let them go, and close it."""
