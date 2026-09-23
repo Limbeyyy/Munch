@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
 import { LIST_POLL_MS } from '../../services/polling';
 import { Event } from '../../types';
 import { ImportProgramme } from '../ImportProgramme';
@@ -25,6 +26,7 @@ interface Props {
  */
 export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
   const { t } = useOrganizer();
+  const me = useAuthStore((state) => state.user?.id);
 
   const [events, setEvents] = useState<Event[]>([]);
   const [counts, setCounts] = useState<Record<string, EventHeadcount>>({});
@@ -60,15 +62,25 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
   /**
    * The two numbers a card shows that the list itself does not carry.
    *
-   * They are fetched per event and quietly left at nothing when they
-   * cannot be read, because a card that says how many sessions it has is
-   * still worth showing when the co-host count is unavailable.
+   * Asked only of the events this person hosts. The list is wider than
+   * that - somebody speaking at an event, or helping run it, sees it
+   * here too - and both of these are the host's to read, so asking for
+   * every event meant two refusals per event belonging to somebody
+   * else. They were caught and the card carried on, so nothing looked
+   * wrong; the cost was two round trips that could not succeed and a
+   * server log of forbidden requests to read past.
+   *
+   * Still guarded: a card that says how many sessions it has is worth
+   * showing when the co-host count cannot be read for some other reason.
    */
   useEffect(() => {
     let alive = true;
     (async () => {
+      const mine = events.filter(
+        (event) => !!me && String(event.host?.id ?? '') === String(me)
+      );
       const rows = await Promise.all(
-        events.map(async (event) => {
+        mine.map(async (event) => {
           try {
             const [grants, invites] = await Promise.all([
               apiClient.getProgrammeRoles(event.id),
@@ -86,7 +98,7 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
       if (alive) setCounts(Object.fromEntries(rows));
     })();
     return () => { alive = false; };
-  }, [events]);
+  }, [events, me]);
 
   const refresh = useCallback(async () => {
     await load();
