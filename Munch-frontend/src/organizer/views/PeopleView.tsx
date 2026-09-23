@@ -1,12 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { QUEUE_POLL_MS } from '../../services/polling';
 import { Event, Session, Speaker as SpeakerProfile } from '../../types';
 import { useOrganizer } from '../i18n';
-import { ContactRequests } from '../ContactRequests';
 import { groupBySpeaker } from '../speakers';
-import { Card, Head, Tabs } from '../ui';
+import { Card, Head } from '../ui';
 import { SpeakerFace } from '../events/SpeakersStep';
 
 
@@ -38,9 +36,6 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
 
   const [events, setEvents] = useState<Event[]>([]);
   const [eventId, setEventId] = useState('');
-  const [tab, setTab] = useState('speakers');
-  const [settingVisibility, setSettingVisibility] = useState<string | null>(null);
-  const [pendingRequests, setPendingRequests] = useState(0);
   const [loading, setLoading] = useState(true);
   /** The profiles written for the chosen event, and what is typed. */
   const [profiles, setProfiles] = useState<SpeakerProfile[]>([]);
@@ -67,16 +62,6 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
   }, [t]);
 
   const event = events.find((e) => e.id === eventId) ?? null;
-
-  // Only the count, so the tab can say how many are waiting. The list
-  // itself is the shared component's business.
-  useEffect(() => {
-    if (!eventId) { setPendingRequests(0); return; }
-    apiClient
-      .listContactRequests({ event: eventId, status: 'pending' })
-      .then((rows) => setPendingRequests(rows.length))
-      .catch(() => setPendingRequests(0));
-  }, [eventId, tab]);
 
   /**
    * Speakers come from the running order, not from anybody's account.
@@ -171,51 +156,14 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
     );
   }, [event]);
 
-  /**
-   * List a speaker publicly, or take them back off the list.
-   *
-   * Every session this person holds moves together, because the setting
-   * describes the person rather than one appearance. The server is what
-   * actually enforces it; this reloads so the card shows what was stored
-   * rather than what was clicked.
-   */
-  const setVisibility = async (speaker: Speaker, visibility: 'public' | 'private') => {
-    if (speaker.visibility === visibility) return;
-    try {
-      setSettingVisibility(speaker.key);
-      await apiClient.setSpeakerVisibility(
-        speaker.slots.map((s) => s.session.id),
-        visibility
-      );
-      const list = await apiClient.listEvents();
-      setEvents(list);
-      toast.success(
-        visibility === 'public'
-          ? t({
-              ne: `${speaker.name} को सम्पर्क सबैले देख्न सक्छन्`,
-              en: `${speaker.name}'s details are open to attendees`,
-            })
-          : t({
-              ne: `${speaker.name} को सम्पर्क अब अनुरोध गरेर मात्र`,
-              en: `${speaker.name}'s details now go through you`,
-            })
-      );
-    } catch (e: any) {
-      toast.error(
-        e.response?.data?.error ?? t({ ne: 'बदल्न सकिएन', en: 'Could not change it' })
-      );
-    } finally {
-      setSettingVisibility(null);
-    }
-  };
 
   return (
     <>
       <Head
-        title={{ ne: 'वक्ता र टोली', en: 'Speakers and team' }}
+        title={{ ne: 'वक्ताहरू', en: 'Speakers' }}
         lede={{
-          ne: 'वक्ता सत्रमा तोकिन्छन् — खाता नभए पनि हुन्छ। टोली भनेको कोठा चलाउने भूमिका हो।',
-          en: 'Speakers are named on sessions and need no account. The team is who runs the room.',
+          ne: 'वक्ताको परिचय थप्नुहोस् र एक वा बढी सत्रमा राख्नुहोस्।',
+          en: 'Add speaker profiles and assign them to one or more sessions.',
         }}
       />
 
@@ -269,24 +217,8 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
             )}
           </div>
 
-          <Tabs
-            active={tab}
-            onChange={setTab}
-            tabs={[
-              { id: 'speakers', label: { ne: `वक्ता (${num(speakers.length)})`, en: `Speakers (${speakers.length})` } },
-              {
-                id: 'contacts',
-                label: pendingRequests > 0
-                  ? { ne: `सम्पर्क अनुरोध (${num(pendingRequests)})`, en: `Contact requests (${pendingRequests})` }
-                  : { ne: 'सम्पर्क अनुरोध', en: 'Contact requests' },
-              },
-            ]}
-          />
-
           {loading ? (
             <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>
-          ) : tab === 'contacts' ? (
-            <ContactRequests eventId={eventId || undefined} refreshMs={QUEUE_POLL_MS} />
           ) : (
             <>
               {shown.length === 0 ? (
@@ -333,33 +265,6 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
                           : one.agendas.join(', ')}
                       </p>
 
-                      {/* Whether an attendee may simply read this speaker's
-                          details, or must ask. Kept on the card because it
-                          is the only place it is decided, and the card it
-                          used to live on has gone. */}
-                      {one.onSessions && (
-                        <div className="mt-2 flex gap-1 justify-center">
-                          {(['public', 'private'] as const).map((which) => (
-                            <button
-                              key={which}
-                              type="button"
-                              disabled={settingVisibility === one.onSessions!.key}
-                              onClick={() => setVisibility(one.onSessions!, which)}
-                              aria-pressed={one.onSessions!.visibility === which}
-                              className={`rounded-full px-2.5 py-0.5 text-[11px]
-                                disabled:opacity-50 ${
-                                one.onSessions!.visibility === which
-                                  ? 'bg-navy-800 text-white'
-                                  : 'bg-[#e3ecfd] text-[#393939]'
-                              }`}
-                            >
-                              {which === 'public'
-                                ? t({ ne: 'सार्वजनिक', en: 'Public' })
-                                : t({ ne: 'निजी', en: 'Private' })}
-                            </button>
-                          ))}
-                        </div>
-                      )}
                     </article>
                   ))}
                 </div>
