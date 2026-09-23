@@ -174,6 +174,14 @@ class HostAccount(models.Model):
     #: clear and some programmes run back to back, so it is theirs to set.
     session_gap_minutes = models.PositiveSmallIntegerField(default=15)
 
+    #: How long somebody may sit in the room doing nothing before the
+    #: room lets them go, in minutes.
+    #:
+    #: A quarter of an hour suits a event people step out of and come
+    #: back to; a workshop where everybody is watching one screen wants
+    #: longer, and a short stand-up wants less. Zero turns it off.
+    idle_timeout_minutes = models.PositiveSmallIntegerField(default=15)
+
     #: How much warning this host's programme gives. A event is called
     #: further ahead than a talk inside it, because people travel to the
     #: first and walk down a corridor to the second - but how much further

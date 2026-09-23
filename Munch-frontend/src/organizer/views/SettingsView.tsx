@@ -43,7 +43,12 @@ export const SettingsView: React.FC = () => {
         ]}
       />
 
-      {tab === 'schedule' && <SchedulingPanel />}
+      {tab === 'schedule' && (
+        <div className="flex flex-col gap-5">
+          <SchedulingPanel />
+          <IdlePanel />
+        </div>
+      )}
 
       {tab === 'notify' && <NotificationPanel />}
 
@@ -262,6 +267,120 @@ const NotificationPanel: React.FC = () => {
  * number is theirs - and it is the number the scheduler actually spaces
  * the day by, not a note about intentions.
  */
+/**
+ * How long somebody may sit in the room doing nothing before it lets go.
+ *
+ * A socket held open is not a person present, and the register is read
+ * afterwards as a record of who was actually there. How long is fair
+ * depends on the room: a event people step out of and come back to
+ * wants a quarter of an hour, a workshop where everybody watches one
+ * screen wants longer, and a short stand-up wants less. Nought turns it
+ * off, for a room nobody should ever be dropped from.
+ */
+const IdlePanel: React.FC = () => {
+  const { t, num } = useOrganizer();
+  const [prefs, setPrefs] = useState<SchedulingPrefs | null>(null);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    apiClient
+      .getSchedulingPrefs()
+      .then((found) => {
+        setPrefs(found);
+        setDraft(String(found.idle_timeout_minutes));
+      })
+      .catch(() => undefined);
+  }, []);
+
+  if (!prefs) return null;
+
+  const most = prefs.maximums.idle_timeout_minutes;
+  const wanted = Number(draft);
+  const valid =
+    draft.trim() !== '' &&
+    Number.isFinite(wanted) &&
+    Number.isInteger(wanted) &&
+    wanted >= 0 &&
+    wanted <= most;
+  const changed = valid && wanted !== prefs.idle_timeout_minutes;
+
+  const save = async () => {
+    if (!changed) return;
+    try {
+      setSaving(true);
+      const saved = await apiClient.setSchedulingPrefs({
+        idle_timeout_minutes: wanted,
+      });
+      setPrefs(saved);
+      setDraft(String(saved.idle_timeout_minutes));
+      toast.success(t({ ne: 'सेभ भयो', en: 'Saved' }));
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.error ?? t({ ne: 'सेभ हुन सकेन', en: 'Could not save' })
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card className="max-w-[760px]">
+      <h3 className="text-[15px] font-semibold mb-1">
+        {t({ ne: 'निष्क्रिय भएपछि बाहिर', en: 'Drop somebody who goes quiet' })}
+      </h3>
+      <p className="text-[13px] text-ink-2 leading-relaxed mb-3.5">
+        {t({
+          ne: 'कोही यति मिनेट केही नगरी बसे भने कोठाले उनलाई बाहिर पठाउँछ, र उपस्थितिमा उनी गएको समय लेखिन्छ।',
+          en: 'Somebody who does nothing for this long is let go, and the register records the hour they stopped rather than the hour it was noticed.',
+        })}
+      </p>
+
+      <div className="flex items-end gap-2.5 flex-wrap">
+        <div>
+          <label
+            htmlFor="manch-idle-timeout"
+            className="block text-[12.5px] text-[#6E7C8E] mb-1.5"
+          >
+            {t({ ne: 'मिनेट', en: 'Minutes' })}
+          </label>
+          <input
+            id="manch-idle-timeout"
+            type="number"
+            min={0}
+            max={most}
+            step={5}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            aria-describedby="manch-idle-timeout-hint"
+            className="border border-navy-800/15 rounded-[9px] px-3 py-2 w-[120px] bg-white"
+          />
+        </div>
+        <Btn tone="amber" onClick={save} disabled={!changed || saving}>
+          {saving ? t({ ne: 'सेभ हुँदै…', en: 'Saving…' }) : t({ ne: 'सेभ', en: 'Save' })}
+        </Btn>
+      </div>
+
+      <p id="manch-idle-timeout-hint" className="text-[12.5px] text-[#6E7C8E] mt-2">
+        {!valid
+          ? t({
+              ne: `० देखि ${num(most)} मिनेटसम्म राख्न मिल्छ।`,
+              en: `Anything from 0 to ${most} minutes.`,
+            })
+          : wanted === 0
+          ? t({
+              ne: 'कसैलाई पनि निष्क्रियताका कारण बाहिर पठाइनेछैन।',
+              en: 'Nobody will be let go for going quiet.',
+            })
+          : t({
+              ne: `पूर्वनिर्धारित ${num(prefs.defaults.idle_timeout_minutes)} मिनेट।`,
+              en: `The default is ${prefs.defaults.idle_timeout_minutes} minutes.`,
+            })}
+      </p>
+    </Card>
+  );
+};
+
 const SchedulingPanel: React.FC = () => {
   const { t, num } = useOrganizer();
   const [prefs, setPrefs] = useState<SchedulingPrefs | null>(null);

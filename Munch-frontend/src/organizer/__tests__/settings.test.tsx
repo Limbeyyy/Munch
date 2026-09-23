@@ -29,11 +29,14 @@ const prefs = (over: any = {}) => ({
   event_reminder_minutes: 60,
   session_reminder_minutes: 15,
   reminders_enabled: true,
+  idle_timeout_minutes: 15,
   defaults: {
     session_gap_minutes: 15, event_reminder_minutes: 60, session_reminder_minutes: 15,
+    idle_timeout_minutes: 15,
   },
   maximums: {
     session_gap_minutes: 240, event_reminder_minutes: 1440, session_reminder_minutes: 1440,
+    idle_timeout_minutes: 240,
   },
   default_session_gap_minutes: 15,
   max_session_gap_minutes: 240,
@@ -136,5 +139,63 @@ describe('how much warning a programme gives', () => {
 
     expect(await screen.findByLabelText('Before a event')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+});
+
+
+/**
+ * How long somebody may sit in the room doing nothing before it lets go.
+ *
+ * A socket held open is not a person present, and the register is read
+ * afterwards as a record of who was actually there - so how long counts
+ * as away is the host's to set.
+ */
+describe('the idle timeout', () => {
+  const openIt = async () => {
+    api.getSchedulingPrefs.mockResolvedValue(prefs() as any);
+    show(<SettingsView />);
+    return screen.findByLabelText('Minutes', { selector: '#manch-idle-timeout' });
+  };
+
+  it('offers the host their own interval', async () => {
+    const box = await openIt();
+
+    expect(box).toHaveValue(15);
+  });
+
+  it('saves a new one', async () => {
+    api.setSchedulingPrefs.mockResolvedValue(
+      prefs({ idle_timeout_minutes: 30 }) as any
+    );
+    const box = await openIt();
+
+    fireEvent.change(box, { target: { value: '30' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[1]);
+
+    await waitFor(() =>
+      expect(api.setSchedulingPrefs).toHaveBeenCalledWith({
+        idle_timeout_minutes: 30,
+      })
+    );
+  });
+
+  /** Nought is a setting, not a missing one: it means never drop anybody. */
+  it('says plainly what nought means', async () => {
+    const box = await openIt();
+
+    fireEvent.change(box, { target: { value: '0' } });
+
+    expect(
+      screen.getByText('Nobody will be let go for going quiet.')
+    ).toBeInTheDocument();
+  });
+
+  it('will not save something out of range', async () => {
+    const box = await openIt();
+
+    fireEvent.change(box, { target: { value: '9999' } });
+
+    expect(screen.getByText('Anything from 0 to 240 minutes.')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Save' })[1]).toBeDisabled();
   });
 });

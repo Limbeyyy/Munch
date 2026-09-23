@@ -166,12 +166,16 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
             MAX_LEAD_MINUTES, EVENT_LEAD_MINUTES, SESSION_LEAD_MINUTES,
         )
         from src.apps.meetings.scheduling import GAP_MINUTES, MAX_GAP_MINUTES
+        from src.apps.meetings.idle import IDLE_MINUTES, MAX_IDLE_MINUTES
 
         #: field -> (default, largest allowed)
         NUMBERS = {
             'session_gap_minutes': (GAP_MINUTES, MAX_GAP_MINUTES),
             'event_reminder_minutes': (EVENT_LEAD_MINUTES, MAX_LEAD_MINUTES),
             'session_reminder_minutes': (SESSION_LEAD_MINUTES, MAX_LEAD_MINUTES),
+            # Nought is meaningful here rather than missing: it is how a
+            # host says nobody should ever be let go for going quiet.
+            'idle_timeout_minutes': (IDLE_MINUTES, MAX_IDLE_MINUTES),
         }
 
         def as_json():

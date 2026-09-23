@@ -50,3 +50,24 @@ def forget_guests_of_ended_meetings():
     if forgotten:
         logger.info(f"Forgot {forgotten} guest row(s) from events that are over")
     return forgotten
+
+
+@shared_task(name='src.apps.meetings.tasks.evict_idle_attendees')
+def evict_idle_attendees():
+    """Let go of anybody who has gone quiet in a room that is still running.
+
+    Runs on a timer because the thing being watched for is an absence:
+    nobody sends a message saying they have stopped paying attention, so
+    something has to come round and notice.
+    """
+    from src.apps.meetings.idle import evict_idle
+    from src.apps.meetings.models import Event
+
+    running = Event.objects.filter(
+        status=Event.Status.ACTIVE
+    ).select_related('host', 'host__host_account')
+
+    let_go = sum(evict_idle(event) for event in running)
+    if let_go:
+        logger.info(f"Let go of {let_go} idle attendee(s)")
+    return let_go

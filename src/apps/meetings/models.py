@@ -123,6 +123,15 @@ class EventParticipant(models.Model):
     session_id = models.CharField(max_length=255, null=True, blank=True)
     joined_at = models.DateTimeField(auto_now_add=True)
     left_at = models.DateTimeField(null=True, blank=True)
+
+    #: The last time this person did anything in the room.
+    #:
+    #: Not the last time their socket was open: a tab left running in a
+    #: window nobody is looking at holds a socket open all afternoon, and
+    #: counting that as presence is how a register ends up saying somebody
+    #: sat through a talk they walked out of. The room says so when they
+    #: actually do something, and this is when it last said so.
+    last_seen_at = models.DateTimeField(null=True, blank=True)
     
     # Status
     is_active = models.BooleanField(default=True)
