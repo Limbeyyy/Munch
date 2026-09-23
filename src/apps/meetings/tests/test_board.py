@@ -674,3 +674,86 @@ class BoardVotingTests(TestCase):
         outsider = signed_in(make_host('outsider@example.com'))
 
         self.assertEqual(self.cast(1, client=outsider).status_code, 404)
+
+
+class SuggestionsAreNotVotedOnTests(TestCase):
+    """A vote sorts a queue, and a suggestion is not queued.
+
+    Voting says which question the room most wants answered, and the
+    host works down from the top. Nobody works down a list of
+    suggestions in order, so a tally against one measures nothing - and
+    the down arrow hands the room a way to bury an idea it dislikes
+    before the host has read it.
+    """
+
+    def setUp(self):
+        self.host = make_host('host@example.com')
+        self.asker = make_host('asker@example.com')
+        self.other = make_host('other@example.com')
+        self.event = make_event(self.host, start=timezone.now())
+        make_session(self.event, timezone.now(), 60)
+        for person in (self.asker, self.other):
+            EventParticipant.objects.create(
+                event=self.event, user=person, role='attendee'
+            )
+        self.guest = GuestAttendee.objects.create(
+            event=self.event, full_name='A Guest',
+            status=GuestAttendee.Status.ADMITTED,
+        )
+
+        def put_up(topic, body):
+            return ChatMessage.objects.create(
+                event=self.event, sender=self.asker, recipient=self.host,
+                body=body,
+                moderation_status=ChatMessage.Moderation.APPROVED,
+                topic=topic,
+            )
+
+        self.question = put_up(ChatMessage.Topic.FAQ, 'When is the reception?')
+        self.suggestion = put_up(
+            ChatMessage.Topic.SUGGESTION, 'Print the maps larger'
+        )
+
+    def cast(self, message, value=1):
+        return signed_in(self.other).post(
+            f'{API}/events/{self.event.id}/vote_board/',
+            {'message_id': str(message.id), 'value': value},
+            format='json',
+        )
+
+    def cast_as_guest(self, message, value=1):
+        from src.apps.meetings.guest_tokens import make_guest_token
+
+        return APIClient().post(
+            f'{API}/events/guest/board/vote/',
+            {
+                'token': make_guest_token(self.guest),
+                'message_id': str(message.id),
+                'value': value,
+            },
+            format='json',
+        )
+
+    def test_a_question_is_still_voted_on(self):
+        self.assertEqual(self.cast(self.question).status_code, 200)
+
+    def test_a_suggestion_is_refused(self):
+        got = self.cast(self.suggestion)
+
+        self.assertEqual(got.status_code, 409)
+        self.assertEqual(got.data['code'], 'not_a_question')
+
+    def test_and_nothing_is_recorded_against_it(self):
+        self.cast(self.suggestion)
+
+        self.assertEqual(self.suggestion.votes.count(), 0)
+
+    def test_a_guest_is_refused_the_same_way(self):
+        """Otherwise the rule is a rule for people with accounts only."""
+        got = self.cast_as_guest(self.suggestion)
+
+        self.assertEqual(got.status_code, 409)
+        self.assertEqual(self.suggestion.votes.count(), 0)
+
+    def test_but_a_guest_still_votes_on_a_question(self):
+        self.assertEqual(self.cast_as_guest(self.question).status_code, 200)

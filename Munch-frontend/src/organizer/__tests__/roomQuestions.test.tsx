@@ -164,3 +164,39 @@ describe('what is waiting for the host', () => {
     expect(screen.getByRole('tab', { name: /Suggestions/ })).toBeInTheDocument();
   });
 });
+
+/**
+ * A vote sorts a queue, and a suggestion is not queued.
+ *
+ * Voting says which question the room most wants answered, and the host
+ * works down from the top. Nobody works down a list of suggestions in
+ * order, so a tally against one measures nothing - and the down arrow
+ * hands the room a way to bury an idea before the host has read it.
+ */
+describe('voting, and what it is for', () => {
+  const withBoth = () => {
+    api.getEventBoard.mockResolvedValue({
+      faq: [entry()],
+      suggestions: [entry({ id: 'sg1', body: 'Print the maps larger' })],
+    } as any);
+    show();
+  };
+
+  it('is offered on a question', async () => {
+    withBoth();
+    await screen.findByText(/purpose of spending/);
+
+    expect(screen.getByRole('button', { name: 'Vote up' })).toBeInTheDocument();
+  });
+
+  it('is not offered on a suggestion', async () => {
+    withBoth();
+    await screen.findByText(/purpose of spending/);
+
+    fireEvent.click(screen.getByRole('tab', { name: /Suggestions/ }));
+
+    expect(await screen.findByText(/Print the maps larger/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Vote up' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Vote down' })).toBeNull();
+  });
+});
