@@ -5,7 +5,7 @@ import { QUEUE_POLL_MS } from '../../services/polling';
 import { ChatMessage, Event, ModerationQueue } from '../../types';
 import { FigmaIcon } from '../../assets/icons';
 import { Pair, useOrganizer } from '../i18n';
-import { Card } from '../ui';
+import { Card, Ic } from '../ui';
 import { eventState } from '../sessionState';
 
 interface Props { events: Event[]; }
@@ -504,17 +504,18 @@ export const ModerationView: React.FC<Props> = ({ events }) => {
 
   return (
     <Card className="flex flex-col gap-6">
-      {/* The grey block holds the event and the two things that narrow
-          it. The design gives it no separate back control: the small word
-          above the title is where you came from, so it is the way back. */}
+      {/* The grey block holds the event, the way back out of it, and the
+          two things that narrow it. The way back is the section's own
+          name with a chevron on it, which is where you came from. */}
       <header className="bg-[#eff0f2] rounded-[12px] px-5 py-4 flex flex-col gap-6">
         <div className="flex flex-col gap-2">
           <button
             type="button"
             onClick={() => setOpened('')}
-            className="self-start text-[24px] font-medium text-[#9e9e9e]
-              leading-[1.2] hover:text-body"
+            className="self-start w-fit flex items-center gap-2 text-[14px]
+              text-head hover:text-navy-800"
           >
+            <Ic d="M15 18l-6-6 6-6" size={18} />
             {t({ ne: 'मडेरेसन', en: 'Moderation' })}
           </button>
           <h1 className="text-[24px] font-medium text-[#030712] leading-[1.2]">

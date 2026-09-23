@@ -254,6 +254,23 @@ describe('opening one event from the grid', () => {
     return screen.findByText('suman@example.com');
   };
 
+  /**
+   * The way back belongs to the event, not to the page.
+   *
+   * It sat above the card, where it read as a control on the screen and
+   * left the card with no head to it. It is now the first thing inside
+   * the block that names the event, which is what it takes you back from.
+   */
+  it('puts the way back inside the card, over the event name', async () => {
+    await open();
+
+    const back = screen.getByRole('button', { name: 'Attendance' });
+    const card = screen.getByRole('heading', {
+      name: 'Disaster Management Review',
+    }).parentElement as HTMLElement;
+    expect(within(card).getByRole('button', { name: 'Attendance' })).toBe(back);
+  });
+
   it('names the event over its register', async () => {
     await open();
 
