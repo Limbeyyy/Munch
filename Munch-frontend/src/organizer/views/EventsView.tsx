@@ -7,6 +7,7 @@ import { ImportProgramme } from '../ImportProgramme';
 import { useOrganizer } from '../i18n';
 import { EventHeadcount, EventsDashboard } from '../events/EventsDashboard';
 import { EventDetail } from '../events/EventDetail';
+import { EventSummary } from '../events/EventSummary';
 import { EventWizard } from '../events/EventWizard';
 
 interface Props {
@@ -32,6 +33,8 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
 
   /** Which screen is up: the list, one event, or the form. */
   const [openId, setOpenId] = useState<string | null>(null);
+  /** A finished event opened to be read back rather than worked on. */
+  const [readingId, setReadingId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string | null } | null>(null);
 
   const load = useCallback(async () => {
@@ -91,6 +94,7 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
   }, [load, onChanged]);
 
   const open = openId ? events.find((e) => e.id === openId) : undefined;
+  const reading = readingId ? events.find((e) => e.id === readingId) : undefined;
 
   if (editing) {
     const subject = editing.id ? events.find((e) => e.id === editing.id) : undefined;
@@ -101,6 +105,10 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
         onSaved={refresh}
       />
     );
+  }
+
+  if (reading) {
+    return <EventSummary event={reading} onBack={() => setReadingId(null)} />;
   }
 
   if (open) {
@@ -133,6 +141,7 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
         onEdit={(event) => setEditing({ id: event.id })}
         onCreate={() => setEditing({ id: null })}
         onImport={() => setImporting((v) => !v)}
+        onReadBack={(event) => setReadingId(event.id)}
       />
     </>
   );

@@ -43,6 +43,7 @@ const show = (events: Event[], spies: Partial<Record<string, jest.Mock>> = {}) =
         onEdit={spies.onEdit ?? jest.fn()}
         onCreate={spies.onCreate ?? jest.fn()}
         onImport={spies.onImport ?? jest.fn()}
+        onReadBack={spies.onReadBack ?? jest.fn()}
       />
     </OrganizerProvider>
   );
@@ -65,9 +66,20 @@ describe('sorting events onto decks', () => {
     expect(deckOf(anEvent({ status: 'cancelled' }))).toBe('done');
   });
 
-  it('puts a scheduled one, and one under way, ahead', () => {
+  it('puts a scheduled one ahead', () => {
     expect(deckOf(anEvent({ status: 'scheduled' }))).toBe('upcoming');
-    expect(deckOf(anEvent({ status: 'active' }))).toBe('upcoming');
+  });
+
+  /**
+   * One that is running has a deck of its own.
+   *
+   * It used to sit under Upcoming, which is true of an event nobody has
+   * opened and false of one people are in the room for. The design gives
+   * it its own tab, and a host looking for the event happening now should
+   * not have to pick it out of the ones that have not started.
+   */
+  it('puts one under way on its own deck', () => {
+    expect(deckOf(anEvent({ status: 'active' }))).toBe('live');
   });
 
   it('counts each deck by what is on it', () => {
