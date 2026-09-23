@@ -82,6 +82,30 @@ Authorization: Bearer <ingest token>
               })}
             </p>
           </div>
+
+          {/* A device transcribing continuously opens a connection per
+              phrase to post one, and interim lines arrive several times a
+              second. It may hold one socket open instead. */}
+          <div className="mt-4 bg-[#EEF3FA] border border-navy-500/20 rounded-[10px] p-3.5">
+            <p className="text-[12.5px] text-ink-2 mb-2">
+              {t({
+                ne: 'लगातार पठाउने यन्त्रले सकेट पनि खोल्न सक्छ:',
+                en: 'A device sending continuously can hold a socket open instead:',
+              })}
+            </p>
+            <pre className="bg-navy-900 text-[#CFE0F7] rounded-lg p-3 text-[11.5px] leading-[1.7] overflow-x-auto">
+{`ws://<server>/ws/device/<code>/transcribe/?token=<ingest token>
+
+{"event": "partial", "text": "…", "lang": "ne-NP"}
+{"event": "final",   "text": "…", "lang": "ne-NP"}`}
+            </pre>
+            <p className="text-[12.5px] text-[#6E7C8E] mt-2">
+              {t({
+                ne: 'एउटै टोकन, एउटै नियम — अन्तिम लाइन मात्र राखिन्छ, दुवै किसिमका लाइन सबैलाई देखिन्छ।',
+                en: 'Same token, same rule: only final lines are stored, and both kinds reach everyone watching this event.',
+              })}
+            </p>
+          </div>
         </Card>
       )}
 

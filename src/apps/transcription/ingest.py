@@ -73,64 +73,66 @@ def publish_segment(event, segment: dict) -> None:
         )
 
 
-@api_view(['POST'])
-# The device presents its own shared token, not a user JWT. Without this the
-# JWT authenticator would try to parse that token and reject the request
-# before the view is ever reached.
-@authentication_classes([])
-@permission_classes([AllowAny])
-def ingest_transcription(request, event_ref):
-    """Accept a transcript line from the room's capture device.
-
-    Interim lines are broadcast so the screen keeps up with the speaker, but
-    only finalised lines are stored - interim text is rewritten constantly and
-    would otherwise fill the transcript with half-formed phrases.
-    """
-    if not _device_authorised(request):
-        return Response(
-            {'error': 'Invalid or missing ingest token'},
-            status=status.HTTP_401_UNAUTHORIZED
-        )
-
+def find_event(event_ref):
+    """The event a device is speaking for, by code or by id."""
     event = Event.objects.filter(code=event_ref).first()
-    if event is None:
-        event = Event.objects.filter(pk=event_ref).first() \
-            if event_ref.count('-') >= 4 else None
-    if event is None:
-        return Response(
-            {'error': f'No event found for {event_ref}'},
-            status=status.HTTP_404_NOT_FOUND
-        )
+    if event is None and event_ref.count('-') >= 4:
+        event = Event.objects.filter(pk=event_ref).first()
+    return event
+
+
+def token_matches(presented: str) -> bool:
+    """Whether this is the device token, compared in constant time."""
+    import hmac
+
+    expected = getattr(settings, 'TRANSCRIPTION_INGEST_TOKEN', '') or ''
+    if not expected or not presented:
+        return False
+    return hmac.compare_digest(presented, expected)
+
+
+class LineRejected(Exception):
+    """A line the server will not take, and why."""
+
+    def __init__(self, message, code='bad_request'):
+        super().__init__(message)
+        self.message = message
+        self.code = code
+
+
+def accept_line(event, data: dict) -> dict:
+    """Take one transcript line: store it if final, and fan it out.
+
+    The whole rule in one place, because there are two doors into it -
+    the device posting a line at a time, and the device holding a socket
+    open and streaming them. Two copies would drift, and the difference
+    would be which lines got stored.
+
+    Interim lines are broadcast so the screen keeps up with the speaker
+    but are not stored: interim text is rewritten constantly, and keeping
+    it would fill the transcript with half-formed phrases.
+    """
     if event.status == Event.Status.ENDED:
-        return Response(
-            {'error': 'This event has ended'},
-            status=status.HTTP_409_CONFLICT
-        )
+        raise LineRejected('This event has ended', 'event_ended')
 
-    text = (request.data.get('text') or '').strip()
+    text = (data.get('text') or '').strip()
     if not text:
-        return Response(
-            {'error': 'text is required'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        raise LineRejected('text is required')
     if len(text) > MAX_TEXT_LENGTH:
-        return Response(
-            {'error': f'text exceeds {MAX_TEXT_LENGTH} characters'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        raise LineRejected(f'text exceeds {MAX_TEXT_LENGTH} characters')
 
-    is_final = bool(request.data.get('is_final', True))
+    is_final = bool(data.get('is_final', True))
 
     segment = {
         'code': event.code,
         # The device reports who is speaking when it can; otherwise the room.
-        'speaker_id': str(request.data.get('speaker_id') or 'room-device'),
-        'speaker_name': request.data.get('speaker_name') or 'Room',
+        'speaker_id': str(data.get('speaker_id') or 'room-device'),
+        'speaker_name': data.get('speaker_name') or 'Room',
         'text': text,
-        'language': request.data.get('language') or 'en',
-        'start_time': float(request.data.get('start_time') or 0),
-        'end_time': float(request.data.get('end_time') or 0),
-        'confidence': float(request.data.get('confidence') or 0.0),
+        'language': data.get('language') or 'en',
+        'start_time': float(data.get('start_time') or 0),
+        'end_time': float(data.get('end_time') or 0),
+        'confidence': float(data.get('confidence') or 0.0),
         'is_final': is_final,
     }
 
@@ -154,7 +156,40 @@ def ingest_transcription(request, event_ref):
         )
 
     publish_segment(event, segment)
-    return Response({'stored': is_final, 'segment': segment},
+    return segment
+
+
+@api_view(['POST'])
+# The device presents its own shared token, not a user JWT. Without this the
+# JWT authenticator would try to parse that token and reject the request
+# before the view is ever reached.
+@authentication_classes([])
+@permission_classes([AllowAny])
+def ingest_transcription(request, event_ref):
+    """Accept a transcript line from the room's capture device."""
+    if not _device_authorised(request):
+        return Response(
+            {'error': 'Invalid or missing ingest token'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+
+    event = find_event(event_ref)
+    if event is None:
+        return Response(
+            {'error': f'No event found for {event_ref}'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    try:
+        segment = accept_line(event, request.data)
+    except LineRejected as no:
+        return Response(
+            {'error': no.message},
+            status=status.HTTP_409_CONFLICT if no.code == 'event_ended'
+            else status.HTTP_400_BAD_REQUEST
+        )
+
+    return Response({'stored': segment['is_final'], 'segment': segment},
                     status=status.HTTP_201_CREATED)
 
 
