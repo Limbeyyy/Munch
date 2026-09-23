@@ -25,7 +25,7 @@ export const NAV: NavItem[] = [
     icon: 'M4 5h16M4 5v14a2 2 0 002 2h12a2 2 0 002-2V5M9 10h6M9 14h6M7 3v4M17 3v4' },
   { id: 'content', group: 2, label: { ne: 'सामग्री र सारांश', en: 'Files and Summaries' },
     icon: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M9 13h6M9 17h6' },
-  { id: 'people', group: 2, label: { ne: 'वक्ता र टोली', en: 'Speaker and teams' },
+  { id: 'people', group: 2, label: { ne: 'वक्ताहरू', en: 'Speakers' },
     icon: 'M17 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9.5 7a3.5 3.5 0 11-7 0 3.5 3.5 0 017 0zM22 21v-2a4 4 0 00-3-3.9M16 3.1a4 4 0 010 7.8' },
 
   // Settings, in the order 594-6439 lists them.
@@ -59,7 +59,7 @@ const CRUMB: Record<string, Pair> = {
   moderation: { ne: 'मडेरेसन', en: 'Moderation' },
   events: { ne: 'कार्यक्रम', en: 'Events' },
   content: { ne: 'सामग्री र सारांश', en: 'Files and Summaries' },
-  people: { ne: 'वक्ता र टोली', en: 'Speaker and teams' },
+  people: { ne: 'वक्ताहरू', en: 'Speakers' },
   reminders: { ne: 'सूचना', en: 'Notifications' },
   profile: { ne: 'प्रोफाइल', en: 'Profile' },
   subscription: { ne: 'बिलिङ र योजना', en: 'Billing & subscription' },

@@ -72,26 +72,44 @@ beforeEach(() => {
  * after, and the requests to reach them.
  */
 describe('the speakers and team page', () => {
-  it('offers the speakers and the contact requests', async () => {
+  /**
+   * The page is the speakers and nothing else.
+   *
+   * It carried a tab strip because there was a second list to reach -
+   * the contact requests - and a strip of one tab is a strip that says
+   * nothing. Who may read a speaker's details is no longer decided here
+   * either.
+   */
+  it('is one list, with no tabs over it', async () => {
     show();
+    await screen.findByRole('heading', { name: 'Speakers' });
 
-    expect(await screen.findByRole('tab', { name: /Speakers/ })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /Contact requests/ })).toBeInTheDocument();
+    expect(screen.queryByRole('tab')).toBeNull();
   });
 
-  it('offers no team roster and no role grants', async () => {
+  it('offers no contact requests, no team and no roles', async () => {
     show();
-    await screen.findByRole('tab', { name: /Speakers/ });
+    await screen.findByRole('heading', { name: 'Speakers' });
 
+    expect(screen.queryByText(/Contact requests/)).toBeNull();
     expect(screen.queryByRole('tab', { name: /Team/ })).toBeNull();
     expect(screen.queryByRole('tab', { name: /Roles/ })).toBeNull();
   });
 
-  /** Nothing reads the roster now, so nothing should go asking for it. */
-  it('does not go asking for a roster it no longer shows', async () => {
+  it('does not decide who may read their details', async () => {
     show();
-    await screen.findByRole('tab', { name: /Speakers/ });
+    await screen.findByRole('heading', { name: 'Speakers' });
+
+    expect(screen.queryByRole('button', { name: 'Public' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Private' })).toBeNull();
+  });
+
+  /** Nothing reads these now, so nothing should go asking for them. */
+  it('does not go asking for what it no longer shows', async () => {
+    show();
+    await screen.findByRole('heading', { name: 'Speakers' });
 
     expect(api.getParticipants).not.toHaveBeenCalled();
+    expect(api.listContactRequests).not.toHaveBeenCalled();
   });
 });
