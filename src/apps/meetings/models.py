@@ -158,6 +158,68 @@ class EventParticipant(models.Model):
         """Check if participant is currently online"""
         return self.is_active and not self.left_at
 
+def speaker_photo_path(instance, filename):
+    """Where a speaker's photograph is kept, under the event it is for."""
+    import posixpath
+
+    ext = posixpath.splitext(filename)[1].lower() or '.jpg'
+    return f'speakers/{instance.event_id}/{instance.id}{ext}'
+
+
+class Speaker(models.Model):
+    """Somebody giving a talk, as a profile rather than a name on a talk.
+
+    A speaker used to be four strings written onto each session: a name,
+    a role, an email, a telephone number. That is enough to print a
+    running order and not enough for anything else - somebody speaking
+    twice was two unrelated sets of strings, their photograph had nowhere
+    to live, and correcting a misspelt name meant finding every talk it
+    was on.
+
+    So a speaker is a row of their own, belonging to the event, and a
+    session points at one. The strings stay on the session: they are what
+    every existing event has, and a running order imported from a
+    spreadsheet still arrives as text.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    event = models.ForeignKey(
+        Event, on_delete=models.CASCADE, related_name='speakers'
+    )
+
+    full_name = models.CharField(max_length=255)
+    #: What they do, as it reads under their name: "VP of Engineering".
+    position = models.CharField(max_length=255, blank=True)
+    organization = models.CharField(max_length=255, blank=True)
+
+    #: Shown wherever they are named - the running order, the room, the
+    #: team list. Optional: most speakers are a name and nothing else.
+    photo = models.ImageField(
+        upload_to=speaker_photo_path, null=True, blank=True
+    )
+
+    linkedin_url = models.URLField(max_length=500, blank=True)
+    website_url = models.URLField(max_length=500, blank=True)
+
+    #: How to reach them afterwards. Private by the same rule the session
+    #: applies: an attendee reads these only once the talk is over, and
+    #: only if the host made them public.
+    email = models.EmailField(blank=True)
+    phone = models.CharField(max_length=40, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'event_speakers'
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['event']),
+        ]
+
+    def __str__(self):
+        return f'{self.full_name} @ {self.event.code}'
+
+
 class EventPermission(models.Model):
     """
     Fine-grained event access control
@@ -482,6 +544,17 @@ class Session(models.Model):
 
     # Free text rather than a link to an account: speakers are often guests
     # of the institution who never sign in.
+    #: The profile this talk is given by, where one has been made.
+    #:
+    #: The strings below are kept alongside rather than replaced: every
+    #: event that already exists has them, a running order imported from
+    #: a spreadsheet arrives as text, and the room reads them without
+    #: needing to know whether a profile was ever filled in.
+    speaker = models.ForeignKey(
+        'Speaker', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='sessions',
+    )
+
     speaker_name = models.CharField(max_length=255, blank=True)
 
     # What they do, as it should read under their name on the running

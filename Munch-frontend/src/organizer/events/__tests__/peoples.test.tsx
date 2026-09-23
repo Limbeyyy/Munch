@@ -89,7 +89,11 @@ const atPeoples = async () => {
       <EventWizard event={event} onClose={jest.fn()} onSaved={jest.fn()} />
     </OrganizerProvider>
   );
+  // Details -> Agendas -> Speakers -> Peoples. The speakers step sits
+  // between the running order and the people now, so the walk is a step
+  // longer than it was.
   fireEvent.click(screen.getByRole('button', { name: 'Skip' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
   // Wait for the lists themselves, not merely for the calls that fetch
   // them - the state lands a tick after the request goes out.

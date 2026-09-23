@@ -63,14 +63,21 @@ const TimeChip: React.FC<{ children: React.ReactNode; dark?: boolean }> = ({
  * stands in on the same warm disc rather than a grey box where a face
  * should be.
  */
-const Portrait: React.FC<{ name: string; size: number }> = ({ name, size }) => (
+const Portrait: React.FC<{
+  name: string;
+  size: number;
+  /** Their photograph, where a speaker profile has one. */
+  src?: string | null;
+}> = ({ name, size, src }) => (
   <span
     className="bg-[#fbecd1] rounded-full grid place-items-center flex-none
       text-navy-900 font-semibold overflow-hidden"
     style={{ width: size, height: size, fontSize: Math.round(size / 2.6) }}
     aria-hidden
   >
-    {(name || '?').trim().charAt(0).toUpperCase()}
+    {src
+      ? <img src={src} alt="" className="w-full h-full object-cover" />
+      : (name || '?').trim().charAt(0).toUpperCase()}
   </span>
 );
 
@@ -205,7 +212,11 @@ export const LiveDashboard: React.FC<Props> = ({
 
             <div className="flex flex-col gap-3 justify-center px-4 py-2.5">
               <div className="flex gap-2 items-center">
-                <Portrait name={onStage?.speaker_name || onStage?.title || event.title} size={84} />
+                <Portrait
+                  name={onStage?.speaker_name || onStage?.title || event.title}
+                  src={onStage?.speaker_photo_url}
+                  size={84}
+                />
                 <div className="flex flex-col items-start justify-center min-w-0">
                   <p className="text-[22px] font-medium text-black leading-[1.2]">
                     {onStage?.title ?? t({ ne: 'कुनै सत्र छैन', en: 'Nothing on stage' })}

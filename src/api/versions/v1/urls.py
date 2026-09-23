@@ -197,9 +197,32 @@ from src.apps.drive import export_views
 from src.apps.meetings import conclusion_views
 from src.apps.meetings import reminder_views
 from src.apps.transcription import ingest as transcription_ingest
+from src.apps.meetings.speaker_views import SpeakerViewSet
+
+# The speakers of one event. Nested rather than top-level: a profile
+# belongs to the programme it was written for, and every question asked
+# of this list is asked about one event.
+_speakers = SpeakerViewSet.as_view({'get': 'list', 'post': 'create'})
+_speaker = SpeakerViewSet.as_view({
+    'get': 'retrieve', 'patch': 'partial_update',
+    'put': 'update', 'delete': 'destroy',
+})
+_speaker_photo = SpeakerViewSet.as_view({'post': 'photo'})
 
 urlpatterns = [
     # The hall's capture device streams text in; clients only read it out.
+    re_path(
+        r'^events/(?P<event_pk>[^/.]+)/speakers/$',
+        _speakers, name='event-speakers',
+    ),
+    re_path(
+        r'^events/(?P<event_pk>[^/.]+)/speakers/(?P<pk>[^/.]+)/$',
+        _speaker, name='event-speaker',
+    ),
+    re_path(
+        r'^events/(?P<event_pk>[^/.]+)/speakers/(?P<pk>[^/.]+)/photo/$',
+        _speaker_photo, name='event-speaker-photo',
+    ),
     re_path(
         r'^events/(?P<event_ref>[^/.]+)/transcription/$',
         transcription_ingest.ingest_transcription,

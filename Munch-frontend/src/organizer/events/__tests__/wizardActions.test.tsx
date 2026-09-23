@@ -95,12 +95,23 @@ describe('the actions at the foot of each step', () => {
     await waitFor(() => expect(api.createEvent).toHaveBeenCalled());
   });
 
-  it('carries on from the agenda step', async () => {
+  it('carries on from the agenda step to the speakers', async () => {
     open(made);
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
     const carryOn = await screen.findByRole('button', { name: 'Continue' });
     fireEvent.click(carryOn);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Speakers' })
+    ).toBeInTheDocument();
+  });
+
+  it('and from the speakers to the people', async () => {
+    open(made);
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
 
     expect(
       await screen.findByRole('heading', { name: 'Peoples' })
@@ -110,6 +121,7 @@ describe('the actions at the foot of each step', () => {
   it('ends on Done, with no Back beside it', async () => {
     open(made);
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
 
     expect(await screen.findByRole('button', { name: 'Done' })).toBeInTheDocument();
@@ -145,6 +157,7 @@ describe('leaving the people step', () => {
       </OrganizerProvider>
     );
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
     await screen.findByRole('button', { name: 'Done' });
     return onClose;
@@ -185,7 +198,7 @@ describe('leaving the people step', () => {
   it('does the same on the way back to an earlier step', async () => {
     await atPeoples();
 
-    fireEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Agendas/ }));
 
     await waitFor(() => expect(draftedIt()).toBe(true));
   });
@@ -199,6 +212,7 @@ describe('leaving the people step', () => {
       </OrganizerProvider>
     );
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
     await screen.findByRole('button', { name: 'Done' });
 
@@ -223,10 +237,11 @@ describe('leaving the people step', () => {
    */
   it('takes one back out of the drafts when it is finished', async () => {
     await atPeoples();
-    fireEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Agendas/ }));
     await waitFor(() => expect(draftedIt()).toBe(true));
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Done' }));
 
     await waitFor(() =>
@@ -254,6 +269,7 @@ describe('leaving the people step', () => {
       </OrganizerProvider>
     );
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
 
     fireEvent.click(await screen.findByRole('button', { name: 'Save as draft' }));

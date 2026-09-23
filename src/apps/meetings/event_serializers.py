@@ -40,6 +40,9 @@ class SessionSerializer(serializers.ModelSerializer):
     ends_at = serializers.DateTimeField(read_only=True)
     attendance_count = serializers.SerializerMethodField()
     speaker_contact = serializers.SerializerMethodField()
+    #: The speaker's photograph, so every screen that names them can show
+    #: them without going and fetching the profile itself.
+    speaker_photo_url = serializers.SerializerMethodField()
 
     def validate(self, attrs):
         # Only on the way in. A patch that leaves the speaker alone should
@@ -53,21 +56,30 @@ class SessionSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'event', 'title', 'description', 'speaker_name', 'speaker_role',
             'speaker_email', 'speaker_phone', 'speaker_visibility',
-            'speaker_contact',
+            'speaker_contact', 'speaker', 'speaker_photo_url',
             'starts_at', 'duration_minutes', 'ends_at', 'position',
             'status', 'started_at', 'ended_at', 'attendance_count',
             'created_at', 'updated_at',
         ]
         read_only_fields = [
             'id', 'ends_at', 'started_at', 'ended_at', 'speaker_contact',
-            'attendance_count', 'created_at', 'updated_at',
+            'speaker_photo_url', 'attendance_count', 'created_at', 'updated_at',
         ]
+
         # Writable, but never read back with the session: who may see a
         # speaker's details is decided by its own endpoint.
         extra_kwargs = {
             'speaker_email': {'write_only': True},
             'speaker_phone': {'write_only': True},
         }
+
+    def get_speaker_photo_url(self, obj):
+        profile = obj.speaker
+        if profile is None or not profile.photo:
+            return None
+        request = self.context.get('request')
+        url = profile.photo.url
+        return request.build_absolute_uri(url) if request else url
 
     def get_attendance_count(self, obj):
         return obj.attendance.count()
