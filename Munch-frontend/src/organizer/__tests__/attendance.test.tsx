@@ -99,6 +99,24 @@ describe('the attendance grid', () => {
     ).toBeInTheDocument();
   });
 
+  /** And so do the events, which is what the controls are controlling. */
+  it('holds the events in that same card', async () => {
+    show();
+    await screen.findByText('Disaster Management Review');
+
+    // Anchored on the heading's own card rather than on some ancestor
+    // of the search box: walking up far enough reaches a box that holds
+    // both layouts, and then the test cannot tell them apart.
+    const card = screen.getByRole('heading', { name: 'Attendance' })
+      .parentElement!.parentElement as HTMLElement;
+    expect(
+      within(card).getByText('Disaster Management Review')
+    ).toBeInTheDocument();
+    expect(
+      within(card).getByRole('button', { name: 'View attendance' })
+    ).toBeInTheDocument();
+  });
+
   it('gives each event a card with how it went', async () => {
     show();
 

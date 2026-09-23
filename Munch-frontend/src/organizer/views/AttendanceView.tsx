@@ -360,11 +360,10 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
           </p>
         </Card>
       ) : !opened ? (
-        <>
-          {/* What is being looked for, narrowed and ordered. */}
-          {/* What the page is, and the two things done to the events on
-              it, in one card rather than a title floating over them. */}
-          <div className="bg-[#f9fafb] border border-line rounded-[12px] p-4 mb-5
+          /* What the page is, what is done to narrow it, and the events
+             themselves - one card rather than a title and a toolbar
+             floating over a grid that belongs to them. */
+          <div className="bg-[#f9fafb] border border-line rounded-[12px] p-4
             flex flex-col gap-4">
             <div>
               <h1 className="text-[24px] font-medium text-head leading-[1.2]">
@@ -410,7 +409,6 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
               <option value="oldest">{t({ ne: 'पुरानो पहिले', en: 'Oldest' })}</option>
             </select>
             </div>
-          </div>
 
           {shown.length === 0 ? (
             <Card className="text-center py-10">
@@ -508,7 +506,7 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
               })}
             </div>
           )}
-        </>
+          </div>
       ) : (
         /*
          * One event's attendance, on one screen.
