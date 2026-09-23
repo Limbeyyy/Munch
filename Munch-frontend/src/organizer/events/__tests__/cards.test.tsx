@@ -45,6 +45,7 @@ const show = (events: Event[], counts = { e1: { coHosts: 2, attendees: 21 } }) =
         onEdit={jest.fn()}
         onCreate={jest.fn()}
         onImport={jest.fn()}
+      onReadBack={jest.fn()}
       />
     </OrganizerProvider>
   );
@@ -102,7 +103,14 @@ describe('the colour a card carries', () => {
     return heading.closest('button')!.parentElement!.parentElement as HTMLElement;
   };
 
-  it('washes a finished event green, the colour of its tag', () => {
+  /**
+   * A finished event is read back rather than worked on.
+   *
+   * It used to be washed green like every other card, which said its
+   * state twice on a deck where every card has the same state. 626-6477
+   * draws it plain, with the way into the record where the pencil was.
+   */
+  it('gives a finished event the card that reads it back', () => {
     // Ran, then ended. One that ended without ever running is a
     // different thing, and reads as never started.
     show([anEvent({
@@ -110,9 +118,12 @@ describe('the colour a card carries', () => {
       scheduled_start: hoursFromNow(-3), scheduled_end: hoursFromNow(-1),
     })]);
 
-    const card = theCard();
-    expect(card.className).toContain('bg-[#e1faea]');
-    expect(within(card).getByText('Completed').className).toContain('text-[#019939]');
+    const read = screen.getByRole('button', { name: 'View Summary' });
+    // 'Completed' is also the deck's own tab, so the word is looked for
+    // inside the card rather than anywhere on the page.
+    const card = read.parentElement!.parentElement!.parentElement as HTMLElement;
+    expect(within(card).getByText('Completed').className).toContain('text-[#018030]');
+    expect(screen.queryByRole('button', { name: /Edit|Continue Setup/ })).toBeNull();
   });
 
   it('washes an unfinished one grey', () => {
