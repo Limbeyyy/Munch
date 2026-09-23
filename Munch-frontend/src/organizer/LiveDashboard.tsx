@@ -1,11 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiClient } from '../services/api';
 import { Artifact, Event, Session, TranscriptionSegment } from '../types';
 import { Pair, useOrganizer } from './i18n';
 import { FigmaIcon } from '../assets/icons';
 import { RoomQuestions } from './RoomQuestions';
 import { PhotoAlbums } from './Photos';
+import toast from 'react-hot-toast';
 import { RoomAgenda } from './RoomAgenda';
+import { errorText } from './errors';
+import {
+  KindChip, dayOf, formatSize, kindOf,
+} from './filesAndSummaries/shared';
 
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -122,6 +127,9 @@ export const LiveDashboard: React.FC<Props> = ({
   const [tab, setTab] = useState<PanelTab>('photos');
   const [segments, setSegments] = useState<TranscriptionSegment[]>([]);
   const [slides, setSlides] = useState<Artifact[]>([]);
+  /** A share or a removal in flight, so the row cannot be pressed twice. */
+  const [sharing, setSharing] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
 
   const agenda = useMemo(
     () => [...sessions].sort(
@@ -147,9 +155,52 @@ export const LiveDashboard: React.FC<Props> = ({
     return () => { gone = true; window.clearInterval(timer); };
   }, [event.code]);
 
-  useEffect(() => {
+  const loadSlides = useCallback(() => {
     apiClient.getResources(event.id).then(setSlides).catch(() => setSlides([]));
   }, [event.id]);
+
+  useEffect(() => { loadSlides(); }, [loadSlides]);
+
+  /**
+   * Share something with the room, from the room.
+   *
+   * Filed against whatever is on stage, which is what the server does
+   * with a file that names no session - the same rule the agenda form
+   * follows when a talk is running.
+   */
+  const share = async (files: File[]) => {
+    setSharing(true);
+    let done = 0;
+    for (const file of files) {
+      try {
+        await apiClient.uploadResource(event.id, file);
+        done += 1;
+      } catch (e: any) {
+        toast.error(errorText(e, t({ ne: 'अपलोड भएन', en: 'Upload failed' })));
+      }
+    }
+    if (done > 0) {
+      toast.success(t({
+        ne: `${num(done)} फाइल थपियो`,
+        en: done === 1 ? 'File added' : `${done} files added`,
+      }));
+    }
+    setSharing(false);
+    loadSlides();
+  };
+
+  const drop = async (one: Artifact) => {
+    setSharing(true);
+    try {
+      await apiClient.deleteResource(event.id, one.id);
+      toast.success(t({ ne: 'फाइल हटाइयो', en: 'File removed' }));
+      loadSlides();
+    } catch (e: any) {
+      toast.error(errorText(e, t({ ne: 'हटाउन सकिएन', en: 'Could not remove it' })));
+    } finally {
+      setSharing(false);
+    }
+  };
 
   const TABS: { id: PanelTab; label: Pair }[] = [
     { id: 'slides', label: { ne: 'स्लाइड', en: 'Slides' } },
@@ -241,22 +292,56 @@ export const LiveDashboard: React.FC<Props> = ({
 
           {/* Slides, questions, photos - the three things a room carries. */}
           <Card>
-            <div className="flex border-b border-[#e3e8ef]" role="tablist">
-              {TABS.map((one) => (
-                <button
-                  key={one.id}
-                  role="tab"
-                  aria-selected={tab === one.id}
-                  onClick={() => setTab(one.id)}
-                  className={`w-[125px] h-[47px] text-[14px] -mb-px border-b-2 ${
-                    tab === one.id
-                      ? 'border-black text-black font-medium'
-                      : 'border-transparent text-[#4a5567]'
-                  }`}
-                >
-                  {t(one.label)}
-                </button>
-              ))}
+            <div className="flex items-center border-b border-[#e3e8ef]">
+              <div className="flex" role="tablist">
+                {TABS.map((one) => (
+                  <button
+                    key={one.id}
+                    role="tab"
+                    aria-selected={tab === one.id}
+                    onClick={() => setTab(one.id)}
+                    className={`w-[125px] h-[47px] text-[14px] -mb-px border-b-2 ${
+                      tab === one.id
+                        ? 'border-black text-black font-medium'
+                        : 'border-transparent text-[#4a5567]'
+                    }`}
+                  >
+                    {t(one.label)}
+                  </button>
+                ))}
+              </div>
+
+              {/* Only on the slides. Questions arrive from the room and
+                  photographs have their own way in, so a button here that
+                  did nothing on two tabs out of three would be a puzzle. */}
+              {tab === 'slides' && (
+                <>
+                  <input
+                    ref={picker}
+                    type="file"
+                    multiple
+                    aria-label={t({ ne: 'फाइल छान्नुहोस्', en: 'Choose files' })}
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files ?? []);
+                      e.target.value = '';
+                      if (files.length > 0) share(files);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={sharing}
+                    onClick={() => picker.current?.click()}
+                    className="ml-auto mr-4 border-[0.6px] border-navy-600 rounded-[8px]
+                      px-3 py-1.5 text-[12px] text-navy-600 leading-4
+                      hover:bg-navy-600/[.06] disabled:opacity-50"
+                  >
+                    {sharing
+                      ? t({ ne: 'पठाउँदै…', en: 'Uploading…' })
+                      : t({ ne: '+ थप्नुहोस्', en: '+ Add' })}
+                  </button>
+                </>
+              )}
             </div>
             <div className="min-h-[156px]">
               {tab === 'slides' && (
@@ -265,13 +350,57 @@ export const LiveDashboard: React.FC<Props> = ({
                     {t({ ne: 'कुनै फाइल छैन।', en: 'Nothing shared yet.' })}
                   </p>
                 ) : (
-                  <ul className="px-4 py-3 flex flex-col gap-2">
-                    {slides.map((one) => (
-                      <li key={one.id} className="text-[14px] text-[#030712] truncate">
-                        {one.display_name}
-                      </li>
+                  /* A row per file, the way every other list of files in
+                     the product reads it: what kind it is, how big, who
+                     shared it and when. A bare filename said none of that
+                     and could not be taken off again. */
+                  <div className="flex flex-col">
+                    {slides.map((one, i) => (
+                      <div
+                        key={one.id}
+                        className={`px-5 py-3 flex gap-4 items-center ${
+                          i < slides.length - 1
+                            ? 'border-b-[0.6px] border-[#f9fafb]' : ''
+                        }`}
+                      >
+                        <KindChip kind={kindOf(one.display_name ?? '')} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[14px] font-medium text-head leading-5
+                            truncate">
+                            {one.display_name}
+                          </p>
+                          <p className="text-[12px] text-faint leading-4 truncate">
+                            {[
+                              formatSize(one.file_size),
+                              one.uploaded_by_name,
+                              dayOf(one.created_at, t),
+                            ].filter(Boolean).join(' · ')}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={sharing}
+                          onClick={() => drop(one)}
+                          aria-label={t({
+                            ne: `${one.display_name} हटाउनुहोस्`,
+                            en: `Remove ${one.display_name}`,
+                          })}
+                          className="size-11 grid place-items-center rounded-[12px]
+                            text-[#d81313] hover:bg-[#d81313]/[.06]
+                            disabled:opacity-50"
+                        >
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                            aria-hidden>
+                            <path
+                              d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v5M14 11v5"
+                              stroke="currentColor" strokeWidth="1.8"
+                              strokeLinecap="round" strokeLinejoin="round"
+                            />
+                          </svg>
+                        </button>
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 )
               )}
               {tab === 'questions' && (

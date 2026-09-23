@@ -57,6 +57,8 @@ beforeEach(() => {
   api.listSessions.mockResolvedValue([] as any);
   api.admitGuest.mockResolvedValue({} as any);
   api.getResources.mockResolvedValue([] as any);
+  api.uploadResource = jest.fn().mockResolvedValue({} as any);
+  api.deleteResource = jest.fn().mockResolvedValue(undefined as any);
   api.getConclusions.mockResolvedValue({ conclusions: [] } as any);
   api.getEventBoard.mockResolvedValue({ faq: [], suggestions: [] } as any);
   api.getTranscript.mockResolvedValue({ segments: [] } as any);
@@ -231,5 +233,77 @@ describe('the message request queue', () => {
         'm1', 'q9', 'decline', undefined
       )
     );
+  });
+});
+
+/**
+ * What has been shared with the room, on the slides tab.
+ *
+ * A bare filename said nothing about what a file was, how big, who put
+ * it there or when - and offered no way to take it off again. It now
+ * reads the way every other list of files in the product reads.
+ */
+describe('the slides tab', () => {
+  const file = (over: any = {}) => ({
+    id: 'a1', event_id: 'm1', artifact_type: 'resource',
+    display_name: 'Field Protocol Guide.pdf', file_size: 1258291,
+    sync_status: 'synced', uploaded_by_name: 'Sarah Sharma',
+    created_at: new Date().toISOString(),
+    ...over,
+  });
+
+  const openSlides = async () => {
+    show();
+    await screen.findByText('Rahul Ingnam');
+    fireEvent.click(screen.getByRole('tab', { name: 'Slides' }));
+  };
+
+  it('says what each file is, and who shared it', async () => {
+    api.getResources.mockResolvedValue([file()] as any);
+    await openSlides();
+
+    expect(await screen.findByText('Field Protocol Guide.pdf')).toBeInTheDocument();
+    expect(screen.getByText('PDF')).toBeInTheDocument();
+    expect(screen.getByText(/Sarah Sharma/)).toBeInTheDocument();
+  });
+
+  it('takes one off', async () => {
+    api.getResources.mockResolvedValue([file()] as any);
+    await openSlides();
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Remove Field Protocol Guide.pdf' })
+    );
+
+    await waitFor(() => expect(api.deleteResource).toHaveBeenCalledWith('m1', 'a1'));
+  });
+
+  it('shares a new one from here', async () => {
+    await openSlides();
+
+    const sent = new File(['x'], 'Map.pdf', { type: 'application/pdf' });
+    fireEvent.change(screen.getByLabelText('Choose files'), {
+      target: { files: [sent] },
+    });
+
+    await waitFor(() =>
+      expect(api.uploadResource).toHaveBeenCalledWith('m1', sent)
+    );
+  });
+
+  /**
+   * Questions arrive from the room and photographs have their own way
+   * in, so a button here that did nothing on two tabs out of three
+   * would be a puzzle.
+   */
+  it('offers the way in on the slides, and nowhere else', async () => {
+    await openSlides();
+    expect(screen.getByRole('button', { name: '+ Add' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Questions' }));
+    expect(screen.queryByRole('button', { name: '+ Add' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Photos' }));
+    expect(screen.queryByRole('button', { name: '+ Add' })).toBeNull();
   });
 });
