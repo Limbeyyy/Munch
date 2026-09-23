@@ -82,13 +82,37 @@ const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 /** "15 September 2026 · 10:00 AM – 12:00 PM", from the day's events. */
+const longDay = (at: Date) => at.toLocaleDateString(undefined, {
+  day: 'numeric', month: 'long', year: 'numeric',
+});
+
+/**
+ * When an event runs, in one line.
+ *
+ * One date and two clock times, which is right for the afternoon most
+ * events are - and wrong, silently, for one that runs over more than a
+ * day: an event opening on the 23rd and closing on the 25th read as
+ * "23 September · 06:10 PM – 07:05 PM", an hour on a Wednesday. The
+ * second date is the only thing that says otherwise, so it is printed
+ * whenever it differs.
+ */
 export const whenLine = (event: Event): string => {
-  const day = new Date(event.event_date ?? event.scheduled_start)
-    .toLocaleDateString(undefined, {
-      day: 'numeric', month: 'long', year: 'numeric',
-    });
-  if (!event.scheduled_start) return day;
-  return `${day} · ${clock(event.scheduled_start)} – ${clock(event.scheduled_end)}`;
+  if (!event.scheduled_start) {
+    return event.event_date ? longDay(new Date(event.event_date)) : '';
+  }
+
+  const from = new Date(event.scheduled_start);
+  const to = event.scheduled_end ? new Date(event.scheduled_end) : null;
+
+  // Read off the hours themselves rather than `event_date`, which is a
+  // separate field and can lag behind them.
+  const opens = `${longDay(from)} · ${clock(event.scheduled_start)}`;
+  if (!to || Number.isNaN(+to)) return opens;
+
+  const sameDay = from.toDateString() === to.toDateString();
+  return sameDay
+    ? `${opens} – ${clock(event.scheduled_end)}`
+    : `${opens} – ${longDay(to)} · ${clock(event.scheduled_end)}`;
 };
 
 /** How many people stand beside the host, and how many were asked along. */

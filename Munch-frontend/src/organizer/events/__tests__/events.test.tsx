@@ -286,3 +286,55 @@ describe('the back link', () => {
     expect(onClick).toHaveBeenCalled();
   });
 });
+
+/**
+ * When an event runs, in one line.
+ *
+ * One date and two clock times is right for the afternoon most events
+ * are, and silently wrong for one running over more than a day: an event
+ * opening on the 23rd and closing on the 25th read as an hour on the
+ * 23rd, and saving a later end date appeared to do nothing at all.
+ */
+describe('the line that says when', () => {
+  const runs = (start: string, end: string) =>
+    whenLine({ scheduled_start: start, scheduled_end: end } as any);
+
+  // Written the way the line writes it, so the test does not assert a
+  // locale. Whether the day or the month comes first is the reader's
+  // business; that the date appears at all is this test's.
+  const asDay = (iso: string) =>
+    new Date(iso).toLocaleDateString(undefined, {
+      day: 'numeric', month: 'long', year: 'numeric',
+    });
+
+  it('gives one date to an event inside a day', () => {
+    const said = runs('2026-09-23T18:10:00', '2026-09-23T19:05:00');
+
+    expect(said).toContain(asDay('2026-09-23T18:10:00'));
+    expect(said.match(/September/g)).toHaveLength(1);
+  });
+
+  it('gives the closing date too where it differs', () => {
+    const said = runs('2026-09-23T18:10:00', '2026-09-25T19:05:00');
+
+    expect(said).toContain(asDay('2026-09-23T18:10:00'));
+    expect(said).toContain(asDay('2026-09-25T19:05:00'));
+  });
+
+  /** The hours are the truth; event_date is a separate field that lags. */
+  it('reads the day off the hours rather than the stored date', () => {
+    const said = whenLine({
+      event_date: '2026-09-01',
+      scheduled_start: '2026-09-23T18:10:00',
+      scheduled_end: '2026-09-23T19:05:00',
+    } as any);
+
+    expect(said).toContain(asDay('2026-09-23T18:10:00'));
+    expect(said).not.toContain(asDay('2026-09-01T00:00:00'));
+  });
+
+  it('says the day alone where there are no hours', () => {
+    expect(whenLine({ event_date: '2026-09-23' } as any))
+      .toContain(asDay('2026-09-23'));
+  });
+});
