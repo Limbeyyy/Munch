@@ -209,6 +209,13 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'src.apps.meetings.tasks.write_reminders',
         'schedule': 600.0,  # every ten minutes
     },
+    'evict-idle-attendees': {
+        # Nobody sends a message saying they have stopped paying
+        # attention, so something has to come round and notice. Every
+        # minute, because the register should not be a minute out.
+        'task': 'src.apps.meetings.tasks.evict_idle_attendees',
+        'schedule': 60.0,
+    },
     'cleanup-old-meetings-daily': {
         'task': 'src.workers.meeting_worker.cleanup_old_meetings',
         'schedule': 86400.0,  # daily

@@ -806,15 +806,19 @@ export interface SchedulingPrefs {
   session_gap_minutes: number;
   event_reminder_minutes: number;
   session_reminder_minutes: number;
+  /** How long somebody may sit doing nothing before the room lets them go. */
+  idle_timeout_minutes: number;
   reminders_enabled: boolean;
   defaults: {
     session_gap_minutes: number;
     event_reminder_minutes: number;
     session_reminder_minutes: number;
+    idle_timeout_minutes: number;
   };
   maximums: {
     session_gap_minutes: number;
     event_reminder_minutes: number;
+    idle_timeout_minutes: number;
     session_reminder_minutes: number;
   };
   default_session_gap_minutes: number;

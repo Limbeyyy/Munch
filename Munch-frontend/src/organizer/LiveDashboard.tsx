@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../services/api';
-import { Artifact, Conclusion, Event, Session, TranscriptionSegment } from '../types';
+import { Artifact, Event, Session, TranscriptionSegment } from '../types';
 import { Pair, useOrganizer } from './i18n';
 import { FigmaIcon } from '../assets/icons';
 import { RoomQuestions } from './RoomQuestions';
 import { PhotoAlbums } from './Photos';
+import { RoomAgenda } from './RoomAgenda';
 
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -90,6 +91,10 @@ interface Props {
   stageActions?: React.ReactNode;
   /** The two queues, and the chat switches, down the right-hand side. */
   queues?: React.ReactNode;
+  /** Re-read the day after the running order has been rearranged. */
+  onChanged: () => Promise<void> | void;
+  /** Put one on stage from the running order itself. */
+  onStart: (sessionId: string) => Promise<void> | void;
   onBackToRoom: () => void;
 }
 
@@ -103,15 +108,13 @@ interface Props {
  * component pulled in both directions would serve neither.
  */
 export const LiveDashboard: React.FC<Props> = ({
-  event, sessions, live, stageActions, queues, onBackToRoom,
+  event, sessions, live, stageActions, queues, onChanged, onStart, onBackToRoom,
 }) => {
   const { t, num } = useOrganizer();
 
   const [tab, setTab] = useState<PanelTab>('photos');
   const [segments, setSegments] = useState<TranscriptionSegment[]>([]);
   const [slides, setSlides] = useState<Artifact[]>([]);
-  const [conclusions, setConclusions] = useState<Conclusion[]>([]);
-  const [opened, setOpened] = useState<string>('');
 
   const agenda = useMemo(
     () => [...sessions].sort(
@@ -121,7 +124,6 @@ export const LiveDashboard: React.FC<Props> = ({
   );
 
   const onStage = live ?? agenda.find((s) => s.status === 'live') ?? agenda[0] ?? null;
-  const selected = agenda.find((s) => s.id === opened) ?? onStage;
 
   /** The transcript of whatever the day has reached. */
   useEffect(() => {
@@ -141,20 +143,6 @@ export const LiveDashboard: React.FC<Props> = ({
   useEffect(() => {
     apiClient.getResources(event.id).then(setSlides).catch(() => setSlides([]));
   }, [event.id]);
-
-  const loadConclusions = useCallback(() => {
-    apiClient
-      .getConclusions()
-      .then((page) => setConclusions(page?.conclusions ?? []))
-      .catch(() => undefined);
-  }, []);
-
-  useEffect(() => { loadConclusions(); }, [loadConclusions]);
-
-  const summaryOf = (sessionId?: string) =>
-    conclusions.find((c) => c.session_id === sessionId) ?? null;
-
-  const summary = summaryOf(selected?.id);
 
   const TABS: { id: PanelTab; label: Pair }[] = [
     { id: 'slides', label: { ne: 'स्लाइड', en: 'Slides' } },
@@ -283,77 +271,21 @@ export const LiveDashboard: React.FC<Props> = ({
             </div>
           </Card>
 
-          {/* The day, and what each part of it came to. */}
+          {/* The day, and what each part of it came to.
+
+              The same running order the room shows, rather than a second
+              drawing of it: a host rearranging the day here and looking
+              at the room on the next screen should be looking at one
+              thing, and two components meant the two drifted. */}
           <Card>
-            <CardHead>{t({ ne: 'एजेन्डा सारांश', en: 'Agenda Summary' })}</CardHead>
-            <div className="grid md:grid-cols-[268px_minmax(0,1fr)] items-stretch">
-              <div className="max-h-[363px] overflow-y-auto ps-3">
-                {agenda.length === 0 ? (
-                  <p className="text-[12.5px] text-subtle px-4 py-5">
-                    {t({ ne: 'कुनै सत्र छैन।', en: 'Nothing scheduled.' })}
-                  </p>
-                ) : (
-                  agenda.map((one) => {
-                    const chosen = one.id === selected?.id;
-                    return (
-                      <button
-                        key={one.id}
-                        onClick={() => setOpened(chosen ? '' : one.id)}
-                        aria-current={chosen}
-                        className={`w-full text-left flex items-center gap-2 p-1 border-b
-                          border-[#e3e8ef] last:border-0 ${
-                            chosen ? 'bg-navy-800 text-white' : 'hover:bg-[#fcfcfc]'
-                          }`}
-                      >
-                        <Portrait name={one.speaker_name || one.title} size={chosen ? 40 : 48} />
-                        <span className="min-w-0 flex-1 px-1">
-                          <span className="block text-[13px] font-medium leading-[1.3] truncate">
-                            {one.title}
-                          </span>
-                          <span className={`block text-[12px] truncate ${
-                            chosen ? 'text-white/70' : 'text-[#4a5567]'
-                          }`}>
-                            {one.speaker_name || t({ ne: 'वक्ता छैन', en: 'No speaker' })}
-                          </span>
-                        </span>
-                        {chosen && (
-                          <FigmaIcon name="arrowRight" size={24} className="flex-none" />
-                        )}
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-
-              <div className="bg-navy-800 text-white p-4 min-h-[363px]">
-                <div className="flex items-start gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[20px] font-medium leading-[1.2] text-center">
-                      {t({ ne: 'सारांश', en: 'Summary' })}
-                    </p>
-                    <p className="text-[14px] text-white/80 mt-1.5">
-                      {selected?.speaker_name ?? ''}
-                    </p>
-                  </div>
-                  {selected?.starts_at && (
-                    <TimeChip dark>{span(selected.starts_at, selected.duration_minutes)}</TimeChip>
-                  )}
-                </div>
-
-                <div className="mt-6 flex flex-col gap-3 text-[14px] leading-[1.5]">
-                  {summary ? (
-                    summary.findings.map((line, i) => <p key={i}>{line}</p>)
-                  ) : (
-                    <p className="text-white/70">
-                      {t({
-                        ne: 'यो सत्र सकिएपछि सारांश यहाँ देखिन्छ।',
-                        en: 'The summary appears here once this session has finished.',
-                      })}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
+            <RoomAgenda
+              event={event}
+              sessions={sessions}
+              liveSessionId={live?.id ?? null}
+              canEdit
+              onChanged={onChanged}
+              onStart={onStart}
+            />
           </Card>
         </div>
 

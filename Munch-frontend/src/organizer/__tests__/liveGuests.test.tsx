@@ -122,3 +122,56 @@ describe('the join request queue', () => {
     expect(screen.queryByText('Sumin Maharjan')).toBeNull();
   });
 });
+
+
+/**
+ * What the live dashboard shows of the day.
+ *
+ * The running order is the same one the room shows rather than a second
+ * drawing of it: a host rearranging the day here and looking at the room
+ * on the next screen should be looking at one thing.
+ */
+describe('the live dashboard', () => {
+  it('shows the running order the room shows', async () => {
+    api.listSessions.mockResolvedValue([{
+      id: 's1', event: 'm1', title: 'Kataho 1', description: '',
+      speaker_name: 'Ram Rimal', speaker_visibility: 'public',
+      starts_at: new Date().toISOString(), duration_minutes: 30,
+      ends_at: new Date(Date.now() + 1800000).toISOString(),
+      position: 0, status: 'scheduled', started_at: null, ended_at: null,
+      attendance_count: 0,
+    }] as any);
+    show();
+
+    expect(
+      await screen.findByRole('heading', { name: 'Agenda Summary' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Drag a session onto another to change their places/)
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * The chat rules went with the chat.
+   *
+   * Driven with a session actually on stage, because that is the only
+   * state the panel ever appeared in - asserted against an event with
+   * nothing running, the test passes whether the panel exists or not.
+   */
+  it('offers no chat rules, even with a session on stage', async () => {
+    api.listSessions.mockResolvedValue([{
+      id: 's1', event: 'm1', title: 'Kataho 1', description: '',
+      speaker_name: 'Ram Rimal', speaker_visibility: 'public',
+      starts_at: new Date(Date.now() - 300000).toISOString(),
+      duration_minutes: 30,
+      ends_at: new Date(Date.now() + 1500000).toISOString(),
+      position: 0, status: 'live',
+      started_at: new Date(Date.now() - 300000).toISOString(),
+      ended_at: null, attendance_count: 0,
+    }] as any);
+    show();
+    await screen.findByText('Rahul Ingnam');
+
+    expect(screen.queryByText('Chat rules')).toBeNull();
+  });
+});

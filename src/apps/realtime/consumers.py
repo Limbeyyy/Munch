@@ -6,6 +6,7 @@ from channels.db import database_sync_to_async
 from src.apps.meetings.models import Event, EventParticipant, ChatMessage
 from src.apps.transcription.models import TranscriptionSegment
 from src.apps.monitoring.models import EventLogEntry
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +137,18 @@ class EventConsumer(AsyncWebsocketConsumer):
         try:
             data = json.loads(text_data)
             message_type = data.get('type')
+
+            # Anything at all from this person is a sign they are still
+            # here, which is what the room measures presence by. A socket
+            # staying open is not: a tab left running in a window nobody
+            # is looking at holds one all afternoon.
+            await self.mark_seen()
+
+            if message_type == 'heartbeat':
+                # Nothing to do but the stamp above. The room sends these
+                # when somebody moves or types, so a person watching a
+                # talk without saying anything still counts as present.
+                return
 
             if message_type == 'participant_state_update':
                 await self.handle_participant_state_update(data)
@@ -459,6 +472,32 @@ class EventConsumer(AsyncWebsocketConsumer):
             'chat_enabled': event.chat_enabled,
             'direct_messages_enabled': event.direct_messages_enabled,
         }
+
+    @database_sync_to_async
+    def mark_seen(self):
+        """Write down that this person has just done something.
+
+        Guests have no participant row, so there is nothing to stamp;
+        they are admitted and removed by the host rather than swept.
+        """
+        if getattr(self, 'guest_group_name', None):
+            return
+        try:
+            event = Event.objects.get(code=self.code)
+        except Event.DoesNotExist:
+            return
+        EventParticipant.objects.filter(
+            event=event, user=self.user, is_active=True
+        ).update(last_seen_at=timezone.now())
+
+    async def idle_evicted(self, message):
+        """Tell this person the room has let them go, and close it."""
+        await self.send(text_data=json.dumps({
+            'type': 'idle_evicted',
+            'reason': message.get('reason', 'idle'),
+            'left_at': message.get('left_at'),
+        }))
+        await self.close()
 
     @database_sync_to_async
     def save_chat_message(self, body, recipient_id=None, topic=None):

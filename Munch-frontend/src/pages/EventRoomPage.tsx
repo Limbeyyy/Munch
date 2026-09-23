@@ -370,6 +370,44 @@ const EventRoomInner: React.FC = () => {
     }
   }, []);
 
+  /**
+   * Tell the room this person is still here.
+   *
+   * Presence is measured by what somebody does, not by whether their
+   * socket is open - a tab left running in a window nobody is looking at
+   * holds one all afternoon. So moving, typing or coming back to the tab
+   * says so, throttled to once a minute because the room only needs to
+   * know within a minute and a mousemove fires hundreds of times.
+   */
+  const lastBeat = useRef(0);
+  const beat = useCallback(() => {
+    const now = Date.now();
+    if (now - lastBeat.current < 60000) return;
+    const socket = wsRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    lastBeat.current = now;
+    socket.send(JSON.stringify({ type: 'heartbeat' }));
+  }, []);
+
+  /** Held in a ref so opening the socket does not depend on it. */
+  const beatRef = useRef(beat);
+  useEffect(() => { beatRef.current = beat; }, [beat]);
+
+  useEffect(() => {
+    const wake = () => beat();
+    const watched: (keyof WindowEventMap)[] = [
+      'pointerdown', 'keydown', 'wheel', 'focus',
+    ];
+    watched.forEach((name) => window.addEventListener(name, wake));
+    // Coming back to a tab is the clearest sign of all that somebody is
+    // there, and it is the one case a mousemove may never follow.
+    document.addEventListener('visibilitychange', wake);
+    return () => {
+      watched.forEach((name) => window.removeEventListener(name, wake));
+      document.removeEventListener('visibilitychange', wake);
+    };
+  }, [beat]);
+
   const sendTo = (
     to: string, body: string, topic: 'faq' | 'suggestion' | null = null
   ) => {
@@ -482,6 +520,9 @@ const EventRoomInner: React.FC = () => {
     wsRef.current = new WebSocket(wsUrl);
     wsRef.current.onopen = () => {
       console.log('WebSocket connected');
+      // Arriving is itself a sign of life, and without this the first
+      // stamp waits on the person doing something.
+      beatRef.current();
     };
 
     wsRef.current.onmessage = (message) => {
@@ -589,6 +630,12 @@ const EventRoomInner: React.FC = () => {
           started_at: data.started_at,
           status: data.status,
         });
+      } else if (data.type === 'idle_evicted') {
+        // The room has let this person go for going quiet. Said plainly,
+        // because otherwise their screen carries on showing a room that
+        // no longer counts them and nothing explains why.
+        toast('You were away, so the room let you go', { icon: '💤' });
+        navigate('/');
       } else if (data.type === 'event_ended') {
         toast(
           data.reason === 'time_elapsed'

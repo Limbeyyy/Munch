@@ -4,12 +4,11 @@ import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { ACTIVE_POLL_MS } from '../../services/polling';
 import { deskSession, startableNow } from '../sessionState';
-import { ChatRules } from '../ChatRules';
 import { RequestButton, RequestCard, RequestRow } from '../RequestCard';
 import { LiveDashboard } from '../LiveDashboard';
 import { ChatMessage, GuestAttendee, Event, Session } from '../../types';
 import { useOrganizer } from '../i18n';
-import { Btn, Card, Head, Panel } from '../ui';
+import { Btn, Card, Head } from '../ui';
 
 
 interface Props {
@@ -224,6 +223,12 @@ export const LiveView: React.FC<Props> = ({ events, onChanged, onNavigate }) => 
       event={current}
       sessions={sessions}
       live={onStage ?? null}
+      onChanged={async () => { await load(); onChanged(); }}
+      onStart={async (sessionId) => {
+        await apiClient.startSession(sessionId);
+        await load();
+        onChanged();
+      }}
       onBackToRoom={() => navigate(`/event/${current.code}`)}
       stageActions={
         isLive ? (
@@ -327,17 +332,6 @@ export const LiveView: React.FC<Props> = ({ events, onChanged, onNavigate }) => 
           ))}
         </RequestCard>
 
-          {/* The chat is something the host does to a session that is
-              running - closing the floor for a speaker, opening direct
-              messages for a question round - so the switches live here
-              while one is on stage. */}
-          {isLive && (
-            <Panel title={t({ ne: 'च्याट नियम', en: 'Chat rules' })}>
-              <div className="px-4 py-3.5">
-                <ChatRules eventId={current.id} />
-              </div>
-            </Panel>
-          )}
         </>
       }
     />
