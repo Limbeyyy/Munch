@@ -281,6 +281,56 @@ describe('one event under moderation', () => {
     ).toContain('bg-[#f3f4f6]');
   });
 
+  /**
+   * Under All Agendas, every pile groups - not just the pending one.
+   *
+   * The grouping is what makes the list readable, and a host reading
+   * back what they approved wants it grouped for the same reason they
+   * wanted it grouped while deciding.
+   */
+  it.each([
+    ['Approved', 'approved'],
+    ['Rejected', 'rejected'],
+  ])('groups the %s pile under its agenda too', async (pillName, key) => {
+    api.getModerationQueue.mockResolvedValue(queue({
+      [key]: [message({
+        moderation_status: key === 'approved' ? 'approved' : 'declined',
+        moderated_by_name: 'Sarah Sharma',
+        moderated_at: new Date().toISOString(),
+      })],
+    }) as any);
+    await moderate();
+    fireEvent.click(await screen.findByRole('button', { name: pillName }));
+
+    const header = await screen.findByRole('button', { expanded: true });
+    expect(header).toHaveTextContent('Field Response Coordination');
+    expect(header).toHaveTextContent(`1 ${pillName.toLowerCase()}`);
+    expect(
+      within(header.parentElement as HTMLElement)
+        .getByText(/communication delays/)
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * The gap this closes.
+   *
+   * A question asked when nothing was on stage has no agenda, and those
+   * were tipped out under the groups as a bare list - so a screen whose
+   * every other entry sat in a named box had one pile floating loose,
+   * and where nothing had ever been on stage the whole list lost its
+   * shape.
+   */
+  it('gives entries with no agenda a header of their own', async () => {
+    api.getModerationQueue.mockResolvedValue(queue({
+      pending: [message({ session: null, session_title: null })],
+    }) as any);
+    await moderate();
+
+    const header = await screen.findByRole('button', { expanded: true });
+    expect(header).toHaveTextContent('Not on any agenda');
+    expect(header).toHaveTextContent('1 pending');
+  });
+
   /** Choosing one agenda is choosing the heading, so it is not repeated. */
   it('drops the grouping once a single agenda is chosen', async () => {
     await moderate();

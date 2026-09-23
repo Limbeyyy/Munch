@@ -471,15 +471,36 @@ export const ModerationView: React.FC<Props> = ({ events }) => {
    * pending is a row the host has to read past to reach the ones that
    * are not.
    */
-  const grouped = agendas
+  const grouped: {
+    id: string; title: string; speaker: string; rows: ChatMessage[];
+  }[] = agendas
     .map((one) => ({
-      agenda: one,
+      id: one.id,
+      title: one.title,
+      speaker: one.speaker,
       rows: shownEntries.filter((row) => (row.session ?? '') === one.id),
     }))
     .filter((group) => group.rows.length > 0);
 
-  /** Anything written when nothing was on stage belongs to no agenda. */
+  /**
+   * Anything written when nothing was on stage belongs to no agenda.
+   *
+   * It still gets a header of its own rather than being tipped out
+   * underneath the groups as a bare list. Under All Agendas every entry
+   * on the screen sits inside a named box, so one pile that does not is
+   * read as part of whichever group it happens to follow - and where
+   * nothing was ever on stage, which is the usual case for a question
+   * put to the event at large, the whole screen loses its shape.
+   */
   const loose = shownEntries.filter((row) => !row.session);
+  if (loose.length > 0) {
+    grouped.push({
+      id: '',
+      title: t({ ne: 'कुनै कार्यसूचीबिना', en: 'Not on any agenda' }),
+      speaker: '',
+      rows: loose,
+    });
+  }
 
   return (
     <Card className="flex flex-col gap-6">
@@ -611,11 +632,12 @@ export const ModerationView: React.FC<Props> = ({ events }) => {
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            {grouped.map(({ agenda: one, rows }) => {
+            {grouped.map((one) => {
+              const rows = one.rows;
               const shut = collapsed[one.id];
               return (
                 <section
-                  key={one.id}
+                  key={one.id || 'loose'}
                   className="bg-white border-[0.6px] border-[#e1e1e1] rounded-[12px]
                     overflow-hidden
                     shadow-[0px_4px_6px_-1px_rgba(0,0,0,0.1),0px_2px_4px_-2px_rgba(0,0,0,0.05)]"
@@ -671,19 +693,6 @@ export const ModerationView: React.FC<Props> = ({ events }) => {
               );
             })}
 
-            {loose.length > 0 && (
-              <div className="flex flex-col gap-2">
-                {loose.map((row) => (
-                  <Entry
-                    key={row.id}
-                    message={row}
-                    pile={pile}
-                    busy={deciding === row.id}
-                    onDecide={(decision) => decide(row, decision)}
-                  />
-                ))}
-              </div>
-            )}
           </div>
         )}
       </div>
