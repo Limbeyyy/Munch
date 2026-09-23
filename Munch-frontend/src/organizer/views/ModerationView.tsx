@@ -124,11 +124,18 @@ const Entry: React.FC<{
 }> = ({ message, pile, busy, onDecide }) => {
   const { t } = useOrganizer();
 
+  // Something already decided is tinted the colour of the decision and
+  // carries no border; only what is still waiting is a white card with
+  // an edge, because only that is a thing to act on.
+  const decided = pile !== 'pending';
+
   return (
-    <article className={`border-[0.6px] rounded-[12px] p-4 ${
+    <article className={`rounded-[12px] p-4 ${
       pile === 'approved'
-        ? 'bg-[#f0fdf4] border-[#bbf7d0]'
-        : 'bg-white border-[#b3b3b3]'
+        ? 'bg-[#ebfbf1]'
+        : pile === 'rejected'
+        ? 'bg-[#feebeb]'
+        : 'bg-white border-[0.6px] border-[#e3e3e3]'
     }`}>
       <div className="flex gap-3 items-start">
         <div className="flex-1 min-w-0 flex flex-col">
@@ -143,18 +150,27 @@ const Entry: React.FC<{
               {since(message.created_at, t)}
             </span>
             {message.session_title && (
-              <span className="bg-[#f3f4f6] rounded-[4px] px-1.5 py-0.5
-                text-[11px] text-subtle leading-[14.667px]">
+              // Dark against a tinted card, pale against a white one:
+              // the pale chip disappears into the tint.
+              <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px]
+                leading-[14.667px] ${
+                decided ? 'bg-[#717171] text-white' : 'bg-[#f3f4f6] text-subtle'
+              }`}>
                 {message.session_title}
               </span>
             )}
           </div>
-          {pile === 'approved' && message.moderated_by_name && (
-            <p className="pt-1.5 text-[12px] text-[#6a7282] leading-4">
-              {t({
-                ne: `${message.moderated_by_name} ले स्वीकृत गरे`,
-                en: `Approved by ${message.moderated_by_name}`,
-              })}
+          {decided && message.moderated_by_name && (
+            <p className="pt-1.5 text-[12px] text-faint leading-4">
+              {t(pile === 'approved'
+                ? {
+                    ne: `${message.moderated_by_name} ले स्वीकृत गरे`,
+                    en: `Approved by ${message.moderated_by_name}`,
+                  }
+                : {
+                    ne: `${message.moderated_by_name} ले अस्वीकार गरे`,
+                    en: `Rejected by ${message.moderated_by_name}`,
+                  })}
               {message.moderated_at && ` · ${since(message.moderated_at, t)}`}
             </p>
           )}
@@ -213,6 +229,10 @@ export const ModerationView: React.FC<Props> = ({ events }) => {
 
   /** One queue per live event, so the cards can count what is in them. */
   const [queues, setQueues] = useState<Record<string, ModerationQueue>>({});
+  /** How many were asked along and how many came, for the same cards. */
+  const [turnout, setTurnout] = useState<Record<string, {
+    invited: number; attended: number; rate: number;
+  }>>({});
 
   // Only what is running. A queue fills while people are in the room, so
   // an event that has not opened has nothing in it and one that has
@@ -240,6 +260,39 @@ export const ModerationView: React.FC<Props> = ({ events }) => {
       return next;
     });
   }, [live, opened]);
+
+  /**
+   * The turnout on each card.
+   *
+   * Read once when the list of live events changes rather than on the
+   * queue's poll: how many were invited does not move while the event
+   * runs, and polling it every few seconds would be a request per event
+   * per tick for a number that does not change.
+   */
+  const countHeads = useCallback(async () => {
+    const got = await Promise.all(live.map(async (one) => {
+      try {
+        const report = await apiClient.getAttendanceReport(one.id);
+        const invited = report?.expected_total ?? 0;
+        const attended = report?.attended_count ?? 0;
+        return [one.id, {
+          invited,
+          attended,
+          rate: invited > 0 ? Math.round((attended / invited) * 100) : 0,
+        }] as const;
+      } catch {
+        return null;
+      }
+    }));
+    setTurnout((was) => {
+      const next = { ...was };
+      got.forEach((pair) => { if (pair) next[pair[0]] = pair[1]; });
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live.map((one) => one.id).join(',')]);
+
+  useEffect(() => { countHeads(); }, [countHeads]);
 
   useEffect(() => {
     read();
@@ -350,8 +403,20 @@ export const ModerationView: React.FC<Props> = ({ events }) => {
                       text-[12px] text-faint leading-4">
                       <span>
                         {t({
-                          ne: `${num(one.session_count ?? 0)} सत्र`,
-                          en: `${num(one.session_count ?? 0)} sessions`,
+                          ne: `${num(one.session_count ?? 0)} कार्यसूची`,
+                          en: `${num(one.session_count ?? 0)} Agendas`,
+                        })}
+                      </span>
+                      <span>
+                        {t({
+                          ne: `${num(turnout[one.id]?.invited ?? 0)} निम्तो`,
+                          en: `${turnout[one.id]?.invited ?? 0} invited`,
+                        })}
+                      </span>
+                      <span>
+                        {t({
+                          ne: `${num(turnout[one.id]?.attended ?? 0)} आए · ${num(turnout[one.id]?.rate ?? 0)}%`,
+                          en: `${turnout[one.id]?.attended ?? 0} attended · ${turnout[one.id]?.rate ?? 0}%`,
                         })}
                       </span>
                       <span>
@@ -418,20 +483,19 @@ export const ModerationView: React.FC<Props> = ({ events }) => {
 
   return (
     <Card className="flex flex-col gap-6">
-      <header className="bg-[#eff0f2] rounded-[12px] px-5 py-3 flex flex-col gap-6">
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-[24px] font-medium text-[#9e9e9e] leading-[1.2]">
-            {t({ ne: 'मडेरेसन', en: 'Moderation' })}
-          </p>
+      {/* The grey block holds the event and the two things that narrow
+          it. The design gives it no separate back control: the small word
+          above the title is where you came from, so it is the way back. */}
+      <header className="bg-[#eff0f2] rounded-[12px] px-5 py-4 flex flex-col gap-6">
+        <div className="flex flex-col gap-2">
           <button
             type="button"
             onClick={() => setOpened('')}
-            className="text-[14px] text-body hover:text-head"
+            className="self-start text-[24px] font-medium text-[#9e9e9e]
+              leading-[1.2] hover:text-body"
           >
-            {t({ ne: '‹ सबै कार्यक्रम', en: '‹ All events' })}
+            {t({ ne: 'मडेरेसन', en: 'Moderation' })}
           </button>
-        </div>
-        <div className="flex flex-col gap-2">
           <h1 className="text-[24px] font-medium text-[#030712] leading-[1.2]">
             {event.title}
           </h1>
@@ -439,18 +503,15 @@ export const ModerationView: React.FC<Props> = ({ events }) => {
             {whenAndWhere(event)}
           </p>
         </div>
-      </header>
 
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3">
-          <div className="flex gap-4 items-center flex-wrap">
-            <SearchBox
-              value={agendaSearch}
-              onChange={setAgendaSearch}
-              label={t({ ne: 'कार्यसूची खोज्नुहोस्', en: 'Search Agendas' })}
-              className="w-full max-w-[417px]"
-            />
-            <div className="flex gap-1 items-center">
+        <div className="flex gap-4 items-center flex-wrap">
+          <SearchBox
+            value={agendaSearch}
+            onChange={setAgendaSearch}
+            label={t({ ne: 'कार्यसूची खोज्नुहोस्', en: 'Search Agendas' })}
+            className="w-full max-w-[417px]"
+          />
+          <div className="flex gap-1 items-center">
               <label
                 htmlFor="manch-moderation-agenda"
                 className="text-[16px] text-black text-center"
@@ -467,11 +528,14 @@ export const ModerationView: React.FC<Props> = ({ events }) => {
                 <option value="all">{t({ ne: 'सबै कार्यसूची', en: 'All Agendas' })}</option>
                 {(queue?.sessions ?? []).map((one) => (
                   <option key={one.id} value={one.id}>{one.title}</option>
-                ))}
-              </select>
-            </div>
+              ))}
+            </select>
           </div>
+        </div>
+      </header>
 
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
           <div
             role="tablist"
             className="border-b-[0.6px] border-[#f3f4f6] flex gap-4 items-start"

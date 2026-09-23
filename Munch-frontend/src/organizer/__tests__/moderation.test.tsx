@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { OrganizerProvider } from '../i18n';
 import { ModerationView } from '../views/ModerationView';
 import { apiClient } from '../../services/api';
@@ -7,6 +7,7 @@ import { apiClient } from '../../services/api';
 jest.mock('../../services/api', () => ({
   apiClient: {
     getModerationQueue: jest.fn(),
+    getAttendanceReport: jest.fn(),
     moderateMessage: jest.fn(),
     hasSession: jest.fn(() => false),
   },
@@ -66,6 +67,9 @@ beforeEach(() => {
     'manch.organizer.prefs', JSON.stringify({ lang: 'en', a11y: {} })
   );
   api.getModerationQueue.mockResolvedValue(queue({ pending: [message()] }) as any);
+  api.getAttendanceReport.mockResolvedValue({
+    expected_total: 9, attended_count: 6,
+  } as any);
 });
 
 const show = (events = [event()]) =>
@@ -220,6 +224,63 @@ describe('one event under moderation', () => {
     expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull();
   });
 
+  /**
+   * A decision is shown as a colour as well as a word.
+   *
+   * On a screen whose whole job is three piles, the pile an entry is in
+   * is the first thing to read, so the card is tinted the colour of the
+   * decision and the agenda chip inverts to stay legible against it.
+   */
+  it('tints what was put up green, and says who put it up', async () => {
+    api.getModerationQueue.mockResolvedValue(queue({
+      approved: [message({
+        moderation_status: 'approved',
+        moderated_by_name: 'Sarah Sharma',
+        moderated_at: new Date(Date.now() - 360000).toISOString(),
+      })],
+    }) as any);
+    await moderate();
+    fireEvent.click(await screen.findByRole('button', { name: 'Approved' }));
+
+    const card = (await screen.findByText(/communication delays/))
+      .closest('article') as HTMLElement;
+    expect(card.className).toContain('bg-[#ebfbf1]');
+    expect(within(card).getByText(/Approved by Sarah Sharma/)).toBeInTheDocument();
+    expect(
+      within(card).getByText('Field Response Coordination').className
+    ).toContain('bg-[#717171]');
+  });
+
+  it('tints what was turned down red, and says who turned it down', async () => {
+    api.getModerationQueue.mockResolvedValue(queue({
+      rejected: [message({
+        moderation_status: 'declined',
+        moderated_by_name: 'Sarah Sharma',
+        moderated_at: new Date(Date.now() - 360000).toISOString(),
+      })],
+    }) as any);
+    await moderate();
+    fireEvent.click(await screen.findByRole('button', { name: 'Rejected' }));
+
+    const card = (await screen.findByText(/communication delays/))
+      .closest('article') as HTMLElement;
+    expect(card.className).toContain('bg-[#feebeb]');
+    expect(within(card).getByText(/Rejected by Sarah Sharma/)).toBeInTheDocument();
+  });
+
+  /** Only what is still waiting is a white card with an edge to act on. */
+  it('leaves what is waiting white, and gives it a border', async () => {
+    await moderate();
+
+    const card = (await screen.findByText(/communication delays/))
+      .closest('article') as HTMLElement;
+    expect(card.className).toContain('bg-white');
+    expect(card.className).toContain('border-[#e3e3e3]');
+    expect(
+      within(card).getByText('Field Response Coordination').className
+    ).toContain('bg-[#f3f4f6]');
+  });
+
   /** Choosing one agenda is choosing the heading, so it is not repeated. */
   it('drops the grouping once a single agenda is chosen', async () => {
     await moderate();
@@ -257,10 +318,34 @@ describe('one event under moderation', () => {
     ).toBeInTheDocument();
   });
 
+  /**
+   * The design gives the second screen no separate back control: the
+   * small word above the event title is where you came from, so that is
+   * what takes you back.
+   */
   it('goes back to the list of events', async () => {
     await moderate();
-    fireEvent.click(await screen.findByRole('button', { name: '‹ All events' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Moderation' }));
 
     expect(screen.getByRole('button', { name: 'Moderate' })).toBeInTheDocument();
+  });
+
+  /** The two things that narrow the list belong to the event, not the list. */
+  it('keeps the search and the agendas inside the block for the event', async () => {
+    await moderate();
+
+    const header = (await screen.findByRole('heading', {
+      name: 'Emergency Service Meeting',
+    })).closest('header') as HTMLElement;
+    expect(within(header).getByLabelText('Search Agendas')).toBeInTheDocument();
+    expect(within(header).getByLabelText('Agendas')).toBeInTheDocument();
+  });
+
+  it('says what the event came to, as well as what is waiting', async () => {
+    show();
+
+    expect(await screen.findByText('9 invited')).toBeInTheDocument();
+    expect(screen.getByText('6 attended · 67%')).toBeInTheDocument();
+    expect(screen.getByText('3 Agendas')).toBeInTheDocument();
   });
 });
