@@ -129,7 +129,10 @@ def accept_line(event, data: dict) -> dict:
         'speaker_id': str(data.get('speaker_id') or 'room-device'),
         'speaker_name': data.get('speaker_name') or 'Room',
         'text': text,
-        'language': data.get('language') or 'en',
+        # 'lang' as well as 'language': a device written against the
+        # shorter name is the common case, and rejecting its lines over a
+        # spelling would be a silent afternoon of English transcript.
+        'language': data.get('language') or data.get('lang') or 'en',
         'start_time': float(data.get('start_time') or 0),
         'end_time': float(data.get('end_time') or 0),
         'confidence': float(data.get('confidence') or 0.0),

@@ -120,6 +120,26 @@ class TheCaptureDeviceSocketTests(TransactionTestCase):
         self.assertEqual(await database_sync_to_async(self.lines)(),
                          ['We opened at nine.'])
 
+    async def test_the_language_is_taken_under_either_name(self):
+        """A device saying 'lang' is the common case.
+
+        Rejecting its lines over a spelling would not look like a
+        rejection: the transcript would simply come out in English all
+        afternoon, with nothing to say why.
+        """
+        comm, _ = await self.device()
+
+        await comm.send_json_to({
+            'event': 'final', 'text': 'नमस्ते', 'lang': 'ne-NP',
+        })
+        await comm.receive_json_from(timeout=2)
+        await comm.disconnect()
+
+        said = await database_sync_to_async(
+            lambda: TranscriptionSegment.objects.get(event=self.event).language
+        )()
+        self.assertEqual(said, 'ne-NP')
+
     async def test_a_line_is_filed_against_whatever_is_on_stage(self):
         comm, _ = await self.device()
 
