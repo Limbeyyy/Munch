@@ -991,6 +991,49 @@ class SessionViewSet(viewsets.ModelViewSet):
         logger.info(f"Summary published for session {session.id}")
         return Response(SessionSummarySerializer(summary).data)
 
+    @action(detail=True, methods=['post'], url_path='unpublish_summary')
+    def unpublish_summary(self, request, pk=None):
+        """Take a published summary back off. Host only.
+
+        The counterpart of publishing, and needed for the same reason
+        publishing is: a summary is what people quote afterwards. Noticing
+        a mistake in one that is already out left the host with nothing to
+        press - only editing it, which sends it back for approval as a
+        side effect of rewriting it. Withdrawing it should not require
+        changing a word.
+
+        What comes back is a draft, which is where it was before it went
+        out; the prose is left exactly as it was.
+        """
+        from src.apps.meetings.event_serializers import SessionSummarySerializer
+
+        session = self.get_object()
+        denied = self._require_host(session)
+        if denied:
+            return denied
+
+        summary = SessionSummary.objects.filter(session=session).first()
+        if summary is None:
+            return Response(
+                {'error': 'There is no summary for this session'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if not summary.is_published:
+            return Response(
+                {'error': 'This summary is not published'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        summary.status = SessionSummary.Status.NEEDS_APPROVAL
+        summary.published_at = None
+        summary.updated_by = request.user
+        summary.save(
+            update_fields=['status', 'published_at', 'updated_by', 'updated_at']
+        )
+
+        logger.info(f"Summary unpublished for session {session.id}")
+        return Response(SessionSummarySerializer(summary).data)
+
     @action(detail=True, methods=['get'])
     def attendance(self, request, pk=None):
         """Who was present for this session."""

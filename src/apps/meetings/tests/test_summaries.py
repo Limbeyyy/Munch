@@ -163,3 +163,84 @@ class SummaryTests(TestCase):
         outsider = signed_in(make_host('outsider@example.com'))
 
         self.assertEqual(outsider.get(self.url()).status_code, 404)
+
+
+class TakingASummaryBackTests(TestCase):
+    """Withdrawing one that has already gone out.
+
+    The counterpart of publishing. Noticing a mistake in a published
+    summary left the host with nothing to press: only editing it, which
+    sends it back for approval as a side effect of rewriting it.
+    Withdrawing it should not require changing a word.
+    """
+
+    def setUp(self):
+        self.host = make_host('host@example.com')
+        self.attendee = make_host('attendee@example.com')
+        past = timezone.now() - timezone.timedelta(hours=2)
+        self.event = make_event(self.host, start=past)
+        self.session = make_session(self.event, past, 60, 'Opening')
+        EventParticipant.objects.create(
+            event=self.event, user=self.attendee, role='attendee'
+        )
+        self.host_client = signed_in(self.host)
+        self.attendee_client = signed_in(self.attendee)
+
+    def url(self, tail='summary'):
+        return f'{API}/sessions/{self.session.id}/{tail}/'
+
+    def published(self):
+        self.host_client.put(
+            self.url(), {'body': 'Sixty-nine districts passed.'}, format='json'
+        )
+        self.host_client.post(self.url('publish_summary'))
+        return SessionSummary.objects.get(session=self.session)
+
+    def test_it_becomes_a_draft_again(self):
+        self.published()
+
+        got = self.host_client.post(self.url('unpublish_summary'))
+
+        self.assertEqual(got.status_code, 200)
+        summary = SessionSummary.objects.get(session=self.session)
+        self.assertFalse(summary.is_published)
+        self.assertIsNone(summary.published_at)
+
+    def test_the_words_are_left_alone(self):
+        """Withdrawing is not editing. Only its state changes."""
+        self.published()
+
+        self.host_client.post(self.url('unpublish_summary'))
+
+        summary = SessionSummary.objects.get(session=self.session)
+        self.assertEqual(summary.body, 'Sixty-nine districts passed.')
+
+    def test_an_attendee_can_no_longer_read_it(self):
+        self.published()
+        self.assertEqual(self.attendee_client.get(self.url()).status_code, 200)
+
+        self.host_client.post(self.url('unpublish_summary'))
+
+        self.assertEqual(self.attendee_client.get(self.url()).status_code, 404)
+
+    def test_nobody_but_the_host_may(self):
+        self.published()
+
+        got = self.attendee_client.post(self.url('unpublish_summary'))
+
+        self.assertEqual(got.status_code, 403)
+        self.assertTrue(
+            SessionSummary.objects.get(session=self.session).is_published
+        )
+
+    def test_one_that_was_never_published_says_so(self):
+        self.host_client.put(self.url(), {'body': 'A draft.'}, format='json')
+
+        got = self.host_client.post(self.url('unpublish_summary'))
+
+        self.assertEqual(got.status_code, 409)
+
+    def test_and_so_does_a_session_with_no_summary_at_all(self):
+        got = self.host_client.post(self.url('unpublish_summary'))
+
+        self.assertEqual(got.status_code, 404)
