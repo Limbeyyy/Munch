@@ -29,26 +29,45 @@ logger = logging.getLogger(__name__)
 class DeviceConsumer(AsyncWebsocketConsumer):
     """One capture device, streaming transcript lines for one event."""
 
+    #: Whether this connection was ever let in. A refused one still gets
+    #: a disconnect, and saying it "left" made a rejection read like a
+    #: device that had connected and gone away - which is the opposite of
+    #: what happened, and the only line in the log about it.
+    admitted = False
+
     async def connect(self):
         self.code = self.scope['url_route']['kwargs']['code']
 
         presented = self._presented_token()
         if not await self._may_speak(presented):
             # Refused before accepting, so an unauthorised device never
-            # holds a connection at all.
+            # holds a connection at all. Said out loud, and which of the
+            # two it was: a device operator can see neither the token the
+            # server holds nor whether one is configured at all, so
+            # "refused" without a reason is a morning of guessing.
+            logger.warning(
+                f"Capture device refused for {self.code}: "
+                + ('no token presented' if not presented
+                   else 'the token does not match TRANSCRIPTION_INGEST_TOKEN')
+            )
             await self.close(code=4401)
             return
 
         self.event_id = await self._event_id()
         if self.event_id is None:
+            logger.warning(
+                f"Capture device refused: no event with the code {self.code}"
+            )
             await self.close(code=4404)
             return
 
+        self.admitted = True
         await self.accept()
         logger.info(f"Capture device connected for {self.code}")
 
     async def disconnect(self, close_code):
-        logger.info(f"Capture device left {self.code}")
+        if self.admitted:
+            logger.info(f"Capture device left {self.code}")
 
     async def receive(self, text_data=None, bytes_data=None):
         """Take one line, or say why it was not taken.
