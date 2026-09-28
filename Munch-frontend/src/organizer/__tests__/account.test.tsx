@@ -6,7 +6,6 @@ import { SubscriptionView } from '../SubscriptionView';
 import { AppearanceView } from '../AppearanceView';
 import { RemindersView } from '../RemindersView';
 import { useNudges } from '../nudges';
-import { ATTENDEE_NAV } from '../../attendee/AttendeeShell';
 import { NAV } from '../OrganizerShell';
 import { apiClient } from '../../services/api';
 
@@ -712,19 +711,15 @@ describe('both portals can reach the new pages', () => {
     expect(ids).toEqual(expect.arrayContaining(['profile', 'subscription', 'reminders']));
   });
 
-  it('carries them in the attendee rail', () => {
-    const ids = ATTENDEE_NAV.map((n) => n.id);
-    expect(ids).toEqual(expect.arrayContaining(['profile', 'subscription', 'reminders']));
-  });
-
-  it('leaves nothing unreachable on a phone', () => {
-    // The rail is hidden at phone width, so anything kept out of the
-    // bottom strip could not be opened at all. The strip scrolls instead.
-    const ids = ATTENDEE_NAV.map((n) => n.id);
-    expect(ids).toContain('reminders');
-    expect(ids).toContain('subscription');
-    expect(ids).toContain('profile');
-  });
+  /**
+   * The attendee side no longer has a rail to carry them.
+   *
+   * It is a phone app now, with five things along the bottom: the
+   * transcript, the running order, the board, the files and who you
+   * are. Subscription and reminders were on the old rail and are not on
+   * the new strip - an attendee was never billed for anything, and the
+   * design gives the five.
+   */
 });
 
 /**

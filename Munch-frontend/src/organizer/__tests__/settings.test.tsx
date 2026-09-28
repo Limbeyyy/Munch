@@ -2,7 +2,6 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { OrganizerProvider } from '../i18n';
 import { SettingsView } from '../views/SettingsView';
-import { HubView } from '../../attendee/views/HubView';
 import { apiClient } from '../../services/api';
 
 jest.mock('../../services/api', () => ({
