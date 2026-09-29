@@ -25,7 +25,8 @@ const runningFor = (from: string | null | undefined): string => {
 export const TranscriptScreen: React.FC<{
   event: Event;
   live: Session | null;
-}> = ({ event, live }) => {
+  onLeave?: () => void;
+}> = ({ event, live, onLeave }) => {
   const { t } = useOrganizer();
   const [lines, setLines] = useState<TranscriptionSegment[]>([]);
   const [following, setFollowing] = useState(true);
@@ -75,49 +76,86 @@ export const TranscriptScreen: React.FC<{
   return (
     <div className="flex flex-col h-[calc(100dvh-76px)]">
       <header
-        className="bg-[#12386e] text-white px-4 py-3 flex items-center gap-3"
-        style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}
+        className="bg-[#12386e] text-white px-6 py-2 flex items-center gap-3
+          border-b-[0.612px] border-[#e5e7eb]"
+        style={{ paddingTop: 'max(8px, env(safe-area-inset-top))' }}
       >
-        <div className="min-w-0 flex-1">
-          <p className="text-[15px] font-semibold truncate">{event.title}</p>
-          <p className="text-[11px] text-white/70">
-            {t({ ne: 'प्रत्यक्ष ट्रान्सक्रिप्ट', en: 'Live transcription' })}
-          </p>
+        <div className="min-w-0 flex-1 flex flex-col gap-1.5 items-start">
+          <div className="min-w-0 w-full">
+            <p className="text-[14px] font-semibold leading-[17.5px] truncate">
+              {event.title}
+            </p>
+            <p className="text-[12px] leading-4 text-[#efefef]">
+              {t({ ne: 'प्रत्यक्ष श्रुतिलेखन', en: 'Live transcription' })}
+            </p>
+          </div>
+
+          {event.status === 'active' && (
+            <span className="bg-[#fef2f2] rounded-full px-3 py-1.5 flex items-center
+              gap-2 flex-none">
+              <span className="bg-[#fb2c36] opacity-[.64] rounded-full size-2"
+                aria-hidden />
+              <span className="text-[12px] font-semibold leading-4 tracking-[0.3px]
+                text-[#e7000b]">
+                {t({ ne: 'प्रत्यक्ष', en: 'LIVE' })}
+              </span>
+              <span className="text-[12px] leading-4 text-[#fb2c36] tabular-nums">
+                {runningFor(event.started_at) || String(tick).slice(0, 0)}
+              </span>
+            </span>
+          )}
         </div>
-        {event.status === 'active' && (
-          <span className="bg-white rounded-full px-2.5 py-1 flex items-center gap-1.5
-            flex-none">
-            <span className="bg-[#e12121] rounded-full size-1.5" aria-hidden />
-            <span className="text-[11px] font-semibold text-[#e12121]">
-              {t({ ne: 'प्रत्यक्ष', en: 'LIVE' })}
-            </span>
-            <span className="text-[11px] text-[#111726] tabular-nums">
-              {runningFor(event.started_at) || String(tick).slice(0, 0)}
-            </span>
-          </span>
+
+        {onLeave && (
+          <button
+            type="button"
+            onClick={onLeave}
+            className="flex-none bg-white border border-[#12386e] rounded-[12px]
+              px-2 py-1 flex items-center gap-1 text-[14px] text-[#f75656]
+              tracking-[-0.07px]"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
+              strokeLinejoin="round" aria-hidden>
+              <path d="M14 20H6a2 2 0 01-2-2V6a2 2 0 012-2h8M18 16l4-4-4-4M22 12H10" />
+            </svg>
+            {t({ ne: 'बाहिर', en: 'Leave' })}
+          </button>
         )}
       </header>
 
-      <div className="px-4 py-2.5 border-b border-[#eceef2] flex items-center gap-3
-        text-[11px]">
-        <span className="uppercase tracking-[.06em] text-[#8b90a0]">
+      <div className="bg-white px-5 py-3 border-b-[0.612px] border-[#f3f4f6]
+        flex items-center gap-2
+        drop-shadow-[0px_4px_3px_rgba(0,0,0,0.1),0px_2px_2px_rgba(0,0,0,0.05)]">
+        <span className="flex-none text-[12px] font-medium leading-4 uppercase
+          text-[#99a1af]">
           {t({ ne: 'अहिलेको', en: 'Current agenda' })}
         </span>
-        <span className="w-px h-3 bg-[#e2e5ea]" aria-hidden />
-        <span className="flex-1 min-w-0 text-[13px] font-medium text-[#111726] truncate">
+        <span className="w-px h-4 bg-[#e5e7eb] flex-none" aria-hidden />
+        <span className="flex-1 min-w-0 text-[14px] font-medium leading-5
+          text-[#1e2939] truncate">
           {live?.title ?? t({ ne: 'केही चलिरहेको छैन', en: 'Nothing on stage' })}
         </span>
         {live && (
-          <span className="text-[#8b90a0] tabular-nums">{clock(live.starts_at)}</span>
+          <>
+            <span className="w-px h-4 bg-[#e5e7eb] flex-none" aria-hidden />
+            <span className="flex-none text-[12px] leading-4 text-[#99a1af]
+              tabular-nums">
+              {clock(live.starts_at)}
+            </span>
+          </>
         )}
       </div>
 
-      <div className="px-4 py-2 flex items-center gap-2 text-[11px]">
-        <span className="uppercase tracking-[.06em] text-[#8b90a0]">
-          {t({ ne: 'प्रत्यक्ष ट्रान्सक्रिप्ट', en: 'Live transcript' })}
+      <div className="px-5 pt-3 flex items-center gap-2">
+        <span className="text-[12px] font-semibold leading-4 uppercase
+          tracking-[1.2px] text-[#99a1af]">
+          {t({ ne: 'प्रत्यक्ष श्रुतिलेखन', en: 'Live transcript' })}
         </span>
-        <span className="flex items-center gap-1 text-[#1a9f54]">
-          <span className="bg-[#1a9f54] rounded-full size-1.5" aria-hidden />
+        <span className="flex items-center gap-1 text-[12px] leading-4
+          text-[#00a63e]">
+          <span className="bg-[#00c950] opacity-[.64] rounded-full size-1.5"
+            aria-hidden />
           {t({ ne: 'चालु', en: 'Active' })}
         </span>
       </div>
@@ -125,7 +163,7 @@ export const TranscriptScreen: React.FC<{
       <div
         ref={scroller}
         onScroll={onScroll}
-        className="flex-1 overflow-y-auto px-4 pb-4"
+        className="flex-1 overflow-y-auto px-5 pb-4"
       >
         {lines.length === 0 ? (
           <p className="pt-10 text-center text-[13px] text-[#8b90a0]">
@@ -135,23 +173,43 @@ export const TranscriptScreen: React.FC<{
             })}
           </p>
         ) : (
-          lines.map((line, i) => (
-            <div key={`${line.created_at ?? ''}-${i}`} className="pt-3">
-              {line.created_at && (
-                <p className="text-[11px] text-[#9ba0ad] tabular-nums">
-                  {clock(line.created_at)}
+          lines.map((line, i) => {
+            // The last line is what is being said now, which is worth
+            // marking: a reader glancing down wants to know where the
+            // room has got to, not only what it said.
+            const now = i === lines.length - 1 && event.status === 'active';
+            return (
+              <div key={`${line.created_at ?? ''}-${i}`} className="pt-6"
+                data-transcript-line>
+                {line.created_at && (
+                  <p className="text-[12px] leading-4 text-[#99a1af] tabular-nums">
+                    {clock(line.created_at)}
+                  </p>
+                )}
+                <div className="pt-1 flex items-center gap-2">
+                  {line.speaker_name && (
+                    <p className="flex-1 min-w-0 text-[14px] font-semibold
+                      leading-5 text-[#101828]">
+                      {line.speaker_name}
+                    </p>
+                  )}
+                  {now && (
+                    <span className="bg-[#eff6ff] rounded-full px-2 py-0.5 flex-none
+                      flex items-center gap-1 text-[12px] leading-4 text-[#155dfc]">
+                      <span className="bg-[#2b7fff] opacity-[.62] rounded-full
+                        w-3 h-1.5" aria-hidden />
+                      {t({ ne: 'बोल्दै', en: 'Speaking' })}
+                    </span>
+                  )}
+                </div>
+                <p className={`pt-1 text-[14px] leading-[22.75px] ${
+                  now ? 'text-[#101828]' : 'text-[#364153]'
+                }`}>
+                  {line.text}
                 </p>
-              )}
-              {line.speaker_name && (
-                <p className="text-[14px] font-semibold text-[#111726]">
-                  {line.speaker_name}
-                </p>
-              )}
-              <p className="pt-0.5 text-[14px] leading-6 text-[#2b3140]">
-                {line.text}
-              </p>
-            </div>
-          ))
+              </div>
+            );
+          })
         )}
         <div ref={foot} />
       </div>
@@ -160,9 +218,10 @@ export const TranscriptScreen: React.FC<{
         <button
           type="button"
           onClick={catchUp}
-          className="absolute left-1/2 -translate-x-1/2 bottom-[92px] bg-[#111726]
+          className="absolute left-1/2 -translate-x-1/2 bottom-[92px] bg-[#101828]
             text-white rounded-full px-4 py-2 flex items-center gap-1.5
-            text-[13px] font-medium shadow-lg"
+            text-[12px] font-medium
+            drop-shadow-[0px_10px_7.5px_rgba(0,0,0,0.1),0px_4px_3px_rgba(0,0,0,0.1)]"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"

@@ -125,6 +125,61 @@ describe('the way in', () => {
   });
 });
 
+describe('home', () => {
+  /**
+   * Live is its own section, not the top of Upcoming: the answer to
+   * something happening now is "go in", not "read about it later".
+   */
+  it('keeps what is running apart from what is coming', async () => {
+    api.listEvents.mockResolvedValue([
+      event({ id: 'e1', title: 'Coming Up' }),
+      event({ id: 'e2', title: 'Running Now', status: 'active' }),
+      event({ id: 'e3', title: 'All Over', status: 'ended' }),
+    ] as any);
+
+    show();
+
+    const now = (await screen.findByRole('heading', { name: 'Live' }))
+      .closest('section')!;
+    expect(within(now).getByText('Running Now')).toBeInTheDocument();
+    expect(within(now).queryByText('Coming Up')).toBeNull();
+
+    const soon = screen.getByRole('heading', { name: 'Upcoming' })
+      .closest('section')!;
+    expect(within(soon).getByText('Coming Up')).toBeInTheDocument();
+
+    const past = screen.getByRole('heading', { name: 'Recently attended' })
+      .closest('section')!;
+    expect(within(past).getByText('All Over')).toBeInTheDocument();
+  });
+
+  it('says nothing about Live where nothing is running', async () => {
+    show();
+    await screen.findByRole('heading', { name: 'Upcoming' });
+    expect(screen.queryByRole('heading', { name: 'Live' })).toBeNull();
+  });
+
+  /** A running event offers the room, not a page about the room. */
+  it('offers the room straight from a running event', async () => {
+    api.listEvents.mockResolvedValue([
+      event({ id: 'e2', title: 'Running Now', status: 'active' }),
+    ] as any);
+
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: /Join Live/ }));
+
+    expect(
+      await screen.findByRole('button', { name: /Transcript/ })
+    ).toBeInTheDocument();
+  });
+
+  it('offers no Join Live on something still to come', async () => {
+    show();
+    await screen.findByText('Emergency Service Meeting');
+    expect(screen.queryByRole('button', { name: /Join Live/ })).toBeNull();
+  });
+});
+
 describe('the events list', () => {
   it('sorts them onto the deck they belong to', async () => {
     api.listEvents.mockResolvedValue([
@@ -327,7 +382,8 @@ describe('one event, opened', () => {
       await screen.findByRole('button', { name: /Transcript/ })
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /Leave room/ }));
+    // The transcript carries the way out in its own header now.
+    fireEvent.click(screen.getByRole('button', { name: /^Leave/ }));
     expect(
       await screen.findByRole('navigation', { name: 'Sections' })
     ).toBeInTheDocument();

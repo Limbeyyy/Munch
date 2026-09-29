@@ -2,7 +2,9 @@ import React, { useMemo } from 'react';
 import { Event } from '../../types';
 import { useAuthStore } from '../../store/authStore';
 import { useOrganizer } from '../../organizer/i18n';
-import { EventCard } from './EventCard';
+import {
+  CompletedEventCard, LiveEventCard, UpcomingEventCard,
+} from './EventCard';
 import { stateOf } from './HomeShell';
 
 /** The first name, which is what a greeting uses. */
@@ -23,47 +25,70 @@ const greeting = (t: (pair: { ne: string; en: string }) => string) => {
   return t({ ne: 'शुभ सन्ध्या,', en: 'Good evening,' });
 };
 
+const Head: React.FC<{
+  title: string;
+  action?: { label: string; onGo: () => void };
+}> = ({ title, action }) => (
+  <div className="flex items-center justify-between gap-3">
+    <h2 className="text-[13px] font-bold uppercase tracking-[0.78px]
+      leading-[19.5px] text-[#64748b]">
+      {title}
+    </h2>
+    {action && (
+      <button
+        type="button"
+        onClick={action.onGo}
+        className="text-[13px] font-semibold leading-[19.5px] text-[#2563eb]"
+      >
+        {action.label}
+      </button>
+    )}
+  </div>
+);
+
 /**
  * Where somebody lands after signing in.
  *
- * Two questions, in the order they are asked: what is coming, and what
- * was I at. Anything running is put at the top of the first, because a
- * person opening this while an event is on is opening it for that.
+ * Three questions in the order they get asked: is anything on now,
+ * what is coming, and what was I at. Live is its own section rather
+ * than the top of Upcoming, because the answer to it is not "read
+ * about this later" but "go in".
  */
 export const HomeScreen: React.FC<{
   events: Event[];
   onOpen: (event: Event) => void;
   onSeeAll: () => void;
-}> = ({ events, onOpen, onSeeAll }) => {
+  onJoinLive?: (event: Event) => void;
+}> = ({ events, onOpen, onSeeAll, onJoinLive }) => {
   const { t } = useOrganizer();
   const { user } = useAuthStore();
 
-  const { ahead, behind } = useMemo(() => {
+  const { live, ahead, behind } = useMemo(() => {
     const byStart = (a: Event, b: Event) =>
       +new Date(a.scheduled_start) - +new Date(b.scheduled_start);
 
-    const live = events.filter((one) => stateOf(one) === 'live').sort(byStart);
-    const upcoming = events
-      .filter((one) => stateOf(one) === 'upcoming')
-      .sort(byStart);
-    const done = events
-      .filter((one) => stateOf(one) === 'completed')
-      .sort((a, b) => -byStart(a, b));
-
-    return { ahead: [...live, ...upcoming], behind: done };
+    return {
+      live: events.filter((one) => stateOf(one) === 'live').sort(byStart),
+      ahead: events.filter((one) => stateOf(one) === 'upcoming').sort(byStart),
+      behind: events
+        .filter((one) => stateOf(one) === 'completed')
+        .sort((a, b) => -byStart(a, b)),
+    };
   }, [events]);
 
   return (
-    <div className="pb-4">
+    <div className="bg-white">
       <div
-        className="mx-4 mt-3 rounded-[14px] bg-[#12386e] text-white px-5 py-5"
+        className="mx-4 rounded-[18px] bg-[#12386e] text-white px-4 py-3"
         style={{ marginTop: 'max(12px, env(safe-area-inset-top))' }}
       >
-        <p className="text-[13px] text-white/80">{greeting(t)}</p>
-        <p className="pt-0.5 text-[24px] font-semibold leading-tight">
+        <p className="text-[13px] leading-[19.5px] text-[#f3f3f3]">
+          {greeting(t)}
+        </p>
+        <p className="pt-0.5 text-[26px] font-extrabold leading-[31.2px]">
           {firstName(user) || t({ ne: 'नमस्ते', en: 'Hello' })} 👋
         </p>
-        <p className="pt-1.5 text-[13px] text-white/80">
+        <p className="pt-1 text-[14px] leading-[21px]">
           {t({
             ne: 'आफ्ना कार्यक्रमको जानकारी यहीँ।',
             en: 'Stay up to date with your events.',
@@ -71,55 +96,68 @@ export const HomeScreen: React.FC<{
         </p>
       </div>
 
-      <section className="pt-5">
-        <h2 className="px-4 text-[12px] font-semibold tracking-[.08em]
-          text-[#8b90a0] uppercase">
-          {t({ ne: 'आउँदै', en: 'Upcoming' })}
-        </h2>
-        {ahead.length === 0 ? (
-          <p className="px-4 pt-3 text-[13px] text-[#8b90a0]">
-            {t({ ne: 'आउँदो कार्यक्रम छैन।', en: 'Nothing coming up.' })}
-          </p>
-        ) : (
-          <div className="px-4 pt-3 flex flex-col gap-3">
-            {ahead.slice(0, 2).map((one) => (
-              <EventCard key={one.id} event={one} onOpen={() => onOpen(one)} />
-            ))}
-          </div>
+      <div className="px-4 pt-6 pb-6 flex flex-col gap-6">
+        {live.length > 0 && (
+          <section>
+            <Head title={t({ ne: 'प्रत्यक्ष', en: 'Live' })} />
+            <div className="pt-3 flex flex-col gap-3">
+              {live.map((one) => (
+                <LiveEventCard
+                  key={one.id}
+                  event={one}
+                  onJoin={() => (onJoinLive ?? onOpen)(one)}
+                />
+              ))}
+            </div>
+          </section>
         )}
-      </section>
 
-      <section className="pt-6">
-        <div className="px-4 flex items-baseline gap-3">
-          <h2 className="flex-1 text-[12px] font-semibold tracking-[.08em]
-            text-[#8b90a0] uppercase">
-            {t({ ne: 'भर्खरै सहभागी', en: 'Recently attended' })}
-          </h2>
-          {behind.length > 0 && (
-            <button
-              type="button"
-              onClick={onSeeAll}
-              className="text-[13px] font-medium text-[#2440c9]"
-            >
-              {t({ ne: 'सबै हेर्नुहोस्', en: 'View all' })}
-            </button>
+        <section>
+          <Head title={t({ ne: 'आउँदै', en: 'Upcoming' })} />
+          {ahead.length === 0 ? (
+            <p className="pt-3 text-[13px] text-[#94a3b8]">
+              {t({ ne: 'आउँदो कार्यक्रम छैन।', en: 'Nothing coming up.' })}
+            </p>
+          ) : (
+            <div className="pt-3 flex flex-col gap-3">
+              {ahead.slice(0, 2).map((one) => (
+                <UpcomingEventCard
+                  key={one.id}
+                  event={one}
+                  onOpen={() => onOpen(one)}
+                />
+              ))}
+            </div>
           )}
-        </div>
-        {behind.length === 0 ? (
-          <p className="px-4 pt-3 text-[13px] text-[#8b90a0]">
-            {t({
-              ne: 'तपाईं अझै कुनै कार्यक्रममा हुनुभएको छैन।',
-              en: 'You have not been to one yet.',
-            })}
-          </p>
-        ) : (
-          <div className="px-4 pt-3 flex flex-col gap-3">
-            {behind.slice(0, 3).map((one) => (
-              <EventCard key={one.id} event={one} onOpen={() => onOpen(one)} />
-            ))}
-          </div>
-        )}
-      </section>
+        </section>
+
+        <section>
+          <Head
+            title={t({ ne: 'भर्खरै सहभागी', en: 'Recently attended' })}
+            action={behind.length > 0
+              ? { label: t({ ne: 'सबै हेर्नुहोस्', en: 'View all' }), onGo: onSeeAll }
+              : undefined}
+          />
+          {behind.length === 0 ? (
+            <p className="pt-3 text-[13px] text-[#94a3b8]">
+              {t({
+                ne: 'तपाईं अझै कुनै कार्यक्रममा हुनुभएको छैन।',
+                en: 'You have not been to one yet.',
+              })}
+            </p>
+          ) : (
+            <div className="pt-3 flex flex-col gap-3">
+              {behind.slice(0, 3).map((one) => (
+                <CompletedEventCard
+                  key={one.id}
+                  event={one}
+                  onOpen={() => onOpen(one)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 };

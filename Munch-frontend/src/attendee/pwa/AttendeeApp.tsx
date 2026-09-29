@@ -92,6 +92,7 @@ export const AttendeeApp: React.FC = () => {
               events={events}
               onOpen={(one) => setOpenId(one.id)}
               onSeeAll={() => setAt('events')}
+              onJoinLive={() => setInRoom(true)}
             />
           )}
           {at === 'events' && (
