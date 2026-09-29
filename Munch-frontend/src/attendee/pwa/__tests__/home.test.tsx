@@ -11,6 +11,7 @@ jest.mock('../../../services/api', () => ({
     getSubEvents: jest.fn(),
     getResources: jest.fn(),
     getHub: jest.fn(),
+    voteHubPost: jest.fn(),
     getSessionSummary: jest.fn(),
     getReminders: jest.fn(),
     markRemindersRead: jest.fn(),
@@ -55,6 +56,15 @@ const session = (over: any = {}) => ({
   ...over,
 }) as any;
 
+const question = (over: any = {}) => ({
+  id: 'h1', kind: 'question', body: 'Why the delay?', category: '',
+  status: 'published', anonymous: false, author: 'Suman',
+  author_is_guest: false, mine: false, session_id: 's1', session_title: null,
+  score: 31, my_vote: 0, answer: '', answered_by: '',
+  created_at: '2026-10-15T05:00:00Z',
+  ...over,
+}) as any;
+
 beforeEach(() => {
   jest.clearAllMocks();
   window.localStorage.clear();
@@ -72,6 +82,9 @@ beforeEach(() => {
     event_lead_minutes: 60, session_lead_minutes: 10,
   } as any);
   api.markRemindersRead.mockResolvedValue({} as any);
+  api.voteHubPost.mockImplementation(async (_code, id) => ({
+    ...question({ id }), score: 32, my_vote: 1,
+  }) as any);
 });
 
 const show = () =>
@@ -214,11 +227,10 @@ describe('one event, opened', () => {
 
   it('keeps questions and suggestions apart', async () => {
     api.getHub.mockResolvedValue({
-      questions: [{ id: 'h1', kind: 'question', body: 'Why the delay?',
-        session_id: 's1', status: 'published' }],
+      questions: [question()],
       ideas: [],
-      suggestions: [{ id: 'h2', kind: 'suggestion', body: 'More signage.',
-        session_id: 's1', status: 'published' }],
+      suggestions: [question({ id: 'h2', kind: 'suggestion',
+        body: 'More signage.' })],
     } as any);
 
     await openIt();
@@ -229,6 +241,72 @@ describe('one event, opened', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Suggestions' }));
     expect(await screen.findByText('More signage.')).toBeInTheDocument();
     expect(screen.queryByText('Why the delay?')).toBeNull();
+  });
+
+  /**
+   * A popular talk collects thirty questions, and the point of
+   * grouping them under their talk is lost if one talk fills the
+   * screen.
+   */
+  it('folds a long thread down to two, and opens it', async () => {
+    api.getHub.mockResolvedValue({
+      questions: [
+        question({ id: 'h1', body: 'First asked.' }),
+        question({ id: 'h2', body: 'Second asked.' }),
+        question({ id: 'h3', body: 'Third asked.' }),
+      ],
+      ideas: [], suggestions: [],
+    } as any);
+
+    await openIt();
+    fireEvent.click(screen.getByRole('tab', { name: 'Questions' }));
+
+    expect(await screen.findByText('Second asked.')).toBeInTheDocument();
+    expect(screen.queryByText('Third asked.')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'view 1 more question' }));
+    expect(screen.getByText('Third asked.')).toBeInTheDocument();
+  });
+
+  it('carries a vote on a question but none on a suggestion', async () => {
+    api.getHub.mockResolvedValue({
+      questions: [question()],
+      ideas: [],
+      suggestions: [question({ id: 'h2', kind: 'suggestion',
+        body: 'More signage.' })],
+    } as any);
+
+    await openIt();
+    fireEvent.click(screen.getByRole('tab', { name: 'Questions' }));
+
+    const up = await screen.findByRole('button', { name: 'Vote up' });
+    expect(up).toHaveTextContent('31');
+    fireEvent.click(up);
+    await waitFor(() => expect(api.voteHubPost)
+      .toHaveBeenCalledWith('ABC-123', 'h1', 1));
+    await waitFor(() => expect(
+      screen.getByRole('button', { name: 'Vote up' })
+    ).toHaveTextContent('32'));
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Suggestions' }));
+    expect(await screen.findByText('More signage.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Vote up' })).toBeNull();
+  });
+
+  it('offers a file to take away, with what it is', async () => {
+    api.getResources.mockResolvedValue([
+      { id: 'a1', session: 's1', display_name: 'Deck.pdf', file_size: 4404019,
+        web_view_link: 'https://example.test/deck' },
+    ] as any);
+
+    await openIt();
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+
+    expect(await screen.findByText('Deck.pdf')).toBeInTheDocument();
+    expect(screen.getByText(/^PDF · /)).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Download Deck.pdf' })
+    ).toHaveAttribute('href', 'https://example.test/deck');
   });
 
   /** A room is only worth offering while there is one. */
