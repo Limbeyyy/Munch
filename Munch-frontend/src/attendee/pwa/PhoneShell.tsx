@@ -71,12 +71,32 @@ export const PhoneShell: React.FC<{
   onGo: (to: Section) => void;
   /** Unread counts against the tabs that carry them. */
   pips?: Partial<Record<Section, number>>;
+  /** Given when there is somewhere to go back out to. */
+  onLeave?: () => void;
   children: React.ReactNode;
-}> = ({ at, onGo, pips = {}, children }) => {
+}> = ({ at, onGo, pips = {}, onLeave, children }) => {
   const { t } = useOrganizer();
 
   return (
     <div className="min-h-[100dvh] bg-white flex flex-col">
+      {/* The way back out. Somebody who opened the room from their
+          events should not have to close the app to get back to them. */}
+      {onLeave && (
+        <button
+          type="button"
+          onClick={onLeave}
+          className="flex items-center gap-1.5 px-4 pb-1 text-[13px] text-[#5b6070]"
+          style={{ paddingTop: 'max(10px, env(safe-area-inset-top))' }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+            strokeLinejoin="round" aria-hidden>
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+          {t({ ne: 'कोठाबाट बाहिर', en: 'Leave room' })}
+        </button>
+      )}
+
       {/* Padded for the bar, so the last line of anything scrollable is
           readable rather than sitting behind it. */}
       <main className="flex-1 pb-[76px]">{children}</main>

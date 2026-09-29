@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
-import { User, Event, AuthTokens, Transcript, TranscriptSummary, Artifact, Recording, Organization, Team, OrganizationMember, OrganizationInvite, SubscriptionData, Invoice, PaymentMethod, DriveFile, DriveSyncStatus, OrganizationAnalytics, ChatSettings, ChatMessage, EventParticipant, GuestAttendee, GuestSession, EventInviteList, AttendanceReport, ChatPerson, GuestResource, TranscriptionSegment, EventDraft, Session, SessionDraft, SessionAttendanceRow, SpeakerContact, ContactRequestRow, UserRoles, ProfileSummary, ReminderPage, EventPhoto, PhotoFolder, PhotoPage, ConclusionAction, ConclusionPage, SchedulingPrefs, SheetExport, UpgradeRequestRow, ResourceVisibility, HubBoard, HubKind, HubPost, SessionSummary, EventBoard, MessageTopic, ModerationQueue, ProgrammeRoles, Speaker, SpeakerDraft, RoleGrantRow, RoleScope } from '../types';
+import { User, Event, AuthTokens, Transcript, TranscriptSummary, Artifact, Recording, Organization, Team, OrganizationMember, OrganizationInvite, SubscriptionData, Invoice, PaymentMethod, DriveFile, DriveSyncStatus, OrganizationAnalytics, ChatSettings, ChatMessage, EventParticipant, GuestAttendee, GuestSession, EventInviteList, AttendanceReport, ChatPerson, GuestResource, TranscriptionSegment, EventDraft, Session, SessionDraft, SessionAttendanceRow, SpeakerContact, ContactRequestRow, UserRoles, ProfileSummary, ReminderPage, EventPhoto, PhotoFolder, PhotoPage, ConclusionAction, ConclusionPage, SchedulingPrefs, SheetExport, UpgradeRequestRow, ResourceVisibility, HubBoard, HubKind, HubPost, SessionSummary, EventBoard, MessageTopic, ModerationQueue, ProgrammeRoles, Speaker, SpeakerDraft, SubEvent, RoleGrantRow, RoleScope } from '../types';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
 const PAYMENT_API_ROOT = API_BASE_URL.replace(/\/api\/v1\/?$/, '');
@@ -419,6 +419,40 @@ class ApiClient {
   async getUpgradeRequests(): Promise<{ requests: UpgradeRequestRow[] }> {
     const response = await this.client.get('/users/upgrade/');
     return response.data;
+  }
+
+  // -- The named parts of one programme ---------------------------------
+
+  /** The groups this event's running order is read in. */
+  async getSubEvents(eventId: string): Promise<SubEvent[]> {
+    const response = await this.client.get(`/events/${eventId}/sub_events/`);
+    const body = response.data;
+    return Array.isArray(body) ? body : (body?.results ?? []);
+  }
+
+  async createSubEvent(
+    eventId: string,
+    group: { title: string; description?: string; session_ids?: string[] }
+  ): Promise<SubEvent> {
+    const response = await this.client.post(
+      `/events/${eventId}/sub_events/`, group
+    );
+    return response.data;
+  }
+
+  async updateSubEvent(
+    eventId: string,
+    groupId: string,
+    group: { title?: string; description?: string; session_ids?: string[] }
+  ): Promise<SubEvent> {
+    const response = await this.client.patch(
+      `/events/${eventId}/sub_events/${groupId}/`, group
+    );
+    return response.data;
+  }
+
+  async deleteSubEvent(eventId: string, groupId: string): Promise<void> {
+    await this.client.delete(`/events/${eventId}/sub_events/${groupId}/`);
   }
 
   // -- Speakers of one event -------------------------------------------

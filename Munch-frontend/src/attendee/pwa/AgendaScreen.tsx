@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../../services/api';
-import { Event, Session, SessionSummary } from '../../types';
+import { Artifact, Event, Session, SessionSummary, SubEvent } from '../../types';
 import { useOrganizer } from '../../organizer/i18n';
 import { daysOf } from '../../organizer/events/days';
 import { ScreenHead } from './PhoneShell';
+import { Grouped, groupSessions } from './grouping';
 
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -12,11 +13,6 @@ const dayKey = (at: Date) => {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
 };
-
-const longDay = (key: string) =>
-  new Date(`${key}T00:00:00`).toLocaleDateString(undefined, {
-    day: 'numeric', month: 'short', year: 'numeric',
-  }).toUpperCase();
 
 /**
  * One talk, read rather than run.
@@ -160,10 +156,54 @@ const AgendaDetail: React.FC<{
 };
 
 /**
- * The running order, a day at a time.
+ * Where a talk has got to, as the cards label it.
  *
- * Down the left is when, because that is what somebody in a hall is
- * looking for: the next thing, and how long until it.
+ * Read off the talk itself rather than off the room, because the list
+ * shows the whole day and only one of them is the room.
+ */
+type Where = 'completed' | 'live' | 'upcoming';
+
+const whereOf = (one: Session): Where => {
+  if (one.status === 'live') return 'live';
+  if (one.status === 'done' || one.status === 'skipped') return 'completed';
+  return 'upcoming';
+};
+
+const WhereChip: React.FC<{ where: Where }> = ({ where }) => {
+  const { t } = useOrganizer();
+  const ink = {
+    completed: '#018030',
+    live: '#bc1c1c',
+    upcoming: '#4272dd',
+  }[where];
+  const label = {
+    completed: t({ ne: 'सकियो', en: 'Completed' }),
+    live: t({ ne: 'प्रत्यक्ष', en: 'Live' }),
+    upcoming: t({ ne: 'आउँदै', en: 'Upcoming' }),
+  }[where];
+
+  return (
+    <span
+      className="bg-[#efefef] rounded-full px-2.5 py-1 flex items-center gap-1.5
+        flex-none text-[11px] font-semibold whitespace-nowrap"
+      style={{ color: ink }}
+    >
+      <span className="rounded-full size-[6px] flex-none"
+        style={{ backgroundColor: ink }} aria-hidden />
+      {label}
+    </span>
+  );
+};
+
+/**
+ * The running order, grouped under the parts of the day it was
+ * arranged into.
+ *
+ * A programme read straight through is a list of thirty talks; read
+ * under its headings it is three subjects, and somebody looking for
+ * the emergency track finds it without reading the other two. The
+ * headings are the host's own - what they called each part when they
+ * grouped it - so this screen says nothing the programme does not.
  */
 export const AgendaScreen: React.FC<{
   event: Event;
@@ -173,15 +213,42 @@ export const AgendaScreen: React.FC<{
   const { t, num } = useOrganizer();
   const [opened, setOpened] = useState<string>('');
   const [day, setDay] = useState('');
+  const [groups, setGroups] = useState<SubEvent[]>([]);
+  const [files, setFiles] = useState<Artifact[]>([]);
+  const [asked, setAsked] = useState<Record<string, number>>({});
+
+  const read = useCallback(async () => {
+    const [parts, shared, hub] = await Promise.all([
+      apiClient.getSubEvents(event.id).catch(() => [] as SubEvent[]),
+      apiClient.getResources(event.id).catch(() => [] as Artifact[]),
+      apiClient.getHub(event.code).catch(() => null),
+    ]);
+    setGroups(parts);
+    setFiles(shared);
+    const tally: Record<string, number> = {};
+    (hub?.questions ?? []).forEach((post) => {
+      if (post.session_id) tally[post.session_id] = (tally[post.session_id] ?? 0) + 1;
+    });
+    setAsked(tally);
+  }, [event.id, event.code]);
+
+  useEffect(() => { read(); }, [read]);
 
   const days = useMemo(() => daysOf(event), [event]);
   const onDay = day && days.includes(day) ? day : (days[0] ?? '');
 
-  const shown = useMemo(
-    () => [...sessions]
-      .filter((one) => days.length <= 1 || dayKey(new Date(one.starts_at)) === onDay)
-      .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at)),
+  const onThisDay = useMemo(
+    () => sessions.filter(
+      (one) => days.length <= 1 || dayKey(new Date(one.starts_at)) === onDay
+    ),
     [sessions, days.length, onDay]
+  );
+
+  const grouped: Grouped[] = useMemo(
+    () => groupSessions(
+      onThisDay, groups, t({ ne: 'बाँकी', en: 'Everything else' })
+    ),
+    [onThisDay, groups, t]
   );
 
   const open = sessions.find((one) => one.id === opened);
@@ -197,97 +264,100 @@ export const AgendaScreen: React.FC<{
   }
 
   return (
-    <div>
+    <div className="bg-[#d6e4f8] min-h-full">
       <ScreenHead
         title={t({ ne: 'कार्यसूची', en: 'Agenda' })}
         under={event.title}
       />
 
-      {days.length > 1 && (
-        <div className="px-4 pt-3">
-          <label className="sr-only" htmlFor="manch-pwa-day">
-            {t({ ne: 'दिन', en: 'Day' })}
-          </label>
-          <select
-            id="manch-pwa-day"
-            value={onDay}
-            onChange={(e) => setDay(e.target.value)}
-            className="bg-[#2440c9] text-white rounded-[10px] px-3 py-2
-              text-[14px] font-medium"
-          >
+      <div className="flex flex-col gap-1.5">
+        {days.length > 1 && (
+          <div className="bg-white px-4 py-2.5 flex gap-4">
             {days.map((one, i) => (
-              <option key={one} value={one}>
+              <button
+                key={one}
+                type="button"
+                aria-pressed={one === onDay}
+                onClick={() => setDay(one)}
+                className={`rounded-full px-3 py-1.5 text-[12px] ${
+                  one === onDay
+                    ? 'bg-[#12386e] text-white'
+                    : 'bg-[#e3ecfd] text-[#393939]'
+                }`}
+              >
                 {t({ ne: `दिन ${num(i + 1)}`, en: `Day ${i + 1}` })}
-              </option>
+              </button>
             ))}
-          </select>
-        </div>
-      )}
+          </div>
+        )}
 
-      {onDay && (
-        <p className="px-4 pt-3 text-[11px] font-semibold tracking-[.06em]
-          text-[#8b90a0]">
-          {days.length > 1
-            ? `${t({ ne: 'दिन', en: 'Day' })} ${num(days.indexOf(onDay) + 1)} — ${longDay(onDay)}`
-            : longDay(onDay)}
-        </p>
-      )}
+        {grouped.length === 0 ? (
+          <p className="bg-white px-4 py-8 text-center text-[13px] text-[#8b90a0]">
+            {t({ ne: 'यो दिन केही छैन।', en: 'Nothing on this day.' })}
+          </p>
+        ) : (
+          grouped.map((group) => (
+            <section key={group.id || 'loose'} className="bg-white px-4 py-2.5">
+              <h2 className="capitalize text-[16px] font-semibold text-[#101010]
+                leading-5">
+                {group.title}
+              </h2>
 
-      {shown.length === 0 ? (
-        <p className="px-4 pt-8 text-center text-[13px] text-[#8b90a0]">
-          {t({ ne: 'यो दिन केही छैन।', en: 'Nothing on this day.' })}
-        </p>
-      ) : (
-        <ul className="px-4 pt-2 pb-4 flex flex-col">
-          {shown.map((one) => {
-            const isLive = live?.id === one.id;
-            return (
-              <li key={one.id} className="flex gap-3">
-                <span className="w-[54px] flex-none pt-3 text-right">
-                  <span className="block text-[13px] font-medium text-[#2440c9]
-                    tabular-nums">
-                    {clock(one.starts_at).replace(/\s?[AP]M/i, '')}
-                  </span>
-                  <span className="block text-[10px] text-[#9ba0ad]">
-                    {clock(one.starts_at).slice(-2)}
-                  </span>
-                </span>
+              <ul className="pt-2.5 flex flex-col gap-2.5">
+                {group.sessions.map((one) => {
+                  const where = live?.id === one.id ? 'live' : whereOf(one);
+                  const mine = files.filter((f) => f.session === one.id).length;
+                  const qs = asked[one.id] ?? 0;
+                  return (
+                    <li key={one.id}>
+                      <button
+                        type="button"
+                        onClick={() => setOpened(one.id)}
+                        className={`w-full text-left bg-white border rounded-[12px]
+                          px-5 py-3 flex items-center gap-4
+                          shadow-[0px_4px_3px_rgba(0,0,0,0.1),0px_2px_2px_rgba(0,0,0,0.05)]
+                          ${where === 'live'
+                            ? 'border-[#f75656]'
+                            : 'border-[#b3b3b3]'}`}
+                        style={{ borderWidth: '0.612px' }}
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[14px] font-semibold
+                            text-[#101828] leading-5">
+                            {one.title}
+                          </span>
+                          <span className="block pt-0.5 text-[12px] text-[#656565]
+                            leading-4 truncate">
+                            {clock(one.starts_at)}
+                            {one.speaker_name && ` · ${one.speaker_name}`}
+                          </span>
+                          <span className="block pt-1 text-[12px] text-[#959595]
+                            leading-[18px]">
+                            {t({
+                              ne: `${num(qs)} प्रश्न · ${num(mine)} फाइल`,
+                              en: `${qs} question${qs === 1 ? '' : 's'}`
+                                + ` · ${mine} file${mine === 1 ? '' : 's'}`,
+                            })}
+                          </span>
+                        </span>
 
-                <span className="relative flex-none w-px bg-[#e6e9ee]" aria-hidden />
-
-                <button
-                  type="button"
-                  onClick={() => setOpened(one.id)}
-                  className={`flex-1 my-1.5 text-left border rounded-[12px] px-3.5 py-3
-                    flex items-center gap-3 ${
-                    isLive
-                      ? 'border-[#2440c9] shadow-[0_0_0_1px_rgba(36,64,201,.25)]'
-                      : 'border-[#e8eaee]'
-                  }`}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[14px] font-semibold text-[#111726]">
-                      {one.title}
-                    </span>
-                    <span className="block pt-1 text-[12px] text-[#8b90a0] truncate">
-                      {t({
-                        ne: `${num(one.duration_minutes)} मिनेट`,
-                        en: `${one.duration_minutes} min`,
-                      })}
-                      {one.speaker_name && ` · ${one.speaker_name}`}
-                    </span>
-                  </span>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                    stroke="#b8bcc6" strokeWidth="2" strokeLinecap="round"
-                    strokeLinejoin="round" aria-hidden className="flex-none">
-                    <path d="M9 6l6 6-6 6" />
-                  </svg>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                        <span className="flex flex-col items-end gap-4 flex-none">
+                          <WhereChip where={where} />
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                            stroke="#b8bcc6" strokeWidth="2.4" strokeLinecap="round"
+                            strokeLinejoin="round" aria-hidden>
+                            <path d="M9 6l6 6-6 6" />
+                          </svg>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ))
+        )}
+      </div>
     </div>
   );
 };

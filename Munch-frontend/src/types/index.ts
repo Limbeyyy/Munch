@@ -518,6 +518,8 @@ export interface Session {
   speaker_name: string;
   /** What they do, as it reads under their name on the running order. */
   speaker_role?: string;
+  /** The part of the day this talk belongs to, where it is grouped. */
+  sub_event?: string | null;
   /** The profile this talk is given by, where one has been made. */
   speaker?: string | null;
   /** Their photograph, so any screen naming them can show them. */
@@ -544,6 +546,22 @@ export interface Session {
 export type EventStatus = 'draft' | 'scheduled' | 'active' | 'ended' | 'cancelled';
 
 /** A session as typed into the create form, before it exists. */
+/**
+ * A named part of a programme, holding some of its talks.
+ *
+ * A grouping and nothing else: the talks keep their own hours, and one
+ * in no group is still on the programme.
+ */
+export interface SubEvent {
+  id: string;
+  event: string;
+  title: string;
+  description: string;
+  position: number;
+  sessions: { id: string; title: string }[];
+  created_at: string;
+}
+
 /**
  * Somebody giving a talk, as a profile rather than a name on a talk.
  *
