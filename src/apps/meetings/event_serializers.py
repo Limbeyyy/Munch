@@ -70,7 +70,7 @@ class SessionSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'event', 'title', 'description', 'speaker_name', 'speaker_role',
             'speaker_email', 'speaker_phone', 'speaker_visibility',
-            'speaker_contact', 'speaker', 'speaker_photo_url',
+            'speaker_contact', 'speaker', 'speaker_photo_url', 'sub_event',
             'starts_at', 'duration_minutes', 'ends_at', 'position',
             'status', 'started_at', 'ended_at', 'attendance_count',
             'created_at', 'updated_at',
