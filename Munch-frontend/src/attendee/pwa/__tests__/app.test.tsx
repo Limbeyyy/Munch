@@ -137,6 +137,40 @@ describe('the five things along the bottom', () => {
 });
 
 describe('the transcript', () => {
+  /** Where the room has got to, not only what it said. */
+  it('marks the last line as what is being said now', async () => {
+    api.getEventSegments.mockResolvedValue([
+      { text: 'Said a while ago.', speaker_name: 'Sarah',
+        created_at: '2026-09-15T04:20:00Z' },
+      { text: 'Being said now.', speaker_name: 'David',
+        created_at: '2026-09-15T04:21:00Z' },
+    ] as any);
+
+    await go('Transcript');
+
+    const now = (await screen.findByText('Being said now.'))
+      .closest('[data-transcript-line]') as HTMLElement;
+    expect(within(now).getByText('Speaking')).toBeInTheDocument();
+
+    const before = screen.getByText('Said a while ago.')
+      .closest('[data-transcript-line]') as HTMLElement;
+    expect(within(before).queryByText('Speaking')).toBeNull();
+  });
+
+  /** Nothing is being said in a room that is over. */
+  it('marks nothing where the event has ended', async () => {
+    api.listEvents.mockResolvedValue([{ ...event, status: 'ended' }] as any);
+    api.getEventSegments.mockResolvedValue([
+      { text: 'The last thing said.', speaker_name: 'Sarah',
+        created_at: '2026-09-15T04:21:00Z' },
+    ] as any);
+
+    await go('Transcript');
+    await screen.findByText('The last thing said.');
+
+    expect(screen.queryByText('Speaking')).toBeNull();
+  });
+
   it('names what is on stage', async () => {
     show();
 

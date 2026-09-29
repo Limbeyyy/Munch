@@ -105,8 +105,13 @@ export const LiveRoom: React.FC<{ onLeave: () => void }> = ({ onLeave }) => {
   }
 
   return (
-    <PhoneShell at={at} onGo={setAt} onLeave={onLeave}>
-      {at === 'transcript' && <TranscriptScreen event={event} live={live} />}
+    // The transcript carries its own way out, in its header where the
+    // design puts it; the other four get the shell's strip instead of
+    // two of them.
+    <PhoneShell at={at} onGo={setAt} onLeave={at === 'transcript' ? undefined : onLeave}>
+      {at === 'transcript' && (
+        <TranscriptScreen event={event} live={live} onLeave={onLeave} />
+      )}
       {at === 'agenda' && (
         <AgendaScreen event={event} sessions={sessions} live={live} />
       )}
