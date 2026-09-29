@@ -1,23 +1,26 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { LIST_POLL_MS } from '../../services/polling';
-import { Event, Session } from '../../types';
+import { Event } from '../../types';
 import { useOrganizer } from '../../organizer/i18n';
-import { PhoneShell, Section } from './PhoneShell';
-import { TranscriptScreen } from './TranscriptScreen';
-import { AgendaScreen } from './AgendaScreen';
-import { BoardScreen } from './BoardScreen';
-import { FilesScreen } from './FilesScreen';
+import { HomeSection, HomeShell } from './HomeShell';
+import { HomeScreen } from './HomeScreen';
+import { EventsScreen } from './EventsScreen';
+import { EventDetail } from './EventDetail';
+import { NotificationsScreen } from './NotificationsScreen';
 import { ProfileScreen } from './ProfileScreen';
+import { LiveRoom } from './LiveRoom';
 
 /**
  * The attendee's app, on a phone.
  *
- * Five things somebody in a hall actually does: follow what is being
- * said, look up what is next, ask something, take a copy of the
- * handouts, and see who they are signed in as. One event at a time,
- * because a person in a room is in one room.
+ * Two flows, not one. Most of the time somebody is outside any room -
+ * looking at what is coming, what they have been told, what was said
+ * at the thing they went to last week - and that is this shell: four
+ * tabs and an event you can open and read. Stepping into a live room
+ * replaces the whole screen, because in a hall the room is the only
+ * thing you are doing.
  *
  * The host's screens are a different app in the same bundle and are
  * left exactly as they were: a host works at a desk and needs the rail,
@@ -26,24 +29,18 @@ import { ProfileScreen } from './ProfileScreen';
 export const AttendeeApp: React.FC = () => {
   const { t } = useOrganizer();
 
-  const [at, setAt] = useState<Section>('transcript');
+  const [at, setAt] = useState<HomeSection>('home');
   const [events, setEvents] = useState<Event[]>([]);
-  const [eventId, setEventId] = useState('');
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [openId, setOpenId] = useState('');
+  const [inRoom, setInRoom] = useState(false);
+  const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
-      const list = await apiClient.listEvents();
-      setEvents(list);
-      // Whichever is running, failing that whichever is first: somebody
-      // opening this in a hall is almost always in the live one.
-      setEventId((was) => was
-        || list.find((one) => one.status === 'active')?.id
-        || list[0]?.id
-        || '');
+      setEvents(await apiClient.listEvents());
     } catch {
-      toast.error(t({ ne: 'कार्यक्रम ल्याउन सकिएन', en: 'Could not load the event' }));
+      toast.error(t({ ne: 'कार्यक्रम ल्याउन सकिएन', en: 'Could not load your events' }));
     } finally {
       setLoading(false);
     }
@@ -56,30 +53,19 @@ export const AttendeeApp: React.FC = () => {
     return () => clearInterval(id);
   }, [load]);
 
-  const event = events.find((one) => one.id === eventId) ?? null;
-
-  const readSessions = useCallback(async () => {
-    if (!eventId) { setSessions([]); return; }
+  const countUnread = useCallback(async () => {
     try {
-      setSessions(await apiClient.listSessions(eventId));
+      setUnread((await apiClient.getReminders()).unread);
     } catch {
-      setSessions([]);
+      /* A badge is not worth a message. */
     }
-  }, [eventId]);
+  }, []);
 
-  useEffect(() => {
-    readSessions();
-    // The running order moves while somebody is looking at it: a talk
-    // ends early, the next starts, and the screen should say so without
-    // being reopened.
-    const id = setInterval(readSessions, 15000);
-    return () => clearInterval(id);
-  }, [readSessions]);
+  useEffect(() => { countUnread(); }, [countUnread]);
 
-  const live = useMemo(
-    () => sessions.find((one) => one.status === 'live') ?? null,
-    [sessions]
-  );
+  if (inRoom) return <LiveRoom onLeave={() => setInRoom(false)} />;
+
+  const open = events.find((one) => one.id === openId) ?? null;
 
   if (loading) {
     return (
@@ -91,34 +77,34 @@ export const AttendeeApp: React.FC = () => {
     );
   }
 
-  if (!event) {
-    return (
-      <div className="min-h-[100dvh] grid place-items-center bg-white px-8">
-        <p className="text-center text-[14px] text-[#8b90a0]">
-          {t({
-            ne: 'तपाईं कुनै कार्यक्रममा हुनुहुन्न।',
-            en: 'You are not in any event yet.',
-          })}
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <PhoneShell at={at} onGo={setAt}>
-      {at === 'transcript' && <TranscriptScreen event={event} live={live} />}
-      {at === 'agenda' && (
-        <AgendaScreen event={event} sessions={sessions} live={live} />
-      )}
-      {at === 'board' && <BoardScreen event={event} />}
-      {at === 'files' && <FilesScreen event={event} sessions={sessions} />}
-      {at === 'profile' && (
-        <ProfileScreen
-          event={event}
-          events={events}
-          onPickEvent={setEventId}
+    <HomeShell at={at} onGo={(to) => { setOpenId(''); setAt(to); }} unread={unread}>
+      {open ? (
+        <EventDetail
+          event={open}
+          onBack={() => setOpenId('')}
+          onEnterRoom={() => setInRoom(true)}
         />
+      ) : (
+        <>
+          {at === 'home' && (
+            <HomeScreen
+              events={events}
+              onOpen={(one) => setOpenId(one.id)}
+              onSeeAll={() => setAt('events')}
+            />
+          )}
+          {at === 'events' && (
+            <EventsScreen events={events} onOpen={(one) => setOpenId(one.id)} />
+          )}
+          {at === 'notifications' && (
+            <NotificationsScreen onRead={() => setUnread(0)} />
+          )}
+          {at === 'profile' && (
+            <ProfileScreen event={null} events={events} onPickEvent={() => {}} />
+          )}
+        </>
       )}
-    </PhoneShell>
+    </HomeShell>
   );
 };

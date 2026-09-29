@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { OrganizerProvider } from '../../../organizer/i18n';
-import { AttendeeApp } from '../AttendeeApp';
+import { LiveRoom } from '../LiveRoom';
 import { apiClient } from '../../../services/api';
 
 jest.mock('../../../services/api', () => ({
@@ -14,6 +14,7 @@ jest.mock('../../../services/api', () => ({
     addHubPost: jest.fn(),
     voteHubPost: jest.fn(),
     getResources: jest.fn(),
+    getSubEvents: jest.fn(),
     getPhotos: jest.fn(),
     getPhotoObjectUrl: jest.fn(),
     hasSession: jest.fn(() => false),
@@ -74,6 +75,7 @@ beforeEach(() => {
   api.getEventSegments.mockResolvedValue([] as any);
   api.getHub.mockResolvedValue({ questions: [], ideas: [], suggestions: [] } as any);
   api.getResources.mockResolvedValue([] as any);
+  api.getSubEvents.mockResolvedValue([] as any);
   api.getPhotos.mockResolvedValue({ folders: [], photos: [] } as any);
   api.getSessionSummary.mockResolvedValue({
     session: 's1', session_title: 'Emergency Response Overview',
@@ -86,7 +88,7 @@ beforeEach(() => {
 const show = () =>
   render(
     <OrganizerProvider>
-      <AttendeeApp />
+      <LiveRoom onLeave={() => {}} />
     </OrganizerProvider>
   );
 
@@ -172,7 +174,83 @@ describe('the agenda', () => {
     expect(
       await screen.findByText('Emergency Response Overview')
     ).toBeInTheDocument();
-    expect(screen.getByText(/60 min/)).toBeInTheDocument();
+    expect(screen.getByText(/Sarah Johnson/)).toBeInTheDocument();
+  });
+
+  /**
+   * The point of the screen. A programme read straight through is a
+   * list; read under the host's own headings it is a shape.
+   */
+  it('reads it under the parts the host grouped it into', async () => {
+    api.getSubEvents.mockResolvedValue([
+      { id: 'g1', event: 'e1', title: 'Emergency', description: '',
+        position: 0, sessions: [], created_at: '', updated_at: '' },
+      { id: 'g2', event: 'e1', title: 'SOS', description: '',
+        position: 1, sessions: [], created_at: '', updated_at: '' },
+    ] as any);
+    api.listSessions.mockResolvedValue([
+      session({ id: 's1', title: 'Response Overview', sub_event: 'g1' }),
+      session({ id: 's2', title: 'Rescue Drill', sub_event: 'g2',
+        status: 'scheduled' }),
+    ] as any);
+
+    await go('Agenda');
+
+    const sos = (await screen.findByText('SOS')).closest('section')!;
+    expect(within(sos).getByText('Rescue Drill')).toBeInTheDocument();
+    expect(within(sos).queryByText('Response Overview')).toBeNull();
+  });
+
+  /** An ungrouped talk is still on the programme, not lost off it. */
+  it('keeps an ungrouped talk where it can still be read', async () => {
+    api.getSubEvents.mockResolvedValue([
+      { id: 'g1', event: 'e1', title: 'Emergency', description: '',
+        position: 0, sessions: [], created_at: '', updated_at: '' },
+    ] as any);
+    api.listSessions.mockResolvedValue([
+      session({ id: 's1', title: 'Response Overview', sub_event: 'g1' }),
+      session({ id: 's2', title: 'Loose Talk', sub_event: null,
+        status: 'scheduled' }),
+    ] as any);
+
+    await go('Agenda');
+
+    const loose = (await screen.findByText('Everything else')).closest('section')!;
+    expect(within(loose).getByText('Loose Talk')).toBeInTheDocument();
+  });
+
+  it('says how far along each talk is', async () => {
+    api.listSessions.mockResolvedValue([
+      session({ id: 's1', title: 'Response Overview', status: 'done' }),
+      session({ id: 's2', title: 'Rescue Drill', status: 'scheduled' }),
+    ] as any);
+
+    await go('Agenda');
+
+    const done = (await screen.findByText('Response Overview'))
+      .closest('button')!;
+    expect(within(done).getByText('Completed')).toBeInTheDocument();
+    const next = screen.getByText('Rescue Drill').closest('button')!;
+    expect(within(next).getByText('Upcoming')).toBeInTheDocument();
+  });
+
+  it('counts what has been asked and filed against each talk', async () => {
+    api.getHub.mockResolvedValue({
+      questions: [post({ id: 'h1', session_id: 's1' })],
+      ideas: [], suggestions: [],
+    } as any);
+    api.getResources.mockResolvedValue([
+      { id: 'a1', session: 's1', display_name: 'Deck.pdf', file_size: 10,
+        web_view_link: '' },
+      { id: 'a2', session: 's1', display_name: 'Notes.pdf', file_size: 10,
+        web_view_link: '' },
+    ] as any);
+
+    await go('Agenda');
+
+    expect(
+      await screen.findByText('1 question · 2 files')
+    ).toBeInTheDocument();
   });
 
   it('opens one on its summary', async () => {
