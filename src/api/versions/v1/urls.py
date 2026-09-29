@@ -209,8 +209,26 @@ _speaker = SpeakerViewSet.as_view({
 })
 _speaker_photo = SpeakerViewSet.as_view({'post': 'photo'})
 
+# The named parts of one programme. Nested for the same reason the
+# speakers are: a grouping belongs to the day it groups.
+from src.apps.meetings.sub_event_views import SubEventViewSet
+
+_sub_events = SubEventViewSet.as_view({'get': 'list', 'post': 'create'})
+_sub_event = SubEventViewSet.as_view({
+    'get': 'retrieve', 'patch': 'partial_update',
+    'put': 'update', 'delete': 'destroy',
+})
+
 urlpatterns = [
     # The hall's capture device streams text in; clients only read it out.
+    re_path(
+        r'^events/(?P<event_pk>[^/.]+)/sub_events/$',
+        _sub_events, name='event-sub-events',
+    ),
+    re_path(
+        r'^events/(?P<event_pk>[^/.]+)/sub_events/(?P<pk>[^/.]+)/$',
+        _sub_event, name='event-sub-event',
+    ),
     re_path(
         r'^events/(?P<event_pk>[^/.]+)/speakers/$',
         _speakers, name='event-speakers',

@@ -158,6 +158,47 @@ class EventParticipant(models.Model):
         """Check if participant is currently online"""
         return self.is_active and not self.left_at
 
+class SubEvent(models.Model):
+    """A named part of the day, holding some of its talks.
+
+    A long programme is not one list. "Emergency", "SOS", "Solutions" -
+    a handful of talks belong together under a heading, and reading the
+    running order as a flat sequence loses that: somebody looking for
+    the emergency track has to recognise which four of twenty talks make
+    it up.
+
+    This is a grouping and nothing else. It has no hours of its own -
+    the talks keep theirs - and a talk in none of them is still on the
+    programme. Deleting one leaves its talks standing, ungrouped: a
+    heading is a way of reading the day, not a container the day is
+    kept in.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    event = models.ForeignKey(
+        Event, on_delete=models.CASCADE, related_name='sub_events'
+    )
+    title = models.CharField(max_length=200)
+    #: The line under the heading, where the host wants to say what the
+    #: group is about. Optional: most headings say enough by themselves.
+    description = models.TextField(blank=True)
+    #: Keeps the order the host put them in, which is not the order of
+    #: their talks - a group may run across the whole day.
+    position = models.PositiveIntegerField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'event_sub_events'
+        ordering = ['position', 'created_at']
+        indexes = [
+            models.Index(fields=['event']),
+        ]
+
+    def __str__(self):
+        return f'{self.title} @ {self.event.code}'
+
+
 def speaker_photo_path(instance, filename):
     """Where a speaker's photograph is kept, under the event it is for."""
     import posixpath
@@ -544,6 +585,14 @@ class Session(models.Model):
 
     # Free text rather than a link to an account: speakers are often guests
     # of the institution who never sign in.
+    #: The part of the day this talk belongs to, where the host has
+    #: grouped it. Null is not an error: a talk in no group is simply
+    #: read on its own.
+    sub_event = models.ForeignKey(
+        'SubEvent', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='sessions',
+    )
+
     #: The profile this talk is given by, where one has been made.
     #:
     #: The strings below are kept alongside rather than replaced: every
