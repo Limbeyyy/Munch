@@ -147,6 +147,32 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
             'plans': [PLANS[key].as_json() for key in PLANS],
         })
 
+    @action(detail=False, methods=['get', 'post'], url_path='notifications')
+    def notifications(self, request):
+        """What this person wants to be told about.
+
+        The host sets how much warning a programme gives; this is the
+        other half, and it belongs to the person being told. Fields are
+        taken one at a time, so a screen may send only what it changed.
+        """
+        from src.apps.accounts.models import NotificationPrefs
+
+        prefs, _ = NotificationPrefs.objects.get_or_create(user=request.user)
+
+        if request.method == 'POST':
+            changes = {}
+            for field in NotificationPrefs.FIELDS:
+                if field in request.data:
+                    changes[field] = bool(request.data[field])
+            if changes:
+                for field, value in changes.items():
+                    setattr(prefs, field, value)
+                prefs.save(update_fields=[*changes, 'updated_at'])
+
+        return Response({
+            field: getattr(prefs, field) for field in NotificationPrefs.FIELDS
+        })
+
     @action(detail=False, methods=['get', 'post'], url_path='scheduling')
     def scheduling(self, request):
         """The intervals this host's programme runs to.

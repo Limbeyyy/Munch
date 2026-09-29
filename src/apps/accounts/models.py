@@ -258,3 +258,52 @@ class UpgradeRequest(models.Model):
 
     def __str__(self):
         return f"{self.user.email} -> {self.plan} ({self.status})"
+
+
+class NotificationPrefs(models.Model):
+    """What somebody wants to be told about, and what they do not.
+
+    The host decides how much warning a programme gives; this is the
+    other side of it, and it belongs to the person being told rather
+    than to the person telling. One row per account, written the first
+    time anybody opens the screen.
+
+    Two of these are read by the reminder writer today. The rest are
+    recorded and nothing sends them yet - there is no mailer and no push
+    - so they are a preference waiting for a sender rather than a switch
+    that does nothing. Storing the answer now means the day something
+    does send them, it starts out asking first.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(
+        User, on_delete=models.CASCADE, related_name='notification_prefs'
+    )
+
+    #: Honoured: an event this person is part of is about to start.
+    event_reminders = models.BooleanField(default=True)
+    #: Honoured: a talk on the programme is about to start.
+    new_sessions = models.BooleanField(default=True)
+
+    #: Recorded only, for want of anything that sends them.
+    event_updates = models.BooleanField(default=True)
+    new_files = models.BooleanField(default=True)
+    published_summaries = models.BooleanField(default=True)
+    email_event_reminders = models.BooleanField(default=True)
+    email_event_updates = models.BooleanField(default=False)
+    email_weekly_digest = models.BooleanField(default=False)
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    #: The fields a screen may send, so one list serves the form, the
+    #: endpoint and the reminder writer.
+    FIELDS = (
+        'event_reminders', 'new_sessions', 'event_updates', 'new_files',
+        'published_summaries', 'email_event_reminders', 'email_event_updates',
+        'email_weekly_digest',
+    )
+
+    class Meta:
+        db_table = 'notification_prefs'
+
+    def __str__(self):
+        return f"notifications for {self.user.email}"

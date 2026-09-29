@@ -21,20 +21,35 @@ interface Ctx {
   setLook: React.Dispatch<React.SetStateAction<Look>>;
 }
 
-export type Theme = 'light' | 'dark' | 'contrast';
+export type Theme = 'system' | 'light' | 'dark' | 'contrast';
 export type TextSize = 'small' | 'medium' | 'large';
+/** The whole app's base size, as the settings screen names the steps. */
+export type AppTextSize = 'small' | 'default' | 'large' | 'xlarge';
 export type LineSpacing = 'comfortable' | 'relaxed';
 
 export interface Look {
   theme: Theme;
   transcriptSize: TextSize;
   transcriptSpacing: LineSpacing;
+  /** How big everything is, not only a transcript. */
+  textSize: AppTextSize;
 }
 
 const DEFAULT_LOOK: Look = {
   theme: 'light',
   transcriptSize: 'medium',
   transcriptSpacing: 'comfortable',
+  textSize: 'default',
+};
+
+/** What the device asks for, when somebody has left it to the device. */
+const deviceWants = (): 'dark' | 'light' => {
+  try {
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches
+      ? 'dark' : 'light';
+  } catch {
+    return 'light';
+  }
 };
 
 const OrganizerCtx = createContext<Ctx | null>(null);
@@ -103,7 +118,12 @@ export const OrganizerProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // The look goes on the root for the same reasons: it has to reach
     // dialogs, and it has to outrank the explicit colours and sizes the
     // design sets on individual elements. The rules live in index.css.
-    root.setAttribute('data-theme', look.theme === 'dark' ? 'dark' : 'light');
+    // 'system' is a deferral rather than a colour: it resolves here, so
+    // everything downstream still sees one of the two it knows.
+    root.setAttribute('data-theme', look.theme === 'dark'
+      || (look.theme === 'system' && deviceWants() === 'dark')
+      ? 'dark' : 'light');
+    root.setAttribute('data-text-size', look.textSize);
     root.setAttribute('data-transcript-size', look.transcriptSize);
     root.setAttribute('data-transcript-spacing', look.transcriptSpacing);
   }, [lang, a11y, look]);

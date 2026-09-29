@@ -941,6 +941,20 @@ export interface ReminderPage {
   session_lead_minutes: number;
 }
 
+/** What somebody wants to be told about, and what they do not. */
+export interface NotificationPrefs {
+  /** Honoured by the reminder writer. */
+  event_reminders: boolean;
+  new_sessions: boolean;
+  /** Recorded, for want of anything that sends them yet. */
+  event_updates: boolean;
+  new_files: boolean;
+  published_summaries: boolean;
+  email_event_reminders: boolean;
+  email_event_updates: boolean;
+  email_weekly_digest: boolean;
+}
+
 /** Everything a profile page shows, in one answer. */
 export interface ProfileSummary extends UserRoles {
   user: {

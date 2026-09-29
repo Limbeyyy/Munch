@@ -495,3 +495,20 @@ html[data-theme='dark'] [class*='drop-shadow-'] {
   box-shadow: none;
   filter: none;
 }
+
+/* The whole app's base size.
+
+   Scaling the document rather than setting a base font size, for the
+   reason the enlargement switch above already scales: the design writes
+   sizes in px on individual elements, so inheritance changes nothing,
+   and zoom keeps the boxes drawn around the type in proportion with it.
+   The steps are the settings screen's 12/14/16/18 against a 14 base. */
+html[data-text-size='small'] body {
+  zoom: 0.857;
+}
+html[data-text-size='large'] body {
+  zoom: 1.143;
+}
+html[data-text-size='xlarge'] body {
+  zoom: 1.286;
+}
