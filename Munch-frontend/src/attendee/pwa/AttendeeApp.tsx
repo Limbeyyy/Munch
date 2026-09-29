@@ -9,7 +9,7 @@ import { HomeScreen } from './HomeScreen';
 import { EventsScreen } from './EventsScreen';
 import { EventDetail } from './EventDetail';
 import { NotificationsScreen } from './NotificationsScreen';
-import { ProfileScreen } from './ProfileScreen';
+import { Settings } from './profile/Settings';
 import { LiveRoom } from './LiveRoom';
 
 /**
@@ -100,9 +100,7 @@ export const AttendeeApp: React.FC = () => {
           {at === 'notifications' && (
             <NotificationsScreen onRead={() => setUnread(0)} />
           )}
-          {at === 'profile' && (
-            <ProfileScreen event={null} events={events} onPickEvent={() => {}} />
-          )}
+          {at === 'profile' && <Settings />}
         </>
       )}
     </HomeShell>

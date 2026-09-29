@@ -70,6 +70,31 @@ def due_at(subject, lead_minutes):
     return subject - timezone.timedelta(minutes=lead_minutes)
 
 
+def _wants(people):
+    """Which kinds of reminder each of these people still wants.
+
+    Anybody who has never opened the screen has no row, and the default
+    is yes: silence is not a request to be left out.
+    """
+    from src.apps.accounts.models import NotificationPrefs
+
+    saved = {
+        row.user_id: row
+        for row in NotificationPrefs.objects.filter(
+            user_id__in=[p.id for p in people]
+        )
+    }
+    return {
+        person.id: {
+            'event_reminders': getattr(
+                saved.get(person.id), 'event_reminders', True
+            ),
+            'new_sessions': getattr(saved.get(person.id), 'new_sessions', True),
+        }
+        for person in people
+    }
+
+
 def generate_for_meeting(event, now=None):
     """Write the reminders this event owes, without writing them twice.
 
@@ -93,11 +118,15 @@ def generate_for_meeting(event, now=None):
     if not people:
         return 0
 
+    # Somebody who has turned a kind of reminder off is not written one.
+    # Read once for the whole run rather than per person per session.
+    wants = _wants(people)
+
     written = 0
 
     if event.scheduled_start > now:
         when = due_at(event.scheduled_start, leads['event'])
-        for person in people:
+        for person in [p for p in people if wants[p.id]['event_reminders']]:
             _, created = Reminder.objects.update_or_create(
                 user=person, event=event, session=None,
                 kind=Reminder.Kind.EVENT,
@@ -109,7 +138,7 @@ def generate_for_meeting(event, now=None):
         if session.starts_at <= now or session.status != session.Status.SCHEDULED:
             continue
         when = due_at(session.starts_at, leads['session'])
-        for person in people:
+        for person in [p for p in people if wants[p.id]['new_sessions']]:
             _, created = Reminder.objects.update_or_create(
                 user=person, event=event, session=session,
                 kind=Reminder.Kind.SESSION,
