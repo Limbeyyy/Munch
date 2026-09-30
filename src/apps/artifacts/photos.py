@@ -12,12 +12,8 @@ of the occasion, and can look at the result without adding to it.
 """
 import logging
 
-from django.db import transaction
 
 logger = logging.getLogger(__name__)
-
-#: The folder every event has, whether or not anybody made one.
-DEFAULT_FOLDER_NAME = 'Default'
 
 #: Big enough for a photograph off a phone, small enough to refuse a video.
 MAX_PHOTO_BYTES = 15 * 1024 * 1024
@@ -33,20 +29,15 @@ class PhotoRefused(Exception):
         self.code = code
 
 
-def default_folder(event):
-    """The event's default folder, made on first sight if need be."""
-    from src.apps.artifacts.models import PhotoFolder
-
-    folder, _ = PhotoFolder.objects.get_or_create(
-        event=event, is_default=True,
-        defaults={'name': DEFAULT_FOLDER_NAME},
-    )
-    return folder
-
-
 def folders_for(event):
-    """Every folder this event has, the default first."""
-    default_folder(event)
+    """Every folder this event has, in the order they were made.
+
+    None, where the host has made none. There used to be a folder
+    called Default conjured here on first sight, which meant every
+    event opened showing a folder nobody had asked for, with the same
+    name as the one in every other event - so it read as one shelf
+    shared between them. An empty list says the true thing.
+    """
     return event.photo_folders.all()
 
 
@@ -111,25 +102,17 @@ def create_folder(event, user, name):
             f'There is already a folder called “{tidy}”.', code='name_taken'
         )
 
-    # The default has to exist before any custom one, or it sorts after
-    # folders that were made before anybody looked at the list.
-    default_folder(event)
-
     return PhotoFolder.objects.create(
         event=event, name=tidy, created_by=user, is_default=False
     )
 
 
 def rename_folder(event, user, folder, name):
-    """Rename a custom folder. The default keeps its name."""
+    """Rename a folder. Host and co-hosts only."""
     if not may_arrange(event, user):
         raise PhotoRefused(
             'Only the host or a co-host can rename a folder.',
             code='not_an_organizer',
-        )
-    if folder.is_default:
-        raise PhotoRefused(
-            'The default folder keeps its name.', code='folder_is_default'
         )
 
     tidy = ' '.join((name or '').split())[:120]
@@ -146,24 +129,26 @@ def rename_folder(event, user, folder, name):
 
 
 def delete_folder(event, user, folder):
-    """Remove a custom folder. What was in it moves to the default."""
+    """Remove an empty folder. Host and co-hosts only.
+
+    What was in one used to move to the default on the way out. With no
+    default there is nowhere for it to go, and the photographs are the
+    record of the day - so a folder with anything in it is kept rather
+    than taken down on top of them.
+    """
     if not may_arrange(event, user):
         raise PhotoRefused(
             'Only the host or a co-host can remove a folder.',
             code='not_an_organizer',
         )
-    if folder.is_default:
+
+    if folder.photos.exists():
         raise PhotoRefused(
-            'The default folder stays.', code='folder_is_default'
+            'Empty the folder before removing it.', code='folder_not_empty'
         )
 
-    # The photographs are the record of the day; the folder is only where
-    # they were filed, so removing the shelf does not burn the album.
-    keep = default_folder(event)
-    with transaction.atomic():
-        folder.photos.update(folder=keep)
-        folder.delete()
-    return keep
+    folder.delete()
+    return None
 
 
 def _drive_folder_id(folder):

@@ -30,26 +30,31 @@ class FolderTests(TestCase):
         self.host = make_host('host@example.com')
         self.event = make_event(self.host)
 
-    def test_every_meeting_has_a_folder_without_anybody_making_one(self):
-        folders = list(photo_service.folders_for(self.event))
+    def test_a_new_event_has_no_folders_at_all(self):
+        # There used to be one called Default conjured on first sight,
+        # with the same name in every event, so a host opening a new one
+        # saw a folder they had not made where last time's had been.
+        self.assertEqual(list(photo_service.folders_for(self.event)), [])
 
-        self.assertEqual(len(folders), 1)
-        self.assertTrue(folders[0].is_default)
-
-    def test_asking_twice_does_not_make_two(self):
+    def test_looking_does_not_make_one(self):
         photo_service.folders_for(self.event)
         photo_service.folders_for(self.event)
 
-        self.assertEqual(self.event.photo_folders.count(), 1)
+        self.assertEqual(self.event.photo_folders.count(), 0)
 
-    def test_the_default_sorts_before_the_custom_ones(self):
+    def test_they_read_in_the_order_they_were_made(self):
         photo_service.create_folder(self.event, self.host, 'Prize distribution')
         photo_service.create_folder(self.event, self.host, 'Halls')
 
         names = [f.name for f in photo_service.folders_for(self.event)]
 
-        self.assertEqual(names[0], photo_service.DEFAULT_FOLDER_NAME)
-        self.assertEqual(names[1:], ['Prize distribution', 'Halls'])
+        self.assertEqual(names, ['Prize distribution', 'Halls'])
+
+    def test_one_event_s_folders_are_not_another_s(self):
+        other = make_event(self.host, title='Another day')
+        photo_service.create_folder(self.event, self.host, 'Halls')
+
+        self.assertEqual(list(photo_service.folders_for(other)), [])
 
     def test_an_attendee_cannot_make_folders(self):
         attendee = make_host('attendee@example.com')
@@ -67,32 +72,35 @@ class FolderTests(TestCase):
 
         self.assertEqual(refusal.exception.code, 'name_taken')
 
-    def test_removing_a_folder_keeps_the_photographs(self):
-        # The folder is only where they were filed; the photographs are the
-        # record of the day.
+    def test_an_empty_folder_can_be_taken_down(self):
+        folder = photo_service.create_folder(self.event, self.host, 'Halls')
+
+        photo_service.delete_folder(self.event, self.host, folder)
+
+        self.assertEqual(self.event.photo_folders.count(), 0)
+
+    def test_a_folder_with_photographs_in_it_is_kept(self):
+        # Removing one used to move what was in it to the default. There
+        # is no default now, and the row cascades, so taking the shelf
+        # down would burn the album.
         folder = photo_service.create_folder(self.event, self.host, 'Halls')
         photo = EventPhoto.objects.create(
             folder=folder, event=self.event, caption='hall.jpg'
         )
 
-        kept = photo_service.delete_folder(self.event, self.host, folder)
+        with self.assertRaises(photo_service.PhotoRefused) as refusal:
+            photo_service.delete_folder(self.event, self.host, folder)
 
-        photo.refresh_from_db()
-        self.assertEqual(photo.folder_id, kept.id)
-        self.assertTrue(kept.is_default)
+        self.assertEqual(refusal.exception.code, 'folder_not_empty')
+        self.assertTrue(EventPhoto.objects.filter(id=photo.id).exists())
 
-    def test_the_default_folder_cannot_be_removed_or_renamed(self):
-        default = photo_service.default_folder(self.event)
+    def test_any_folder_can_be_renamed_now(self):
+        folder = photo_service.create_folder(self.event, self.host, 'Halls')
 
-        for act in (
-            lambda: photo_service.delete_folder(self.event, self.host, default),
-            lambda: photo_service.rename_folder(
-                self.event, self.host, default, 'Something else'
-            ),
-        ):
-            with self.assertRaises(photo_service.PhotoRefused) as refusal:
-                act()
-            self.assertEqual(refusal.exception.code, 'folder_is_default')
+        photo_service.rename_folder(self.event, self.host, folder, 'The hall')
+
+        folder.refresh_from_db()
+        self.assertEqual(folder.name, 'The hall')
 
 
 class WhoMayAddPhotosTests(TestCase):
@@ -102,7 +110,9 @@ class WhoMayAddPhotosTests(TestCase):
         self.session = make_session(
             self.event, self.event.scheduled_start, 60, 'Haldi'
         )
-        self.folder = photo_service.default_folder(self.event)
+        self.folder = photo_service.create_folder(
+            self.event, self.host, 'Halls'
+        )
 
     def finish(self):
         self.event.status = Event.Status.ENDED
@@ -167,6 +177,14 @@ class PhotoEndpointTests(TestCase):
             role=EventParticipant.Role.ATTENDEE, is_active=True,
         )
 
+    def a_folder(self, name='Halls'):
+        """A folder to file a photograph in.
+
+        Made rather than assumed: with the default gone, an event has
+        no folders until the host makes one.
+        """
+        return photo_service.create_folder(self.event, self.host, name)
+
     def as_(self, user):
         from django.test import Client
 
@@ -188,7 +206,8 @@ class PhotoEndpointTests(TestCase):
         self.assertTrue(body['is_a_photographer'])
         self.assertTrue(body['can_upload'])
         self.assertTrue(body['can_arrange'])
-        self.assertEqual(len(body['folders']), 1)
+        # No folders until the host makes one, and the page still works.
+        self.assertEqual(body['folders'], [])
 
     def test_the_host_can_add_once_it_has_finished(self):
         self.finish()
@@ -256,7 +275,7 @@ class PhotoEndpointTests(TestCase):
         # which is no use as the source of a preview.
         self.finish()
         photo = EventPhoto.objects.create(
-            folder=photo_service.default_folder(self.event),
+            folder=self.a_folder(),
             event=self.event, caption='group.jpg',
             web_view_link='https://drive.google.com/file/d/x/view',
         )
@@ -269,7 +288,7 @@ class PhotoEndpointTests(TestCase):
 
     def test_a_stranger_cannot_fetch_a_photograph_by_its_link(self):
         photo = EventPhoto.objects.create(
-            folder=photo_service.default_folder(self.event),
+            folder=self.a_folder(),
             event=self.event, drive_file_id='file-1',
         )
         stranger = make_host('stranger@example.com')
@@ -280,7 +299,7 @@ class PhotoEndpointTests(TestCase):
 
     def test_it_is_sent_inline_so_a_page_can_show_it(self):
         photo = EventPhoto.objects.create(
-            folder=photo_service.default_folder(self.event),
+            folder=self.a_folder(),
             event=self.event, drive_file_id='file-1', mime_type='image/jpeg',
         )
 
@@ -297,7 +316,7 @@ class PhotoEndpointTests(TestCase):
 
     def test_an_attendee_cannot_delete_somebody_elses_photograph(self):
         photo = EventPhoto.objects.create(
-            folder=photo_service.default_folder(self.event),
+            folder=self.a_folder(),
             event=self.event, uploaded_by=self.host,
         )
 
@@ -310,7 +329,7 @@ class PhotoEndpointTests(TestCase):
 
     def test_the_host_can_remove_one(self):
         photo = EventPhoto.objects.create(
-            folder=photo_service.default_folder(self.event),
+            folder=self.a_folder(),
             event=self.event, uploaded_by=self.host,
         )
 
@@ -329,11 +348,19 @@ class PhotosAreNotFilesTests(TestCase):
         self.host = make_host('host@example.com')
         self.event = make_event(self.host)
 
+    def a_folder(self, name='Halls'):
+        """A folder to file a photograph in.
+
+        Made rather than assumed: with the default gone, an event has
+        no folders until the host makes one.
+        """
+        return photo_service.create_folder(self.event, self.host, name)
+
     def test_a_photograph_does_not_appear_among_the_shared_files(self):
         from src.apps.artifacts.visibility import resources_for
 
         EventPhoto.objects.create(
-            folder=photo_service.default_folder(self.event),
+            folder=self.a_folder(),
             event=self.event, caption='group.jpg',
         )
 
@@ -345,4 +372,4 @@ class PhotosAreNotFilesTests(TestCase):
         photo_service.create_folder(self.event, self.host, 'Halls')
 
         self.assertEqual(Artifact.objects.count(), 0)
-        self.assertEqual(PhotoFolder.objects.count(), 2)
+        self.assertEqual(PhotoFolder.objects.count(), 1)
