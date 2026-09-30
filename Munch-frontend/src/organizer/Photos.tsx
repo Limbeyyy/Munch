@@ -259,6 +259,16 @@ export const PhotoUploads: React.FC<{
             : 'border border-navy-800/15 rounded-[10px] bg-white overflow-hidden'
         }
       >
+        {page.folders.length === 0 && (
+          <li className={`px-3 py-3 text-[12.5px] ${
+            dark ? 'text-gray-400' : 'text-[#6E7C8E]'
+          }`}>
+            {t({
+              ne: 'अझै कुनै फोल्डर छैन।',
+              en: 'No folders yet.',
+            })}
+          </li>
+        )}
         {page.folders.map((folder) => (
           <li
             key={folder.id}
@@ -271,11 +281,6 @@ export const PhotoUploads: React.FC<{
             <span aria-hidden className="text-[15px]">🗂️</span>
             <span className="min-w-0 flex-1">
               <span className="text-[13px] font-medium">{folder.name}</span>
-              {!folder.is_default && (
-                <span className={`ms-1.5 text-[11px] ${dark ? 'text-gray-400' : 'text-[#6E7C8E]'}`}>
-                  {t({ ne: 'आफ्नै', en: 'custom' })}
-                </span>
-              )}
               <span className={`block text-[11.5px] ${dark ? 'text-gray-400' : 'text-[#6E7C8E]'}`}>
                 {t({
                   ne: `${num(folder.photo_count)} तस्बिर`,
@@ -472,7 +477,7 @@ export const PhotoAlbums: React.FC<{
                         'linear-gradient(180deg,rgba(0,0,0,.05),rgba(0,0,0,.55))',
                     }}
                   />
-                  {folder.is_mine && !folder.is_default && (
+                  {folder.is_mine && (
                     <span className="absolute top-2 end-2 text-[10.5px] bg-white/25 rounded-full px-2 leading-[18px]">
                       {t({ ne: 'मेरो', en: 'Mine' })}
                     </span>
@@ -532,7 +537,7 @@ export const PhotoAlbums: React.FC<{
                     : t({ ne: 'तस्बिर थप्ने', en: 'Add photos' })}
                 </Btn>
               )}
-              {mayAdd && page.can_arrange && !current.is_default && (
+              {mayAdd && page.can_arrange && (
                 <Btn sm onClick={() => removeFolder(current)}>
                   {t({ ne: 'फोल्डर हटाउने', en: 'Remove folder' })}
                 </Btn>

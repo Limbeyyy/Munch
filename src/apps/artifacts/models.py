@@ -99,11 +99,11 @@ class Artifact(models.Model):
 class PhotoFolder(models.Model):
     """A named place for the photographs taken at an event.
 
-    Every event has one folder whether anybody asked for it or not: the
-    default. Photographs land there unless the host has made somewhere
-    better to put them - a prize distribution, the hall, a seminar - and
-    "somewhere better" is the host's judgement, not ours, so the custom
-    folders are theirs to create and name.
+    Made by the host, and only by the host: a prize distribution, the
+    hall, a seminar. Where they have made none the event has none, and
+    the screen says so. There used to be one called Default standing in
+    every event whether anybody wanted it or not, which read as a single
+    shelf shared between them.
 
     Kept apart from Artifact on purpose. Files and summaries are working
     documents with a release rule tied to the session that owns them;
@@ -115,7 +115,9 @@ class PhotoFolder(models.Model):
         Event, on_delete=models.CASCADE, related_name='photo_folders'
     )
     name = models.CharField(max_length=120)
-    #: The one every event has, which cannot be renamed or removed.
+    #: Vestigial. Nothing sets this now; it is kept so the folders that
+    #: carried the old Default name, and the photographs filed in them,
+    #: survive the change rather than being swept out with it.
     is_default = models.BooleanField(default=False)
     created_by = models.ForeignKey(
         'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
@@ -128,8 +130,8 @@ class PhotoFolder(models.Model):
 
     class Meta:
         db_table = 'photo_folders'
-        # The default sorts first; the rest read in the order they were made.
-        ordering = ['-is_default', 'created_at']
+        # In the order they were made, which is the order they were meant.
+        ordering = ['created_at']
         constraints = [
             models.UniqueConstraint(
                 fields=['event', 'name'], name='one_photo_folder_per_name'
