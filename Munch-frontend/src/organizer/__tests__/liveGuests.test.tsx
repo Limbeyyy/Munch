@@ -92,7 +92,7 @@ describe('the join request queue', () => {
     show();
 
     expect(await screen.findByText('Rahul Ingnam')).toBeInTheDocument();
-    expect(screen.getByText('Join Request')).toBeInTheDocument();
+    expect(screen.getByText('Join Requests')).toBeInTheDocument();
   });
 
   it('lets them in', async () => {
@@ -237,6 +237,63 @@ describe('the message request queue', () => {
         'm1', 'q9', 'decline', undefined
       )
     );
+  });
+});
+
+/**
+ * The queues down the side of the desk.
+ */
+describe('the request queues', () => {
+  /**
+   * The chevron was there all along, filled #FCFCFC because it was
+   * drawn for the navy bar. On a white card it was invisible, which
+   * read as the dropdown being missing altogether.
+   */
+  it('shows a chevron that can actually be seen on a white card', async () => {
+    show();
+    const head = (await screen.findByText('Join Requests'))
+      .closest('button') as HTMLElement;
+
+    const arrow = head.querySelector('img') as HTMLImageElement;
+    expect(arrow).not.toBeNull();
+    expect(arrow.getAttribute('src')).toContain('chevron-down-dark');
+  });
+
+  it('turns it over when the queue is open', async () => {
+    show();
+    const head = (await screen.findByText('Message Requests'))
+      .closest('button') as HTMLElement;
+
+    const before = head.querySelector('img')!.className;
+    fireEvent.click(head);
+    expect(head.querySelector('img')!.className).not.toEqual(before);
+  });
+});
+
+/**
+ * The transcript on the host's desk.
+ *
+ * When, who, then what they said - each on its own line. It used to be
+ * the time in a chip down the left with the words beside it and no
+ * name at all, which read as a log rather than as a conversation.
+ */
+describe('the live transcript', () => {
+  it('names who said it, and when', async () => {
+    api.getEventSegments.mockResolvedValue([
+      { text: 'Good morning everyone.', speaker_name: 'Sarah',
+        created_at: '2026-09-15T06:30:00Z' },
+    ] as any);
+
+    show();
+
+    const line = (await screen.findByText('Good morning everyone.'))
+      .closest('[data-transcript-line]') as HTMLElement;
+    expect(within(line).getByText('Sarah')).toBeInTheDocument();
+  });
+
+  it('says the transcript is running', async () => {
+    show();
+    expect(await screen.findByText('Active')).toBeInTheDocument();
   });
 });
 

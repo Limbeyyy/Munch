@@ -43,18 +43,6 @@ const CardHead: React.FC<{
   </div>
 );
 
-/** The pale chip a time is written in. */
-const TimeChip: React.FC<{ children: React.ReactNode; dark?: boolean }> = ({
-  children, dark,
-}) => (
-  <span
-    className={`h-6 px-1 rounded-[4px] grid place-items-center text-[12px] leading-none
-      flex-none ${dark ? 'bg-white text-navy-900' : 'bg-[#f6f8fb] border border-[#e3e8ef] text-[#4a5567]'}`}
-  >
-    {children}
-  </span>
-);
-
 /**
  * A round portrait the way the design draws one.
  *
@@ -78,11 +66,6 @@ const Portrait: React.FC<{
       ? <img src={src} alt="" className="w-full h-full object-cover" />
       : (name || '?').trim().charAt(0).toUpperCase()}
   </span>
-);
-
-/** The thin upright rule the design puts between two facts. */
-const Rule: React.FC = () => (
-  <span aria-hidden className="w-px h-3 bg-[#e3e8ef] flex-none" />
 );
 
 type PanelTab = 'slides' | 'questions' | 'photos';
@@ -296,24 +279,42 @@ export const LiveDashboard: React.FC<Props> = ({
         <div className="flex flex-col gap-3 min-w-0">
           <Card>
             <CardHead>{t({ ne: 'लाइभ ट्रान्सक्रिप्ट', en: 'Live Transcript' })}</CardHead>
-            <div className="max-h-[383px] overflow-y-auto px-3 py-2.5 flex flex-col gap-3">
+
+            <div className="px-4 pt-3 pb-1 flex items-center gap-2">
+              <span className="text-[12px] font-semibold leading-4 uppercase
+                tracking-[1.2px] text-[#99a1af]">
+                {t({ ne: 'प्रत्यक्ष ट्रान्सक्रिप्ट', en: 'Live transcript' })}
+              </span>
+              <span className="flex items-center gap-1 text-[12px] leading-4
+                text-[#00a63e]">
+                <span className="bg-[#00c950] opacity-[.64] rounded-full size-1.5"
+                  aria-hidden />
+                {t({ ne: 'चालु', en: 'Active' })}
+              </span>
+            </div>
+
+            <div className="max-h-[383px] overflow-y-auto px-4 pb-3 flex flex-col">
               {segments.length === 0 ? (
                 <p className="text-[12.5px] text-subtle py-2">
                   {t({ ne: 'अझै केही भनिएको छैन।', en: 'Nothing said yet.' })}
                 </p>
               ) : (
+                /* When, who, then what they said - each on its own line.
+                   It used to be the time in a chip down the left with
+                   the words beside it and no name at all, which read as
+                   a log rather than as a conversation. */
                 segments.map((line, i) => (
-                  <div key={i} className="flex gap-3 items-start">
-                    <TimeChip>
+                  <div key={i} className="pt-3" data-transcript-line>
+                    <p className="text-[12px] leading-4 text-[#99a1af] tabular-nums">
                       {line.created_at ? clock(line.created_at) : num(i + 1)}
-                    </TimeChip>
-                    <Rule />
-                    {/* Marked, so the size and spacing the reader chose on
-                        the appearance page reach it. */}
-                    <p
-                      data-transcript-line
-                      className="text-[14px] text-[#030712] leading-[1.5] min-w-0 flex-1"
-                    >
+                    </p>
+                    {line.speaker_name && (
+                      <p className="pt-1 text-[14px] font-semibold leading-5
+                        text-[#101828]">
+                        {line.speaker_name}
+                      </p>
+                    )}
+                    <p className="pt-1 text-[14px] leading-[22.75px] text-[#364153]">
                       {line.text}
                     </p>
                   </div>

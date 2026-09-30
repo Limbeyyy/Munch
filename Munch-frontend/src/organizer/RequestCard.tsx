@@ -45,7 +45,7 @@ export const RequestCard: React.FC<Props> = ({ title, count, children, empty }) 
           )}
         </span>
         <FigmaIcon
-          name="chevronDown"
+          name="chevronDownDark"
           size={22}
           className={showing ? 'rotate-180' : ''}
         />

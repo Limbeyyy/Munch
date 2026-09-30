@@ -267,7 +267,7 @@ export const LiveView: React.FC<Props> = ({ events, onChanged, onNavigate }) => 
               queue below says how many are waiting; the attendance page
               says who came. */}
         <RequestCard
-          title={{ ne: 'भित्र आउन अनुरोध', en: 'Join Request' }}
+          title={{ ne: 'भित्र आउन अनुरोध', en: 'Join Requests' }}
           count={knocking.length}
           empty={{
             ne: 'पाहुनाले बैठक कोडबाट अनुरोध पठाएपछि यहाँ देखिन्छ।',
@@ -304,7 +304,7 @@ export const LiveView: React.FC<Props> = ({ events, onChanged, onNavigate }) => 
         {/* What has been written to the front of the room, and the only
             question worth asking about it: which board it belongs on. */}
         <RequestCard
-          title={{ ne: 'सन्देश अनुरोध', en: 'Message Request' }}
+          title={{ ne: 'सन्देश अनुरोध', en: 'Message Requests' }}
           count={pending.length}
           empty={{ ne: 'लाइन सफा छ।', en: 'The queue is clear.' }}
         >
