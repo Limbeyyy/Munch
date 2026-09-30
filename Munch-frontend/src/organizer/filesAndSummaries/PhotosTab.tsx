@@ -6,7 +6,7 @@ import { errorText } from '../errors';
 import { useOrganizer } from '../i18n';
 import { Modal } from '../OrganizerShell';
 import {
-  FilledButton, NothingYet, QuietButton, SearchInput, dayOf,
+  FilledButton, FolderNameDialog, NothingYet, QuietButton, SearchInput, dayOf,
 } from './shared';
 
 /**
@@ -76,7 +76,6 @@ export const PhotosTab: React.FC<{ event: Event }> = ({ event }) => {
   const [opened, setOpened] = useState('');
 
   const [naming, setNaming] = useState(false);
-  const [folderName, setFolderName] = useState('');
   const [uploading, setUploading] = useState(false);
   const [chosen, setChosen] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -97,15 +96,12 @@ export const PhotosTab: React.FC<{ event: Event }> = ({ event }) => {
 
   useEffect(() => { load(); }, [load]);
 
-  const create = async () => {
-    const name = folderName.trim();
-    if (!name) return;
+  const create = async (name: string) => {
     setBusy(true);
     try {
       await apiClient.createPhotoFolder(event.code, name);
       toast.success(t({ ne: 'फोल्डर बन्यो', en: 'Folder created' }));
       setNaming(false);
-      setFolderName('');
       await load();
     } catch (e: any) {
       toast.error(errorText(e, t({ ne: 'बनेन', en: 'Could not create it' })));
@@ -296,7 +292,7 @@ export const PhotosTab: React.FC<{ event: Event }> = ({ event }) => {
           onChange={setSearch}
           label={t({ ne: 'फोल्डर खोज्नुहोस्', en: 'Search Files' })}
         />
-        <FilledButton onClick={() => { setFolderName(''); setNaming(true); }}>
+        <FilledButton onClick={() => setNaming(true)}>
           <span aria-hidden>+</span>
           {t({ ne: 'नयाँ फोल्डर', en: 'New Folder' })}
         </FilledButton>
@@ -353,47 +349,13 @@ export const PhotosTab: React.FC<{ event: Event }> = ({ event }) => {
       )}
 
       {/* 641-19229 */}
-      <Modal
+      <FolderNameDialog
         open={naming}
+        busy={busy}
         onClose={() => setNaming(false)}
-        title={t({ ne: 'फोल्डर बनाउनुहोस्', en: 'Create folder' })}
-        divided
-        footer={
-          <>
-            <QuietButton
-              className="!text-[14px] !px-4 !py-2"
-              disabled={busy}
-              onClick={() => setNaming(false)}
-            >
-              {t({ ne: 'रद्द', en: 'Cancel' })}
-            </QuietButton>
-            <button
-              type="button"
-              disabled={busy || folderName.trim() === ''}
-              onClick={create}
-              className="bg-navy-800 rounded-[8px] px-4 py-2 text-[14px]
-                font-medium text-white hover:bg-navy-900 disabled:opacity-50"
-            >
-              {t({ ne: 'फोल्डर बनाउनुहोस्', en: 'Create folder' })}
-            </button>
-          </>
-        }
-      >
-        <label
-          htmlFor="manch-folder-name"
-          className="block text-[12px] text-subtle leading-4 pb-1"
-        >
-          {t({ ne: 'फोल्डरको नाम', en: 'Folder name' })}
-        </label>
-        <input
-          id="manch-folder-name"
-          value={folderName}
-          onChange={(e) => setFolderName(e.target.value)}
-          placeholder={t({ ne: 'वक्ताका कार्यसूची', en: 'Speaker Agendas' })}
-          className="w-full border border-line rounded-[8px] h-10 px-3
-            text-[14px] text-head placeholder:text-faint"
-        />
-      </Modal>
+        onCreate={create}
+      />
+
     </div>
   );
 };
