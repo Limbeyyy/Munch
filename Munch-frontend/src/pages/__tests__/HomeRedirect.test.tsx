@@ -1,15 +1,11 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { HomeRedirect, markFreshSignIn, rememberPortal, forgetPortal } from '../HomeRedirect';
+import {
+  HomeRedirect, markFreshSignIn, rememberPortal, forgetPortal,
+} from '../HomeRedirect';
 import { apiClient } from '../../services/api';
 import { UserRoles } from '../../types';
-
-// English is what a browser that has never chosen is shown; Nepali is
-// still the source language, and a stored choice still wins.
-const HOST_CARD = 'Sign in as host';
-const ATTENDEE_CARD = 'Sign in as attendee';
-const FREE_TRIAL = 'Free trial: 2 events, 2 events each, 2 sessions each.';
 
 jest.mock('../../services/api', () => ({
   apiClient: { getMyRoles: jest.fn(), startHosting: jest.fn() },
@@ -29,10 +25,31 @@ const roles = (over: Partial<UserRoles> = {}): UserRoles => ({
 });
 
 /**
+ * What the browser says about the thing it is running on.
+ *
+ * A mouse that can hover is a desk; a coarse pointer that cannot is a
+ * hand. jsdom answers neither by default, so each test says which.
+ */
+const usingA = (kind: 'mouse' | 'finger') => {
+  (window as any).matchMedia = (query: string) => ({
+    matches: kind === 'mouse'
+      ? /pointer: fine|hover: hover/.test(query)
+      : /pointer: coarse|hover: none/.test(query),
+    media: query,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    onchange: null,
+    dispatchEvent: () => false,
+  });
+};
+
+/**
  * Rendered the way the real application renders it.
  *
  * StrictMode is what index.tsx wraps the app in, and it runs every effect
- * twice. Leaving it out of the test is how a chooser that mounted and was
+ * twice. Leaving it out of the test is how a screen that mounted and was
  * immediately replaced managed to look like it worked.
  */
 const show = () =>
@@ -52,22 +69,16 @@ beforeEach(() => {
   jest.clearAllMocks();
   forgetPortal();
   window.sessionStorage.clear();
+  (apiClient.startHosting as jest.Mock).mockResolvedValue({});
+  usingA('mouse');
 });
 
-describe('the chooser after signing in', () => {
-  it('asks even somebody who only holds one role', async () => {
-    // The bug this covers: a host-only account was routed straight through
-    // and never saw the question.
-    (apiClient.getMyRoles as jest.Mock).mockResolvedValue(roles());
-    markFreshSignIn();
-
-    show();
-
-    expect(await screen.findByText(HOST_CARD)).toBeInTheDocument();
-    expect(screen.getByText(ATTENDEE_CARD)).toBeInTheDocument();
-  });
-
-  it('asks somebody who holds both', async () => {
+/**
+ * There used to be a card asking which portal. It was a question
+ * almost nobody needed: the device already says it.
+ */
+describe('signing in', () => {
+  it('asks nothing at all', async () => {
     (apiClient.getMyRoles as jest.Mock).mockResolvedValue(
       roles({ is_attendee: true, portals: ['host', 'attendee'] })
     );
@@ -75,62 +86,102 @@ describe('the chooser after signing in', () => {
 
     show();
 
-    expect(await screen.findByText(HOST_CARD)).toBeInTheDocument();
+    expect(await screen.findByText('organizer portal')).toBeInTheDocument();
+    expect(screen.queryByText(/Sign in as/)).not.toBeInTheDocument();
   });
 
-  it('asks somebody brand new, who holds neither yet', async () => {
+  it('takes a desk to the host portal', async () => {
     (apiClient.getMyRoles as jest.Mock).mockResolvedValue(
-      roles({ is_host: false, can_start_hosting: true, portals: [], plan: null, usage: null })
+      roles({ is_attendee: true, portals: ['host', 'attendee'] })
     );
     markFreshSignIn();
-
-    show();
-
-    expect(
-      await screen.findByText(FREE_TRIAL)
-    ).toBeInTheDocument();
-  });
-
-  it('stays on the chooser rather than being replaced a moment later', async () => {
-    // The regression: with effects running twice, the second pass found
-    // the mark already spent and routed straight through.
-    (apiClient.getMyRoles as jest.Mock).mockResolvedValue(roles());
-    markFreshSignIn();
-
-    show();
-    await screen.findByText(HOST_CARD);
-
-    // Give any second pass a chance to navigate away before checking.
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(screen.getByText(HOST_CARD)).toBeInTheDocument();
-    expect(screen.queryByText('organizer portal')).not.toBeInTheDocument();
-  });
-
-  it('asks only once per sign-in', async () => {
-    (apiClient.getMyRoles as jest.Mock).mockResolvedValue(roles());
-    markFreshSignIn();
-
-    const first = show();
-    fireEvent.click(await first.findByText(HOST_CARD));
-    await first.findByText('organizer portal');
-    first.unmount();
-
-    // Coming back to "/" later is ordinary navigation, not a new sign-in.
-    const second = show();
-    expect(await second.findByText('organizer portal')).toBeInTheDocument();
-  });
-});
-
-describe('arriving without having just signed in', () => {
-  it('goes straight through for a single role', async () => {
-    (apiClient.getMyRoles as jest.Mock).mockResolvedValue(roles());
 
     show();
 
     expect(await screen.findByText('organizer portal')).toBeInTheDocument();
   });
 
-  it('honours what they last chose', async () => {
+  it('takes a phone to the attendee app', async () => {
+    usingA('finger');
+    (apiClient.getMyRoles as jest.Mock).mockResolvedValue(
+      roles({ is_attendee: true, portals: ['host', 'attendee'] })
+    );
+    markFreshSignIn();
+
+    show();
+
+    expect(await screen.findByText('attendee portal')).toBeInTheDocument();
+  });
+
+  /**
+   * The device is a guess about what somebody came to do. It cannot
+   * hand them a role they do not hold.
+   */
+  it('does not send a host-only account to the attendee app on a phone', async () => {
+    usingA('finger');
+    (apiClient.getMyRoles as jest.Mock).mockResolvedValue(roles());
+    markFreshSignIn();
+
+    show();
+
+    expect(await screen.findByText('organizer portal')).toBeInTheDocument();
+  });
+
+  it('does not send an attendee-only account to the host portal at a desk', async () => {
+    (apiClient.getMyRoles as jest.Mock).mockResolvedValue(
+      roles({ is_host: false, is_attendee: true, portals: ['attendee'] })
+    );
+    markFreshSignIn();
+
+    show();
+
+    expect(await screen.findByText('attendee portal')).toBeInTheDocument();
+    expect(apiClient.startHosting).not.toHaveBeenCalled();
+  });
+});
+
+describe('an account that holds neither role yet', () => {
+  const brandNew = () => roles({
+    is_host: false, can_start_hosting: true, portals: [],
+    plan: null, usage: null,
+  });
+
+  /** Hosting is the only thing a new account can actually do. */
+  it('opens the trial at a desk, so the door is not locked', async () => {
+    (apiClient.getMyRoles as jest.Mock).mockResolvedValue(brandNew());
+    markFreshSignIn();
+
+    show();
+
+    expect(await screen.findByText('organizer portal')).toBeInTheDocument();
+    await waitFor(() => expect(apiClient.startHosting).toHaveBeenCalled());
+  });
+
+  it('falls back to the attendee app where the trial cannot be opened', async () => {
+    (apiClient.getMyRoles as jest.Mock).mockResolvedValue(brandNew());
+    (apiClient.startHosting as jest.Mock).mockRejectedValue(new Error('nope'));
+    markFreshSignIn();
+
+    show();
+
+    expect(await screen.findByText('attendee portal')).toBeInTheDocument();
+  });
+
+  it('starts nothing on a phone', async () => {
+    usingA('finger');
+    (apiClient.getMyRoles as jest.Mock).mockResolvedValue(brandNew());
+    markFreshSignIn();
+
+    show();
+
+    expect(await screen.findByText('attendee portal')).toBeInTheDocument();
+    expect(apiClient.startHosting).not.toHaveBeenCalled();
+  });
+});
+
+describe('arriving without having just signed in', () => {
+  /** Somebody who switched should not be sent back by their device. */
+  it('honours what they last chose over the device', async () => {
     (apiClient.getMyRoles as jest.Mock).mockResolvedValue(
       roles({ is_attendee: true, portals: ['host', 'attendee'] })
     );
@@ -142,8 +193,9 @@ describe('arriving without having just signed in', () => {
   });
 
   it('ignores a remembered choice that no longer applies', async () => {
+    usingA('finger');
     (apiClient.getMyRoles as jest.Mock).mockResolvedValue(
-      roles({ is_host: false, portals: ['attendee'], plan: null, usage: null })
+      roles({ is_host: false, is_attendee: true, portals: ['attendee'] })
     );
     rememberPortal('host');
 
@@ -154,6 +206,38 @@ describe('arriving without having just signed in', () => {
 
   it('falls back to the attendee app when roles cannot be read', async () => {
     (apiClient.getMyRoles as jest.Mock).mockRejectedValue(new Error('offline'));
+
+    show();
+
+    expect(await screen.findByText('attendee portal')).toBeInTheDocument();
+  });
+});
+
+describe('what the device is read from', () => {
+  /** A narrowed window on a laptop is still a laptop. */
+  it('reads the pointer, not the width', async () => {
+    (window as any).innerWidth = 380;
+    (apiClient.getMyRoles as jest.Mock).mockResolvedValue(
+      roles({ is_attendee: true, portals: ['host', 'attendee'] })
+    );
+    markFreshSignIn();
+
+    show();
+
+    expect(await screen.findByText('organizer portal')).toBeInTheDocument();
+  });
+
+  /** A browser too old to answer still has to be sent somewhere. */
+  it('falls back to the user agent', async () => {
+    delete (window as any).matchMedia;
+    Object.defineProperty(window.navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
+      configurable: true,
+    });
+    (apiClient.getMyRoles as jest.Mock).mockResolvedValue(
+      roles({ is_attendee: true, portals: ['host', 'attendee'] })
+    );
+    markFreshSignIn();
 
     show();
 
