@@ -4,7 +4,9 @@ import { apiClient } from '../services/api';
 import { Artifact, ChatMessage, PhotoPage, Session } from '../types';
 import { Pair, useOrganizer } from './i18n';
 import { errorText } from './errors';
-import { KindChip, clockOf, dayOf, formatSize, kindOf } from './filesAndSummaries/shared';
+import {
+  FolderNameDialog, KindChip, clockOf, dayOf, formatSize, kindOf,
+} from './filesAndSummaries/shared';
 import { PhotoImage } from './Photos';
 
 /**
@@ -478,6 +480,7 @@ export const PhotoFolderStrip: React.FC<{ eventRef: string }> = ({ eventRef }) =
   const { t, num } = useOrganizer();
   const [page, setPage] = useState<PhotoPage | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const [naming, setNaming] = useState(false);
   const [making, setMaking] = useState(false);
 
   const read = useCallback(() => {
@@ -486,12 +489,12 @@ export const PhotoFolderStrip: React.FC<{ eventRef: string }> = ({ eventRef }) =
 
   useEffect(() => { read(); setOpen(null); }, [read]);
 
-  const make = async () => {
-    const name = window.prompt(t({ ne: 'फोल्डरको नाम', en: 'Folder name' }));
-    if (!name || !name.trim()) return;
+  const make = async (name: string) => {
     setMaking(true);
     try {
-      await apiClient.createPhotoFolder(eventRef, name.trim());
+      await apiClient.createPhotoFolder(eventRef, name);
+      toast.success(t({ ne: 'फोल्डर बन्यो', en: 'Folder created' }));
+      setNaming(false);
       read();
     } catch (e: any) {
       toast.error(errorText(e, t({ ne: 'बनाउन सकिएन', en: 'Could not create it' })));
@@ -510,7 +513,7 @@ export const PhotoFolderStrip: React.FC<{ eventRef: string }> = ({ eventRef }) =
           <button
             type="button"
             disabled={making}
-            onClick={make}
+            onClick={() => setNaming(true)}
             className="w-[88px] h-[81px] flex-none bg-white border-[0.401px]
               border-[#e5e7eb] rounded-[7.872px] p-[10.496px]
               flex flex-col gap-1.5 items-center justify-center
@@ -565,6 +568,14 @@ export const PhotoFolderStrip: React.FC<{ eventRef: string }> = ({ eventRef }) =
           ))
         )}
       </div>
+
+      {/* 641-19229 */}
+      <FolderNameDialog
+        open={naming}
+        busy={making}
+        onClose={() => setNaming(false)}
+        onCreate={make}
+      />
 
       {/* What is in the one that was opened. The shelf on its own would
           say how many photographs there are and never show one. */}

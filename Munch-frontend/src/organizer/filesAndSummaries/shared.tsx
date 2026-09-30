@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { FigmaIcon } from '../../assets/icons';
 import { Pair, useOrganizer } from '../i18n';
+import { Modal } from '../OrganizerShell';
 
 /**
  * The parts 641-16431 and its siblings draw more than once.
@@ -269,4 +270,77 @@ export const whenAndWhere = (event: {
     `${clockOf(event.scheduled_start)} – ${clockOf(event.scheduled_end)}`,
     event.venue,
   ].filter(Boolean).join(' · ');
+};
+
+/**
+ * Asking a folder what it is called.
+ *
+ * One dialog, because the photographs tab and the host's live desk
+ * both ask it and a second copy of a form is a second copy that drifts.
+ * It owns the field and nothing else: the caller says what happens to
+ * the name, which is different in the two places.
+ */
+export const FolderNameDialog: React.FC<{
+  open: boolean;
+  busy?: boolean;
+  onClose: () => void;
+  onCreate: (name: string) => void;
+}> = ({ open, busy = false, onClose, onCreate }) => {
+  const { t } = useOrganizer();
+  const [name, setName] = useState('');
+
+  // Emptied on the way in rather than on the way out, so a dialog
+  // dismissed mid-typing does not reopen with the abandoned name in it.
+  useEffect(() => { if (open) setName(''); }, [open]);
+
+  const send = () => {
+    const tidy = name.trim();
+    if (tidy) onCreate(tidy);
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={t({ ne: 'फोल्डर बनाउनुहोस्', en: 'Create folder' })}
+      divided
+      footer={
+        <>
+          <QuietButton
+            className="!text-[14px] !px-4 !py-2"
+            disabled={busy}
+            onClick={onClose}
+          >
+            {t({ ne: 'रद्द', en: 'Cancel' })}
+          </QuietButton>
+          <button
+            type="button"
+            disabled={busy || name.trim() === ''}
+            onClick={send}
+            className="bg-navy-800 rounded-[8px] px-4 py-2 text-[14px]
+              font-medium text-white hover:bg-navy-900 disabled:opacity-50"
+          >
+            {t({ ne: 'फोल्डर बनाउनुहोस्', en: 'Create folder' })}
+          </button>
+        </>
+      }
+    >
+      <label
+        htmlFor="manch-folder-name"
+        className="block text-[12px] text-subtle leading-4 pb-1"
+      >
+        {t({ ne: 'फोल्डरको नाम', en: 'Folder name' })}
+      </label>
+      <input
+        id="manch-folder-name"
+        value={name}
+        autoFocus
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') send(); }}
+        placeholder={t({ ne: 'वक्ताका कार्यसूची', en: 'Speaker Agendas' })}
+        className="w-full border border-line rounded-[8px] h-10 px-3
+          text-[14px] text-head placeholder:text-faint"
+      />
+    </Modal>
+  );
 };

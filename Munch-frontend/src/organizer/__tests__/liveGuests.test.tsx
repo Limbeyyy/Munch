@@ -17,6 +17,7 @@ jest.mock('../../services/api', () => ({
     getTranscript: jest.fn(),
     getEventSegments: jest.fn(),
     getPhotos: jest.fn(),
+    createPhotoFolder: jest.fn(),
     getSchedulingPrefs: jest.fn(),
     hasSession: () => false,
   },
@@ -63,7 +64,10 @@ beforeEach(() => {
   api.getEventBoard.mockResolvedValue({ faq: [], suggestions: [] } as any);
   api.getTranscript.mockResolvedValue({ segments: [] } as any);
   api.getEventSegments.mockResolvedValue([] as any);
-  api.getPhotos.mockResolvedValue({ folders: [], photos: [] } as any);
+  api.getPhotos.mockResolvedValue({
+    folders: [], photos: [], can_arrange: true,
+  } as any);
+  api.createPhotoFolder.mockResolvedValue({ id: 'f1', name: 'Prabhat' } as any);
   api.getSchedulingPrefs.mockResolvedValue({ session_gap_minutes: 15 } as any);
 });
 
@@ -233,6 +237,67 @@ describe('the message request queue', () => {
         'm1', 'q9', 'decline', undefined
       )
     );
+  });
+});
+
+/**
+ * Making a folder from the desk.
+ *
+ * It used to be the browser's own prompt box, which is not a screen
+ * anybody designed.
+ */
+describe('the photos tab', () => {
+  const openPhotos = async () => {
+    show();
+    await screen.findByText('Rahul Ingnam');
+    fireEvent.click(screen.getByRole('tab', { name: 'Photos' }));
+  };
+
+  it('asks for the name on a dialog, not a prompt box', async () => {
+    const asked = jest.spyOn(window, 'prompt');
+    await openPhotos();
+
+    fireEvent.click(await screen.findByRole('button', { name: /New Folder/ }));
+
+    expect(await screen.findByLabelText('Folder name')).toBeInTheDocument();
+    expect(asked).not.toHaveBeenCalled();
+    asked.mockRestore();
+  });
+
+  it('creates the folder it was given', async () => {
+    await openPhotos();
+    fireEvent.click(await screen.findByRole('button', { name: /New Folder/ }));
+
+    fireEvent.change(await screen.findByLabelText('Folder name'), {
+      target: { value: 'Prabhat' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create folder' }));
+
+    await waitFor(() =>
+      expect(api.createPhotoFolder).toHaveBeenCalledWith('ABC123', 'Prabhat')
+    );
+  });
+
+  /** A name is required; the button says so by staying off. */
+  it('will not create an unnamed one', async () => {
+    await openPhotos();
+    fireEvent.click(await screen.findByRole('button', { name: /New Folder/ }));
+    await screen.findByLabelText('Folder name');
+
+    expect(screen.getByRole('button', { name: 'Create folder' })).toBeDisabled();
+  });
+
+  /** Dismissed mid-typing, it should not reopen with the abandoned name. */
+  it('forgets what was typed when it is dismissed', async () => {
+    await openPhotos();
+    fireEvent.click(await screen.findByRole('button', { name: /New Folder/ }));
+    fireEvent.change(await screen.findByLabelText('Folder name'), {
+      target: { value: 'Abandoned' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /New Folder/ }));
+    expect(await screen.findByLabelText('Folder name')).toHaveValue('');
   });
 });
 
