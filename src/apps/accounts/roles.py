@@ -17,11 +17,18 @@ def is_host(user) -> bool:
 
 
 def is_attendee(user) -> bool:
-    """Whether anyone has put this person on a list."""
-    from src.apps.meetings.access import events_visible_to
+    """Whether anyone has put this person on a list.
+
+    Their own events are not a list they were put on - except where
+    they put themselves on it, which the filter allows for. That is why
+    this asks the attendee rule rather than taking the general one and
+    dropping everything they host: a host invited to their own event is
+    an attendee of it.
+    """
+    from src.apps.meetings.access import events_attended_by
     from src.apps.meetings.models import Event
 
-    return Event.objects.filter(events_visible_to(user)).exclude(host=user).exists()
+    return Event.objects.filter(events_attended_by(user)).exists()
 
 
 def portals_for(user) -> list:

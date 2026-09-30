@@ -34,7 +34,7 @@ export const LiveRoom: React.FC<{ onLeave: () => void }> = ({ onLeave }) => {
 
   const load = useCallback(async () => {
     try {
-      const list = await apiClient.listEvents();
+      const list = await apiClient.listEvents('attendee');
       setEvents(list);
       // Whichever is running, failing that whichever is first: somebody
       // opening this in a hall is almost always in the live one.
