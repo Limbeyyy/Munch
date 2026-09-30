@@ -539,7 +539,7 @@ export const PhotoFolderStrip: React.FC<{ eventRef: string }> = ({ eventRef }) =
               type="button"
               aria-pressed={open === one.id}
               onClick={() => setOpen(open === one.id ? null : one.id)}
-              className={`flex-1 min-w-[170px] h-[81px] bg-white border-[0.401px]
+              className={`w-[185px] flex-none h-[81px] bg-white border-[0.401px]
                 rounded-[7.872px] p-[10.496px] text-left
                 drop-shadow-[0px_2.6px_2px_rgba(0,0,0,0.1)] hover:bg-black/[.02] ${
                 open === one.id ? 'border-[#194d97]' : 'border-[#e5e7eb]'
