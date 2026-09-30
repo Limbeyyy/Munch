@@ -38,7 +38,7 @@ export const AttendeeApp: React.FC = () => {
 
   const load = useCallback(async () => {
     try {
-      setEvents(await apiClient.listEvents());
+      setEvents(await apiClient.listEvents('attendee'));
     } catch {
       toast.error(t({ ne: 'कार्यक्रम ल्याउन सकिएन', en: 'Could not load your events' }));
     } finally {

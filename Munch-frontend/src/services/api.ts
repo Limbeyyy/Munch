@@ -720,8 +720,17 @@ class ApiClient {
 
   // Events: a day's programme of events, each with its own sessions
 
-  async listEvents(): Promise<Event[]> {
-    const response = await this.client.get('/events/');
+  /**
+   * The events this person has anything to do with.
+   *
+   * `as: 'attendee'` asks the narrower question instead: which was I
+   * put in. A host holds both answers and they are not the same one,
+   * so the attendee app has to say which it is asking.
+   */
+  async listEvents(as?: 'attendee'): Promise<Event[]> {
+    const response = await this.client.get(
+      '/events/', as ? { params: { as } } : undefined
+    );
     return response.data.results || response.data;
   }
 

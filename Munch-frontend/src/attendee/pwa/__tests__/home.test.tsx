@@ -107,6 +107,18 @@ const go = async (tab: string) => {
  * looking forward to a thing, or back at one. That is this shell.
  */
 describe('the way in', () => {
+  /**
+   * A host opening this on their phone is looking at other people's
+   * programmes. Their own belong in the host portal, and asking the
+   * general question would hand them back.
+   */
+  it('asks only for the events this person was put in', async () => {
+    show();
+    await screen.findByRole('navigation', { name: 'Sections' });
+
+    expect(api.listEvents).toHaveBeenCalledWith('attendee');
+  });
+
   it('opens on home, not on a room', async () => {
     show();
     expect(

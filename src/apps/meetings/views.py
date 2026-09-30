@@ -206,14 +206,28 @@ class EventRoomViewSet(viewsets.ModelViewSet):
 
         Joining is how a user gains access in the first place, so that action
         must be able to find an event the user is not yet part of.
+
+        `?as=attendee` asks the narrower question the attendee app asks:
+        which events was I put in, rather than which do I have anything
+        to do with. A host holds both answers and they are not the same
+        one - their own programmes belong in the host portal and not in
+        the app they open on the way to somebody else's.
         """
         if self.action == 'join':
             return Event.objects.all()
 
-        from src.apps.meetings.access import events_visible_to
+        from src.apps.meetings.access import (
+            events_attended_by, events_visible_to,
+        )
+
+        rule = (
+            events_attended_by
+            if self.request.query_params.get('as') == 'attendee'
+            else events_visible_to
+        )
 
         return (
-            Event.objects.filter(events_visible_to(self.request.user))
+            Event.objects.filter(rule(self.request.user))
             .distinct()
             .order_by('-scheduled_start')
         )

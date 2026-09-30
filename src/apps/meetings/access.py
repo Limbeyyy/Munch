@@ -50,6 +50,52 @@ def events_visible_to(user):
     )
 
 
+def events_attended_by(user):
+    """The events this person may see for some reason other than running one.
+
+    The attendee side's rule. Hosting an event is not attending it: a
+    host opening the app on their phone is looking at other people's
+    programmes, and their own SOS has no business appearing there with
+    nobody having asked them to it.
+
+    Being asked still counts even when they asked themselves. A host who
+    puts their own address on the invitation list of their own event has
+    said they are going to it, and it shows up here read-only like
+    anybody else's.
+
+    The one trap is the participant row. Creating an event gives the
+    host one straight away, in the host role, so matching on
+    participation alone would hand every host their own programmes back.
+    The role has to be true of *their* row and not of any row on the
+    event - otherwise one attendee turning up to Rahul's own event would
+    satisfy it and put SOS back on his phone.
+
+    Both halves therefore have to reach the database in one `filter()`
+    call, which is what makes Django join the table once and test them
+    against the same row. Splitting them over chained `.filter()` calls
+    would join it twice and quietly lose the rule, so callers pass this
+    whole thing to a single filter.
+    """
+    from src.apps.meetings.models import EventParticipant
+
+    went = Q(
+        participants__user=user,
+        participants__role__in=[
+            EventParticipant.Role.CO_HOST,
+            EventParticipant.Role.PRESENTER,
+            EventParticipant.Role.ATTENDEE,
+        ],
+    )
+
+    return (
+        went
+        | _named(user, invited='invites__email')
+        | _named(user, speaks='sessions__speaker_email')
+        | _named(user, granted='role_grants__email')
+        | _named(user, on_session='sessions__role_grants__email')
+    )
+
+
 def sessions_visible_to(user):
     """The same rule, one relation further out.
 
