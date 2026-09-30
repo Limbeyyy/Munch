@@ -241,6 +241,66 @@ describe('the message request queue', () => {
 });
 
 /**
+ * The stage card.
+ *
+ * The talk, who is giving it, the three panels that belong to it and
+ * the way to end it - one sheet, because they are one thing.
+ */
+describe('the stage', () => {
+  it('says how long the event has been running, not when it was meant to', async () => {
+    show();
+    await screen.findByText('Rahul Ingnam');
+
+    // Started ten minutes ago in the fixture.
+    expect(screen.getByText(/\dm$/)).toBeInTheDocument();
+    expect(screen.queryByText(/\d{1,2}:\d{2}\s?[AP]M-/)).toBeNull();
+  });
+
+  it('keeps the panels on the same sheet as the talk', async () => {
+    api.listSessions.mockResolvedValue([{
+      id: 's1', event: 'm1', title: 'Kataho 1', description: '',
+      speaker_name: 'Ram Rimal', speaker_visibility: 'public',
+      starts_at: new Date().toISOString(), duration_minutes: 30,
+      ends_at: new Date(Date.now() + 1800000).toISOString(),
+      position: 0, status: 'live', started_at: null, ended_at: null,
+      attendance_count: 0,
+    }] as any);
+    show();
+    // Wait for the running order, or the tabs are on screen before the
+    // talk they belong to is.
+    await screen.findByText('Ram Rimal');
+
+    // The card is the nearest clipped sheet around the tabs; the talk
+    // and its speaker have to be inside that same one.
+    const sheet = screen.getByRole('tab', { name: 'Slides' })
+      .closest('div.overflow-hidden') as HTMLElement;
+
+    expect(within(sheet).getByText('Kataho 1')).toBeInTheDocument();
+    expect(within(sheet).getByText('Ram Rimal')).toBeInTheDocument();
+  });
+
+  /** Ending it belongs beside the talk, not beside the event's name. */
+  it('puts the session controls beside the talk', async () => {
+    api.listSessions.mockResolvedValue([{
+      id: 's1', event: 'm1', title: 'Kataho 1', description: '',
+      speaker_name: 'Ram Rimal', speaker_visibility: 'public',
+      starts_at: new Date().toISOString(), duration_minutes: 30,
+      ends_at: new Date(Date.now() + 1800000).toISOString(),
+      position: 0, status: 'live', started_at: null, ended_at: null,
+      attendance_count: 0,
+    }] as any);
+    show();
+
+    const row = (await screen.findByText('Ram Rimal'))
+      .closest('div.justify-between') as HTMLElement;
+
+    expect(
+      within(row).getByRole('button', { name: /End session/ })
+    ).toBeInTheDocument();
+  });
+});
+
+/**
  * The queues down the side of the desk.
  */
 describe('the request queues', () => {

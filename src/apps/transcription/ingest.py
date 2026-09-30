@@ -123,11 +123,23 @@ def accept_line(event, data: dict) -> dict:
 
     is_final = bool(data.get('is_final', True))
 
+    # A line belongs to whatever part of the running order is on stage,
+    # and that is also the best guess at who is saying it.
+    live_session = event.sessions.filter(status='live').first()
+
     segment = {
         'code': event.code,
-        # The device reports who is speaking when it can; otherwise the room.
+        # The device reports who is speaking when it can. It usually
+        # cannot - one microphone in a hall hears one room - so the
+        # talk on stage answers instead, because whoever is giving it
+        # is who the room is listening to. "Room" is the last resort,
+        # for a line arriving with nothing running and nobody named.
         'speaker_id': str(data.get('speaker_id') or 'room-device'),
-        'speaker_name': data.get('speaker_name') or 'Room',
+        'speaker_name': (
+            data.get('speaker_name')
+            or (live_session.speaker_name if live_session else '')
+            or 'Room'
+        ),
         'text': text,
         # 'lang' as well as 'language': a device written against the
         # shorter name is the common case, and rejecting its lines over a
@@ -139,8 +151,6 @@ def accept_line(event, data: dict) -> dict:
         'is_final': is_final,
     }
 
-    # A line belongs to whatever part of the running order is on stage.
-    live_session = event.sessions.filter(status='live').first()
     segment['session_id'] = str(live_session.id) if live_session else None
     segment['session_title'] = live_session.title if live_session else None
 
