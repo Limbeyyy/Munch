@@ -297,6 +297,22 @@ class EventViewSet(EventRoomViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
+            # The host is already at their own event. Said rather than
+            # silently dropped: somebody who typed their own address
+            # meant something by it, and a list that comes back one
+            # shorter with no explanation is a puzzle.
+            from src.apps.meetings.models import hosts_this
+
+            if any(hosts_this(event, email) for email in emails):
+                return Response(
+                    {
+                        'error': 'You are the host of this event and cannot '
+                                 'be invited to it.',
+                        'code': 'host_cannot_be_invited',
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             for email in emails:
                 _, created = EventInvite.objects.get_or_create(
                     event=event,
