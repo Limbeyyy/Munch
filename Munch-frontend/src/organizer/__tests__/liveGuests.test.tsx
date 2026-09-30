@@ -1,6 +1,6 @@
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { OrganizerProvider } from '../i18n';
 import { LiveView } from '../views/LiveView';
 import { apiClient } from '../../services/api';
@@ -237,6 +237,108 @@ describe('the message request queue', () => {
 });
 
 /**
+ * What the room has asked, on the questions tab.
+ *
+ * Grouped under the talk it was asked during: a host deciding on
+ * twenty questions is deciding about four talks, and the pile said
+ * nothing about which.
+ */
+describe('the questions tab', () => {
+  const asked = (over: any = {}) => ({
+    id: 'q1', body: 'What happens to the escalation list?',
+    sender_name: 'John D.', sender_id: 'u2', sender_email: null,
+    sender_is_guest: false, recipient_id: null, recipient_name: null,
+    recipient_is_guest: false, is_direct: false,
+    moderation_status: 'pending',
+    created_at: new Date(Date.now() - 120000).toISOString(),
+    session: 's1', session_title: 'Opening Keynote',
+    ...over,
+  });
+
+  const openQuestions = async () => {
+    api.listSessions.mockResolvedValue([
+      { id: 's1', event: 'm1', title: 'Opening Keynote',
+        speaker_name: 'Ram Rimal',
+        starts_at: '2026-09-15T04:00:00Z', duration_minutes: 30,
+        status: 'done', position: 0 },
+      { id: 's2', event: 'm1', title: 'Field Response',
+        speaker_name: 'Sita Gurung',
+        starts_at: '2026-09-15T05:00:00Z', duration_minutes: 30,
+        status: 'scheduled', position: 1 },
+    ] as any);
+    show();
+    await screen.findByText('Rahul Ingnam');
+    fireEvent.click(screen.getByRole('tab', { name: 'Questions' }));
+  };
+
+  it('files each one under the talk it was asked during', async () => {
+    api.getPendingMessages.mockResolvedValue([
+      asked({ id: 'q1', body: 'About the keynote.', session: 's1' }),
+      asked({ id: 'q2', body: 'About the field.', session: 's2' }),
+    ] as any);
+
+    await openQuestions();
+
+    const group = (await screen.findByText('“About the keynote.”'))
+      .closest('div.bg-white') as HTMLElement;
+    expect(within(group).queryByText('“About the field.”')).toBeNull();
+  });
+
+  it('says how many each talk is waiting on', async () => {
+    api.getPendingMessages.mockResolvedValue([
+      asked({ id: 'q1', session: 's1' }),
+      asked({ id: 'q2', session: 's1' }),
+    ] as any);
+
+    await openQuestions();
+
+    expect(await screen.findByText('2 pending')).toBeInTheDocument();
+  });
+
+  /** Approving files it where the asker said, without being told again. */
+  it('approves without naming a board', async () => {
+    api.getPendingMessages.mockResolvedValue([asked()] as any);
+    await openQuestions();
+
+    const card = (await screen.findByText('“What happens to the escalation list?”'))
+      .closest('div.bg-white') as HTMLElement;
+    fireEvent.click(within(card).getByRole('button', { name: 'Approve' }));
+
+    await waitFor(() =>
+      expect(api.moderateMessage).toHaveBeenCalledWith('m1', 'q1', 'approve')
+    );
+  });
+
+  it('rejects one', async () => {
+    api.getPendingMessages.mockResolvedValue([asked()] as any);
+    await openQuestions();
+
+    const card = (await screen.findByText('“What happens to the escalation list?”'))
+      .closest('div.bg-white') as HTMLElement;
+    fireEvent.click(within(card).getByRole('button', { name: 'Reject' }));
+
+    await waitFor(() =>
+      expect(api.moderateMessage).toHaveBeenCalledWith('m1', 'q1', 'decline')
+    );
+  });
+
+  /** A decided question leaves at once; waiting for the poll to agree
+      would leave the host looking at a stale queue. */
+  it('takes a decided one off the list straight away', async () => {
+    api.getPendingMessages.mockResolvedValue([asked()] as any);
+    await openQuestions();
+
+    const card = (await screen.findByText('“What happens to the escalation list?”'))
+      .closest('div.bg-white') as HTMLElement;
+    fireEvent.click(within(card).getByRole('button', { name: 'Approve' }));
+
+    await waitFor(() => expect(
+      screen.queryByText('“What happens to the escalation list?”')
+    ).toBeNull());
+  });
+});
+
+/**
  * What has been shared with the room, on the slides tab.
  *
  * A bare filename said nothing about what a file was, how big, who put
@@ -278,8 +380,61 @@ describe('the slides tab', () => {
     await waitFor(() => expect(api.deleteResource).toHaveBeenCalledWith('m1', 'a1'));
   });
 
-  it('shares a new one from here', async () => {
+  /**
+   * Under the talk it belongs to. A flat list said which files
+   * existed and not which part of the day they were for, which is
+   * what a host asks of them while the day is running.
+   */
+  it('files each one under the talk it belongs to', async () => {
+    api.listSessions.mockResolvedValue([
+      { id: 's1', event: 'm1', title: 'Opening Keynote',
+        starts_at: '2026-09-15T04:00:00Z', duration_minutes: 30,
+        status: 'done', position: 0 },
+      { id: 's2', event: 'm1', title: 'Field Response',
+        starts_at: '2026-09-15T05:00:00Z', duration_minutes: 30,
+        status: 'scheduled', position: 1 },
+    ] as any);
+    api.getResources.mockResolvedValue([
+      file({ id: 'a1', display_name: 'Keynote Deck.pdf', session: 's1' }),
+      file({ id: 'a2', display_name: 'Field Map.pdf', session: 's2' }),
+    ] as any);
+
     await openSlides();
+
+    // Anchored on the file rather than the heading: the stage card and
+    // the running order below both name the talk as well.
+    const group = (await screen.findByText('Keynote Deck.pdf'))
+      .closest('div.bg-white') as HTMLElement;
+
+    expect(within(group).getByText('Opening Keynote')).toBeInTheDocument();
+    expect(within(group).queryByText('Field Map.pdf')).toBeNull();
+  });
+
+  /** A file shared against no talk is still findable. */
+  it('keeps one that belongs to no talk where it can be seen', async () => {
+    api.getResources.mockResolvedValue([
+      file({ display_name: 'Programme.pdf', session: null }),
+    ] as any);
+
+    await openSlides();
+
+    const loose = (await screen.findByText('For the whole event'))
+      .closest('div.bg-white') as HTMLElement;
+    expect(within(loose).getByText('Programme.pdf')).toBeInTheDocument();
+  });
+
+  /** Each group adds to itself, so a file goes where it was put. */
+  it('shares a new one into the talk it was added under', async () => {
+    api.listSessions.mockResolvedValue([
+      { id: 's1', event: 'm1', title: 'Opening Keynote',
+        starts_at: '2026-09-15T04:00:00Z', duration_minutes: 30,
+        status: 'done', position: 0 },
+    ] as any);
+    api.getResources.mockResolvedValue([] as any);
+
+    await openSlides();
+    // The one Add inside the panel; the group is the only thing there.
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add' }));
 
     const sent = new File(['x'], 'Map.pdf', { type: 'application/pdf' });
     fireEvent.change(screen.getByLabelText('Choose files'), {
@@ -287,23 +442,18 @@ describe('the slides tab', () => {
     });
 
     await waitFor(() =>
-      expect(api.uploadResource).toHaveBeenCalledWith('m1', sent)
+      expect(api.uploadResource).toHaveBeenCalledWith('m1', sent, undefined, 's1')
     );
   });
 
   /**
    * Questions arrive from the room and photographs have their own way
-   * in, so a button here that did nothing on two tabs out of three
-   * would be a puzzle.
+   * in, so an Add on those two tabs would be a puzzle.
    */
-  it('offers the way in on the slides, and nowhere else', async () => {
+  it('offers no Add on the questions tab', async () => {
     await openSlides();
-    expect(screen.getByRole('button', { name: '+ Add' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Questions' }));
-    expect(screen.queryByRole('button', { name: '+ Add' })).toBeNull();
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Photos' }));
     expect(screen.queryByRole('button', { name: '+ Add' })).toBeNull();
   });
 });
