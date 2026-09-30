@@ -6,6 +6,7 @@ import caretRight from './caret-right.svg';
 import chatLeftDots from './chat-left-dots.svg';
 import checkFill from './check-fill.svg';
 import chevronDown from './chevron-down.svg';
+import chevronDownDark from './chevron-down-dark.svg';
 import exitStroke from './exit-stroke.svg';
 import fileCopy from './file-copy.svg';
 import fileUpload from './file-upload.svg';
@@ -38,6 +39,14 @@ export const FIGMA_ICON = {
   folder: folderOpenOutline,
   participants: peoplesTwo,
   chevronDown,
+  /** The same chevron for a white card.
+
+      The exported one is filled #FCFCFC because it was drawn for the
+      navy bar, and on a white sheet it is invisible - which is how the
+      request queues came to look as though they had no dropdown at
+      all. This is that file's own path with the fill changed, not a
+      redrawn glyph. */
+  chevronDownDark,
   arrowRight,
   copy: fileCopy,
   /** The page-with-an-arrow over an empty upload box. */
