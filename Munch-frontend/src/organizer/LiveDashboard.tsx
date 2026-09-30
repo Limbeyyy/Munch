@@ -9,11 +9,18 @@ import { RoomAgenda } from './RoomAgenda';
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-/** "10:12-10:25", the way every time chip on this screen is written. */
-const span = (from: string, minutes?: number | null) => {
-  const start = new Date(from);
-  const end = new Date(+start + (minutes ?? 0) * 60000);
-  return `${clock(start.toISOString())}-${clock(end.toISOString())}`;
+/**
+ * How long something has been going, as a live room counts it.
+ *
+ * Hours only once there are some: "14m" reads at a glance where
+ * "00:14" asks to be parsed.
+ */
+const elapsedSince = (from: string | null | undefined): string => {
+  if (!from) return '';
+  const mins = Math.floor((Date.now() - +new Date(from)) / 60000);
+  if (mins < 0) return '';
+  const hours = Math.floor(mins / 60);
+  return hours > 0 ? `${hours}h ${mins % 60}m` : `${mins}m`;
 };
 
 /** The white card everything on this screen is drawn on. */
@@ -103,6 +110,16 @@ export const LiveDashboard: React.FC<Props> = ({
 
   const [tab, setTab] = useState<PanelTab>('photos');
   const [segments, setSegments] = useState<TranscriptionSegment[]>([]);
+  /** Bumped on a timer. The value is never read: the re-render that
+      comes with it is the whole point. */
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setTick((n) => n + 1), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const running = elapsedSince(event.started_at);
 
   const agenda = useMemo(
     () => [...sessions].sort(
@@ -180,15 +197,24 @@ export const LiveDashboard: React.FC<Props> = ({
                       {t({ ne: 'लाइभ', en: 'Live' })}
                     </span>
                   )}
-                  {stageActions}
+                  {/* How long it has been running, beside the light that
+                      says it is. A start and an end time said when the
+                      talk was meant to happen, which the running order
+                      already says and nobody watching a live room asks. */}
+                  {running && (
+                    <span className="text-[13px] text-[#4a5567] leading-[1.4]
+                      tabular-nums">
+                      {running}
+                    </span>
+                  )}
                 </span>
               }
             >
               {event.title}
             </CardHead>
 
-            <div className="flex flex-col gap-3 justify-center px-4 py-2.5">
-              <div className="flex gap-2 items-center">
+            <div className="px-4 py-2.5 flex gap-3 items-start justify-between">
+              <div className="flex gap-2 items-center min-w-0">
                 <Portrait
                   name={onStage?.speaker_name || onStage?.title || event.title}
                   src={onStage?.speaker_photo_url}
@@ -206,20 +232,20 @@ export const LiveDashboard: React.FC<Props> = ({
                 </div>
               </div>
 
-              <div className="flex gap-3 items-center flex-wrap">
-                {onStage?.starts_at && (
-                  <span className="text-[14px] text-[#4a5567] leading-[1.4] tracking-[-0.07px]">
-                    {span(onStage.starts_at, onStage.duration_minutes)}
-                  </span>
-                )}
-              </div>
+              {/* Ending the session belongs beside the session, not up
+                  beside the event's own name. */}
+              {stageActions && (
+                <span className="flex items-center gap-2 flex-none">
+                  {stageActions}
+                </span>
+              )}
             </div>
-          </Card>
 
-          {/* Slides, questions, photos - the three things a room carries. */}
-          <Card>
+            {/* Slides, questions, photos - the three things a room
+                carries. On the same sheet as the talk they belong to
+                rather than adrift underneath it. */}
             <div className="bg-[#fcfcfc] h-12 flex items-stretch
-              border-b border-[#e3e8ef]" role="tablist">
+              border-y border-[#e3e8ef]" role="tablist">
               {TABS.map((one) => (
                 <button
                   key={one.id}
@@ -305,7 +331,9 @@ export const LiveDashboard: React.FC<Props> = ({
                    a log rather than as a conversation. */
                 segments.map((line, i) => (
                   <div key={i} className="pt-3" data-transcript-line>
-                    <p className="text-[12px] leading-4 text-[#99a1af] tabular-nums">
+                    {/* Smaller than both the name and the words: it is
+                        the least of the three things on the line. */}
+                    <p className="text-[11px] leading-4 text-[#99a1af] tabular-nums">
                       {line.created_at ? clock(line.created_at) : num(i + 1)}
                     </p>
                     {line.speaker_name && (
