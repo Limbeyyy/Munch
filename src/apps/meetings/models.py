@@ -523,6 +523,13 @@ class GuestAttendee(models.Model):
         return f"{self.full_name} ({self.status}) @ {self.event.code}"
 
 
+def hosts_this(event, email) -> bool:
+    """Whether that address is the one running this event."""
+    theirs = (getattr(getattr(event, 'host', None), 'email', '') or '').strip()
+    given = (email or '').strip()
+    return bool(theirs) and theirs.lower() == given.lower()
+
+
 class EventInvite(models.Model):
     """An invitation link the host sent to a specific email address.
 
@@ -553,6 +560,23 @@ class EventInvite(models.Model):
         indexes = [
             models.Index(fields=['event', 'joined_at']),
         ]
+
+    def save(self, *args, **kwargs):
+        """Refuse an invitation the host wrote to themselves.
+
+        The last line of defence rather than the first - the endpoints
+        say so properly - but it belongs here too, because the rule is
+        about what an invitation *is* and not about which screen made
+        it. A host is already at their own event; being on its
+        invitation list would count them twice in the headcount and put
+        the event back on their own attendee app.
+        """
+        if hosts_this(self.event, self.email):
+            raise ValueError(
+                'The host is already at their own event and cannot be '
+                'invited to it.'
+            )
+        return super().save(*args, **kwargs)
 
     @property
     def has_joined(self) -> bool:

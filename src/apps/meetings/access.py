@@ -58,10 +58,10 @@ def events_attended_by(user):
     programmes, and their own SOS has no business appearing there with
     nobody having asked them to it.
 
-    Being asked still counts even when they asked themselves. A host who
-    puts their own address on the invitation list of their own event has
-    said they are going to it, and it shows up here read-only like
-    anybody else's.
+    Never their own event, by any route. A host cannot be invited to
+    what they are running, cannot be a participant in it, and does not
+    meet it in the app - the event is theirs to run and the host portal
+    is where it is run from.
 
     The one trap is the participant row. Creating an event gives the
     host one straight away, in the host role, so matching on
@@ -93,7 +93,7 @@ def events_attended_by(user):
         | _named(user, speaks='sessions__speaker_email')
         | _named(user, granted='role_grants__email')
         | _named(user, on_session='sessions__role_grants__email')
-    )
+    ) & ~Q(host=user)
 
 
 def sessions_visible_to(user):
