@@ -44,11 +44,19 @@ def _who(request, event):
             status=status.HTTP_401_UNAUTHORIZED,
         )
 
+    from src.apps.meetings.access import can_see_event
     from src.apps.meetings.entry import is_open
 
+    # `can_see_event` is the rule everywhere else: whoever was invited,
+    # named on the running order, given a role, or has already joined.
+    # Without it the hub closed the moment the event ended, because an
+    # invitee who read along without joining the room has no
+    # participant row - so their own questions vanished the day after,
+    # along with the answers.
     belongs = (
         str(user.id) == str(event.host_id)
         or event.participants.filter(user=user).exists()
+        or can_see_event(event, user)
         or is_open(event)
     )
     if not belongs:

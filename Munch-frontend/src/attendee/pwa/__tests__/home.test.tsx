@@ -9,6 +9,7 @@ jest.mock('../../../services/api', () => ({
     listEvents: jest.fn(),
     listSessions: jest.fn(),
     getSubEvents: jest.fn(),
+    getPhotos: jest.fn(),
     getResources: jest.fn(),
     getHub: jest.fn(),
     voteHubPost: jest.fn(),
@@ -16,7 +17,6 @@ jest.mock('../../../services/api', () => ({
     getReminders: jest.fn(),
     markRemindersRead: jest.fn(),
     getEventSegments: jest.fn(),
-    getPhotos: jest.fn(),
     hasSession: jest.fn(() => false),
   },
 }));
@@ -74,6 +74,7 @@ beforeEach(() => {
   api.listEvents.mockResolvedValue([event()] as any);
   api.listSessions.mockResolvedValue([session()] as any);
   api.getSubEvents.mockResolvedValue([] as any);
+  api.getPhotos.mockResolvedValue({ folders: [], photos: [] } as any);
   api.getResources.mockResolvedValue([] as any);
   api.getHub.mockResolvedValue({ questions: [], ideas: [], suggestions: [] } as any);
   api.getSessionSummary.mockRejectedValue(new Error('not published'));
@@ -358,6 +359,68 @@ describe('one event, opened', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Suggestions' }));
     expect(await screen.findByText('More signage.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Vote up' })).toBeNull();
+  });
+
+  /**
+   * The files tab holds two things: the handouts filed against each
+   * talk, and the albums of the day.
+   */
+  it('switches between the handouts and the albums', async () => {
+    api.getResources.mockResolvedValue([
+      { id: 'a1', session: 's1', display_name: 'Deck.pdf', file_size: 2048,
+        web_view_link: 'https://example.test/deck' },
+    ] as any);
+    api.getPhotos.mockResolvedValue({
+      folders: [{ id: 'f1', name: 'Event Opening', photo_count: 24,
+        is_default: false, created_by: '', is_mine: false, created_at: '' }],
+      photos: [],
+    } as any);
+
+    await openIt();
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+
+    expect(await screen.findByText('Deck.pdf')).toBeInTheDocument();
+    expect(screen.queryByText('Event Opening')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Photos' }));
+
+    expect(await screen.findByText('Event Opening')).toBeInTheDocument();
+    expect(screen.getByText('24 photos')).toBeInTheDocument();
+    expect(screen.queryByText('Deck.pdf')).toBeNull();
+  });
+
+  it('says so where there are no albums', async () => {
+    await openIt();
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Photos' }));
+
+    expect(await screen.findByText('No photographs yet.')).toBeInTheDocument();
+  });
+
+  /** Having chosen Photos, leaving the tab should leave the albums. */
+  it('leaves the albums behind when another tab is chosen', async () => {
+    api.getPhotos.mockResolvedValue({
+      folders: [{ id: 'f1', name: 'Event Opening', photo_count: 24,
+        is_default: false, created_by: '', is_mine: false, created_at: '' }],
+      photos: [],
+    } as any);
+
+    await openIt();
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Photos' }));
+    expect(await screen.findByText('Event Opening')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Agendas' }));
+    expect(screen.queryByText('Event Opening')).toBeNull();
+  });
+
+  /** The switcher is the files tab's own; it has no business elsewhere. */
+  it('offers the switcher only on the files tab', async () => {
+    await openIt();
+    expect(screen.queryByRole('button', { name: 'Photos' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+    expect(screen.getByRole('button', { name: 'Photos' })).toBeInTheDocument();
   });
 
   it('offers a file to take away, with what it is', async () => {
