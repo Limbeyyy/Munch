@@ -226,7 +226,7 @@ def forget_guests(event):
     # pointer to a row that is about to go. A question asked from the floor
     # belongs to the event - it may be on the board already - and the
     # host should still be able to put it up, or read who asked it.
-    from src.apps.meetings.models import ChatMessage
+    from src.apps.meetings.models import ChatMessage, HubPost
 
     for guest in event.guests.all():
         ChatMessage.objects.filter(guest_sender=guest).update(
@@ -235,6 +235,11 @@ def forget_guests(event):
         ChatMessage.objects.filter(guest_recipient=guest).update(
             guest_recipient_name=guest.full_name
         )
+        # And what they put on the board. These used to be deleted with
+        # the guest row, so a question asked from the floor disappeared
+        # the moment the event ended - including one the host had not
+        # got to yet.
+        HubPost.objects.filter(guest=guest).update(guest_name=guest.full_name)
 
     gone, _ = GuestAttendee.objects.filter(event=event).delete()
     if gone:
