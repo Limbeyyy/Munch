@@ -245,6 +245,25 @@ export const EventDetail: React.FC<{
     board[kind].filter((post) => post.session_id === one.id);
 
   /**
+   * Everything that belongs to no talk on the programme.
+   *
+   * A question asked with nothing on stage carries no session, and
+   * the rest of this screen is grouped by session - so without a
+   * place of its own it was drawn nowhere at all. Which is how a
+   * question somebody could see in the room, and the host could see
+   * on their queue, came back to an empty tab here.
+   *
+   * Measured against every session the event has, not the day being
+   * shown, or switching days would strand the ones from the other.
+   */
+  const onProgramme = (id: string | null | undefined) =>
+    Boolean(id) && sessions.some((one) => one.id === id);
+
+  const looseFiles = files.filter((one) => !onProgramme(one.session));
+  const loosePosts = (kind: 'questions' | 'suggestions') =>
+    board[kind].filter((post) => !onProgramme(post.session_id));
+
+  /**
    * A vote on a question, which sorts a queue. Suggestions carry none:
    * nobody reads a suggestion in order of popularity.
    */
@@ -581,6 +600,77 @@ export const EventDetail: React.FC<{
                 })}
             </section>
           ))
+        )}
+
+        {/* Not under any part of the day, because it belongs to none. */}
+        {tab === 'files' && filesAt === 'agenda' && looseFiles.length > 0 && (
+          <section className="bg-white px-4 py-2.5 flex flex-col gap-2.5">
+            <GroupHead title={t({ ne: 'कार्यक्रमभरि', en: 'For the whole event' })} />
+            <ul className="pt-1 flex flex-col gap-2">
+              {looseFiles.map((file) => (
+                <li
+                  key={file.id}
+                  className="border-[0.72px] border-[#b3b3b3] rounded-[16px] p-4
+                    flex gap-3 items-center"
+                >
+                  <span className="size-10 rounded-[12px] bg-[#fef2f2]
+                    grid place-items-center flex-none">
+                    <img src={fileIcon} alt="" width="18" height="18" />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-[14px] font-medium text-[#101828]
+                      leading-[21px] truncate">
+                      {file.display_name}
+                    </span>
+                    <span className="block text-[12px] text-[#99a1af] leading-4">
+                      {kindOf(file.display_name ?? '')} ·{' '}
+                      {formatSize(file.file_size)}
+                    </span>
+                  </span>
+                  {file.web_view_link && (
+                    <a
+                      href={file.web_view_link}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={t({
+                        ne: `${file.display_name} खोल्नुहोस्`,
+                        en: `Download ${file.display_name}`,
+                      })}
+                      className="bg-[#efefef] rounded-[12px] p-2 flex-none
+                        grid place-items-center"
+                    >
+                      <img src={downloadIcon} alt="" width="18" height="18" />
+                    </a>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {(tab === 'questions' || tab === 'suggestions')
+          && loosePosts(tab).length > 0 && (
+          <section className="bg-white px-4 py-2.5 flex flex-col gap-2.5">
+            <GroupHead
+              title={t({ ne: 'कार्यक्रमभरि', en: 'For the whole event' })}
+            />
+            <Thread
+              title={tab === 'questions'
+                ? t({ ne: 'प्रश्न', en: 'Questions' })
+                : t({ ne: 'सुझाव', en: 'Suggestions' })}
+              posts={loosePosts(tab)}
+              more={(n) => (tab === 'questions'
+                ? t({
+                    ne: `थप ${num(n)} प्रश्न हेर्नुहोस्`,
+                    en: `view ${n} more ${n === 1 ? 'question' : 'questions'}`,
+                  })
+                : t({
+                    ne: `थप ${num(n)} सुझाव हेर्नुहोस्`,
+                    en: `view ${n} more ${n === 1 ? 'suggestion' : 'suggestions'}`,
+                  }))}
+              onVote={tab === 'questions' ? vote : undefined}
+            />
+          </section>
         )}
       </div>
 
