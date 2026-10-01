@@ -5,6 +5,14 @@ from django.core.validators import EmailValidator
 from src.utilities.utils import encrypt_token, decrypt_token
 import uuid
 
+def avatar_path(instance, filename):
+    """Where somebody's own photograph is kept."""
+    import posixpath
+
+    ext = posixpath.splitext(filename)[1].lower() or '.jpg'
+    return f'avatars/{instance.id}{ext}'
+
+
 class User(AbstractUser):
     """
     Custom User model with Google OAuth integration
@@ -12,7 +20,13 @@ class User(AbstractUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(unique=True, validators=[EmailValidator()])
     google_subject = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    #: The picture Google had when they signed in. Seeded, not owned:
+    #: it is where the face comes from until somebody puts up their own.
     avatar_url = models.URLField(max_length=500, null=True, blank=True)
+    #: Their own, uploaded here. Kept apart from the Google one so that
+    #: signing in again cannot overwrite a picture they chose, and so
+    #: that removing theirs falls back to Google rather than to nothing.
+    avatar = models.ImageField(upload_to=avatar_path, null=True, blank=True)
     is_active = models.BooleanField(default=True)
     is_verified = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -28,6 +42,13 @@ class User(AbstractUser):
     #: Where invoices would be addressed. Free text: an address is not the
     #: same shape in two countries.
     billing_address = models.CharField(max_length=255, blank=True)
+
+    def photo_url(self, request=None):
+        """The picture to show: their own if they put one up, else Google's."""
+        if self.avatar:
+            url = self.avatar.url
+            return request.build_absolute_uri(url) if request else url
+        return self.avatar_url or None
 
     #: When somebody asked for their account to be closed.
     #:

@@ -9,6 +9,8 @@ jest.mock('../../../services/api', () => ({
   apiClient: {
     getNotificationPrefs: jest.fn(),
     setNotificationPrefs: jest.fn(),
+    updateProfile: jest.fn(),
+    uploadAvatar: jest.fn(),
     hasSession: jest.fn(() => false),
   },
 }));
@@ -19,6 +21,12 @@ jest.mock('react-hot-toast', () => ({
 }));
 
 const api = apiClient as jest.Mocked<typeof apiClient>;
+
+// jsdom has neither, and the picture preview is held on an object URL.
+beforeAll(() => {
+  (URL as any).createObjectURL = jest.fn(() => 'blob:picked');
+  (URL as any).revokeObjectURL = jest.fn();
+});
 
 const PREFS = {
   event_reminders: true, new_sessions: false, event_updates: true,
@@ -41,6 +49,8 @@ beforeEach(() => {
     } as any,
   });
   api.getNotificationPrefs.mockResolvedValue(PREFS as any);
+  api.updateProfile.mockImplementation(async (d) => ({ ...d }) as any);
+  api.uploadAvatar.mockResolvedValue({} as any);
   api.setNotificationPrefs.mockImplementation(
     async (changes) => ({ ...PREFS, ...changes }) as any
   );
@@ -106,13 +116,80 @@ describe('profile information', () => {
     expect(screen.getByText('suminmaharjan@gmail.com')).toBeInTheDocument();
   });
 
-  /** It comes from Google, so there is nothing here to change. */
-  it('offers no way to change it', async () => {
+  /**
+   * Google seeds the name and the picture; this system owns them
+   * after that, so both are the person's to change.
+   */
+  it('reads rather than edits until asked', async () => {
     await open('Profile information');
     await screen.findByText('Profile Information');
 
     expect(screen.queryByRole('textbox')).toBeNull();
-    expect(screen.queryByRole('button', { name: /Edit/ })).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Edit Profile' })
+    ).toBeInTheDocument();
+  });
+
+  it('opens the name for editing, and offers to save', async () => {
+    await open('Profile information');
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Profile' }));
+
+    expect(screen.getByLabelText('Full Name')).toHaveValue('Sumin Maharjan');
+    expect(
+      screen.getByRole('button', { name: 'Save Changes' })
+    ).toBeInTheDocument();
+  });
+
+  /** Nothing to keep yet, so there is nothing to press. */
+  it('will not save until something has changed', async () => {
+    await open('Profile information');
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Profile' }));
+
+    expect(screen.getByRole('button', { name: 'Save Changes' })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Full Name'), {
+      target: { value: 'Sumin K Shrestha' },
+    });
+    expect(
+      screen.getByRole('button', { name: 'Save Changes' })
+    ).not.toBeDisabled();
+  });
+
+  it('writes the name back as the two the account keeps', async () => {
+    await open('Profile information');
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Profile' }));
+    fireEvent.change(screen.getByLabelText('Full Name'), {
+      target: { value: 'Sumin K Shrestha' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    await waitFor(() => expect(api.updateProfile).toHaveBeenCalledWith({
+      first_name: 'Sumin', last_name: 'K Shrestha',
+    }));
+  });
+
+  it('puts up a photograph', async () => {
+    await open('Profile information');
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Profile' }));
+
+    const file = new File(['x'], 'me.png', { type: 'image/png' });
+    fireEvent.change(screen.getByLabelText('Choose a photo'), {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    await waitFor(() => expect(api.uploadAvatar).toHaveBeenCalledWith(file));
+  });
+
+  /** The address is what the account is. */
+  it('never offers the email for editing', async () => {
+    await open('Profile information');
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Profile' }));
+
+    expect(screen.getByText('suminmaharjan@gmail.com')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Email/)).toBeNull();
+    // The name is the only thing open.
+    expect(screen.getAllByRole('textbox')).toHaveLength(1);
   });
 
   it('comes back', async () => {
