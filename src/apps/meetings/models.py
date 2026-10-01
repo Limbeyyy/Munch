@@ -1011,10 +1011,18 @@ class HubPost(models.Model):
         User, on_delete=models.CASCADE, related_name='hub_posts',
         null=True, blank=True,
     )
+    # Not CASCADE, which is what it was, and what deleted a guest's
+    # questions outright at the end of every event: guest rows are
+    # forgotten when the hall empties, and these went with them. What
+    # somebody asked belongs to the event - it may be on the board
+    # already, and the host may still have to answer it - so the post
+    # keeps the name itself rather than only pointing at a row that is
+    # about to go. The same shape ChatMessage has used all along.
     guest = models.ForeignKey(
-        'meetings.GuestAttendee', on_delete=models.CASCADE,
+        'meetings.GuestAttendee', on_delete=models.SET_NULL,
         related_name='hub_posts', null=True, blank=True,
     )
+    guest_name = models.CharField(max_length=120, blank=True, default='')
 
     # Asked without a name against it. The author is still recorded - one
     # person gets one vote and one question - but it is not shown.
@@ -1047,11 +1055,19 @@ class HubPost(models.Model):
             models.Index(fields=['session']),
         ]
         constraints = [
+            # Never two authors, and never none - except for a guest
+            # who has since been forgotten, whose name the post keeps
+            # instead. Without that third case the rule would forbid
+            # the forgetting, which is the one thing it must not do.
             models.CheckConstraint(
                 name='hub_post_exactly_one_author',
                 check=(
                     models.Q(user__isnull=False, guest__isnull=True)
                     | models.Q(user__isnull=True, guest__isnull=False)
+                    | models.Q(
+                        user__isnull=True, guest__isnull=True,
+                        guest_name__gt='',
+                    )
                 ),
             ),
         ]
@@ -1064,7 +1080,13 @@ class HubPost(models.Model):
         if self.user:
             full = f"{self.user.first_name} {self.user.last_name}".strip()
             return full or self.user.email
-        return self.guest.full_name if self.guest else 'Attendee'
+        if self.guest_id:
+            return self.guest.full_name
+        if self.guest_name:
+            # A guest who has been forgotten. What they asked is still
+            # here, and still theirs.
+            return self.guest_name
+        return 'Attendee'
 
     def __str__(self):
         return f"{self.kind}: {self.body[:40]}"
