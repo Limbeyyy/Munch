@@ -5,6 +5,9 @@ import toast from 'react-hot-toast';
 import { GuestJoinDialog } from '../components/GuestJoinDialog';
 import { forgetPortal, markFreshSignIn } from './HomeRedirect';
 import { apiClient } from '../services/api';
+import {
+  googleRedirectUri, oauthOrigin, whyGoogleWillRefuse,
+} from '../services/oauthOrigin';
 
 export const LoginPage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -49,8 +52,7 @@ export const LoginPage: React.FC = () => {
       window.history.replaceState({}, document.title, cleanUrl.toString());
 
       try {
-        const redirectUri = `${window.location.origin}/login`;
-        await googleLogin(code, redirectUri);
+        await googleLogin(code, googleRedirectUri());
         toast.success('Logged in successfully!');
         // Signing in afresh is where the host-or-attendee question belongs,
         // so drop any earlier answer and let the chooser at "/" ask again.
@@ -69,9 +71,17 @@ export const LoginPage: React.FC = () => {
   }, [searchParams, googleLogin, navigate]);
 
   const handleGoogleLogin = async () => {
+    // Said here rather than by Google. Sent on, the person lands on
+    // "Access blocked: Authorization Error" with a line about device_id
+    // that tells them nothing they can act on.
+    const refusal = whyGoogleWillRefuse(oauthOrigin());
+    if (refusal) {
+      toast.error(refusal, { duration: 10000 });
+      return;
+    }
+
     try {
-      const redirectUri = `${window.location.origin}/login`;
-      const response = await apiClient.googleConnect(redirectUri);
+      const response = await apiClient.googleConnect(googleRedirectUri());
       window.location.href = response.auth_url;
     } catch (error: any) {
       toast.error('Failed to initiate login: ' + error.message);
