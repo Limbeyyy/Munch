@@ -36,11 +36,19 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
         PATCH as well as PUT: the write is partial either way, and the
         client has always sent a patch - which this refused with a 405.
         """
+        # The request goes to the serializer so an uploaded picture
+        # comes back as a whole address rather than a path the client
+        # would have to know how to complete.
         if request.method == 'GET':
-            serializer = UserProfileSerializer(request.user)
+            serializer = UserProfileSerializer(
+                request.user, context={'request': request}
+            )
             return Response(serializer.data)
         else:
-            serializer = UserProfileSerializer(request.user, data=request.data, partial=True)
+            serializer = UserProfileSerializer(
+                request.user, data=request.data, partial=True,
+                context={'request': request},
+            )
             serializer.is_valid(raise_exception=True)
             serializer.save()
             return Response(serializer.data)

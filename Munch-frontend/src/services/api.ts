@@ -1471,6 +1471,23 @@ class ApiClient {
    * The address is not among it: it is what the account is, and what
    * Google signed them in as. The server ignores it either way.
    */
+  /**
+   * Put up a photograph of their own.
+   *
+   * Sent as a file rather than an address: a field that took a URL
+   * would let anything at all be pointed at from somebody's profile.
+   * What Google supplied is left where it is, so taking this one down
+   * falls back to that rather than to nothing.
+   */
+  async uploadAvatar(file: File): Promise<User> {
+    const form = new FormData();
+    form.append('avatar', file);
+    const response = await this.client.patch('/users/profile/', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  }
+
   async updateProfile(data: {
     first_name?: string;
     last_name?: string;
