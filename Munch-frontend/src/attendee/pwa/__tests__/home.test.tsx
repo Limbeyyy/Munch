@@ -293,6 +293,56 @@ describe('one event, opened', () => {
     ).toBeInTheDocument();
   });
 
+  /**
+   * A question asked with nothing on stage carries no session, and
+   * the rest of the screen is grouped by session - so it used to be
+   * drawn nowhere at all, and the tab came back empty.
+   */
+  it('shows a question that belongs to no talk', async () => {
+    api.getHub.mockResolvedValue({
+      questions: [question({ id: 'h1', body: 'What is Kataho?',
+        session_id: null })],
+      ideas: [],
+      suggestions: [question({ id: 'h2', kind: 'suggestion',
+        body: 'Do this proper', session_id: null })],
+    } as any);
+
+    await openIt();
+    fireEvent.click(screen.getByRole('tab', { name: 'Questions' }));
+    expect(await screen.findByText('What is Kataho?')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Suggestions' }));
+    expect(await screen.findByText('Do this proper')).toBeInTheDocument();
+  });
+
+  /** One against a talk that is not on the day being shown is not lost. */
+  it('shows one whose talk is not on the programme it can see', async () => {
+    api.getHub.mockResolvedValue({
+      questions: [question({ id: 'h1', body: 'From another day.',
+        session_id: 'gone' })],
+      ideas: [], suggestions: [],
+    } as any);
+
+    await openIt();
+    fireEvent.click(screen.getByRole('tab', { name: 'Questions' }));
+
+    expect(await screen.findByText('From another day.')).toBeInTheDocument();
+  });
+
+  it('files one that belongs to no talk where it can be seen', async () => {
+    api.getResources.mockResolvedValue([
+      { id: 'a1', session: null, display_name: 'Programme.pdf',
+        file_size: 2048, web_view_link: 'https://example.test/p' },
+    ] as any);
+
+    await openIt();
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+
+    const loose = (await screen.findByText('For the whole event'))
+      .closest('section') as HTMLElement;
+    expect(within(loose).getByText('Programme.pdf')).toBeInTheDocument();
+  });
+
   it('keeps questions and suggestions apart', async () => {
     api.getHub.mockResolvedValue({
       questions: [question()],
