@@ -188,6 +188,68 @@ class TheHubReachesTheHostTests(APITestCase):
         self.assertEqual(board['questions'], [])
 
 
+class ClearingTheBacklogTests(APITestCase):
+    """Questions asked before the host had a screen for them.
+
+    They were never decided, so they are still waiting - on events that
+    have since finished. The host has to be able to go and clear them
+    now, or they are lost, and nothing about an ended event should
+    stop that.
+    """
+
+    def setUp(self):
+        self.host = make_host('host@example.com')
+        start = timezone.now() - timezone.timedelta(days=2)
+        self.event = make_event(self.host, start=start, minutes=120)
+        self.asker = User.objects.create_user(
+            username='asker', email='asker@example.com', password='pw'
+        )
+        self.event.invites.create(email='asker@example.com')
+        self.stuck = HubPost.objects.create(
+            event=self.event, user=self.asker,
+            kind=HubPost.Kind.QUESTION, body='What is Kataho?',
+            status=HubPost.Status.PENDING,
+        )
+        self.event.status = Event.Status.ENDED
+        self.event.ended_at = timezone.now()
+        self.event.save()
+
+    def test_it_is_waiting_on_the_host_s_screen(self):
+        self.client.force_authenticate(self.host)
+
+        body = self.client.get(
+            f'{API}/events/{self.event.id}/moderation_queue/'
+        ).json()
+
+        self.assertIn('What is Kataho?', [r['body'] for r in body['pending']])
+
+    def test_the_host_can_still_let_it_through(self):
+        self.client.force_authenticate(self.host)
+
+        answer = self.client.post(
+            f'{API}/events/{self.event.id}/moderate_message/',
+            {'message_id': str(self.stuck.id), 'decision': 'approve'},
+            format='json',
+        )
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+        self.stuck.refresh_from_db()
+        self.assertEqual(self.stuck.status, HubPost.Status.PUBLISHED)
+
+    def test_and_it_then_shows_on_the_finished_event(self):
+        self.client.force_authenticate(self.host)
+        self.client.post(
+            f'{API}/events/{self.event.id}/moderate_message/',
+            {'message_id': str(self.stuck.id), 'decision': 'approve'},
+            format='json',
+        )
+
+        self.client.force_authenticate(self.asker)
+        board = self.client.get(f'{API}/events/{self.event.code}/hub/').json()
+
+        self.assertIn('What is Kataho?', [q['body'] for q in board['questions']])
+
+
 class TheHubOutlivesTheEventTests(APITestCase):
     """What was asked does not vanish the day the event ends."""
 
