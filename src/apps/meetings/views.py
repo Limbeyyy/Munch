@@ -966,7 +966,21 @@ class EventRoomViewSet(viewsets.ModelViewSet):
             'sender', 'recipient', 'guest_sender', 'guest_recipient'
         ).order_by('created_at')
 
-        return Response(ChatMessageSerializer(qs, many=True).data)
+        # And what the room wrote into the hub. These used to be missing
+        # entirely: a question asked from the app waited for a host who
+        # had no screen it appeared on.
+        from src.apps.meetings import hub_review
+
+        waiting = [
+            hub_review.as_message(post)
+            for post in hub_review.held_for(event)
+            if hub_review.PILE.get(post.status) == 'pending'
+        ]
+
+        rows = ChatMessageSerializer(qs, many=True).data
+        return Response(
+            sorted([*rows, *waiting], key=lambda r: str(r['created_at']))
+        )
 
     @action(detail=True, methods=['get'], url_path='reviewed_messages')
     def reviewed_messages(self, request, pk=None):
@@ -1060,6 +1074,14 @@ class EventRoomViewSet(viewsets.ModelViewSet):
                 if message.moderation_status == state:
                     by_state[name].append(row)
 
+        # The hub's own, in the same three piles.
+        from src.apps.meetings import hub_review
+
+        for post in hub_review.held_for(event):
+            pile = hub_review.PILE.get(post.status)
+            if pile in by_state:
+                by_state[pile].append(hub_review.as_message(post))
+
         return Response({
             **by_state,
             'sessions': [
@@ -1103,6 +1125,25 @@ class EventRoomViewSet(viewsets.ModelViewSet):
         ).select_related(
             'sender', 'recipient', 'guest_sender', 'guest_recipient'
         ).first()
+
+        if message is None:
+            # It may be something the room wrote into the hub, which the
+            # queues now carry alongside the messages. One endpoint
+            # decides both, because to the host they are one queue.
+            from src.apps.meetings import hub_review
+            from src.apps.meetings.models import HubPost
+
+            post = HubPost.objects.filter(event=event, id=message_id).first()
+            if post is not None:
+                if hub_review.PILE.get(post.status) != 'pending':
+                    return Response(
+                        {'error': f'Already {post.status}'},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                return Response(
+                    hub_review.as_message(hub_review.decide(post, decision))
+                )
+
         if message is None:
             return Response(
                 {'error': 'Message not found'},

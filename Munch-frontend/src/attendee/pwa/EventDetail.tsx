@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import {
-  Artifact, Event, HubPost, Session, SessionSummary, SubEvent,
+  Artifact, Event, HubPost, PhotoPage, Session, SessionSummary, SubEvent,
 } from '../../types';
 import { Pair, useOrganizer } from '../../organizer/i18n';
 import { errorText } from '../../organizer/errors';
@@ -10,6 +10,7 @@ import { formatSize, kindOf } from '../../organizer/filesAndSummaries/shared';
 import { daysOf } from '../../organizer/events/days';
 import { Grouped, groupSessions } from './grouping';
 import { stateOf } from './HomeShell';
+import { PhotoImage } from '../../organizer/Photos';
 import fileIcon from './icons/file.svg';
 import downloadIcon from './icons/download.svg';
 
@@ -183,6 +184,9 @@ export const EventDetail: React.FC<{
 }> = ({ event, onBack, onEnterRoom }) => {
   const { t, num } = useOrganizer();
   const [tab, setTab] = useState<Tab>('agendas');
+  /** The files tab holds two: the handouts, and the albums. */
+  const [filesAt, setFilesAt] = useState<'agenda' | 'photos'>('agenda');
+  const [albums, setAlbums] = useState<PhotoPage | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [groups, setGroups] = useState<SubEvent[]>([]);
   const [summaries, setSummaries] = useState<Record<string, SessionSummary>>({});
@@ -206,6 +210,8 @@ export const EventDetail: React.FC<{
       questions: hub?.questions ?? [],
       suggestions: hub?.suggestions ?? [],
     });
+
+    apiClient.getPhotos(event.code).then(setAlbums).catch(() => setAlbums(null));
 
     const written = await Promise.all(
       own.map((one) => apiClient.getSessionSummary(one.id)
@@ -333,8 +339,86 @@ export const EventDetail: React.FC<{
         </div>
       )}
 
+      {/* The files tab holds two different things: the handouts filed
+          against each talk, and the albums of the day. A switcher
+          rather than two more tabs along the top, which would have
+          made seven. */}
+      {tab === 'files' && (
+        <div className="bg-white px-4 pt-1 pb-2.5">
+          <div className="bg-[#d6e4f8] rounded-[12px] p-1 flex gap-1 h-11">
+            {([
+              ['agenda', t({ ne: 'कार्यसूचीका फाइल', en: "Agenda's File" })],
+              ['photos', t({ ne: 'तस्बिर', en: 'Photos' })],
+            ] as const).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={filesAt === id}
+                onClick={() => setFilesAt(id)}
+                className={`flex-1 rounded-[8px] capitalize text-[14px] font-medium
+                  leading-5 ${filesAt === id
+                    ? 'bg-white text-[#101828] drop-shadow-[0px_1px_1.5px_rgba(0,0,0,0.1)]'
+                    : 'text-[#6a7282]'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* The albums are of the day rather than of one talk, so they sit
+          outside the parts the rest of the screen is grouped into. */}
+      {tab === 'files' && filesAt === 'photos' && (
+        <section className="bg-white px-4 py-2.5">
+          {(albums?.folders ?? []).length === 0 ? (
+            <p className="py-4 text-[13px] text-[#99a1af]">
+              {t({ ne: 'कुनै तस्बिर छैन।', en: 'No photographs yet.' })}
+            </p>
+          ) : (
+            <div className="pt-3 pb-3 grid grid-cols-2 gap-5">
+              {(albums?.folders ?? []).map((folder) => {
+                const cover = albums?.photos.find(
+                  (one) => one.folder_id === folder.id
+                );
+                return (
+                  <div
+                    key={folder.id}
+                    className="bg-white border-[0.72px] border-[#b3b3b3]
+                      rounded-[16px] overflow-hidden
+                      shadow-[0px_4px_6px_-1px_rgba(0,0,0,0.1),0px_2px_4px_-2px_rgba(0,0,0,0.05)]"
+                  >
+                    <div className="h-[178px] bg-[#f3f4f6]">
+                      {cover && (
+                        <PhotoImage
+                          photo={cover}
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                    </div>
+                    <div className="p-3">
+                      <p className="text-[13px] font-semibold leading-[19.5px]
+                        text-[#101828] truncate">
+                        {folder.name}
+                      </p>
+                      <p className="text-[12px] leading-4 text-[#99a1af]">
+                        {t({
+                          ne: `${num(folder.photo_count)} तस्बिर`,
+                          en: `${folder.photo_count} photo`
+                            + `${folder.photo_count === 1 ? '' : 's'}`,
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
       <div className="flex flex-col gap-1.5">
-        {grouped.length === 0 ? (
+        {tab === 'files' && filesAt === 'photos' ? null : grouped.length === 0 ? (
           <p className="bg-white px-4 py-8 text-center text-[13px] text-[#8b90a0]">
             {t({ ne: 'यहाँ केही छैन।', en: 'Nothing here yet.' })}
           </p>
