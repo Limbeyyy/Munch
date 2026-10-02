@@ -682,11 +682,6 @@ class ApiClient {
   }
 
   // Event endpoints
-  async listEventRooms(): Promise<Event[]> {
-    const response = await this.client.get('/events/');
-    return response.data.results || response.data;
-  }
-
   /** Edit a event in place - used by the organizer's agenda. */
   async updateEventRoom(eventId: string, patch: Partial<Event>): Promise<Event> {
     const response = await this.client.patch(`/events/${eventId}/`, patch);

@@ -62,7 +62,7 @@ beforeEach(() => {
     close() {}
     send() {}
   };
-  api.listEventRooms.mockResolvedValue([event]);
+  api.listEvents.mockResolvedValue([event]);
   api.getReminders.mockResolvedValue({
     reminders: [], unread: 0, event_lead_minutes: 60, session_lead_minutes: 15,
   } as any);
@@ -80,7 +80,7 @@ describe('opening the organizer', () => {
   it('lands on the live desk', async () => {
     showOrganizer();
 
-    await waitFor(() => expect(api.listEventRooms).toHaveBeenCalled());
+    await waitFor(() => expect(api.listEvents).toHaveBeenCalled());
     expect(
       await screen.findByRole('heading', { name: 'Live Dashboard' })
     ).toBeInTheDocument();
@@ -103,10 +103,21 @@ describe('opening the organizer', () => {
   it('says plainly when there is nothing to run', async () => {
     // A host with an empty programme still lands here, so it has to read
     // sensibly rather than looking broken.
-    api.listEventRooms.mockResolvedValue([] as any);
+    api.listEvents.mockResolvedValue([] as any);
 
     showOrganizer();
 
     expect(await screen.findByText(/Nothing is scheduled/)).toBeInTheDocument();
+  });
+
+  /**
+   * These events feed every section of the panel - the live desk, the
+   * files, moderation, attendance, the speakers - so asking the broad
+   * question here put somebody else's event into all of them at once.
+   */
+  it('asks only for the events this person runs', async () => {
+    showOrganizer();
+
+    await waitFor(() => expect(api.listEvents).toHaveBeenCalledWith('host'));
   });
 });
