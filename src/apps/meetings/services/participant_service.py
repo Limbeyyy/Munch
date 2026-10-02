@@ -30,6 +30,18 @@ class ParticipantService:
                 participant.joined_at = timezone.now()
                 participant.save()
 
+            # An invitation to this address has now been taken up. It
+            # used to be stamped only the other way round - inviting
+            # somebody who had already joined - so the ordinary case of
+            # joining after being invited left the invitation looking
+            # unanswered, and the attendance report called them absent.
+            from src.apps.meetings.event_views import _match_existing_participant
+
+            if participant.user.email:
+                _match_existing_participant(
+                    participant.event, participant.user.email
+                )
+
             EventLogEntry.objects.create(
                 event_id=event_id,
                 event_type=EventLogEntry.EventType.PARTICIPANT_JOINED,

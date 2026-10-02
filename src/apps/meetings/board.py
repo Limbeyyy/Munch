@@ -90,11 +90,54 @@ def _entry(message, *, user=None, guest=None):
     }
 
 
+def _hub_entry(post, *, user=None, guest=None):
+    """A hub post in the shape the board is read in.
+
+    Two tables feed one board. A question put to the host privately is
+    a ChatMessage; one written into the hub from the app is a HubPost;
+    once the host has let either through, the room should read them in
+    one list rather than having to know which door it came in by.
+    """
+    from src.apps.meetings import hub
+
+    return {
+        'id': str(post.id),
+        'body': post.body,
+        'asked_by': post.author_label,
+        'asker_is_guest': post.guest_id is not None or bool(post.guest_name),
+        'was_direct': False,
+        'answer': post.answer,
+        'answered_by': post.answered_by,
+        'answered_at': None,
+        'score': hub.score_of(post),
+        'my_vote': hub.my_vote(post, user=user, guest=guest),
+        'sent_to': None,
+        'created_at': post.created_at,
+        #: Which table it came from, so a vote goes to the right place.
+        'is_hub': True,
+    }
+
+
+def _published_hub(event):
+    """What the host has let through from the hub."""
+    from src.apps.meetings.models import HubPost
+
+    return (
+        HubPost.objects.filter(event=event)
+        .select_related('session', 'user', 'guest')
+        .prefetch_related('votes')
+    )
+
+
 def board_for(event, *, user=None, guest=None) -> dict:
     """The board, highest-voted first.
 
     The room decides what most wants answering, so what the host sees at
     the top is what people actually care about.
+
+    Both tables feed it. A question asked from the attendee app lands in
+    HubPost and used to reach no board at all, so the room's Questions
+    panel said nothing was up however many the host had approved.
     """
     sorted_messages = (
         ChatMessage.objects.filter(event=event, moderation_status__in=LET_THROUGH)
@@ -106,13 +149,28 @@ def board_for(event, *, user=None, guest=None) -> dict:
     )
     rendered = [_entry(m, user=user, guest=guest) for m in sorted_messages]
 
-    def of(topic):
+    from src.apps.meetings.models import HubPost
+
+    posts = list(_published_hub(event))
+    asked = [
+        _hub_entry(p, user=user, guest=guest)
+        for p in posts
+        if p.status == HubPost.Status.PUBLISHED
+    ]
+    # Hub suggestions are not here on purpose. This board is read by
+    # everybody in the event, and a suggestion is a private word with
+    # the organizer - the ChatMessage ones on it are there because the
+    # host deliberately published them, which is a decision nobody has
+    # made about these.
+
+    def of(topic, also):
         return sorted(
-            (r for r, m in zip(rendered, sorted_messages) if m.topic == topic),
-            key=lambda r: (-r['score'], r['created_at']),
+            [r for r, m in zip(rendered, sorted_messages) if m.topic == topic]
+            + also,
+            key=lambda r: (-r['score'], str(r['created_at'])),
         )
 
     return {
-        'faq': of(ChatMessage.Topic.FAQ),
-        'suggestions': of(ChatMessage.Topic.SUGGESTION),
+        'faq': of(ChatMessage.Topic.FAQ, asked),
+        'suggestions': of(ChatMessage.Topic.SUGGESTION, []),
     }

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useEventStore } from '../store/eventStore';
 import { useAuthStore } from '../store/authStore';
+import { formatElapsed } from '../services/elapsed';
 import { apiClient } from '../services/api';
 import { RESOURCE_POLL_MS } from '../services/polling';
 import {
@@ -32,16 +33,6 @@ const formatFileSize = (bytes?: number | null): string => {
     unit += 1;
   }
   return `${size < 10 && unit > 0 ? size.toFixed(1) : Math.round(size)} ${units[unit]}`;
-};
-
-const formatElapsed = (totalSeconds: number): string => {
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return hours > 0
-    ? `${hours}:${pad(minutes)}:${pad(seconds)}`
-    : `${pad(minutes)}:${pad(seconds)}`;
 };
 
 const EventRoomInner: React.FC = () => {
@@ -138,11 +129,17 @@ const EventRoomInner: React.FC = () => {
   // identity changes on every refetch and would otherwise tear down the
   // websocket, the camera and the timer.
   const eventId = currentEvent?.id ?? null;
-  // A room is a session, not a event. The event may be a whole
-  // morning; what people are sitting through is one talk, and that is
-  // what the clock on the wall should count.
   const session = currentEvent?.current_session ?? null;
-  const startedAt = session?.started_at ?? null;
+  /*
+   * The clock counts the event, not the talk on stage.
+   *
+   * It used to count the talk, on the reasoning that what people are
+   * sitting through is one talk. True, but it meant the host's room
+   * read 03:46 while the same person's phone read 00:06 - two honest
+   * numbers measuring two different things under one label, which is
+   * worse than either. One event, one elapsed time, everywhere.
+   */
+  const startedAt = currentEvent?.started_at ?? session?.started_at ?? null;
 
   useEffect(() => {
     eventIdRef.current = eventId;

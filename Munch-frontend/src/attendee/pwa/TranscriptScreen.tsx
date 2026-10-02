@@ -2,18 +2,12 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { apiClient } from '../../services/api';
 import { Event, Session, TranscriptionSegment } from '../../types';
 import { useOrganizer } from '../../organizer/i18n';
+import { useElapsed } from '../../services/elapsed';
 
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 /** How long the event has been running, as the header counts it. */
-const runningFor = (from: string | null | undefined): string => {
-  if (!from) return '';
-  const minutes = Math.max(0, Math.floor((Date.now() - +new Date(from)) / 60000));
-  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${
-    String(minutes % 60).padStart(2, '0')}`;
-};
-
 /**
  * What is being said, as it is said.
  *
@@ -30,7 +24,7 @@ export const TranscriptScreen: React.FC<{
   const { t } = useOrganizer();
   const [lines, setLines] = useState<TranscriptionSegment[]>([]);
   const [following, setFollowing] = useState(true);
-  const [tick, setTick] = useState(0);
+  const running = useElapsed(event.started_at);
   const foot = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -49,11 +43,6 @@ export const TranscriptScreen: React.FC<{
     return () => clearInterval(id);
   }, [read]);
 
-  // The running time, once a minute.
-  useEffect(() => {
-    const id = setInterval(() => setTick((n) => n + 1), 30000);
-    return () => clearInterval(id);
-  }, []);
 
   useEffect(() => {
     if (following) foot.current?.scrollIntoView({ block: 'end' });
@@ -100,7 +89,7 @@ export const TranscriptScreen: React.FC<{
                 {t({ ne: 'प्रत्यक्ष', en: 'LIVE' })}
               </span>
               <span className="text-[12px] leading-4 text-[#fb2c36] tabular-nums">
-                {runningFor(event.started_at) || String(tick).slice(0, 0)}
+                {running}
               </span>
             </span>
           )}

@@ -2,26 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../services/api';
 import { Event, Session, TranscriptionSegment } from '../types';
 import { Pair, useOrganizer } from './i18n';
+import { useElapsed } from '../services/elapsed';
 import { FigmaIcon } from '../assets/icons';
 import { PendingQuestions, PhotoFolderStrip, SlideGroups } from './livePanels';
 import { RoomAgenda } from './RoomAgenda';
 
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-/**
- * How long something has been going, as a live room counts it.
- *
- * Hours only once there are some: "14m" reads at a glance where
- * "00:14" asks to be parsed.
- */
-const elapsedSince = (from: string | null | undefined): string => {
-  if (!from) return '';
-  const mins = Math.floor((Date.now() - +new Date(from)) / 60000);
-  if (mins < 0) return '';
-  const hours = Math.floor(mins / 60);
-  return hours > 0 ? `${hours}h ${mins % 60}m` : `${mins}m`;
-};
 
 /** The white card everything on this screen is drawn on. */
 const Card: React.FC<{ className?: string; children: React.ReactNode }> = ({
@@ -110,16 +97,8 @@ export const LiveDashboard: React.FC<Props> = ({
 
   const [tab, setTab] = useState<PanelTab>('photos');
   const [segments, setSegments] = useState<TranscriptionSegment[]>([]);
-  /** Bumped on a timer. The value is never read: the re-render that
-      comes with it is the whole point. */
-  const [, setTick] = useState(0);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => setTick((n) => n + 1), 30000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const running = elapsedSince(event.started_at);
+  const running = useElapsed(event.started_at);
 
   const agenda = useMemo(
     () => [...sessions].sort(

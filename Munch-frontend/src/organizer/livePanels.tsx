@@ -257,27 +257,30 @@ const ago = (iso: string, t: (pair: Pair) => string, num: (n: number | string) =
 };
 
 /**
- * What the room has asked and nobody has answered for yet.
+ * The questions the host has let through.
  *
- * Grouped under the talk it was asked during, because a host deciding
- * on twenty questions is deciding about four talks, and the pile told
- * them nothing about which. Each group says how many are waiting on
- * it, which is the number that makes somebody open it.
+ * Reading, not deciding. Approve and Reject live in Message Requests
+ * beside this panel, and having them in both places meant the same
+ * question appeared twice with two sets of buttons, and vanished from
+ * here the moment it was approved - which is backwards. This is where
+ * a question arrives *after* it has been let through.
+ *
+ * Grouped under the talk it was asked during, because a host looking
+ * at twenty questions is looking at four talks.
  */
 export const PendingQuestions: React.FC<{
   eventId: string;
   sessions: Session[];
-  /** Polled, because they arrive from the room while this is open. */
+  /** Polled, because they are approved from the panel beside this one. */
   refreshMs?: number;
 }> = ({ eventId, sessions, refreshMs = 15000 }) => {
   const { t, num } = useOrganizer();
   const [waiting, setWaiting] = useState<ChatMessage[]>([]);
   const [shut, setShut] = useState<string[]>([]);
-  const [busy, setBusy] = useState<string | null>(null);
 
   const read = useCallback(() => {
-    apiClient.getPendingMessages(eventId)
-      .then(setWaiting)
+    apiClient.getModerationQueue(eventId)
+      .then((queue) => setWaiting(queue.approved))
       .catch(() => undefined);
   }, [eventId]);
 
@@ -286,24 +289,6 @@ export const PendingQuestions: React.FC<{
     const timer = window.setInterval(read, refreshMs);
     return () => window.clearInterval(timer);
   }, [read, refreshMs]);
-
-  const decide = async (one: ChatMessage, how: 'approve' | 'decline') => {
-    setBusy(one.id);
-    // Off the list at once. It is decided, and waiting for the next
-    // poll to agree would leave the host looking at a stale queue.
-    setWaiting((was) => was.filter((m) => m.id !== one.id));
-    try {
-      // No topic named. Approving files it where the asker put it,
-      // which is the rule the queue beside this one already follows -
-      // naming one here would overrule them.
-      await apiClient.moderateMessage(eventId, one.id, how);
-    } catch (e: any) {
-      toast.error(errorText(e, t({ ne: 'भएन', en: 'That did not go through' })));
-      read();
-    } finally {
-      setBusy(null);
-    }
-  };
 
   const order = useMemo(
     () => [...sessions].sort(
@@ -338,7 +323,10 @@ export const PendingQuestions: React.FC<{
   if (groups.length === 0) {
     return (
       <p className="px-4 py-6 text-[12.5px] text-[#99a1af]">
-        {t({ ne: 'पर्खिरहेको प्रश्न छैन।', en: 'Nothing waiting on you.' })}
+        {t({
+          ne: 'अझै कुनै प्रश्न स्वीकृत भएको छैन।',
+          en: 'Nothing has been let through yet.',
+        })}
       </p>
     );
   }
@@ -387,8 +375,9 @@ export const PendingQuestions: React.FC<{
               <span className="flex-none bg-[#f3f4f6] rounded-full px-2 py-0.5
                 text-[12px] font-medium leading-4 text-[#6a7282]">
                 {t({
-                  ne: `${num(group.mine.length)} पर्खाइमा`,
-                  en: `${group.mine.length} pending`,
+                  ne: `${num(group.mine.length)} प्रश्न`,
+                  en: `${group.mine.length} question`
+                    + `${group.mine.length === 1 ? '' : 's'}`,
                 })}
               </span>
             </button>
@@ -423,28 +412,6 @@ export const PendingQuestions: React.FC<{
                         </div>
                       </div>
 
-                      <div className="flex gap-1.5 items-center flex-none">
-                        <button
-                          type="button"
-                          disabled={busy === one.id}
-                          onClick={() => decide(one, 'decline')}
-                          className="border-[0.612px] border-[#e5e7eb] rounded-[8px]
-                            px-2.5 py-1 text-[12px] leading-4 text-[#4a5565]
-                            hover:bg-black/[.03] disabled:opacity-50"
-                        >
-                          {t({ ne: 'अस्वीकार', en: 'Reject' })}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy === one.id}
-                          onClick={() => decide(one, 'approve')}
-                          className="bg-[#12386e] rounded-[8px] px-2.5 py-1
-                            text-[12px] font-medium leading-4 text-white
-                            hover:bg-[#12386e]/90 disabled:opacity-50"
-                        >
-                          {t({ ne: 'स्वीकार', en: 'Approve' })}
-                        </button>
-                      </div>
                     </div>
                   </div>
                 ))}
