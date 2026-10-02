@@ -96,6 +96,37 @@ def events_attended_by(user):
     ) & ~Q(host=user)
 
 
+def events_hosted_by(user):
+    """The events this person runs, rather than the ones they are in.
+
+    The host portal's rule. Being invited to somebody else's programme
+    does not make it yours to run: Prabhat, who hosts his own events,
+    was shown Rahul's in his organizer dashboard because Rahul had put
+    him on the guest list - an event he could open, could not change,
+    and had no business seeing there at all.
+
+    Co-hosting does count. Somebody given that role is running the
+    thing with the host, and the organizer screens are where they do
+    it. Speaking at one does not: a speaker is on the programme, not
+    behind it.
+    """
+    from src.apps.meetings.models import EventParticipant, RoleGrant
+
+    return (
+        Q(host=user)
+        | Q(
+            participants__user=user,
+            participants__role__in=[
+                EventParticipant.Role.HOST,
+                EventParticipant.Role.CO_HOST,
+            ],
+        )
+        | _named(user, co_host='role_grants__email') & Q(
+            role_grants__role=RoleGrant.Role.CO_HOST
+        )
+    )
+
+
 def sessions_visible_to(user):
     """The same rule, one relation further out.
 

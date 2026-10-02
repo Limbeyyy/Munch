@@ -106,7 +106,7 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
 
   useEffect(() => {
     apiClient
-      .listEvents()
+      .listEvents('host')
       .then((list) => {
         setEvents(list);
         setEventId((prev) => prev || list[0]?.id || '');

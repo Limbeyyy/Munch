@@ -723,11 +723,13 @@ class ApiClient {
   /**
    * The events this person has anything to do with.
    *
-   * `as: 'attendee'` asks the narrower question instead: which was I
-   * put in. A host holds both answers and they are not the same one,
-   * so the attendee app has to say which it is asking.
+   * Each portal asks its own narrower question instead: `attendee` is
+   * which was I put in, `host` is which do I run. Somebody who hosts
+   * their own and is invited to somebody else's holds both answers,
+   * and either portal showing the union of them puts an event where
+   * it does not belong.
    */
-  async listEvents(as?: 'attendee'): Promise<Event[]> {
+  async listEvents(as?: 'attendee' | 'host'): Promise<Event[]> {
     const response = await this.client.get(
       '/events/', as ? { params: { as } } : undefined
     );
