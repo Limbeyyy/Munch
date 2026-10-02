@@ -8,7 +8,7 @@ import checkFill from './check-fill.svg';
 import chevronDown from './chevron-down.svg';
 import chevronDownDark from './chevron-down-dark.svg';
 import logoutDark from './logout-dark.svg';
-import bell from './bell.svg';
+import notifications from './notifications.svg';
 import exitStroke from './exit-stroke.svg';
 import fileCopy from './file-copy.svg';
 import fileUpload from './file-upload.svg';
@@ -55,9 +55,10 @@ export const FIGMA_ICON = {
       is that file's own path in the ink the top bar writes in, since
       white on white is how the request queues lost their chevrons. */
   logoutDark,
-  /** What this person has been told. Exported at #94A3B8, which is
-      already the grey the top bar's quiet controls use. */
-  bell,
+  /** What this person has been told. Filled #1D1B20, the ink the
+      design writes it in, so it sits darker than the hand-drawn
+      glyphs beside it in the rail. */
+  notifications,
   arrowRight,
   copy: fileCopy,
   /** The page-with-an-arrow over an empty upload box. */
