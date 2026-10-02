@@ -135,7 +135,6 @@ const OrganizerInner: React.FC = () => {
         view={view}
         onNavigate={setView}
         badges={badges}
-        eventName={activeTitle}
         onOpenA11y={() => setView('appearance')}
       >
         {loading ? (

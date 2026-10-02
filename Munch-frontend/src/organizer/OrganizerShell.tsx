@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { Pair, useOrganizer } from './i18n';
 import { Btn, Ic } from './ui';
+import { FigmaIcon } from '../assets/icons';
 import manchMark from '../assets/icons/manch-mark.svg';
 
 export interface NavItem {
@@ -71,7 +72,6 @@ interface Props {
   onNavigate: (id: string) => void;
   /** Live counts shown against the rail entries. */
   badges?: Record<string, { text: string; hot?: boolean }>;
-  eventName?: string;
   onOpenA11y: () => void;
   children: React.ReactNode;
 }
@@ -85,7 +85,7 @@ interface Props {
  * account rather than to any one screen.
  */
 export const OrganizerShell: React.FC<Props> = ({
-  view, onNavigate, badges = {}, eventName, onOpenA11y, children,
+  view, onNavigate, badges = {}, onOpenA11y, children,
 }) => {
   const { user, logout } = useAuthStore();
   const { lang, setLang, t, a11y } = useOrganizer();
@@ -204,14 +204,6 @@ export const OrganizerShell: React.FC<Props> = ({
                   {t(CRUMB[view] ?? { ne: 'मञ्च', en: 'Manch' })}
                 </span>
               </nav>
-
-              {eventName && (
-                <span className="hidden md:flex items-center gap-1.5 min-w-0 bg-[#F9FAFB]
-                  border border-line rounded-[10px] px-3 py-1 text-[13px] text-body">
-                  <Ic d="M8 2v4M16 2v4M3 9h18M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z" size={14} />
-                  <b className="font-medium truncate max-w-[26vw]">{eventName}</b>
-                </span>
-              )}
             </div>
 
             <div className="flex items-center gap-3 flex-none">
@@ -246,7 +238,45 @@ export const OrganizerShell: React.FC<Props> = ({
                 <Ic d="M12 4.5v.01M4 8h16M12 8v6M12 14l-3 6M12 14l3 6" size={16} />
               </button>
 
-              <Btn sm onClick={logout}>{t({ ne: 'बाहिरिनुहोस्', en: 'Logout' })}</Btn>
+              {/* What this person has been told. The same count the
+                  rail carries, because they are the same thing seen
+                  from two places. */}
+              <button
+                onClick={() => onNavigate('reminders')}
+                aria-current={view === 'reminders' ? 'page' : undefined}
+                title={t({ ne: 'सूचना', en: 'Notifications' })}
+                className={`relative w-8 h-8 rounded-[10px] grid place-items-center ${
+                  view === 'reminders'
+                    ? 'bg-navy-800'
+                    : 'hover:bg-black/[.04]'
+                }`}
+              >
+                <FigmaIcon
+                  name="bell"
+                  size={18}
+                  title={t({ ne: 'सूचना', en: 'Notifications' })}
+                />
+                {badges.reminders && (
+                  <span className="absolute -top-0.5 -right-0.5 bg-[#ef4444] text-white
+                    rounded-full min-w-[16px] h-4 px-1 grid place-items-center
+                    text-[10px] font-bold leading-none">
+                    {badges.reminders.text}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={logout}
+                title={t({ ne: 'बाहिरिनुहोस्', en: 'Logout' })}
+                className="w-8 h-8 rounded-[10px] grid place-items-center
+                  hover:bg-black/[.04]"
+              >
+                <FigmaIcon
+                  name="logoutDark"
+                  size={18}
+                  title={t({ ne: 'बाहिरिनुहोस्', en: 'Logout' })}
+                />
+              </button>
             </div>
           </header>
 

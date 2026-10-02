@@ -1,8 +1,9 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { OrganizerPage } from '../OrganizerPage';
 import { apiClient } from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
 
 /**
  * Where a refresh lands.
@@ -119,5 +120,67 @@ describe('opening the organizer', () => {
     showOrganizer();
 
     await waitFor(() => expect(api.listEvents).toHaveBeenCalledWith('host'));
+  });
+
+  /**
+   * The bar carries three controls and no event name. The name was a
+   * chip saying which event the panel was pointed at, which the
+   * breadcrumb and the page itself already say.
+   */
+  it('offers a way out as an icon, not a word', async () => {
+    showOrganizer();
+    await waitFor(() => expect(api.listEvents).toHaveBeenCalled());
+
+    const out = screen.getByRole('button', { name: 'Logout' });
+    expect(out.querySelector('img')).not.toBeNull();
+    expect(out).not.toHaveTextContent('Logout');
+  });
+
+  it('and it still signs out', async () => {
+    const bye = jest.fn();
+    useAuthStore.setState({ logout: bye } as any);
+    showOrganizer();
+    await waitFor(() => expect(api.listEvents).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Logout' }));
+
+    expect(bye).toHaveBeenCalled();
+  });
+
+  it('puts notifications between accessibility and the way out', async () => {
+    showOrganizer();
+    await waitFor(() => expect(api.listEvents).toHaveBeenCalled());
+
+    const bar = screen.getByRole('button', { name: 'Logout' })
+      .parentElement as HTMLElement;
+    const order = Array.from(bar.querySelectorAll('button'))
+      .map((b) => b.getAttribute('title'));
+
+    expect(order.slice(-3)).toEqual([
+      'Accessibility and appearance', 'Notifications', 'Logout',
+    ]);
+  });
+
+  it('opens the notifications page when the bell is pressed', async () => {
+    showOrganizer();
+    await waitFor(() => expect(api.listEvents).toHaveBeenCalled());
+
+    // The rail carries one of these too; this is the bar's.
+    const bar = screen.getByRole('button', { name: 'Logout' })
+      .parentElement as HTMLElement;
+    fireEvent.click(within(bar).getByRole('button', { name: 'Notifications' }));
+
+    expect(
+      await screen.findByRole('heading', { name: /Notifications/ })
+    ).toBeInTheDocument();
+  });
+
+  it('no longer names the event in the bar', async () => {
+    showOrganizer();
+    await waitFor(() => expect(api.listEvents).toHaveBeenCalled());
+
+    const bar = screen.getByRole('navigation', { name: 'Breadcrumb' })
+      .parentElement as HTMLElement;
+    expect(bar).not.toHaveTextContent('Test day');
   });
 });
