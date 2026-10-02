@@ -239,7 +239,7 @@ export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = ()
           </div>
         </SectionCard>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col pt-4 gap-4">
           <SectionHeading>
             {t({ ne: 'प्रोफाइलको विवरण', en: 'Profile information' })}
           </SectionHeading>
