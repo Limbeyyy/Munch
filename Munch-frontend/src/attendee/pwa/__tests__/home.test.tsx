@@ -18,6 +18,8 @@ jest.mock('../../../services/api', () => ({
     getReminders: jest.fn(),
     markRemindersRead: jest.fn(),
     getEventSegments: jest.fn(),
+    joinEvent: jest.fn(),
+    leaveEvent: jest.fn(),
     hasSession: jest.fn(() => false),
   },
 }));
@@ -86,6 +88,9 @@ beforeEach(() => {
     event_lead_minutes: 60, session_lead_minutes: 10,
   } as any);
   api.markRemindersRead.mockResolvedValue({} as any);
+  api.getEventSegments.mockResolvedValue([] as any);
+  api.joinEvent.mockResolvedValue({} as any);
+  api.leaveEvent.mockResolvedValue(undefined as any);
   api.voteHubPost.mockImplementation(async (_code, id) => ({
     ...question({ id }), score: 32, my_vote: 1,
   }) as any);
@@ -662,6 +667,38 @@ describe('one event, opened', () => {
   it('offers the live room only for an event that is running', async () => {
     await openIt();
     expect(screen.queryByRole('button', { name: /Enter live room/ })).toBeNull();
+  });
+
+  /**
+   * Opening the room on a phone used to tell the server nothing, so
+   * an attendee who sat through the whole event never appeared among
+   * the participants and was counted absent afterwards.
+   */
+  it('says that somebody is in the room on the way in', async () => {
+    api.listEvents.mockResolvedValue([
+      event({ status: 'active', started_at: '2026-10-15T04:15:00Z' }),
+    ] as any);
+
+    // Home is the way to a running event; the events list has an
+    // Upcoming deck and a Completed one, and a live event is on neither.
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: /Join Live/ }));
+
+    await waitFor(() => expect(api.joinEvent).toHaveBeenCalledWith('ABC-123'));
+  });
+
+  it('and that they have gone on the way out', async () => {
+    api.listEvents.mockResolvedValue([
+      event({ status: 'active', started_at: '2026-10-15T04:15:00Z' }),
+    ] as any);
+
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: /Join Live/ }));
+    await waitFor(() => expect(api.joinEvent).toHaveBeenCalled());
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Leave/ }));
+
+    await waitFor(() => expect(api.leaveEvent).toHaveBeenCalledWith('e1'));
   });
 
   it('steps into the room and back out again', async () => {

@@ -17,6 +17,8 @@ jest.mock('../../../services/api', () => ({
     getSubEvents: jest.fn(),
     getPhotos: jest.fn(),
     getPhotoObjectUrl: jest.fn(),
+    joinEvent: jest.fn(),
+    leaveEvent: jest.fn(),
     hasSession: jest.fn(() => false),
   },
 }));
@@ -77,6 +79,8 @@ beforeEach(() => {
   api.getResources.mockResolvedValue([] as any);
   api.getSubEvents.mockResolvedValue([] as any);
   api.getPhotos.mockResolvedValue({ folders: [], photos: [] } as any);
+  api.joinEvent.mockResolvedValue({} as any);
+  api.leaveEvent.mockResolvedValue(undefined as any);
   api.getSessionSummary.mockResolvedValue({
     session: 's1', session_title: 'Emergency Response Overview',
     body: 'An exploration of how the response was coordinated.',
