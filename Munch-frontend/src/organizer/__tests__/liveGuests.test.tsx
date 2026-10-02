@@ -278,6 +278,31 @@ describe('the stage', () => {
     expect(screen.queryByText(/\d{1,2}:\d{2}\s?[AP]M-/)).toBeNull();
   });
 
+  /**
+   * Between two talks there is nothing to count. The card falls back
+   * to the first item so there is something to look at, but that one
+   * has already been given - counting from its start turned the gap
+   * into a two-hour countdown.
+   */
+  it('counts nothing in the gap between two talks', async () => {
+    api.listSessions.mockResolvedValue([{
+      id: 's1', event: 'm1', title: 'Kataho 1', description: '',
+      speaker_name: 'Ram Rimal', speaker_visibility: 'public',
+      starts_at: new Date(Date.now() - 7200000).toISOString(),
+      duration_minutes: 30,
+      ends_at: new Date(Date.now() - 5400000).toISOString(),
+      position: 0, status: 'done',
+      started_at: new Date(Date.now() - 7200000).toISOString(),
+      ended_at: new Date(Date.now() - 5400000).toISOString(),
+      attendance_count: 0,
+    }] as any);
+
+    show();
+    await screen.findByText('Ram Rimal');
+
+    expect(screen.queryByText(/^\d{1,2}:\d{2}(:\d{2})?$/)).toBeNull();
+  });
+
   it('keeps the panels on the same sheet as the talk', async () => {
     api.listSessions.mockResolvedValue([{
       id: 's1', event: 'm1', title: 'Kataho 1', description: '',

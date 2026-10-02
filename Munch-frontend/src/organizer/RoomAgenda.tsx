@@ -164,25 +164,9 @@ export const RoomAgenda: React.FC<Props> = ({
   const lastEnd = rows.length
     ? Math.max(...rows.map((s) => s.startsAt + s.durationMinutes * MS))
     : null;
-  const advertised = +new Date(event.scheduled_end);
-  const drift = lastEnd === null ? 0 : Math.round((lastEnd - advertised) / MS);
   const firstStart = rows.length
     ? Math.min(...rows.map((s) => s.startsAt))
     : +new Date(event.scheduled_start);
-
-  const driftLine = () => {
-    if (lastEnd === null || Math.abs(drift) < 1) return null;
-    if (drift > 0) {
-      return t({
-        ne: `तालिकाभन्दा ${num(drift)} मिनेट लामो`,
-        en: `${drift} min past the hour it was set to finish`,
-      });
-    }
-    return t({
-      ne: `तालिकाभन्दा ${num(-drift)} मिनेट छिटो`,
-      en: `${-drift} min earlier than it was set to finish`,
-    });
-  };
 
   const stateOf = (session: PlannedSession) => {
     if (session.id === liveSessionId || session.status === 'live') return 'live';
@@ -403,11 +387,6 @@ export const RoomAgenda: React.FC<Props> = ({
               : ''}
           </span>
         </div>
-        {driftLine() && (
-          <p className={`text-[12px] mt-0.5 ${drift > 0 ? 'text-amber-700' : 'text-ok'}`}>
-            {driftLine()}
-          </p>
-        )}
         <p className="text-[11px] text-[#656565] mt-0.5">
           {canEdit
             ? t({
