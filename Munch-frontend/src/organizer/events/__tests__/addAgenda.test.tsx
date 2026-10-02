@@ -11,6 +11,7 @@ jest.mock('../../../services/api', () => ({
     getResources: jest.fn(),
     uploadResource: jest.fn(),
     deleteResource: jest.fn(),
+    getSubEvents: jest.fn(),
   },
 }));
 
@@ -30,6 +31,9 @@ beforeEach(() => {
   window.localStorage.setItem(
     'manch.organizer.prefs', JSON.stringify({ lang: 'en', a11y: {} })
   );
+  // No named parts unless a test says so: the plain list is the
+  // ordinary case and every one of these predates them.
+  api.getSubEvents.mockResolvedValue([] as any);
   api.createSession.mockResolvedValue({ id: 's1', title: 'Opening' } as any);
   api.updateSession.mockResolvedValue({ id: 's9', title: 'Session Kataho' } as any);
   api.getResources.mockResolvedValue([] as any);
@@ -448,5 +452,106 @@ describe('choosing the day', () => {
     const sent = api.createSession.mock.calls[0][0];
     expect(new Date(sent.starts_at).toDateString())
       .toBe(new Date('2026-09-16T11:30').toDateString());
+  });
+});
+
+/**
+ * Which part of the day a talk goes under.
+ *
+ * A long event is a morning on one subject and an afternoon on another,
+ * and the form that writes a talk is where it is said which. Optional
+ * throughout: an event nobody has divided up has nothing to choose
+ * between, so it is not asked about at all.
+ */
+describe('filing a talk under one of the event’s subcategories', () => {
+  const groups = [
+    { id: 'g1', event: 'e1', title: 'Climate Change', description: '',
+      position: 0, sessions: [], created_at: '2026-09-01T00:00:00Z' },
+    { id: 'g2', event: 'e1', title: 'Carbon emissions', description: '',
+      position: 1, sessions: [], created_at: '2026-09-01T00:00:00Z' },
+  ] as any;
+
+  const picker = () =>
+    screen.getByLabelText('Select Event’s Subcategory') as HTMLSelectElement;
+
+  it('is not asked about where the day has no named parts', async () => {
+    show();
+
+    await waitFor(() => expect(api.getSubEvents).toHaveBeenCalledWith('e1'));
+    expect(screen.queryByText('Assign to Event’s Subcategory')).not.toBeInTheDocument();
+  });
+
+  it('offers the event’s own parts, and none as the first answer', async () => {
+    api.getSubEvents.mockResolvedValue(groups);
+    show();
+
+    await screen.findByText('Assign to Event’s Subcategory');
+    expect(Array.from(picker().options).map((o) => o.textContent)).toEqual([
+      'Select Event’s Subcategory', 'Climate Change', 'Carbon emissions',
+    ]);
+    expect(picker().value).toBe('');
+  });
+
+  it('sends the part that was chosen', async () => {
+    api.getSubEvents.mockResolvedValue(groups);
+    show();
+    await screen.findByText('Assign to Event’s Subcategory');
+
+    fillIn();
+    fireEvent.change(picker(), { target: { value: 'g2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add agenda' }));
+
+    await waitFor(() => expect(api.createSession).toHaveBeenCalled());
+    expect(api.createSession.mock.calls[0][0].sub_event).toBe('g2');
+  });
+
+  /**
+   * Null rather than absent. Leaving the field out tells the server to
+   * leave the filing alone, so a talk taken back out of a heading would
+   * stay in it.
+   */
+  it('says so plainly when the talk belongs under none of them', async () => {
+    api.getSubEvents.mockResolvedValue(groups);
+    show();
+    await screen.findByText('Assign to Event’s Subcategory');
+
+    fillIn();
+    fireEvent.click(screen.getByRole('button', { name: 'Add agenda' }));
+
+    await waitFor(() => expect(api.createSession).toHaveBeenCalled());
+    expect(api.createSession.mock.calls[0][0].sub_event).toBeNull();
+  });
+
+  it('opens on the part the talk is already under', async () => {
+    api.getSubEvents.mockResolvedValue(groups);
+    render(
+      <OrganizerProvider>
+        <AddAgendaDialog
+          eventId="e1"
+          day="2026-09-15"
+          session={{
+            id: 's9', title: 'Session Kataho', description: '',
+            starts_at: '2026-09-15T10:00:00', duration_minutes: 30,
+            sub_event: 'g1',
+          } as any}
+          onClose={jest.fn()}
+          onAdded={jest.fn()}
+        />
+      </OrganizerProvider>
+    );
+
+    await screen.findByText('Assign to Event’s Subcategory');
+    expect(picker().value).toBe('g1');
+  });
+
+  /** The talk is the point; the heading is a way of reading it. */
+  it('still writes the talk when the parts cannot be fetched', async () => {
+    api.getSubEvents.mockRejectedValue(new Error('offline'));
+    show();
+
+    fillIn();
+    fireEvent.click(screen.getByRole('button', { name: 'Add agenda' }));
+
+    await waitFor(() => expect(api.createSession).toHaveBeenCalled());
   });
 });

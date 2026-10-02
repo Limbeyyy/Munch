@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
-import { Event, RoleGrantRow, Session } from '../../types';
+import { Event, RoleGrantRow, Session, SubEvent } from '../../types';
 import { ShareEventDialog } from '../../components/ShareEventDialog';
 import { errorText } from '../errors';
 import { Pair, useOrganizer } from '../i18n';
@@ -11,8 +11,8 @@ import { toLocalInput } from '../EventDraftFields';
 import { BackLink, EventHeading, PlusGlyph, Sheet, Stepper } from './chrome';
 import { CoHostDialog, Field, inputClass } from './CoHostDialog';
 import { AddAgendaDialog } from './AddAgendaDialog';
-import { AgendaBoard } from './AgendaBoard';
 import { SpeakersStep } from './SpeakersStep';
+import { GroupedAgenda, SubcategoryEditor } from './subEvents';
 import { dayOfSession, daysOf } from './days';
 import { PeopleEmpty, PeopleHeading, PersonRow, initialsOf } from './people';
 import { whenLine } from './EventsDashboard';
@@ -124,6 +124,68 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
   /** The talk being changed, if one is. */
   const [editing, setEditing] = useState<Session | null>(null);
 
+  /**
+   * The named parts of the day, and the ones typed before it existed.
+   *
+   * The design asks for them on the first step, which is the step that
+   * creates the event - so on a brand-new one there is nothing yet to
+   * hang a heading off. They wait here and are written the moment there
+   * is, the same way the agenda form holds files picked before its talk
+   * exists.
+   */
+  const [groups, setGroups] = useState<SubEvent[]>([]);
+  const [pendingGroups, setPendingGroups] = useState<string[]>([]);
+
+  const loadGroups = useCallback(async (eventId: string) => {
+    try {
+      setGroups(await apiClient.getSubEvents(eventId));
+    } catch {
+      // Headings are a way of reading the day, not the day.
+    }
+  }, []);
+
+  const savedId = saved?.id;
+  useEffect(() => { if (savedId) loadGroups(savedId); }, [savedId, loadGroups]);
+
+  const addGroup = async (title: string) => {
+    if (!saved) {
+      setPendingGroups((held) => [...held, title]);
+      return;
+    }
+    try {
+      await apiClient.createSubEvent(saved.id, { title });
+      await loadGroups(saved.id);
+    } catch (e: any) {
+      toast.error(errorText(e, t({
+        ne: 'उपवर्ग थप्न सकिएन', en: 'Could not add the subcategory',
+      })));
+    }
+  };
+
+  const removeGroup = async (at: number) => {
+    if (at >= groups.length) {
+      const held = at - groups.length;
+      setPendingGroups((all) => all.filter((_, i) => i !== held));
+      return;
+    }
+    const group = groups[at];
+    if (!saved || !group) return;
+    try {
+      await apiClient.deleteSubEvent(saved.id, group.id);
+      await loadGroups(saved.id);
+      // The talks under it stay on the programme; the server detaches
+      // them rather than taking them with it.
+      const fresh = await apiClient.getEvent(saved.id);
+      setSaved(fresh);
+    } catch (e: any) {
+      toast.error(errorText(e, t({
+        ne: 'उपवर्ग हटाउन सकिएन', en: 'Could not remove the subcategory',
+      })));
+    }
+  };
+
+  const groupTitles = [...groups.map((one) => one.title), ...pendingGroups];
+
   const [roles, setRoles] = useState<RoleGrantRow[]>([]);
   const [invited, setInvited] = useState<{ email: string; joined: boolean }[]>([]);
   const [addCoHost, setAddCoHost] = useState(false);
@@ -174,8 +236,9 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
 
     try {
       setBusy(true);
+      let made: Event;
       if (saved) {
-        const next = await apiClient.updateEvent(saved.id, {
+        made = await apiClient.updateEvent(saved.id, {
           title: title.trim(),
           venue: venue.trim(),
           description,
@@ -183,9 +246,9 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
           scheduled_start: from.toISOString(),
           scheduled_end: new Date(+from + minutes * 60000).toISOString(),
         });
-        setSaved(next);
+        setSaved(made);
       } else {
-        const next = await apiClient.createEvent({
+        made = await apiClient.createEvent({
           title: title.trim(),
           venue: venue.trim(),
           description,
@@ -194,9 +257,28 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
           duration_minutes: minutes,
           sessions: [],
         });
-        setSaved(next);
-        toast.success(t({ ne: `${next.title} बन्यो`, en: `${next.title} created` }));
+        setSaved(made);
+        toast.success(t({ ne: `${made.title} बन्यो`, en: `${made.title} created` }));
       }
+
+      // Now there is something to hang the headings off. One that will
+      // not write does not undo the event that was just made, so it is
+      // said out loud rather than thrown.
+      if (pendingGroups.length > 0) {
+        try {
+          for (const name of pendingGroups) {
+            await apiClient.createSubEvent(made.id, { title: name });
+          }
+          setPendingGroups([]);
+        } catch (e: any) {
+          toast.error(errorText(e, t({
+            ne: 'कार्यक्रम बच्यो, तर उपवर्ग थपिएनन्',
+            en: 'The event was saved, but its subcategories were not added',
+          })));
+        }
+        await loadGroups(made.id);
+      }
+
       await onSaved();
       setStep(1);
     } catch (e: any) {
@@ -451,6 +533,15 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
             />
           </Field>
 
+          {/* The parts the day divides into, named here so the running
+              order on the next step can be read under them. */}
+          <SubcategoryEditor
+            titles={groupTitles}
+            onAdd={addGroup}
+            onRemove={removeGroup}
+            disabled={busy}
+          />
+
           <Actions
             cancel={t({ ne: 'रद्द', en: 'Cancel' })}
             go={busy
@@ -533,14 +624,13 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
                   en: `Agenda · ${sessionCount} sessions`,
                 })}
               </h2>
-              <AgendaBoard
-                event={days.length > 1
-                  ? {
-                      ...saved,
-                      sessions: (saved.sessions ?? [])
-                        .filter((one) => dayOfSession(one) === currentDay),
-                    }
-                  : saved}
+              <GroupedAgenda
+                event={saved}
+                groups={groups}
+                sessions={days.length > 1
+                  ? (saved.sessions ?? [])
+                      .filter((one) => dayOfSession(one) === currentDay)
+                  : undefined}
                 onChanged={async () => {
                   const fresh = await apiClient.getEvent(saved.id);
                   setSaved(fresh);

@@ -174,3 +174,101 @@ class GroupingTheRunningOrderTests(TestCase):
         mine = next(one for one in rows if one['title'] == 'Opening')
 
         self.assertEqual(mine['sub_event'], group.id)
+
+
+class FilingATalkUnderAHeadingTests(TestCase):
+    """Which heading a talk may be filed under, written from its own form.
+
+    The field has always been writable; until the host side grew a form
+    that sets it, nothing ever did. What the form must not be allowed to
+    do is file a talk under somebody else's heading: every screen reads
+    a day as its event's headings plus whatever is under none of them,
+    so a talk pointing elsewhere would be in neither list and simply
+    stop appearing on the programme.
+    """
+
+    def setUp(self):
+        self.host = make_host('host@example.com')
+        start = timezone.now() + timezone.timedelta(days=1)
+        self.event = make_event(self.host, start=start, minutes=240)
+        self.talk = make_session(self.event, start, 30, 'Opening')
+        self.mine = SubEvent.objects.create(event=self.event, title='Climate')
+
+        # Another host's event entirely, with a heading of its own.
+        self.stranger = make_host('stranger@example.com')
+        theirs = make_event(self.stranger, start=start, minutes=60)
+        self.not_mine = SubEvent.objects.create(event=theirs, title='Theirs')
+
+        self.client = signed_in(self.host)
+
+    def test_a_talk_goes_under_a_heading_of_its_own_event(self):
+        response = self.client.patch(
+            f'{API}/sessions/{self.talk.id}/',
+            {'sub_event': str(self.mine.id)},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.talk.refresh_from_db()
+        self.assertEqual(self.talk.sub_event_id, self.mine.id)
+
+    def test_a_heading_from_another_event_is_refused(self):
+        response = self.client.patch(
+            f'{API}/sessions/{self.talk.id}/',
+            {'sub_event': str(self.not_mine.id)},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('sub_event', response.data)
+        self.talk.refresh_from_db()
+        self.assertIsNone(self.talk.sub_event_id)
+
+    def test_a_talk_can_be_taken_back_out_of_its_heading(self):
+        self.talk.sub_event = self.mine
+        self.talk.save(update_fields=['sub_event'])
+
+        response = self.client.patch(
+            f'{API}/sessions/{self.talk.id}/',
+            {'sub_event': None},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.talk.refresh_from_db()
+        self.assertIsNone(self.talk.sub_event_id)
+
+    def test_a_new_talk_may_name_its_heading_as_it_is_written(self):
+        start = self.event.scheduled_start + timezone.timedelta(hours=3)
+        response = self.client.post(
+            f'{API}/sessions/',
+            {
+                'event': str(self.event.id),
+                'title': 'Carbon',
+                'starts_at': start.isoformat(),
+                'duration_minutes': 30,
+                'sub_event': str(self.mine.id),
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        written = Session.objects.get(id=response.data['id'])
+        self.assertEqual(written.sub_event_id, self.mine.id)
+
+    def test_a_new_talk_may_not_name_another_event_s_heading(self):
+        start = self.event.scheduled_start + timezone.timedelta(hours=3)
+        response = self.client.post(
+            f'{API}/sessions/',
+            {
+                'event': str(self.event.id),
+                'title': 'Carbon',
+                'starts_at': start.isoformat(),
+                'duration_minutes': 30,
+                'sub_event': str(self.not_mine.id),
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertFalse(Session.objects.filter(title='Carbon').exists())

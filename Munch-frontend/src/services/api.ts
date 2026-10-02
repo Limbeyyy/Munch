@@ -836,6 +836,8 @@ class ApiClient {
     hall?: string;
     starts_at: string;
     duration_minutes: number;
+    /** Which of the event's named parts it goes under; null for none. */
+    sub_event?: string | null;
   }): Promise<Session> {
     const response = await this.client.post('/sessions/', data);
     return response.data;

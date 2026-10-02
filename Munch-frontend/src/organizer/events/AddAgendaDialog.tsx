@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { Artifact, Session } from '../../types';
+import { Artifact, Session, SubEvent } from '../../types';
 import { FigmaIcon } from '../../assets/icons';
 import { errorText } from '../errors';
 import { useOrganizer } from '../i18n';
 import { Ic } from '../ui';
 import { FileBadge } from './fileKinds';
+import { SubcategoryPicker } from './subEvents';
 
 /** The lengths the design offers, rather than a number to be typed. */
 const LENGTHS = [15, 20, 30, 45, 60, 90, 120];
@@ -87,6 +88,17 @@ export const AddAgendaDialog: React.FC<Props> = ({
   );
   const [busy, setBusy] = useState(false);
 
+  /**
+   * The event's named parts, and which one this talk goes under.
+   *
+   * Fetched here rather than handed down, because every screen that
+   * opens this form has the event's id and not always its headings -
+   * and one of them may have been written a moment ago on the step
+   * before this one.
+   */
+  const [groups, setGroups] = useState<SubEvent[]>([]);
+  const [inGroup, setInGroup] = useState(session?.sub_event ?? '');
+
   /** What the speaker has already handed in, as the server holds it. */
   const [shared, setShared] = useState<Artifact[]>([]);
   /**
@@ -115,6 +127,16 @@ export const AddAgendaDialog: React.FC<Props> = ({
   useEffect(() => {
     if (sessionId) readShared(sessionId);
   }, [sessionId, readShared]);
+
+  useEffect(() => {
+    let live = true;
+    apiClient.getSubEvents(eventId)
+      .then((all) => { if (live) setGroups(all); })
+      // Filing a talk under a heading is optional, so a form that could
+      // not fetch the headings still writes the talk.
+      .catch(() => { if (live) setGroups([]); });
+    return () => { live = false; };
+  }, [eventId]);
 
   /** Send what was picked, or hold it until there is an agenda to hold it. */
   const take = async (picked: FileList | null) => {
@@ -171,6 +193,10 @@ export const AddAgendaDialog: React.FC<Props> = ({
       description: details.trim(),
       starts_at: new Date(`${onDay}T${startTime}`).toISOString(),
       duration_minutes: minutes,
+      // Null rather than absent: leaving it out would mean "do not
+      // touch", and taking a talk back out of a heading has to be
+      // something the form can do.
+      sub_event: inGroup || null,
     };
 
     try {
@@ -277,6 +303,10 @@ export const AddAgendaDialog: React.FC<Props> = ({
             <Ic d="M18 6L6 18M6 6l12 12" size={14} />
           </button>
         </div>
+
+        {/* Which part of the day this talk belongs to, asked before the
+            talk itself: it is the thing being added to. */}
+        <SubcategoryPicker groups={groups} value={inGroup} onChange={setInGroup} />
 
         <div className="flex flex-col gap-4 p-6">
           <Row label={t({ ne: 'एजेन्डाको नाम', en: 'Agenda name' })} required>

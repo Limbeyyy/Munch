@@ -50,6 +50,35 @@ def _require_speaker_details(attrs):
     return attrs
 
 
+def _require_own_sub_event(attrs, instance):
+    """A talk may only be filed under a heading of its own event.
+
+    The field has always been writable; nothing sent to it until now,
+    so nothing had to be said about it. The host side files talks under
+    headings from a form, and a heading belonging to somebody else's
+    event would be accepted silently and then lose the talk: every
+    screen reads the day as its event's headings plus whatever is under
+    none of them, and a talk pointing at a stranger's heading is in
+    neither list. It would simply stop being on the programme.
+
+    So it is refused at the door rather than discovered later. Clearing
+    the field is always fine - that is the talk going back to being
+    ungrouped, which is a real thing for it to be.
+    """
+    if 'sub_event' not in attrs:
+        return attrs
+    group = attrs.get('sub_event')
+    if group is None:
+        return attrs
+
+    event = attrs.get('event') or getattr(instance, 'event', None)
+    if event is not None and str(group.event_id) != str(event.id):
+        raise serializers.ValidationError({
+            'sub_event': 'That subcategory belongs to a different event.',
+        })
+    return attrs
+
+
 class SessionSerializer(serializers.ModelSerializer):
     ends_at = serializers.DateTimeField(read_only=True)
     attendance_count = serializers.SerializerMethodField()
@@ -59,6 +88,7 @@ class SessionSerializer(serializers.ModelSerializer):
     speaker_photo_url = serializers.SerializerMethodField()
 
     def validate(self, attrs):
+        _require_own_sub_event(attrs, self.instance)
         # Only on the way in. A patch that leaves the speaker alone should
         # not have to resend details that are already stored.
         if self.instance is None:
