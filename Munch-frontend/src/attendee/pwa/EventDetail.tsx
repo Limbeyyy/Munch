@@ -316,8 +316,22 @@ export const EventDetail: React.FC<{
     }
   };
 
+  /**
+   * Whether this tab is showing anything at all.
+   *
+   * The page used to be painted blue underneath everything, so a tab
+   * with nothing on it was a white strip and then a blue slab - which
+   * reads as a rendering fault rather than as an empty tab. The blue
+   * is the ground between and beneath the white blocks; with no
+   * blocks there is no ground to see.
+   */
+  const showingAlbums = tab === 'files' && filesAt === 'photos';
+  const filled = showingAlbums
+    ? (albums?.folders ?? []).length > 0
+    : grouped.length > 0;
+
   return (
-    <div className="bg-[#d6e4f8] min-h-full">
+    <div className="bg-white min-h-full flex flex-col">
       <header
         className="bg-white px-4 pt-3 pb-2 border-b-[0.72px] border-[#b3b3b3]"
         style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}
@@ -480,7 +494,7 @@ export const EventDetail: React.FC<{
         </section>
       )}
 
-      <div className="flex flex-col gap-1.5">
+      <div className={`flex flex-col gap-1.5 ${filled ? 'bg-[#d6e4f8]' : ''}`}>
         {tab === 'files' && filesAt === 'photos' ? null : grouped.length === 0 && !(
           tab === 'questions' && Boolean(questionAgenda) && looseQuestions.length > 0
         ) ? (
@@ -727,6 +741,10 @@ export const EventDetail: React.FC<{
         )}
       </div>
 
+      {/* The rest of the way down. Only where something is sitting on
+          it: an empty tab is simply a white screen, and a blue slab
+          under nothing reads as a rendering fault. */}
+      {filled && <div className="flex-1 bg-[#d6e4f8]" data-ground aria-hidden />}
     </div>
   );
 };
