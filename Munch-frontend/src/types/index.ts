@@ -793,6 +793,7 @@ export interface HubPost {
   session_title: string | null;
   /** Upvotes less downvotes. */
   score: number;
+  downvote_count: number;
   /** How this reader voted: 1, -1, or 0 for not yet. */
   my_vote: number;
   answer: string;

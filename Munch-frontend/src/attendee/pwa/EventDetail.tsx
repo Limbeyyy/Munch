@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import {
-  Artifact, Event, HubPost, PhotoPage, Session, SessionSummary, SubEvent,
+  Artifact, Event, HubPost, PhotoPage, Session, SessionSummary, Speaker, SubEvent,
 } from '../../types';
 import { Pair, useOrganizer } from '../../organizer/i18n';
 import { errorText } from '../../organizer/errors';
@@ -148,7 +148,7 @@ const Thread: React.FC<{
                       ? 'bg-[#194d97] text-white'
                       : 'bg-[#f3f4f6] text-[#6a7282]'}`}
                 >
-                  ▼
+                  ▼ {num(post.downvote_count ?? 0)}
                 </button>
               </div>
             )}
@@ -179,15 +179,17 @@ const Thread: React.FC<{
  */
 export const EventDetail: React.FC<{
   event: Event;
+  fromHome?: boolean;
   onBack: () => void;
   onEnterRoom?: () => void;
-}> = ({ event, onBack, onEnterRoom }) => {
+}> = ({ event, fromHome = false, onBack, onEnterRoom }) => {
   const { t, num } = useOrganizer();
   const [tab, setTab] = useState<Tab>('agendas');
   /** The files tab holds two: the handouts, and the albums. */
   const [filesAt, setFilesAt] = useState<'agenda' | 'photos'>('agenda');
   const [albums, setAlbums] = useState<PhotoPage | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [speakerProfiles, setSpeakerProfiles] = useState<Speaker[]>([]);
   const [groups, setGroups] = useState<SubEvent[]>([]);
   const [summaries, setSummaries] = useState<Record<string, SessionSummary>>({});
   const [files, setFiles] = useState<Artifact[]>([]);
@@ -197,13 +199,15 @@ export const EventDetail: React.FC<{
   const [day, setDay] = useState('');
 
   const read = useCallback(async () => {
-    const [own, parts, shared, hub] = await Promise.all([
+    const [own, parts, shared, hub, profiles] = await Promise.all([
       apiClient.listSessions(event.id).catch(() => [] as Session[]),
       apiClient.getSubEvents(event.id).catch(() => [] as SubEvent[]),
       apiClient.getResources(event.id).catch(() => [] as Artifact[]),
       apiClient.getHub(event.code).catch(() => null),
+      apiClient.getSpeakers(event.id).catch(() => [] as Speaker[]),
     ]);
     setSessions(own);
+    setSpeakerProfiles(profiles);
     setGroups(parts);
     setFiles(shared);
     setBoard({
@@ -262,6 +266,27 @@ export const EventDetail: React.FC<{
   const looseFiles = files.filter((one) => !onProgramme(one.session));
   const loosePosts = (kind: 'questions' | 'suggestions') =>
     board[kind].filter((post) => !onProgramme(post.session_id));
+  const looseQuestions = loosePosts('questions');
+  const questionAgenda = groups.length === 1 ? groups[0] : null;
+  const questionAgendaIsGrouped = Boolean(
+    questionAgenda && grouped.some((group) => group.id === questionAgenda.id)
+  );
+  const renderLooseThread = (kind: 'questions' | 'suggestions') => (
+    <Thread
+      title={t(TAB[kind])}
+      posts={loosePosts(kind)}
+      more={(n) => (kind === 'questions'
+        ? t({
+            ne: `थप ${num(n)} प्रश्न हेर्नुहोस्`,
+            en: `View ${n} more ${n === 1 ? 'Question' : 'Questions'}`,
+          })
+        : t({
+            ne: `थप ${num(n)} सुझाव हेर्नुहोस्`,
+            en: `View ${n} more ${n === 1 ? 'Suggestion' : 'Suggestions'}`,
+          }))}
+      onVote={kind === 'questions' ? vote : undefined}
+    />
+  );
 
   /**
    * A vote on a question, which sorts a queue. Suggestions carry none:
@@ -288,7 +313,7 @@ export const EventDetail: React.FC<{
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-1.5 text-[14px] font-medium
+          className="pt-4 flex items-center gap-1.5 pt-4 text-[14px] font-medium
             text-[#9e9e9e] leading-5"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -296,11 +321,13 @@ export const EventDetail: React.FC<{
             strokeLinejoin="round" aria-hidden>
             <path d="M15 18l-6-6 6-6" />
           </svg>
-          {t({ ne: 'कार्यसूची', en: 'Agenda' })}
+          {fromHome
+            ? t({ ne: 'पछाडि', en: 'Back' })
+            : t({ ne: 'घटनाहरू', en: 'Events' })}
         </button>
 
         <div className="pt-1 flex items-start gap-1">
-          <h1 className="flex-1 text-[18px] font-semibold text-[#101828]
+          <h1 className="flex-1 text-[18px] pt-4 font-semibold text-[#101828]
             leading-[27px]">
             {event.title}
           </h1>
@@ -363,7 +390,7 @@ export const EventDetail: React.FC<{
           rather than two more tabs along the top, which would have
           made seven. */}
       {tab === 'files' && (
-        <div className="bg-white px-4 pt-1 pb-2.5">
+        <div className="bg-white px-4 pt-4 pb-2.5">
           <div className="bg-[#d6e4f8] rounded-[12px] p-1 flex gap-1 h-11">
             {([
               ['agenda', t({ ne: 'कार्यसूचीका फाइल', en: "Agenda's File" })],
@@ -389,7 +416,7 @@ export const EventDetail: React.FC<{
       {/* The albums are of the day rather than of one talk, so they sit
           outside the parts the rest of the screen is grouped into. */}
       {tab === 'files' && filesAt === 'photos' && (
-        <section className="bg-white px-4 py-2.5">
+        <section className="bg-white mb-[22rem] px-4 py-2.5">
           {(albums?.folders ?? []).length === 0 ? (
             <p className="py-4 text-[13px] text-[#99a1af]">
               {t({ ne: 'कुनै तस्बिर छैन।', en: 'No photographs yet.' })}
@@ -437,169 +464,193 @@ export const EventDetail: React.FC<{
       )}
 
       <div className="flex flex-col gap-1.5">
-        {tab === 'files' && filesAt === 'photos' ? null : grouped.length === 0 ? (
+        {tab === 'files' && filesAt === 'photos' ? null : grouped.length === 0 && !(
+          tab === 'questions' && Boolean(questionAgenda) && looseQuestions.length > 0
+        ) ? (
           <p className="bg-white px-4 py-8 text-center text-[13px] text-[#8b90a0]">
             {t({ ne: 'यहाँ केही छैन।', en: 'Nothing here yet.' })}
           </p>
         ) : (
-          grouped.map((group) => (
-            <section
-              key={group.id || 'loose'}
-              className="bg-white px-4 py-2.5 flex flex-col gap-2.5"
-            >
-              <GroupHead title={group.title} />
+          <>
+            {grouped.map((group) => (
+              <section
+                key={group.id || 'loose'}
+                className="bg-white px-4 py-2.5 flex flex-col gap-2.5"
+              >
+                <GroupHead title={group.title} />
 
-              {tab === 'agendas' && (
-                <div className="flex flex-col gap-3">
-                  {group.sessions.map((one) => {
-                    const summary = summaries[one.id];
-                    return (
-                      <article
-                        key={one.id}
-                        className="border-[0.72px] border-[#b3b3b3] rounded-[16px]
-                          px-4 py-3"
-                      >
-                        <p className="text-[14px] font-semibold text-[#101828]">
-                          {one.title}
-                        </p>
-                        <p className="pt-0.5 text-[12px] text-[#656565]">
-                          {clock(one.starts_at)}
-                          {one.speaker_name && ` · ${one.speaker_name}`}
-                        </p>
-                        {summary?.is_published && summary.body
-                          ? <Prose body={summary.body} />
-                          : (
-                            <p className="pt-2 text-[13px] italic text-[#99a1af]">
-                              {t({
-                                ne: 'सारांश अझै प्रकाशित छैन।',
-                                en: 'No summary published yet.',
-                              })}
-                            </p>
-                          )}
-                      </article>
-                    );
-                  })}
-                </div>
-              )}
-
-              {tab === 'speaker' && (
-                <div className="flex flex-col gap-3">
-                  {group.sessions.filter((one) => one.speaker_name).length === 0 ? (
-                    <p className="text-[13px] text-[#99a1af]">
-                      {t({ ne: 'वक्ता तोकिएको छैन।', en: 'No speaker named.' })}
-                    </p>
-                  ) : (
-                    group.sessions
-                      .filter((one) => one.speaker_name)
-                      .map((one) => (
+                {tab === 'agendas' && (
+                  <div className="flex flex-col gap-3">
+                    {group.sessions.map((one) => {
+                      const summary = summaries[one.id];
+                      return (
                         <article
                           key={one.id}
                           className="border-[0.72px] border-[#b3b3b3] rounded-[16px]
-                            p-4 flex gap-3 items-start"
+                            px-4 py-3"
                         >
-                          <span className="size-[72px] rounded-[12px] bg-[#fbecd1]
-                            grid place-items-center overflow-hidden flex-none
-                            text-[24px] font-semibold text-[#12386e]">
-                            {one.speaker_photo_url
-                              ? <img src={one.speaker_photo_url} alt=""
-                                  className="w-full h-full object-cover" />
-                              : one.speaker_name.trim().charAt(0).toUpperCase()}
-                          </span>
-                          <div className="min-w-0">
-                            <span className="inline-block bg-[#e6efff] text-[#2440c9]
-                              rounded-[6px] px-2 py-1 text-[12px]">
-                              {one.title}
-                            </span>
-                            <p className="pt-1.5 text-[15px] font-semibold
-                              text-[#101828]">
-                              {one.speaker_name}
-                            </p>
-                            {one.speaker_role && (
-                              <p className="text-[13px] text-[#1e2939]">
-                                {one.speaker_role}
+                          <p className="text-[14px] font-semibold text-[#101828]">
+                            {one.title}
+                          </p>
+                          <p className="pt-0.5 text-[12px] text-[#99a1af]">
+                            {clock(one.starts_at)}
+                            {one.speaker_name && ` · ${one.speaker_name}`}
+                          </p>
+                          {summary?.is_published && summary.body
+                            ? <Prose body={summary.body} />
+                            : (
+                              <p className="pt-2 text-[13px] text-[#656565]">
+                                {t({
+                                  ne: 'सारांश अझै प्रकाशित छैन।',
+                                  en: 'No summary published yet.',
+                                })}
                               </p>
                             )}
-                          </div>
                         </article>
-                      ))
-                  )}
-                </div>
-              )}
-
-              {tab === 'files' && group.sessions.map((one) => {
-                const mine = files.filter((f) => f.session === one.id);
-                if (mine.length === 0) return null;
-                return (
-                  <div key={one.id}>
-                    <TalkHead title={one.title} />
-                    <ul className="pt-3 flex flex-col gap-2">
-                      {mine.map((file) => (
-                        <li
-                          key={file.id}
-                          className="border-[0.72px] border-[#b3b3b3]
-                            rounded-[16px] p-4 flex gap-3 items-center"
-                        >
-                          <span className="size-10 rounded-[12px] bg-[#fef2f2]
-                            grid place-items-center flex-none">
-                            <img src={fileIcon} alt="" width="18" height="18" />
-                          </span>
-                          <span className="flex-1 min-w-0">
-                            <span className="block text-[14px] font-medium
-                              text-[#101828] leading-[21px] truncate">
-                              {file.display_name}
-                            </span>
-                            <span className="block text-[12px] text-[#99a1af]
-                              leading-4">
-                              {kindOf(file.display_name ?? '')} ·{' '}
-                              {formatSize(file.file_size)}
-                            </span>
-                          </span>
-                          {file.web_view_link && (
-                            <a
-                              href={file.web_view_link}
-                              target="_blank"
-                              rel="noreferrer"
-                              aria-label={t({
-                                ne: `${file.display_name} खोल्नुहोस्`,
-                                en: `Download ${file.display_name}`,
-                              })}
-                              className="bg-[#efefef] rounded-[12px] p-2 flex-none
-                                grid place-items-center"
-                            >
-                              <img src={downloadIcon} alt="" width="18" height="18" />
-                            </a>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                )}
 
-              {(tab === 'questions' || tab === 'suggestions') &&
-                group.sessions.map((one) => {
-                  const posts = postsOf(one, tab);
-                  if (posts.length === 0) return null;
+                {tab === 'speaker' && (
+                  <div className="flex flex-col gap-3">
+                    {group.sessions.filter((one) => one.speaker_name).length === 0 ? (
+                      <p className="text-[13px] text-[#99a1af]">
+                        {t({ ne: 'वक्ता तोकिएको छैन।', en: 'No speaker named.' })}
+                      </p>
+                    ) : (
+                      group.sessions
+                        .filter((one) => one.speaker_name)
+                        .map((one) => (
+                          <article
+                            key={one.id}
+                            className="border-[0.72px] border-[#b3b3b3] rounded-[16px]
+                              p-4 flex gap-3 items-start"
+                          >
+                            <span className="size-[72px] rounded-[12px] bg-[#fbecd1]
+                              grid place-items-center overflow-hidden flex-none
+                              text-[24px] font-semibold text-[#12386e]">
+                              {one.speaker_photo_url
+                                ? <img src={one.speaker_photo_url} alt=""
+                                    className="w-full h-full object-cover" />
+                                : one.speaker_name.trim().charAt(0).toUpperCase()}
+                            </span>
+                            <div className="min-w-0">
+                              <span className="inline-block bg-[#efefef] text-[#194d97]
+                                rounded-[6px] px-2 py-1 text-[12px]">
+                                {one.title}
+                              </span>
+                              <p className="pt-1.5 text-[15px] font-semibold
+                                text-[#101828]">
+                                {one.speaker_name}
+                              </p>
+                              {one.speaker_role && (
+                                <p className="text-[13px] text-[#64748b]">
+                                  {one.speaker_role}
+                                </p>
+                              )}
+                              {speakerProfiles.find(
+                                (profile) => profile.id === one.speaker
+                              )?.organization && (
+                              <p className="text-[13px] text-[#94a3b8]">
+                                  {speakerProfiles.find(
+                                    (profile) => profile.id === one.speaker
+                                  )?.organization}
+                                </p>
+                              )}
+                            </div>
+                          </article>
+                        ))
+                    )}
+                  </div>
+                )}
+
+                {tab === 'files' && group.sessions.map((one) => {
+                  const mine = files.filter((f) => f.session === one.id);
+                  if (mine.length === 0) return null;
                   return (
-                    <Thread
-                      key={one.id}
-                      title={one.title}
-                      posts={posts}
-                      more={(n) => (tab === 'questions'
-                        ? t({
-                            ne: `थप ${num(n)} प्रश्न हेर्नुहोस्`,
-                            en: `view ${n} more ${n === 1 ? 'question' : 'questions'}`,
-                          })
-                        : t({
-                            ne: `थप ${num(n)} सुझाव हेर्नुहोस्`,
-                            en: `view ${n} more ${n === 1 ? 'suggestion' : 'suggestions'}`,
-                          }))}
-                      onVote={tab === 'questions' ? vote : undefined}
-                    />
+                    <div key={one.id}>
+                      <TalkHead title={one.title} />
+                      <ul className="pt-3 flex flex-col gap-2">
+                        {mine.map((file) => (
+                          <li
+                            key={file.id}
+                            className="border-[0.72px] border-[#b3b3b3]
+                              rounded-[16px] p-4 flex gap-3 items-center"
+                          >
+                            <span className="size-10 rounded-[12px] bg-[#fef2f2]
+                              grid place-items-center flex-none">
+                              <img src={fileIcon} alt="" width="18" height="18" />
+                            </span>
+                            <span className="flex-1 min-w-0">
+                              <span className="block text-[14px] font-medium
+                                text-[#101828] leading-[21px] truncate">
+                                {file.display_name}
+                              </span>
+                              <span className="block text-[12px] text-[#99a1af]
+                                leading-4">
+                                {kindOf(file.display_name ?? '')} ·{' '}
+                                {formatSize(file.file_size)}
+                              </span>
+                            </span>
+                            {file.web_view_link && (
+                              <a
+                                href={file.web_view_link}
+                                target="_blank"
+                                rel="noreferrer"
+                                aria-label={t({
+                                  ne: `${file.display_name} खोल्नुहोस्`,
+                                  en: `Download ${file.display_name}`,
+                                })}
+                                className="bg-[#efefef] rounded-[12px] p-2 flex-none
+                                  grid place-items-center"
+                              >
+                                <img src={downloadIcon} alt="" width="18" height="18" />
+                              </a>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   );
                 })}
-            </section>
-          ))
+
+                {(tab === 'questions' || tab === 'suggestions') &&
+                  group.sessions.map((one) => {
+                    const posts = postsOf(one, tab);
+                    if (posts.length === 0) return null;
+                    return (
+                      <Thread
+                        key={one.id}
+                        title={one.title}
+                        posts={posts}
+                        more={(n) => (tab === 'questions'
+                          ? t({
+                              ne: `थप ${num(n)} प्रश्न हेर्नुहोस्`,
+                              en: `view ${n} more ${n === 1 ? 'question' : 'questions'}`,
+                            })
+                          : t({
+                              ne: `थप ${num(n)} सुझाव हेर्नुहोस्`,
+                              en: `view ${n} more ${n === 1 ? 'suggestion' : 'suggestions'}`,
+                            }))}
+                        onVote={tab === 'questions' ? vote : undefined}
+                      />
+                    );
+                  })}
+
+                {tab === 'questions' && questionAgenda?.id === group.id &&
+                  looseQuestions.length > 0 && renderLooseThread('questions')}
+              </section>
+            ))}
+            {tab === 'questions' && questionAgenda && !questionAgendaIsGrouped &&
+              looseQuestions.length > 0 && (
+                <section className="bg-white px-4 py-2.5 flex flex-col gap-2.5">
+                  <GroupHead title={questionAgenda.title} />
+                  {renderLooseThread('questions')}
+                </section>
+              )}
+            <div className="h-0" />
+          </>
         )}
 
         {/* Not under any part of the day, because it belongs to none. */}
@@ -648,33 +699,17 @@ export const EventDetail: React.FC<{
           </section>
         )}
 
-        {(tab === 'questions' || tab === 'suggestions')
+        {(tab === 'suggestions' || (tab === 'questions' && !questionAgenda))
           && loosePosts(tab).length > 0 && (
           <section className="bg-white px-4 py-2.5 flex flex-col gap-2.5">
             <GroupHead
               title={t({ ne: 'कार्यक्रमभरि', en: 'For the whole event' })}
             />
-            <Thread
-              title={tab === 'questions'
-                ? t({ ne: 'प्रश्न', en: 'Questions' })
-                : t({ ne: 'सुझाव', en: 'Suggestions' })}
-              posts={loosePosts(tab)}
-              more={(n) => (tab === 'questions'
-                ? t({
-                    ne: `थप ${num(n)} प्रश्न हेर्नुहोस्`,
-                    en: `view ${n} more ${n === 1 ? 'question' : 'questions'}`,
-                  })
-                : t({
-                    ne: `थप ${num(n)} सुझाव हेर्नुहोस्`,
-                    en: `view ${n} more ${n === 1 ? 'suggestion' : 'suggestions'}`,
-                  }))}
-              onVote={tab === 'questions' ? vote : undefined}
-            />
+            {renderLooseThread(tab)}
           </section>
         )}
       </div>
 
-      <div className="h-6" />
     </div>
   );
 };
