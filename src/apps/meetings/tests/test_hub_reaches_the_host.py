@@ -250,6 +250,78 @@ class ClearingTheBacklogTests(APITestCase):
         self.assertIn('What is Kataho?', [q['body'] for q in board['questions']])
 
 
+class WhichTalkAQuestionBelongsToTests(APITestCase):
+    """A question asked during a talk belongs to that talk.
+
+    The client may name one, and the attendee app does not always. It
+    used to be filed against nothing at all then, so it sat for ever
+    under "Not on any agenda" and the host's agenda filter could never
+    find it - the same rule a transcript line and a shared file have
+    always followed was simply missing here.
+    """
+
+    def setUp(self):
+        self.host = make_host('host@example.com')
+        start = timezone.now() - timezone.timedelta(minutes=10)
+        self.event = make_event(self.host, start=start, minutes=120)
+        self.event.status = Event.Status.ACTIVE
+        self.event.started_at = start
+        self.event.save()
+        self.onstage = make_session(self.event, start, 60, 'Kataho Services')
+        self.later = make_session(
+            self.event, start + timezone.timedelta(hours=1), 60, 'Closing'
+        )
+        self.asker = User.objects.create_user(
+            username='asker', email='asker@example.com', password='pw'
+        )
+        EventParticipant.objects.create(
+            event=self.event, user=self.asker,
+            role=EventParticipant.Role.ATTENDEE, is_active=True,
+        )
+        self.client.force_authenticate(self.asker)
+
+    def ask(self, **extra):
+        answer = self.client.post(
+            f'{API}/events/{self.event.code}/hub/',
+            {'kind': 'question', 'body': 'Who owns it?', **extra},
+            format='json',
+        )
+        self.assertEqual(answer.status_code, 201, answer.content)
+        return HubPost.objects.get(id=answer.json()['id'])
+
+    def live(self):
+        self.onstage.status = 'live'
+        self.onstage.save(update_fields=['status'])
+
+    def test_one_asked_with_a_talk_on_stage_belongs_to_it(self):
+        self.live()
+
+        self.assertEqual(self.ask().session_id, self.onstage.id)
+
+    def test_the_client_is_still_believed_where_it_names_one(self):
+        self.live()
+
+        asked = self.ask(session=str(self.later.id))
+
+        self.assertEqual(asked.session_id, self.later.id)
+
+    def test_one_asked_with_nothing_on_stage_belongs_to_nothing(self):
+        self.assertIsNone(self.ask().session_id)
+
+    def test_the_host_can_filter_to_the_talk_it_was_asked_during(self):
+        self.live()
+        asked = self.ask()
+
+        self.client.force_authenticate(self.host)
+        body = self.client.get(
+            f'{API}/events/{self.event.id}/moderation_queue/'
+        ).json()
+
+        row = next(r for r in body['pending'] if r['body'] == 'Who owns it?')
+        self.assertEqual(row['session'], str(asked.session_id))
+        self.assertEqual(row['session_title'], 'Kataho Services')
+
+
 class ApprovedQuestionsReachTheRoomTests(APITestCase):
     """The room's own board reads two tables, not one.
 
@@ -303,16 +375,41 @@ class ApprovedQuestionsReachTheRoomTests(APITestCase):
 
         self.assertEqual(self.board()['faq'], [])
 
-    def test_a_suggestion_never_reaches_it(self):
-        """The board is read by the room; a suggestion is not for them."""
+    def test_a_suggestion_reaches_the_host(self):
+        """It was addressed to them; the room's board is where they read it."""
         self.asked(
             HubPost.Status.ADDRESSED, kind=HubPost.Kind.SUGGESTION,
             body='More signage, please.',
         )
 
         body = self.board()
+        self.assertIn(
+            'More signage, please.', [r['body'] for r in body['suggestions']]
+        )
+        self.assertEqual(body['faq'], [], 'and not onto the questions')
+
+    def test_and_nobody_else(self):
+        """The same board is read by everybody in the event."""
+        self.asked(
+            HubPost.Status.ADDRESSED, kind=HubPost.Kind.SUGGESTION,
+            body='More signage, please.',
+        )
+        self.client.force_authenticate(self.asker)
+
+        body = self.client.get(f'{API}/events/{self.event.id}/board/').json()
+
         self.assertEqual(body['suggestions'], [])
-        self.assertEqual(body['faq'], [])
+
+    def test_nor_a_guest_reading_it(self):
+        self.asked(
+            HubPost.Status.ADDRESSED, kind=HubPost.Kind.SUGGESTION,
+            body='More signage, please.',
+        )
+        from src.apps.meetings.board import board_for
+
+        body = board_for(self.event, user=None, guest=None)
+
+        self.assertEqual(body['suggestions'], [])
 
     def test_an_attendee_reads_the_same_board(self):
         self.asked(HubPost.Status.PUBLISHED)

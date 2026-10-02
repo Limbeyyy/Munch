@@ -73,6 +73,51 @@ class HubBacklogCommandTests(APITestCase):
         spare.refresh_from_db()
         self.assertEqual(spare.status, HubPost.Status.PENDING)
 
+    # --- giving an agenda to what never had one -----------------------
+
+    def test_it_files_loose_posts_under_the_named_agenda(self):
+        from src.apps.meetings.tests.factories import make_session
+
+        session = make_session(
+            self.event, self.event.scheduled_start, 60, 'Kataho Services'
+        )
+
+        self.run_it('--event', self.event.code, '--file-under', str(session.id))
+
+        self.question.refresh_from_db()
+        self.suggestion.refresh_from_db()
+        self.assertEqual(self.question.session_id, session.id)
+        self.assertEqual(self.suggestion.session_id, session.id)
+
+    def test_it_decides_nothing_while_doing_so(self):
+        from src.apps.meetings.tests.factories import make_session
+
+        session = make_session(
+            self.event, self.event.scheduled_start, 60, 'Kataho Services'
+        )
+
+        self.run_it('--event', self.event.code, '--file-under', str(session.id))
+
+        self.question.refresh_from_db()
+        self.assertEqual(self.question.status, HubPost.Status.PENDING)
+
+    def test_an_agenda_from_another_event_is_refused(self):
+        from src.apps.meetings.tests.factories import make_session
+
+        other = make_event(self.host, title='Another day')
+        theirs = make_session(other, other.scheduled_start, 60, 'Theirs')
+
+        out = StringIO()
+        err = StringIO()
+        call_command(
+            'hub_backlog', '--event', self.event.code,
+            '--file-under', str(theirs.id), stdout=out, stderr=err,
+        )
+
+        self.question.refresh_from_db()
+        self.assertIsNone(self.question.session_id)
+        self.assertIn('No agenda', err.getvalue())
+
     def test_it_says_so_when_there_is_nothing(self):
         HubPost.objects.all().delete()
 
