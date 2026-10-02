@@ -32,6 +32,7 @@ export const AttendeeApp: React.FC = () => {
   const [at, setAt] = useState<HomeSection>('home');
   const [events, setEvents] = useState<Event[]>([]);
   const [openId, setOpenId] = useState('');
+  const [profileSubpageOpen, setProfileSubpageOpen] = useState(false);
   const [inRoom, setInRoom] = useState(false);
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -78,10 +79,20 @@ export const AttendeeApp: React.FC = () => {
   }
 
   return (
-    <HomeShell at={at} onGo={(to) => { setOpenId(''); setAt(to); }} unread={unread}>
+    <HomeShell
+      at={at}
+      onGo={(to) => {
+        setOpenId('');
+        setProfileSubpageOpen(false);
+        setAt(to);
+      }}
+      unread={unread}
+      showNav={!open && !profileSubpageOpen}
+    >
       {open ? (
         <EventDetail
           event={open}
+          fromHome={at === 'home'}
           onBack={() => setOpenId('')}
           onEnterRoom={() => setInRoom(true)}
         />
@@ -101,7 +112,9 @@ export const AttendeeApp: React.FC = () => {
           {at === 'notifications' && (
             <NotificationsScreen onRead={() => setUnread(0)} />
           )}
-          {at === 'profile' && <Settings />}
+          {at === 'profile' && (
+            <Settings onSubpageChange={setProfileSubpageOpen} />
+          )}
         </>
       )}
     </HomeShell>

@@ -1,0 +1,46 @@
+.attendee-live-room-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  min-width: 0;
+  padding: calc(max(10px, env(safe-area-inset-top)) + 1.5rem) 16px 16px;
+  background: #fff;
+  border-bottom: 1px solid #eceef2;
+}
+
+.attendee-live-room-heading {
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+}
+
+.attendee-live-room-heading h1,
+.attendee-live-room-heading p {
+  overflow: hidden;
+  margin: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attendee-live-room-heading h1 {
+  color: #111726;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.attendee-live-room-heading p {
+  color: #8b90a0;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.attendee-live-room-agenda-detail-header {
+  padding-top: calc(max(12px, env(safe-area-inset-top)) + 1.5rem);
+}
+
+.attendee-live-room-agenda {
+  min-height: 100%;
+  background: #fff;
+}

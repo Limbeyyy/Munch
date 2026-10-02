@@ -24,7 +24,7 @@ export const SubHead: React.FC<{
       <button
         type="button"
         onClick={onBack}
-        className="flex items-center gap-1.5 text-[14px] font-medium
+        className="flex items-center gap-1.5 pt-4 text-[14px] font-medium
           text-[#9e9e9e] leading-5 flex-none"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -34,7 +34,7 @@ export const SubHead: React.FC<{
         </svg>
         {t({ ne: 'पछाडि', en: 'Back' })}
       </button>
-      <h1 className="flex-1 min-w-0 pr-[60px] text-center text-[16px]
+      <h1 className="flex-1 min-w-0 pr-[60px] text-center pt-4 text-[16px]
         font-semibold text-[#101828] leading-[27px]">
         {title}
       </h1>

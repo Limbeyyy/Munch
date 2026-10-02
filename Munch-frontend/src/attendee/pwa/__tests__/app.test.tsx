@@ -116,10 +116,39 @@ describe('the five things along the bottom', () => {
     });
   });
 
+  it('uses the attendee settings profile with the normal selected-tab style', async () => {
+    show();
+    const bar = await screen.findByRole('navigation', { name: 'Sections' });
+    fireEvent.click(within(bar).getByRole('button', { name: 'Profile' }));
+
+    expect(await screen.findByText('Profile and Settings')).toBeInTheDocument();
+    const profileTab = within(
+      screen.getByRole('navigation', { name: 'Sections' })
+    ).getByRole('button', { name: 'Profile' });
+    expect(profileTab).toHaveClass('text-[#194D97]');
+    expect(profileTab).not.toHaveClass('bg-[#194D97]');
+    expect(profileTab.querySelector('svg')).toHaveAttribute('stroke', '#194D97');
+  });
+
   it('opens on the transcript', async () => {
     show();
 
     expect(await screen.findByText('Live transcription')).toBeInTheDocument();
+  });
+
+  it('does not show a Leave room button on any live-room tab', async () => {
+    show();
+    const bar = await screen.findByRole('navigation', { name: 'Sections' });
+    const tabs = ['Transcript', 'Agenda', 'Q&A', 'Files', 'Profile'];
+
+    for (const tab of tabs) {
+      fireEvent.click(within(bar).getByRole('button', { name: tab }));
+      if (tab === 'Transcript') {
+        expect(screen.getByRole('button', { name: 'Leave' })).toBeInTheDocument();
+      } else {
+        expect(screen.queryByRole('button', { name: /Leave room|Leave/ })).toBeNull();
+      }
+    }
   });
 
   /** Somebody opening this in a hall is almost always in the live one. */
@@ -291,6 +320,13 @@ describe('the agenda', () => {
     await go('Agenda');
     fireEvent.click(await screen.findByText('Emergency Response Overview'));
 
+    expect(screen.queryByRole('heading', { name: 'Agenda' })).toBeNull();
+    const back = screen.getAllByRole('button', { name: 'Agenda' })
+      .find((button) => button.closest('header'))!;
+    expect(back).toBeInTheDocument();
+    expect(back.closest('header')).toHaveClass(
+      'attendee-live-room-agenda-detail-header'
+    );
     expect(
       await screen.findByText(/how the response was coordinated/)
     ).toBeInTheDocument();
