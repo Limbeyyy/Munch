@@ -127,7 +127,25 @@ describe('signing in', () => {
     expect(await screen.findByText('organizer portal')).toBeInTheDocument();
   });
 
-  it('does not send an attendee-only account to the host portal at a desk', async () => {
+  /**
+   * Signing in from a laptop is taken as saying you are here to run
+   * something, so somebody who only attends becomes a host on the way
+   * through. That is what the free trial is for.
+   */
+  it('makes an attendee-only account a host at a desk', async () => {
+    (apiClient.getMyRoles as jest.Mock).mockResolvedValue(
+      roles({ is_host: false, is_attendee: true, portals: ['attendee'] })
+    );
+    markFreshSignIn();
+
+    show();
+
+    expect(await screen.findByText('organizer portal')).toBeInTheDocument();
+    await waitFor(() => expect(apiClient.startHosting).toHaveBeenCalled());
+  });
+
+  it('leaves them where they are on a phone', async () => {
+    usingA('finger');
     (apiClient.getMyRoles as jest.Mock).mockResolvedValue(
       roles({ is_host: false, is_attendee: true, portals: ['attendee'] })
     );
@@ -137,6 +155,30 @@ describe('signing in', () => {
 
     expect(await screen.findByText('attendee portal')).toBeInTheDocument();
     expect(apiClient.startHosting).not.toHaveBeenCalled();
+  });
+
+  /** Already a host: nothing to take up, so nothing is asked for. */
+  it('asks for no trial where they already have one', async () => {
+    (apiClient.getMyRoles as jest.Mock).mockResolvedValue(roles());
+    markFreshSignIn();
+
+    show();
+
+    expect(await screen.findByText('organizer portal')).toBeInTheDocument();
+    expect(apiClient.startHosting).not.toHaveBeenCalled();
+  });
+
+  /** The trial is what makes the dashboard worth opening. */
+  it('falls back to the attendee app where the trial cannot be opened', async () => {
+    (apiClient.getMyRoles as jest.Mock).mockResolvedValue(
+      roles({ is_host: false, is_attendee: true, portals: ['attendee'] })
+    );
+    (apiClient.startHosting as jest.Mock).mockRejectedValue(new Error('no'));
+    markFreshSignIn();
+
+    show();
+
+    expect(await screen.findByText('attendee portal')).toBeInTheDocument();
   });
 });
 

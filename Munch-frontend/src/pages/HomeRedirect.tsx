@@ -107,21 +107,20 @@ export const looksLikeDesktop = (): boolean => {
 /**
  * Which portal this arrival should land in.
  *
- * The device answers first, because it is the better guess about what
- * somebody is here to do: running a programme is desk work - tables,
- * forms, a rail down the side - and following one is a thing done
- * standing in a hall. But the device cannot grant a role. Somebody who
- * only holds one of them goes there whatever they are holding, because
- * the alternative is landing them in a portal with nothing in it.
+ * At a desk, the host portal - and if they are not a host yet, they
+ * become one. Signing in from a laptop is taken as saying you are
+ * here to run something, which is what the free trial is for.
+ *
+ * On a phone, the attendee app, because following a programme is what
+ * a phone is for. Here the device cannot grant anything: somebody who
+ * only hosts goes to the host portal whatever they are holding,
+ * because the alternative is a portal with nothing in it.
  */
 export const portalFor = (roles: UserRoles, desktop: boolean): Portal => {
-  const wanted: Portal = desktop ? 'host' : 'attendee';
-  if (roles.portals.includes(wanted)) return wanted;
+  if (desktop) return 'host';
+  if (roles.portals.includes('attendee')) return 'attendee';
   if (roles.portals.length > 0) return roles.portals[0] as Portal;
-  // Neither yet. On a desk that means hosting, which is the only thing
-  // a new account can actually do; on a phone it means the attendee app,
-  // which at least explains how to join with a code.
-  return wanted;
+  return 'attendee';
 };
 
 const Loading: React.FC = () => (
