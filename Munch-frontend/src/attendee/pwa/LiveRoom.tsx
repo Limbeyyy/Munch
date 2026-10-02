@@ -31,6 +31,7 @@ export const LiveRoom: React.FC<{ onLeave: () => void }> = ({ onLeave }) => {
   const [eventId, setEventId] = useState('');
   const [sessions, setSessions] = useState<Session[]>([]);
   const [agendaDetailOpen, setAgendaDetailOpen] = useState(false);
+  const [photoFolderOpen, setPhotoFolderOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -109,7 +110,10 @@ export const LiveRoom: React.FC<{ onLeave: () => void }> = ({ onLeave }) => {
     <PhoneShell
       at={at}
       onGo={setAt}
-      hideSectionHeader={at === 'agenda' && agendaDetailOpen}
+      hideSectionHeader={
+        (at === 'agenda' && agendaDetailOpen)
+        || (at === 'files' && photoFolderOpen)
+      }
       eventTitle={event.title}
     >
       {at === 'transcript' && (
@@ -124,7 +128,13 @@ export const LiveRoom: React.FC<{ onLeave: () => void }> = ({ onLeave }) => {
         />
       )}
       {at === 'board' && <BoardScreen event={event} />}
-      {at === 'files' && <FilesScreen event={event} sessions={sessions} />}
+      {at === 'files' && (
+        <FilesScreen
+          event={event}
+          sessions={sessions}
+          onFolderOpenChange={setPhotoFolderOpen}
+        />
+      )}
       {at === 'profile' && <Settings />}
     </PhoneShell>
   );
