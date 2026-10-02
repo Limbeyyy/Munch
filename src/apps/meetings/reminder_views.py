@@ -20,6 +20,18 @@ logger = logging.getLogger(__name__)
 LOOKBACK_HOURS = 24
 
 
+def _for_audience(reminders, user, audience):
+    if audience == 'host':
+        return reminders.filter(event__host=user)
+
+    from src.apps.meetings.access import events_attended_by
+    from src.apps.meetings.models import Event
+
+    return reminders.filter(
+        event__in=Event.objects.filter(events_attended_by(user))
+    ).distinct()
+
+
 def _as_json(reminder):
     """One reminder, with the diary link it deserves.
 
@@ -90,6 +102,10 @@ def my_reminders(request):
     from src.apps.meetings.models import Event
     from src.apps.meetings.reminders import generate_for_meeting
 
+    audience = request.query_params.get('audience', 'attendee')
+    if audience not in ('attendee', 'host'):
+        return Response({'error': 'Invalid reminder audience'}, status=status.HTTP_400_BAD_REQUEST)
+
     upcoming = Event.objects.filter(
         events_visible_to(request.user),
         scheduled_end__gte=timezone.now(),
@@ -109,6 +125,7 @@ def my_reminders(request):
         .select_related('event', 'session')
         .order_by('starts_at')
     )
+    mine = _for_audience(mine, request.user, audience)
     rows = [_as_json(r) for r in mine]
 
     # Anything already due has now been shown, which is what delivery means
@@ -136,7 +153,12 @@ def my_reminders(request):
 @permission_classes([IsAuthenticated])
 def mark_reminders_read(request):
     """Put the badge down. Either one reminder, or all of them."""
+    audience = request.data.get('audience', 'attendee')
+    if audience not in ('attendee', 'host'):
+        return Response({'error': 'Invalid reminder audience'}, status=status.HTTP_400_BAD_REQUEST)
+
     mine = Reminder.objects.filter(user=request.user, read_at__isnull=True)
+    mine = _for_audience(mine, request.user, audience)
 
     one = request.data.get('id')
     if one:

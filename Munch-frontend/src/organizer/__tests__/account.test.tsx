@@ -533,6 +533,7 @@ describe('the reminders page', () => {
     expect(
       await screen.findByText(/60 minutes ahead, and each session 15 minutes ahead/)
     ).toBeInTheDocument();
+    expect(api.getReminders).toHaveBeenCalledWith('host');
   });
 
   it('gives every nudge a diary link that needs no sign-in', async () => {
@@ -602,7 +603,7 @@ describe('the reminders page', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Mark read' }));
 
     expect(screen.queryByRole('button', { name: 'Mark read' })).not.toBeInTheDocument();
-    expect(api.markRemindersRead).toHaveBeenCalledWith('r1');
+    expect(api.markRemindersRead).toHaveBeenCalledWith('r1', 'host');
     settle();
   });
 });

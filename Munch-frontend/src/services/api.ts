@@ -661,13 +661,19 @@ class ApiClient {
   }
 
   /** What this person is owed a nudge about, with diary links. */
-  async getReminders(): Promise<ReminderPage> {
-    const response = await this.client.get('/reminders/');
+  async getReminders(audience: 'attendee' | 'host' = 'attendee'): Promise<ReminderPage> {
+    const response = await this.client.get('/reminders/', { params: { audience } });
     return response.data;
   }
 
-  async markRemindersRead(id?: string): Promise<{ marked: number }> {
-    const response = await this.client.post('/reminders/read/', id ? { id } : {});
+  async markRemindersRead(
+    id?: string,
+    audience: 'attendee' | 'host' = 'attendee'
+  ): Promise<{ marked: number }> {
+    const response = await this.client.post('/reminders/read/', {
+      ...(id ? { id } : {}),
+      audience,
+    });
     return response.data;
   }
 

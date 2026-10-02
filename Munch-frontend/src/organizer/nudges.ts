@@ -69,7 +69,7 @@ export const useNudges = () => {
 
   const refresh = useCallback(async () => {
     try {
-      const fresh = await apiClient.getReminders();
+      const fresh = await apiClient.getReminders('host');
       setPage(fresh);
 
       if (announcePermission() === 'granted') {
@@ -115,7 +115,7 @@ export const useNudges = () => {
         : prev
     );
     try {
-      await apiClient.markRemindersRead(id);
+      await apiClient.markRemindersRead(id, 'host');
     } catch {
       refresh();
     }

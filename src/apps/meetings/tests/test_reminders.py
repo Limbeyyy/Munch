@@ -169,7 +169,38 @@ class ReminderPageTests(TestCase):
         self.client = signed_in(self.host)
 
     def page(self):
-        return self.client.get(f'{API}/reminders/').json()
+        return self.client.get(f'{API}/reminders/?audience=host').json()
+
+    def test_host_and_attendee_reminders_are_separate(self):
+        other_host = make_host('other-host@example.com')
+        invited_event = make_event(
+            other_host,
+            start=self.start,
+            title='Invited meeting',
+        )
+        EventInvite.objects.create(
+            event=invited_event,
+            email=self.host.email,
+            invited_by=other_host,
+        )
+
+        host_rows = self.page()['reminders']
+        attendee_rows = self.client.get(
+            f'{API}/reminders/?audience=attendee'
+        ).json()['reminders']
+
+        self.assertEqual({row['event_title'] for row in host_rows}, {self.event.title})
+        self.assertEqual(
+            {row['event_title'] for row in attendee_rows}, {invited_event.title}
+        )
+
+        self.client.post(f'{API}/reminders/read/', {'audience': 'host'}, format='json')
+        self.assertTrue(
+            Reminder.objects.filter(user=self.host, event=self.event, read_at__isnull=False).exists()
+        )
+        self.assertTrue(
+            Reminder.objects.filter(user=self.host, event=invited_event, read_at__isnull=True).exists()
+        )
 
     def test_the_page_generates_what_is_missing(self):
         self.assertEqual(Reminder.objects.count(), 0)
@@ -256,7 +287,7 @@ class ReminderPageTests(TestCase):
         self.imminent()
         self.assertEqual(self.page()['unread'], 2)
 
-        self.client.post(f'{API}/reminders/read/')
+        self.client.post(f'{API}/reminders/read/', {'audience': 'host'}, format='json')
 
         self.assertEqual(self.page()['unread'], 0)
 
@@ -264,7 +295,11 @@ class ReminderPageTests(TestCase):
         self.imminent()
         rows = self.page()['reminders']
 
-        self.client.post(f'{API}/reminders/read/', {'id': rows[0]['id']}, format='json')
+        self.client.post(
+            f'{API}/reminders/read/',
+            {'id': rows[0]['id'], 'audience': 'host'},
+            format='json',
+        )
 
         self.assertEqual(self.page()['unread'], 1)
 
