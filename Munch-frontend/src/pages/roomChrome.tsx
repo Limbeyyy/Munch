@@ -88,7 +88,7 @@ export const RoomBarButton: React.FC<{
     type="button"
     onClick={onClick}
     aria-pressed={open}
-    className={`relative flex flex-col items-center gap-[9px] px-3 py-2 rounded-[12px] w-[92px]
+    className={`relative flex flex-col items-center gap-[9px] px-3 py-2 rounded-[12px] w-max min-w-[92px]
       flex-none transition-colors ${open ? 'bg-white/[.16]' : 'hover:bg-white/[.08]'}`}
   >
     <FigmaIcon name={icon} size={24} />

@@ -251,8 +251,6 @@ export const GuestEventPage: React.FC = () => {
             recipient_is_guest: !!data.recipient_is_guest,
           }]
         );
-      } else if (data.type === 'event_started') {
-        setStartedAt(data.started_at);
       } else if (data.type === 'event_ended') {
         // The only way a event ends now: somebody decided it had.
         toast('The host ended the event', { icon: '👋' });
@@ -368,7 +366,6 @@ export const GuestEventPage: React.FC = () => {
       loadChat();
       try {
         const { guest, event } = await apiClient.guestStatus(token);
-        if (event?.started_at) setStartedAt(event.started_at);
         if (event?.status === 'ended') {
           toast('The event has ended');
           leave();

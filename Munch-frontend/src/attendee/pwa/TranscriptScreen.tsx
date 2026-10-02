@@ -24,7 +24,7 @@ export const TranscriptScreen: React.FC<{
   const { t } = useOrganizer();
   const [lines, setLines] = useState<TranscriptionSegment[]>([]);
   const [following, setFollowing] = useState(true);
-  const running = useElapsed(event.started_at);
+  const running = useElapsed(live?.started_at);
   const foot = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
 
