@@ -76,8 +76,6 @@ interface Props {
   queues?: React.ReactNode;
   /** Re-read the day after the running order has been rearranged. */
   onChanged: () => Promise<void> | void;
-  /** Put one on stage from the running order itself. */
-  onStart: (sessionId: string) => Promise<void> | void;
   onBackToRoom: () => void;
 }
 
@@ -91,7 +89,7 @@ interface Props {
  * component pulled in both directions would serve neither.
  */
 export const LiveDashboard: React.FC<Props> = ({
-  event, sessions, live, stageActions, queues, onChanged, onStart, onBackToRoom,
+  event, sessions, live, stageActions, queues, onChanged, onBackToRoom,
 }) => {
   const { t, num } = useOrganizer();
 
@@ -171,7 +169,7 @@ export const LiveDashboard: React.FC<Props> = ({
               right={
                 <span className="flex items-center gap-2 flex-none">
                   {live && (
-                    <span className="bg-[#fce2ef] text-[#f83995] h-6 px-2 rounded-[4px]
+                    <span className="bg-live text-white h-6 px-2 rounded-[4px]
                       grid place-items-center text-[12px] tracking-[-0.06px]">
                       {t({ ne: 'लाइभ', en: 'Live' })}
                     </span>
@@ -275,7 +273,6 @@ export const LiveDashboard: React.FC<Props> = ({
               liveSessionId={live?.id ?? null}
               canEdit
               onChanged={onChanged}
-              onStart={onStart}
             />
           </Card>
         </div>

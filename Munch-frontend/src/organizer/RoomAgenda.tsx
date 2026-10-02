@@ -370,7 +370,7 @@ export const RoomAgenda: React.FC<Props> = ({
           </div>
 
           {onStage ? (
-            <span className="bg-[#fce2ef] text-[#f83995] text-[12px] rounded-[4px]
+            <span className="bg-live text-white text-[12px] rounded-[4px]
               h-6 px-2 grid place-items-center flex-none">
               {t({ ne: 'लाइभ', en: 'Live' })}
             </span>
