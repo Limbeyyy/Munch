@@ -228,14 +228,11 @@ describe('the events list', () => {
     await go('Events');
 
     expect(await screen.findByText('Coming Up')).toBeInTheDocument();
-    expect(screen.queryByText('Running Now')).toBeNull();
-
-    fireEvent.click(screen.getByRole('button', { name: /^Live/ }));
-    expect(await screen.findByText('Running Now')).toBeInTheDocument();
-    expect(screen.queryByText('Coming Up')).toBeNull();
+    expect(screen.queryByText('All Over')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /^Completed/ }));
     expect(await screen.findByText('All Over')).toBeInTheDocument();
+    expect(screen.queryByText('Coming Up')).toBeNull();
   });
 
   it('renders completed events with questions and summary availability', async () => {
@@ -333,6 +330,74 @@ describe('one event, opened', () => {
     expect(
       screen.getByRole('button', { name: 'view less' })
     ).toBeInTheDocument();
+  });
+
+  /**
+   * Picking a day is the running order's question. Everywhere else
+   * the question is about the event, and the filter used to follow
+   * those tabs around with nothing on screen saying why half the
+   * speakers were missing.
+   */
+  it('shows every day\'s speakers, not only the day chosen', async () => {
+    api.listEvents.mockResolvedValue([
+      event({ scheduled_end: '2026-10-16T06:15:00Z' }),
+    ] as any);
+    api.listSessions.mockResolvedValue([
+      session({ id: 's1', title: 'Opening', speaker_name: 'Ram Rimal',
+        starts_at: '2026-10-15T04:00:00Z' }),
+      session({ id: 's2', title: 'Closing', speaker_name: 'Sita Gurung',
+        starts_at: '2026-10-16T04:00:00Z' }),
+    ] as any);
+
+    await openIt();
+
+    // Day 1 only, on the running order.
+    expect(await screen.findByText('Opening')).toBeInTheDocument();
+    expect(screen.queryByText('Closing')).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Speaker' }));
+
+    expect(await screen.findByText('Ram Rimal')).toBeInTheDocument();
+    expect(screen.getByText('Sita Gurung')).toBeInTheDocument();
+  });
+
+  it('and every day\'s files and questions', async () => {
+    api.listEvents.mockResolvedValue([
+      event({ scheduled_end: '2026-10-16T06:15:00Z' }),
+    ] as any);
+    api.listSessions.mockResolvedValue([
+      session({ id: 's1', title: 'Opening',
+        starts_at: '2026-10-15T04:00:00Z' }),
+      session({ id: 's2', title: 'Closing',
+        starts_at: '2026-10-16T04:00:00Z' }),
+    ] as any);
+    api.getResources.mockResolvedValue([
+      { id: 'a2', session: 's2', display_name: 'SecondDay.pdf',
+        file_size: 2048, web_view_link: 'https://example.test/x' },
+    ] as any);
+
+    await openIt();
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+
+    expect(await screen.findByText('SecondDay.pdf')).toBeInTheDocument();
+  });
+
+  /** The pills are the running order's own. */
+  it('offers the day pills only on the running order', async () => {
+    api.listEvents.mockResolvedValue([
+      event({ scheduled_end: '2026-10-16T06:15:00Z' }),
+    ] as any);
+    api.listSessions.mockResolvedValue([
+      session({ id: 's1', starts_at: '2026-10-15T04:00:00Z' }),
+      session({ id: 's2', starts_at: '2026-10-16T04:00:00Z' }),
+    ] as any);
+
+    await openIt();
+    expect(await screen.findByRole('button', { name: 'Day 2' }))
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Speaker' }));
+    expect(screen.queryByRole('button', { name: 'Day 2' })).toBeNull();
   });
 
   it('carries the speaker onto the speaker tab', async () => {
@@ -575,8 +640,11 @@ describe('one event, opened', () => {
       event({ status: 'active', started_at: '2026-10-15T04:15:00Z' }),
     ] as any);
 
-    await openIt(/^Live/ as any);
-    fireEvent.click(screen.getByRole('button', { name: /Enter live room/ }));
+    // Home is the way to a running event: the events list has an
+    // Upcoming deck and a Completed one, and a live event is on
+    // neither.
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: /Join Live/ }));
 
     expect(
       await screen.findByRole('button', { name: /Transcript/ })

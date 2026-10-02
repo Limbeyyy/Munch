@@ -232,18 +232,30 @@ export const EventDetail: React.FC<{
   const days = useMemo(() => daysOf(event), [event]);
   const onDay = day && days.includes(day) ? day : (days[0] ?? '');
 
-  const onThisDay = useMemo(
-    () => sessions.filter(
-      (one) => days.length <= 1 || dayKey(new Date(one.starts_at)) === onDay
-    ),
-    [sessions, days.length, onDay]
+  /**
+   * Which talks this tab is about.
+   *
+   * The day pills belong to the running order, where picking a day is
+   * the whole point of them. Everywhere else the question is about the
+   * event: who spoke at it, what was shared at it, what was asked at
+   * it - and the filter followed those tabs around silently, so the
+   * speaker list showed one day's speakers with nothing on screen
+   * saying why the others were missing.
+   */
+  const inScope = useMemo(
+    () => (tab === 'agendas'
+      ? sessions.filter(
+          (one) => days.length <= 1 || dayKey(new Date(one.starts_at)) === onDay
+        )
+      : sessions),
+    [tab, sessions, days.length, onDay]
   );
 
   const grouped: Grouped[] = useMemo(
     () => groupSessions(
-      onThisDay, groups, t({ ne: 'बाँकी', en: 'Everything else' })
+      inScope, groups, t({ ne: 'बाँकी', en: 'Everything else' })
     ),
-    [onThisDay, groups, t]
+    [inScope, groups, t]
   );
   const postsOf = (one: Session, kind: 'questions' | 'suggestions') =>
     board[kind].filter((post) => post.session_id === one.id);
@@ -365,15 +377,20 @@ export const EventDetail: React.FC<{
         </div>
       </header>
 
+      {/* Scrolled rather than squeezed. A seven-day programme used to
+          shrink every pill until each was a circle round a wrapped
+          digit. */}
       {tab === 'agendas' && days.length > 1 && (
-        <div className="bg-white px-4 py-2.5 flex gap-4">
+        <div className="bg-white px-4 py-2.5 flex gap-2 overflow-x-auto
+          [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {days.map((one, i) => (
             <button
               key={one}
               type="button"
               aria-pressed={one === onDay}
               onClick={() => setDay(one)}
-              className={`rounded-full px-3 py-1.5 text-[12px] ${
+              className={`flex-none whitespace-nowrap rounded-full px-3 py-1.5
+                text-[12px] ${
                 one === onDay
                   ? 'bg-[#12386e] text-white'
                   : 'bg-[#e3ecfd] text-[#393939]'
