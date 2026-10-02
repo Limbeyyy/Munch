@@ -253,6 +253,22 @@ describe('arriving without having just signed in', () => {
 
     expect(await screen.findByText('attendee portal')).toBeInTheDocument();
   });
+
+  /**
+   * Becoming a host is a real thing to become, so it waits for a
+   * session that actually works. A token that the server will not
+   * honour reads as no answer at all, and nothing is taken up on the
+   * strength of it.
+   */
+  it('takes up nothing when the session turns out to be no good', async () => {
+    (apiClient.getMyRoles as jest.Mock).mockRejectedValue(new Error('401'));
+    markFreshSignIn();
+
+    show();
+
+    await screen.findByText('attendee portal');
+    expect(apiClient.startHosting).not.toHaveBeenCalled();
+  });
 });
 
 describe('what the device is read from', () => {
