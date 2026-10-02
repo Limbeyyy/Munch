@@ -4,7 +4,7 @@ import { apiClient } from '../../services/api';
 import { Event, HubKind, HubPost } from '../../types';
 import { errorText } from '../../organizer/errors';
 import { useOrganizer } from '../../organizer/i18n';
-import { ScreenHead, Switcher } from './PhoneShell';
+import { Switcher } from './PhoneShell';
 
 const MOST = 500;
 
@@ -86,7 +86,7 @@ const AskSheet: React.FC<{
           disabled={busy || body.trim() === ''}
           onClick={() => onSend(body.trim())}
           className="mt-2 w-full rounded-[12px] py-3.5 text-[15px] font-semibold
-            text-white bg-[#2440c9] disabled:bg-[#9fb0e4]"
+            text-white bg-[#12386e] disabled:bg-[#9fb0e4]"
         >
           {busy
             ? t({ ne: 'पठाउँदै…', en: 'Sending…' })
@@ -179,11 +179,6 @@ export const BoardScreen: React.FC<{ event: Event }> = ({ event }) => {
 
   return (
     <div>
-      <ScreenHead
-        title={t({ ne: 'प्रश्न', en: 'Q&A' })}
-        under={t({ ne: 'प्रश्न र सुझाव', en: 'questions and suggestions' })}
-      />
-
       <Switcher<'questions' | 'suggestions'>
         value={tab}
         onChange={setTab}

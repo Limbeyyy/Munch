@@ -38,21 +38,27 @@ const Icon: React.FC<{ of: keyof typeof ICON }> = ({ of }) => (
  * screen leaves room to say what each answer means. The list only has
  * to say what the current answer is.
  */
-export const Settings: React.FC = () => {
+export const Settings: React.FC<{
+  onSubpageChange?: (isOpen: boolean) => void;
+}> = ({ onSubpageChange }) => {
   const { t, lang, look } = useOrganizer();
   const { user, logout } = useAuthStore();
   const [at, setAt] = useState<Page>('list');
+  const navigate = (page: Page) => {
+    setAt(page);
+    onSubpageChange?.(page !== 'list');
+  };
 
   const who = nameOf(user);
   const photo = user?.avatar_url;
 
-  if (at === 'profile') return <ProfileInformation onBack={() => setAt('list')} />;
+  if (at === 'profile') return <ProfileInformation onBack={() => navigate('list')} />;
   if (at === 'notifications') {
-    return <NotificationSettings onBack={() => setAt('list')} />;
+    return <NotificationSettings onBack={() => navigate('list')} />;
   }
-  if (at === 'appearance') return <Appearance onBack={() => setAt('list')} />;
-  if (at === 'text') return <TextSize onBack={() => setAt('list')} />;
-  if (at === 'language') return <LanguageSettings onBack={() => setAt('list')} />;
+  if (at === 'appearance') return <Appearance onBack={() => navigate('list')} />;
+  if (at === 'text') return <TextSize onBack={() => navigate('list')} />;
+  if (at === 'language') return <LanguageSettings onBack={() => navigate('list')} />;
 
   const themeName = {
     system: t({ ne: 'यन्त्र अनुसार', en: 'System' }),
@@ -74,8 +80,8 @@ export const Settings: React.FC = () => {
         className="bg-white px-4 pt-3 pb-2 border-b-[0.72px] border-[#b3b3b3]"
         style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}
       >
-        <h1 className="text-[20px] font-semibold text-[#101828] leading-[27px]
-          text-center">
+        <h1 className="text-[16px] font-semibold text-[#101828] leading-[27px]
+          pt-4 text-center">
           {t({ ne: 'प्रोफाइल र सेटिङ', en: 'Profile and Settings' })}
         </h1>
       </header>
@@ -119,7 +125,7 @@ export const Settings: React.FC = () => {
             lead={<Tile><Icon of="person" /></Tile>}
             title={t({ ne: 'प्रोफाइल जानकारी', en: 'Profile information' })}
             last
-            onGo={() => setAt('profile')}
+            onGo={() => navigate('profile')}
           />
         </Block>
 
@@ -127,26 +133,26 @@ export const Settings: React.FC = () => {
           <Row
             lead={<Tile><Icon of="bell" /></Tile>}
             title={t({ ne: 'सूचना', en: 'Notifications' })}
-            onGo={() => setAt('notifications')}
+            onGo={() => navigate('notifications')}
           />
           <Row
             lead={<Tile><Icon of="sun" /></Tile>}
             title={t({ ne: 'रूप', en: 'Appearance' })}
             value={themeName}
-            onGo={() => setAt('appearance')}
+            onGo={() => navigate('appearance')}
           />
           <Row
             lead={<Tile><Icon of="text" /></Tile>}
             title={t({ ne: 'अक्षरको आकार', en: 'Text size' })}
             value={sizeName}
-            onGo={() => setAt('text')}
+            onGo={() => navigate('text')}
           />
           <Row
             lead={<Tile><Icon of="globe" /></Tile>}
             title={t({ ne: 'भाषा', en: 'Language' })}
             value={lang === 'ne' ? 'नेपाली' : 'English'}
             last
-            onGo={() => setAt('language')}
+            onGo={() => navigate('language')}
           />
         </Block>
 
@@ -186,8 +192,6 @@ export const Settings: React.FC = () => {
           </button>
         </section>
       </div>
-
-      <div className="h-6" />
     </div>
   );
 };

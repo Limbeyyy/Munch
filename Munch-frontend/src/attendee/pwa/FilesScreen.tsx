@@ -3,7 +3,7 @@ import { apiClient } from '../../services/api';
 import { Artifact, Event, EventPhoto, PhotoFolder, Session } from '../../types';
 import { useOrganizer } from '../../organizer/i18n';
 import { formatSize, kindOf } from '../../organizer/filesAndSummaries/shared';
-import { ScreenHead, Switcher } from './PhoneShell';
+import { Switcher } from './PhoneShell';
 
 /** The tinted square a file's kind sits in. */
 const TINT: Record<string, { bg: string; ink: string }> = {
@@ -147,11 +147,6 @@ export const FilesScreen: React.FC<{
 
   return (
     <div>
-      <ScreenHead
-        title={t({ ne: 'फाइल', en: 'Files' })}
-        under={event.title}
-      />
-
       <Switcher<'files' | 'photos'>
         value={tab}
         onChange={setTab}

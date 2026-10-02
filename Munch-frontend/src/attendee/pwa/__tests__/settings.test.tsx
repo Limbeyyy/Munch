@@ -2,6 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { OrganizerProvider } from '../../../organizer/i18n';
 import { Settings } from '../profile/Settings';
+import { HomeShell } from '../HomeShell';
 import { apiClient } from '../../../services/api';
 import { useAuthStore } from '../../../store/authStore';
 
@@ -203,6 +204,29 @@ describe('profile information', () => {
 });
 
 describe('the notification switches', () => {
+  it('hides the app navbar on a settings subpage and restores it on Back', async () => {
+    const InShell: React.FC = () => {
+      const [subpageOpen, setSubpageOpen] = React.useState(false);
+      return (
+        <HomeShell at="profile" onGo={() => {}} showNav={!subpageOpen}>
+          <Settings onSubpageChange={setSubpageOpen} />
+        </HomeShell>
+      );
+    };
+    render(<OrganizerProvider><InShell /></OrganizerProvider>);
+    expect(screen.getByRole('navigation', { name: 'Sections' }))
+      .toBeInTheDocument();
+
+    const preferences = screen.getByRole('heading', { name: 'App Preferences' })
+      .closest('section')!;
+    fireEvent.click(within(preferences).getByRole('button', { name: 'Notifications' }));
+    expect(screen.queryByRole('navigation', { name: 'Sections' })).toBeNull();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Back/ }));
+    expect(await screen.findByRole('navigation', { name: 'Sections' }))
+      .toBeInTheDocument();
+  });
+
   it('shows each one as the account has it', async () => {
     await open('^Notifications');
 

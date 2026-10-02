@@ -9,7 +9,7 @@ import { TranscriptScreen } from './TranscriptScreen';
 import { AgendaScreen } from './AgendaScreen';
 import { BoardScreen } from './BoardScreen';
 import { FilesScreen } from './FilesScreen';
-import { ProfileScreen } from './ProfileScreen';
+import { Settings } from './profile/Settings';
 
 /**
  * The live room, on a phone.
@@ -30,6 +30,7 @@ export const LiveRoom: React.FC<{ onLeave: () => void }> = ({ onLeave }) => {
   const [events, setEvents] = useState<Event[]>([]);
   const [eventId, setEventId] = useState('');
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [agendaDetailOpen, setAgendaDetailOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -105,25 +106,26 @@ export const LiveRoom: React.FC<{ onLeave: () => void }> = ({ onLeave }) => {
   }
 
   return (
-    // The transcript carries its own way out, in its header where the
-    // design puts it; the other four get the shell's strip instead of
-    // two of them.
-    <PhoneShell at={at} onGo={setAt} onLeave={at === 'transcript' ? undefined : onLeave}>
+    <PhoneShell
+      at={at}
+      onGo={setAt}
+      hideSectionHeader={at === 'agenda' && agendaDetailOpen}
+      eventTitle={event.title}
+    >
       {at === 'transcript' && (
         <TranscriptScreen event={event} live={live} onLeave={onLeave} />
       )}
       {at === 'agenda' && (
-        <AgendaScreen event={event} sessions={sessions} live={live} />
+        <AgendaScreen
+          event={event}
+          sessions={sessions}
+          live={live}
+          onDetailChange={setAgendaDetailOpen}
+        />
       )}
       {at === 'board' && <BoardScreen event={event} />}
       {at === 'files' && <FilesScreen event={event} sessions={sessions} />}
-      {at === 'profile' && (
-        <ProfileScreen
-          event={event}
-          events={events}
-          onPickEvent={setEventId}
-        />
-      )}
+      {at === 'profile' && <Settings />}
     </PhoneShell>
   );
 };

@@ -78,7 +78,7 @@ export const TranscriptScreen: React.FC<{
       <header
         className="bg-[#12386e] text-white px-6 py-2 flex items-center gap-3
           border-b-[0.612px] border-[#e5e7eb]"
-        style={{ paddingTop: 'max(8px, env(safe-area-inset-top))' }}
+        style={{ paddingTop: 'max(35px, env(safe-area-inset-top))' }}
       >
         <div className="min-w-0 flex-1 flex flex-col gap-1.5 items-start">
           <div className="min-w-0 w-full">
@@ -122,6 +122,7 @@ export const TranscriptScreen: React.FC<{
             {t({ ne: 'बाहिर', en: 'Leave' })}
           </button>
         )}
+
       </header>
 
       <div className="bg-white px-5 py-3 border-b-[0.612px] border-[#f3f4f6]

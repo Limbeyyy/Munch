@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pair, useOrganizer } from '../../organizer/i18n';
+import './LiveRoom.css';
 
 /**
  * The frame the attendee app lives in, on a phone.
@@ -71,34 +72,29 @@ export const PhoneShell: React.FC<{
   onGo: (to: Section) => void;
   /** Unread counts against the tabs that carry them. */
   pips?: Partial<Record<Section, number>>;
-  /** Given when there is somewhere to go back out to. */
-  onLeave?: () => void;
+  hideSectionHeader?: boolean;
+  eventTitle?: string;
   children: React.ReactNode;
-}> = ({ at, onGo, pips = {}, onLeave, children }) => {
+}> = ({ at, onGo, pips = {}, hideSectionHeader = false, eventTitle, children }) => {
   const { t } = useOrganizer();
+  const horizontalHeader = !hideSectionHeader &&
+    (at === 'agenda' || at === 'board' || at === 'files');
 
   return (
     <div className="min-h-[100dvh] bg-white flex flex-col">
-      {/* The way back out. Somebody who opened the room from their
-          events should not have to close the app to get back to them. */}
-      {onLeave && (
-        <button
-          type="button"
-          onClick={onLeave}
-          className="flex items-center gap-1.5 px-4 pb-1 text-[13px] text-[#5b6070]"
-          style={{ paddingTop: 'max(10px, env(safe-area-inset-top))' }}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="2" strokeLinecap="round"
-            strokeLinejoin="round" aria-hidden>
-            <path d="M15 18l-6-6 6-6" />
-          </svg>
-          {t({ ne: 'कोठाबाट बाहिर', en: 'Leave room' })}
-        </button>
+      {horizontalHeader && (
+        <header className="attendee-live-room-toolbar">
+          <div className="attendee-live-room-heading">
+            <h1>{t(LABEL[at])}</h1>
+            {eventTitle && <p>{eventTitle}</p>}
+          </div>
+        </header>
       )}
 
       {/* Padded for the bar, so the last line of anything scrollable is
-          readable rather than sitting behind it. */}
+          readable rather than sitting behind it. Add a little room at the
+          top so the first element doesn't sit flush against the safe-area.
+          */}
       <main className="flex-1 pb-[76px]">{children}</main>
 
       <nav
@@ -116,12 +112,12 @@ export const PhoneShell: React.FC<{
               aria-current={on ? 'page' : undefined}
               onClick={() => onGo(one)}
               className={`flex-1 pt-2.5 pb-2 flex flex-col items-center gap-1
-                ${on ? 'text-[#2440c9]' : 'text-[#8b90a0]'}`}
+                ${on ? 'text-[#194D97]' : 'text-[#8b90a0]'}`}
             >
               <span className="relative">
                 <svg
                   width="24" height="24" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="1.6"
+                  stroke={on ? '#194D97' : 'currentColor'} strokeWidth="1.6"
                   strokeLinecap="round" strokeLinejoin="round" aria-hidden
                 >
                   {GLYPH[one]}
@@ -143,7 +139,7 @@ export const PhoneShell: React.FC<{
 export const ScreenHead: React.FC<{ title: string; under?: string }> = ({
   title, under,
 }) => (
-  <header className="px-4 pt-3 pb-3 border-b border-[#eceef2] text-center">
+  <header className="px-4 pt-3 pt-6 pb-3 border-b border-[#eceef2] text-center">
     <h1 className="text-[17px] font-semibold text-[#111726]">{title}</h1>
     {under && <p className="pt-0.5 text-[12px] text-[#8b90a0]">{under}</p>}
   </header>

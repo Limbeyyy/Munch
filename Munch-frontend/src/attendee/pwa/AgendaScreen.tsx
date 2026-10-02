@@ -3,7 +3,6 @@ import { apiClient } from '../../services/api';
 import { Artifact, Event, Session, SessionSummary, SubEvent } from '../../types';
 import { useOrganizer } from '../../organizer/i18n';
 import { daysOf } from '../../organizer/events/days';
-import { ScreenHead } from './PhoneShell';
 import { Grouped, groupSessions } from './grouping';
 
 const clock = (iso: string) =>
@@ -48,8 +47,8 @@ const AgendaDetail: React.FC<{
   return (
     <div>
       <header
-        className="px-4 pt-3 pb-3 border-b border-[#eceef2]"
-        style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}
+        className="attendee-live-room-agenda-detail-header px-4 pb-3
+          border-b border-[#eceef2]"
       >
         <button
           type="button"
@@ -209,7 +208,8 @@ export const AgendaScreen: React.FC<{
   event: Event;
   sessions: Session[];
   live: Session | null;
-}> = ({ event, sessions, live }) => {
+  onDetailChange?: (isOpen: boolean) => void;
+}> = ({ event, sessions, live, onDetailChange }) => {
   const { t, num } = useOrganizer();
   const [opened, setOpened] = useState<string>('');
   const [day, setDay] = useState('');
@@ -258,18 +258,16 @@ export const AgendaScreen: React.FC<{
         event={event}
         session={open}
         isLive={live?.id === open.id}
-        onBack={() => setOpened('')}
+        onBack={() => {
+          setOpened('');
+          onDetailChange?.(false);
+        }}
       />
     );
   }
 
   return (
-    <div className="bg-[#d6e4f8] min-h-full">
-      <ScreenHead
-        title={t({ ne: 'कार्यसूची', en: 'Agenda' })}
-        under={event.title}
-      />
-
+    <div className="attendee-live-room-agenda min-h-full">
       <div className="flex flex-col gap-1.5">
         {days.length > 1 && (
           <div className="bg-white px-4 py-2.5 flex gap-4">
@@ -312,7 +310,10 @@ export const AgendaScreen: React.FC<{
                     <li key={one.id}>
                       <button
                         type="button"
-                        onClick={() => setOpened(one.id)}
+                        onClick={() => {
+                          setOpened(one.id);
+                          onDetailChange?.(true);
+                        }}
                         className={`w-full text-left bg-white border rounded-[12px]
                           px-5 py-3 flex items-center gap-4
                           shadow-[0px_4px_3px_rgba(0,0,0,0.1),0px_2px_2px_rgba(0,0,0,0.05)]
