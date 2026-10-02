@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
-import { Event, RoleGrantRow, Session } from '../../types';
+import { Event, RoleGrantRow, Session, SubEvent } from '../../types';
 import { ShareEventDialog } from '../../components/ShareEventDialog';
 import { EventQrCard } from '../../components/EventQrCard';
 import { errorText } from '../errors';
@@ -13,7 +13,7 @@ import { BackLink, Block, Caution, DeckTabs, EventHeading, PlusGlyph, ReadyRow, 
 import { CoHostDialog } from './CoHostDialog';
 import { PeopleEmpty, PeopleHeading, PersonRow, initialsOf } from './people';
 import { AddAgendaDialog } from './AddAgendaDialog';
-import { AgendaBoard } from './AgendaBoard';
+import { GroupedAgenda } from './subEvents';
 import { whenLine } from './EventsDashboard';
 
 const clock = (iso: string) =>
@@ -53,6 +53,8 @@ export const EventDetail: React.FC<Props> = ({
    */
   const [writing, setWriting] = useState<Session | 'new' | null>(null);
   const [sharing, setSharing] = useState<Event | null>(null);
+  /** The event's named parts, so the running order reads under them. */
+  const [groups, setGroups] = useState<SubEvent[]>([]);
 
   const sessions = event.sessions ?? [];
   const withoutSpeaker = sessions.filter((s) => !s.speaker_name).length;
@@ -112,6 +114,16 @@ export const EventDetail: React.FC<Props> = ({
   }, [event.id]);
 
   useEffect(() => { loadPeople(); }, [loadPeople]);
+
+  useEffect(() => {
+    let live = true;
+    apiClient.getSubEvents(event.id)
+      .then((all) => { if (live) setGroups(all); })
+      // A day with no headings reads as one list, which is also what a
+      // day whose headings could not be fetched should read as.
+      .catch(() => { if (live) setGroups([]); });
+    return () => { live = false; };
+  }, [event.id]);
 
   /** The event that opens the day, which "Start event" starts. */
   const opener = [event].sort(
@@ -360,8 +372,9 @@ export const EventDetail: React.FC<Props> = ({
             </div>
 
             <div className="px-5 py-3">
-              <AgendaBoard
+              <GroupedAgenda
                 event={event}
+                groups={groups}
                 onChanged={onChanged}
                 onAdd={() => setWriting('new')}
                 onEdit={(id) => {

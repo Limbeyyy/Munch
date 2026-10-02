@@ -22,6 +22,9 @@ jest.mock('../../../services/api', () => ({
     deleteSession: jest.fn(),
     rescheduleSessions: jest.fn(),
     getSchedulingPrefs: jest.fn(),
+    getSubEvents: jest.fn(),
+    createSubEvent: jest.fn(),
+    deleteSubEvent: jest.fn(),
     // The auth store reads this the moment it is imported.
     hasSession: () => false,
   },
@@ -62,6 +65,9 @@ beforeEach(() => {
   useAuthStore.setState({
     user: { first_name: 'Sarah', last_name: 'Sharma', email: 'sarah@example.com' } as any,
   });
+  // No named parts unless a test says so: the plain list is the
+  // ordinary case and every one of these predates them.
+  api.getSubEvents.mockResolvedValue([] as any);
   api.getProgrammeRoles.mockResolvedValue({
     granted: [{ id: 'g1', email: 'man@gmail.com', role: 'co_host' }],
     speakers: [],

@@ -11,6 +11,9 @@ jest.mock('../../../services/api', () => ({
     getEvent: jest.fn(),
     getProgrammeRoles: jest.fn(),
     getEventInvites: jest.fn(),
+    getSubEvents: jest.fn(),
+    createSubEvent: jest.fn(),
+    deleteSubEvent: jest.fn(),
     hasSession: () => false,
   },
 }));
@@ -39,6 +42,9 @@ beforeEach(() => {
   window.localStorage.setItem(
     'manch.organizer.prefs', JSON.stringify({ lang: 'en', a11y: {} })
   );
+  // No named parts unless a test says so: the plain list is the
+  // ordinary case and every one of these predates them.
+  api.getSubEvents.mockResolvedValue([] as any);
   api.createEvent.mockResolvedValue(made);
   api.updateEvent.mockResolvedValue(made);
   api.getProgrammeRoles.mockResolvedValue({ granted: [], speakers: [] } as any);
@@ -152,5 +158,107 @@ describe('where the first agenda item starts', () => {
 
     // The dialog opens on the event's own start, not on a fixed 10:00.
     expect(await screen.findByDisplayValue('09:30')).toBeInTheDocument();
+  });
+});
+
+/**
+ * The parts a day divides into, named on the step that describes it.
+ *
+ * Which is also the step that creates the event, so on a new one there
+ * is nothing yet to hang a heading off. They wait and are written the
+ * moment there is - the same way the agenda form holds a file picked
+ * before its talk exists.
+ */
+describe('naming the parts of an event', () => {
+  const add = (name: string) => {
+    fireEvent.click(screen.getByRole('button', { name: '+ New Subcategories' }));
+    fireEvent.change(screen.getByLabelText('Subcategory name'), {
+      target: { value: name },
+    });
+    fireEvent.keyDown(screen.getByLabelText('Subcategory name'), { key: 'Enter' });
+  };
+
+  it('says plainly that it is optional', () => {
+    newEvent();
+
+    expect(screen.getByText('Event Subcategories')).toBeInTheDocument();
+    expect(
+      screen.getByText('Select one or more sessions. This is optional.')
+    ).toBeInTheDocument();
+  });
+
+  it('lists what has been named, numbered the way the design numbers it', () => {
+    newEvent();
+
+    add('Climate Change');
+    add('Carbon emissions');
+
+    expect(screen.getByText('Climate Change')).toBeInTheDocument();
+    expect(screen.getByText('Carbon emissions')).toBeInTheDocument();
+    expect(screen.getByText('01.')).toBeInTheDocument();
+    expect(screen.getByText('02.')).toBeInTheDocument();
+  });
+
+  /**
+   * Nothing is written while the event does not exist: there is no
+   * event for a heading to belong to, and inventing one would create
+   * an event the host had not finished describing.
+   */
+  it('writes nothing until the event itself exists', () => {
+    newEvent();
+
+    add('Climate Change');
+
+    expect(api.createSubEvent).not.toHaveBeenCalled();
+  });
+
+  it('writes them the moment the event does exist', async () => {
+    newEvent();
+    set(/Event name/, 'Emergency Services');
+    add('Climate Change');
+    add('Carbon emissions');
+
+    fireEvent.click(screen.getByRole('button', { name: /Create event/ }));
+
+    await waitFor(() => expect(api.createSubEvent).toHaveBeenCalledTimes(2));
+    expect(api.createSubEvent.mock.calls.map((c: any[]) => [c[0], c[1].title]))
+      .toEqual([['e1', 'Climate Change'], ['e1', 'Carbon emissions']]);
+  });
+
+  /** A heading that will not write does not undo the event. */
+  it('keeps the event when a heading cannot be written', async () => {
+    api.createSubEvent.mockRejectedValue(new Error('nope'));
+    newEvent();
+    set(/Event name/, 'Emergency Services');
+    add('Climate Change');
+
+    fireEvent.click(screen.getByRole('button', { name: /Create event/ }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(api.createEvent).toHaveBeenCalled();
+    expect(await screen.findByRole('heading', { name: 'Agendas' }))
+      .toBeInTheDocument();
+  });
+
+  it('lets one be taken back off before anything is written', () => {
+    newEvent();
+
+    add('Climate Change');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Climate Change' }));
+
+    expect(screen.queryByText('Climate Change')).not.toBeInTheDocument();
+  });
+
+  /** An empty name is not a heading, so pressing add and walking away
+      leaves the list as it was. */
+  it('does not name a part nothing was typed into', () => {
+    newEvent();
+
+    fireEvent.click(screen.getByRole('button', { name: '+ New Subcategories' }));
+    fireEvent.blur(screen.getByLabelText('Subcategory name'));
+
+    expect(screen.getByRole('button', { name: '+ New Subcategories' }))
+      .toBeInTheDocument();
+    expect(screen.queryByText('01.')).not.toBeInTheDocument();
   });
 });

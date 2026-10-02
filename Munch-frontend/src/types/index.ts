@@ -607,6 +607,14 @@ export interface SessionDraft {
   starts_at: string;
   duration_minutes: number;
   description?: string;
+  /**
+   * Which of the event's named parts this talk goes under, if any.
+   *
+   * Null is a real answer and means "under none of them", so it is
+   * sent rather than left out: omitting it tells the server to leave
+   * the filing alone, which is not the same thing.
+   */
+  sub_event?: string | null;
 }
 
 /** A event as typed into the create form, with its running order. */
