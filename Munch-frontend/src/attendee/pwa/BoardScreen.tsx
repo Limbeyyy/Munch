@@ -86,7 +86,7 @@ const AskSheet: React.FC<{
           disabled={busy || body.trim() === ''}
           onClick={() => onSend(body.trim())}
           className="mt-2 w-full rounded-[12px] py-3.5 text-[15px] font-semibold
-            text-white bg-[#12386e] disabled:bg-[#9fb0e4]"
+            text-white bg-[#12386e] disabled:bg-[#92A2B9]"
         >
           {busy
             ? t({ ne: 'पठाउँदै…', en: 'Sending…' })

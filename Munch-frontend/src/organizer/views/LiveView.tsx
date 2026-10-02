@@ -225,11 +225,6 @@ export const LiveView: React.FC<Props> = ({ events, onChanged, onNavigate }) => 
       sessions={sessions}
       live={onStage ?? null}
       onChanged={async () => { await load(); onChanged(); }}
-      onStart={async (sessionId) => {
-        await apiClient.startSession(sessionId);
-        await load();
-        onChanged();
-      }}
       onBackToRoom={() => navigate(`/event/${current.code}`)}
       stageActions={
         isLive ? (

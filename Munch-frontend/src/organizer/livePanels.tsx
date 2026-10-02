@@ -332,7 +332,7 @@ export const PendingQuestions: React.FC<{
   }
 
   return (
-    <div className="p-4 flex flex-col gap-3">
+    <div className="max-h-[280px] overflow-y-auto overscroll-contain p-4 flex flex-col gap-3">
       {groups.map((group) => {
         const open = !shut.includes(group.id);
         return (
