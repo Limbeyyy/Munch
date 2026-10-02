@@ -157,11 +157,24 @@ def board_for(event, *, user=None, guest=None) -> dict:
         for p in posts
         if p.status == HubPost.Status.PUBLISHED
     ]
-    # Hub suggestions are not here on purpose. This board is read by
-    # everybody in the event, and a suggestion is a private word with
-    # the organizer - the ChatMessage ones on it are there because the
-    # host deliberately published them, which is a decision nobody has
-    # made about these.
+    # Hub suggestions reach the organizer and nobody else.
+    #
+    # This board is read by everybody in the event, so they cannot
+    # simply be added to it - a suggestion is a private word with the
+    # organizer, and the ChatMessage ones on it are there only because
+    # the host deliberately published them. But the host has to be able
+    # to read their own post, so they are here for the host alone.
+    reading_it = (
+        user is not None
+        and getattr(user, 'is_authenticated', False)
+        and str(user.id) == str(event.host_id)
+    )
+    offered = [
+        _hub_entry(p, user=user, guest=guest)
+        for p in posts
+        if reading_it and p.kind == HubPost.Kind.SUGGESTION
+        and p.status != HubPost.Status.DECLINED
+    ]
 
     def of(topic, also):
         return sorted(
@@ -172,5 +185,5 @@ def board_for(event, *, user=None, guest=None) -> dict:
 
     return {
         'faq': of(ChatMessage.Topic.FAQ, asked),
-        'suggestions': of(ChatMessage.Topic.SUGGESTION, []),
+        'suggestions': of(ChatMessage.Topic.SUGGESTION, offered),
     }

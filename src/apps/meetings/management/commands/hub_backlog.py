@@ -27,8 +27,19 @@ class Command(BaseCommand):
             '--approve', action='store_true',
             help='Let them through, rather than only listing them.',
         )
+        parser.add_argument(
+            '--file-under',
+            help=(
+                'An agenda id. Files every post that belongs to no agenda '
+                'under it, so the moderation screen can filter to them. '
+                'Needs --event.'
+            ),
+        )
 
     def handle(self, *args, **options):
+        if options['file_under']:
+            return self.file_under(options)
+
         waiting = HubPost.objects.filter(
             status__in=WAITING
         ).select_related('event').order_by('event__title', 'created_at')
@@ -71,3 +82,42 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(f'\nLet {len(posts)} through.')
         )
+
+    def file_under(self, options):
+        """Give an agenda to the posts that were never given one.
+
+        A question asked before this was fixed carries no agenda, so
+        the host's filter cannot reach it. Nothing can work out which
+        talk it was meant for from here - only the host knows - so the
+        agenda is named rather than guessed.
+        """
+        from src.apps.meetings.models import Event, Session
+
+        if not options['event']:
+            self.stderr.write('--file-under needs --event as well.')
+            return
+
+        event = Event.objects.filter(code=options['event']).first()
+        if event is None:
+            self.stderr.write(f"No event with code {options['event']}.")
+            return
+
+        session = Session.objects.filter(
+            id=options['file_under'], event=event
+        ).first()
+        if session is None:
+            self.stderr.write(
+                f"No agenda {options['file_under']} on {event.code}. "
+                'Its agendas are:'
+            )
+            for one in event.sessions.order_by('starts_at'):
+                self.stderr.write(f'    {one.id}  {one.title}')
+            return
+
+        moved = HubPost.objects.filter(
+            event=event, session__isnull=True
+        ).update(session=session)
+
+        self.stdout.write(self.style.SUCCESS(
+            f'Filed {moved} post(s) under "{session.title}".'
+        ))

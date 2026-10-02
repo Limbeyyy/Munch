@@ -103,6 +103,13 @@ def hub_posts(request, event_ref):
     session_id = request.data.get('session')
     if session_id:
         session = Session.objects.filter(id=session_id, event=event).first()
+    if session is None:
+        # Filed against whatever is on stage, which is the rule a
+        # transcript line and a shared file already follow. Without it
+        # a question asked in the middle of a talk belonged to no part
+        # of the day, so the host's agenda filter could never find it
+        # and it sat for ever under "Not on any agenda".
+        session = event.sessions.filter(status='live').first()
 
     # A suggestion is a private word with the organizer, so it does not
     # queue for approval - there is nobody else for it to be shown to.
