@@ -87,6 +87,12 @@ export const Settings: React.FC<{
       </header>
 
       <div className="flex flex-col gap-1.5">
+        {/* Who this is, and the first thing about them, on one sheet.
+            The gaps between the other blocks are the page showing
+            through, which is how the design separates one group of
+            settings from the next - but the card and the account it
+            belongs to are not two groups. */}
+        <div>
         <div className="bg-white px-4 py-2">
           <div
             className="rounded-[16px] overflow-hidden px-4 py-2 flex gap-4
@@ -128,6 +134,7 @@ export const Settings: React.FC<{
             onGo={() => navigate('profile')}
           />
         </Block>
+        </div>
 
         <Block label={t({ ne: 'एपका प्राथमिकता', en: 'App Preferences' })}>
           <Row
