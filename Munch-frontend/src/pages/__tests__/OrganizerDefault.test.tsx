@@ -161,6 +161,19 @@ describe('opening the organizer', () => {
     ]);
   });
 
+  /** The design's own glyph, not one drawn here. */
+  it('draws notifications with the exported icon', async () => {
+    showOrganizer();
+    await waitFor(() => expect(api.listEvents).toHaveBeenCalled());
+
+    const bar = screen.getByRole('button', { name: 'Logout' })
+      .parentElement as HTMLElement;
+    const bell = within(bar).getByRole('button', { name: 'Notifications' })
+      .querySelector('img') as HTMLImageElement;
+
+    expect(bell.getAttribute('src')).toContain('notifications');
+  });
+
   it('opens the notifications page when the bell is pressed', async () => {
     showOrganizer();
     await waitFor(() => expect(api.listEvents).toHaveBeenCalled());

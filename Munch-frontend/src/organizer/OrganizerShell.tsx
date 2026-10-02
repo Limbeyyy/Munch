@@ -42,7 +42,7 @@ export const NAV: NavItem[] = [
     icon: 'M12 3a9 9 0 100 18 2 2 0 001.6-3.2 2 2 0 011.6-3.2H18a3 3 0 003-3A9 9 0 0012 3zM7.5 10.5h.01M10.5 7.5h.01M14 7.5h.01M16.5 10.5h.01' },
   { id: 'reminders', group: 3, label: { ne: 'सूचना र सम्झना', en: 'Notifications' },
     icon: 'M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0',
-    figma: 'bell' },
+    figma: 'notifications' },
 
   // Kept reachable, below the three groups the design names.
   { id: 'reports', group: 4, label: { ne: 'रिपोर्ट', en: 'Reports' },
@@ -259,7 +259,7 @@ export const OrganizerShell: React.FC<Props> = ({
                 }`}
               >
                 <FigmaIcon
-                  name="bell"
+                  name="notifications"
                   size={18}
                   title={t({ ne: 'सूचना', en: 'Notifications' })}
                 />
