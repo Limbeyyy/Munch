@@ -290,7 +290,7 @@ export const BoardScreen: React.FC<{ event: Event }> = ({ event }) => {
                           : 'bg-[#f2f3f5] text-[#5b6070]'
                       }`}
                     >
-                      ▼
+                      ▼ {num(Math.max(0, one.downvote_count ?? 0))}
                     </button>
                   </span>
                 )}

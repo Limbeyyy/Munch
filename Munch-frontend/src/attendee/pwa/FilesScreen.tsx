@@ -54,13 +54,19 @@ const Tile: React.FC<{ photo: EventPhoto }> = ({ photo }) => {
 export const FilesScreen: React.FC<{
   event: Event;
   sessions: Session[];
-}> = ({ event, sessions }) => {
+  onFolderOpenChange: (open: boolean) => void;
+}> = ({ event, sessions, onFolderOpenChange }) => {
   const { t, num } = useOrganizer();
   const [tab, setTab] = useState<'files' | 'photos'>('files');
   const [files, setFiles] = useState<Artifact[]>([]);
   const [folders, setFolders] = useState<PhotoFolder[]>([]);
   const [photos, setPhotos] = useState<EventPhoto[]>([]);
   const [opened, setOpened] = useState('');
+
+  const openFolder = (id: string) => {
+    setOpened(id);
+    onFolderOpenChange(Boolean(id));
+  };
 
   const read = useCallback(async () => {
     const [shared, album] = await Promise.all([
@@ -111,7 +117,7 @@ export const FilesScreen: React.FC<{
         >
           <button
             type="button"
-            onClick={() => setOpened('')}
+            onClick={() => openFolder('')}
             className="flex items-center gap-1.5 text-[14px] text-[#5b6070]"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -238,7 +244,7 @@ export const FilesScreen: React.FC<{
               <button
                 key={one.id}
                 type="button"
-                onClick={() => setOpened(one.id)}
+                onClick={() => openFolder(one.id)}
                 className="text-left border border-[#e8eaee] rounded-[12px]
                   overflow-hidden"
               >
