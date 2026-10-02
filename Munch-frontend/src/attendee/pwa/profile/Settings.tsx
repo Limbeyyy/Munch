@@ -78,7 +78,7 @@ export const Settings: React.FC<{
     <div className="bg-[#d6e4f8] min-h-full">
       <header
         className="bg-white px-4 pt-3 pb-2 border-b-[0.72px] border-[#b3b3b3]"
-        style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}
+        style={{ paddingTop: 'max(35px, env(safe-area-inset-top))' }}
       >
         <h1 className="text-[16px] font-semibold text-[#101828] leading-[27px]
           pt-4 text-center">

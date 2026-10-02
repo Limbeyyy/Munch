@@ -219,7 +219,7 @@ export const BoardScreen: React.FC<{ event: Event }> = ({ event }) => {
           type="button"
           onClick={() => setAsking(true)}
           className="w-full border border-dashed border-[#9fb0e4] rounded-[12px]
-            py-3.5 text-[14px] font-medium text-[#2440c9]"
+            py-3.5 text-[14px] font-medium text-[#194d97]"
         >
           +{'  '}
           {tab === 'questions'

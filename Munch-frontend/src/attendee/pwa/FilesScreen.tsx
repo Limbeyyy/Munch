@@ -113,7 +113,7 @@ export const FilesScreen: React.FC<{
       <div>
         <header
           className="px-4 pt-3 pb-3 border-b border-[#eceef2]"
-          style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}
+          style={{ paddingTop: 'max(35px, env(safe-area-inset-top))' }}
         >
           <button
             type="button"

@@ -52,7 +52,7 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
 
   useEffect(() => {
     apiClient
-      .listEvents()
+      .listEvents('host')
       .then((list) => {
         setEvents(list);
         setEventId((prev) => prev || list[0]?.id || '');

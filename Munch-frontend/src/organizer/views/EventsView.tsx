@@ -41,7 +41,7 @@ export const EventsView: React.FC<Props> = ({ onOpenRoom, onChanged }) => {
 
   const load = useCallback(async () => {
     try {
-      const data = await apiClient.listEvents();
+      const data = await apiClient.listEvents('host');
       setEvents(data);
     } catch {
       toast.error(t({ ne: 'कार्यक्रम ल्याउन सकिएन', en: 'Could not load the programme' }));
