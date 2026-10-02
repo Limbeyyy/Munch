@@ -235,7 +235,9 @@ class ReminderSettingTests(TestCase):
         self.set_leads(event_reminder_minutes=120, session_reminder_minutes=30)
         self.reminders()
 
-        body = self.client_for(self.host).get(f'{API}/reminders/').json()
+        body = self.client_for(self.host).get(
+            f'{API}/reminders/?audience=host'
+        ).json()
 
         self.assertEqual(body['event_lead_minutes'], 120)
         self.assertEqual(body['session_lead_minutes'], 30)

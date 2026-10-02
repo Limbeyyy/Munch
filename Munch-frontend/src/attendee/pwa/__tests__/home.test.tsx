@@ -705,6 +705,8 @@ describe('the notifications', () => {
     await go('Notifications');
 
     expect(await screen.findByText('Upcoming event')).toBeInTheDocument();
+    expect(api.getReminders).toHaveBeenCalledWith('attendee');
     await waitFor(() => expect(api.markRemindersRead).toHaveBeenCalled());
+    expect(api.markRemindersRead).toHaveBeenCalledWith(undefined, 'attendee');
   });
 });

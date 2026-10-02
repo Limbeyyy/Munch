@@ -63,7 +63,7 @@ export const NotificationsScreen: React.FC<{
 
   const read = useCallback(async () => {
     try {
-      const page = await apiClient.getReminders();
+      const page = await apiClient.getReminders('attendee');
       setRows(page.reminders ?? []);
     } catch {
       setRows([]);
@@ -75,7 +75,7 @@ export const NotificationsScreen: React.FC<{
   useEffect(() => { read(); }, [read]);
 
   useEffect(() => {
-    apiClient.markRemindersRead().then(onRead).catch(() => undefined);
+    apiClient.markRemindersRead(undefined, 'attendee').then(onRead).catch(() => undefined);
     // Once, on opening. Marking again on every refresh would fight the
     // count rather than settle it.
     // eslint-disable-next-line react-hooks/exhaustive-deps

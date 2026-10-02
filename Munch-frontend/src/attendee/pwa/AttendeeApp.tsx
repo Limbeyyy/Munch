@@ -56,7 +56,7 @@ export const AttendeeApp: React.FC = () => {
 
   const countUnread = useCallback(async () => {
     try {
-      setUnread((await apiClient.getReminders()).unread);
+      setUnread((await apiClient.getReminders('attendee')).unread);
     } catch {
       /* A badge is not worth a message. */
     }
