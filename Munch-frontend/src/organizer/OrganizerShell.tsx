@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { Pair, useOrganizer } from './i18n';
 import { Btn, Ic } from './ui';
-import { FigmaIcon } from '../assets/icons';
+import { FigmaIcon, FigmaIconName } from '../assets/icons';
 import manchMark from '../assets/icons/manch-mark.svg';
 
 export interface NavItem {
@@ -10,6 +10,10 @@ export interface NavItem {
   group: 1 | 2 | 3 | 4;
   label: Pair;
   icon: string;
+  /** An exported icon, where the design gives one. It is drawn in the
+      colour it was exported in rather than the rail's, so it does not
+      take the navy the others take when selected. */
+  figma?: FigmaIconName;
   /** Small count or live marker beside the name. */
   badge?: { text: string; hot?: boolean };
 }
@@ -37,7 +41,8 @@ export const NAV: NavItem[] = [
   { id: 'appearance', group: 3, label: { ne: 'रूपरंग', en: 'Appearance' },
     icon: 'M12 3a9 9 0 100 18 2 2 0 001.6-3.2 2 2 0 011.6-3.2H18a3 3 0 003-3A9 9 0 0012 3zM7.5 10.5h.01M10.5 7.5h.01M14 7.5h.01M16.5 10.5h.01' },
   { id: 'reminders', group: 3, label: { ne: 'सूचना र सम्झना', en: 'Notifications' },
-    icon: 'M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0' },
+    icon: 'M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0',
+    figma: 'bell' },
 
   // Kept reachable, below the three groups the design names.
   { id: 'reports', group: 4, label: { ne: 'रिपोर्ट', en: 'Reports' },
@@ -133,7 +138,9 @@ export const OrganizerShell: React.FC<Props> = ({
                   }`}
                 >
                   <span className={current ? 'text-navy-800' : 'text-black/45'}>
-                    <Ic d={item.icon} size={20} />
+                    {item.figma
+                      ? <FigmaIcon name={item.figma} size={20} />
+                      : <Ic d={item.icon} size={20} />}
                   </span>
                   <span className="truncate">{t(item.label)}</span>
                   {badge && (

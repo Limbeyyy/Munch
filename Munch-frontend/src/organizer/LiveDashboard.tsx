@@ -104,7 +104,22 @@ export const LiveDashboard: React.FC<Props> = ({
   );
 
   const onStage = live ?? agenda.find((s) => s.status === 'live') ?? agenda[0] ?? null;
-  const running = useElapsed(onStage?.started_at);
+
+  /**
+   * The clock runs only while a talk actually is.
+   *
+   * The card falls back to the first item on the running order when
+   * nothing is on stage, so there is something to look at between
+   * talks - but that item has already been given, and its start time
+   * is hours old. Counting from it turned the gap between two talks
+   * into a two-hour countdown. In the gap the light says Live, which
+   * is true of the event, and nothing says how long, which is the
+   * honest answer about a talk that has not started.
+   */
+  const actuallyOn = live ?? agenda.find((s) => s.status === 'live') ?? null;
+  const running = useElapsed(
+    actuallyOn?.status === 'live' ? actuallyOn.started_at : null
+  );
 
   /** The transcript of whatever the day has reached. */
   useEffect(() => {
