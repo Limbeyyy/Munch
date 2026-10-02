@@ -49,10 +49,20 @@ class Artifact(models.Model):
 
     #: Who may read this, and when. Chosen by whoever uploaded it and
     #: changeable by the organizers afterwards.
+    #: Readable as soon as it is shared, unless somebody says otherwise.
+    #:
+    #: It used to default to AFTER_SESSION, and nothing in the product
+    #: ever set it to anything else - so every file a host uploaded was
+    #: held until the talk it was filed against had finished, and files
+    #: on an event that had not started were invisible to everyone the
+    #: event was for. A host who shares something has shared it.
+    #:
+    #: The holding rule still works where it is asked for; it is just no
+    #: longer what happens to somebody who never asked for it.
     visibility = models.CharField(
         max_length=20,
         choices=Visibility.choices,
-        default=Visibility.AFTER_SESSION,
+        default=Visibility.NOW,
         help_text="Who may read this file, and from when",
     )
 
@@ -136,11 +146,10 @@ class PhotoFolder(models.Model):
             models.UniqueConstraint(
                 fields=['event', 'name'], name='one_photo_folder_per_name'
             ),
-            models.UniqueConstraint(
-                fields=['event'],
-                condition=models.Q(is_default=True),
-                name='one_default_photo_folder_per_event',
-            ),
+            # There was a 'one default folder per event' constraint here.
+            # Migration 0003 dropped it when the default folder went;
+            # leaving it in the model only made every makemigrations
+            # offer to put it back.
         ]
 
     def __str__(self):
