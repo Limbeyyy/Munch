@@ -98,6 +98,7 @@ def as_json(post, *, user=None, guest=None) -> dict:
         'session_id': str(post.session_id) if post.session_id else None,
         'session_title': post.session.title if post.session_id else None,
         'score': score_of(post),
+        'downvote_count': post.votes.filter(value=-1).count(),
         'my_vote': my_vote(post, user=user, guest=guest),
         'answer': post.answer,
         'answered_by': post.answered_by,

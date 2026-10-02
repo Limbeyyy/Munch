@@ -181,11 +181,13 @@ class HubTests(TestCase):
         self.assertEqual(response.json()['score'], 1)
 
     def test_a_downvote_lowers_it(self):
-        asked = self.publish(HubPost.objects.get(
-            id=self.post(kind='question', body='Off topic').json()['id']
-        ))
+        created = self.post(kind='question', body='Off topic')
+        self.assertEqual(created.json()['downvote_count'], 0)
+        asked = self.publish(HubPost.objects.get(id=created.json()['id']))
 
-        self.assertEqual(self.vote(asked, -1).json()['score'], -1)
+        voted = self.vote(asked, -1).json()
+        self.assertEqual(voted['score'], -1)
+        self.assertEqual(voted['downvote_count'], 1)
 
     def test_one_person_gets_one_vote(self):
         asked = self.publish(HubPost.objects.get(
