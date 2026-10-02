@@ -15,21 +15,21 @@ const clock = (iso: string) =>
 const until = (iso: string, t: (pair: { ne: string; en: string }) => string) => {
   const days = Math.ceil((+new Date(iso) - Date.now()) / 86400000);
   if (days < 0) return '';
-  if (days === 0) return t({ ne: 'आज सुरु', en: 'Starts today' });
-  if (days === 1) return t({ ne: 'भोलि सुरु', en: 'Starts tomorrow' });
+  if (days === 0) return t({ ne: 'आज सुरु', en: 'Starts Today' });
+  if (days === 1) return t({ ne: 'भोलि सुरु', en: 'Starts Tomorrow' });
   return t({ ne: `${days} दिनमा सुरु`, en: `Starts in ${days} days` });
 };
 
-const Pin: React.FC = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+const Pin: React.FC<{ size?: number }> = ({ size = 13 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M12 21s7-6.2 7-11a7 7 0 10-14 0c0 4.8 7 11 7 11z" />
     <circle cx="12" cy="10" r="2.5" />
   </svg>
 );
 
-const Cal: React.FC = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+const Cal: React.FC<{ size?: number }> = ({ size = 13 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <rect x="3.5" y="5" width="17" height="15" rx="2" />
     <path d="M8 3v4M16 3v4M3.5 10h17" />
@@ -81,13 +81,22 @@ export const EventCard: React.FC<{
       )}
 
       <div className="pt-3 flex items-center gap-3">
-        <span className="flex-1 text-[12px] text-[#9ba0ad]">
-          {t({
-            ne: `${num(event.session_count ?? 0)} सत्र`,
-            en: `${event.session_count ?? 0} sessions`,
-          })}
-          {detail && ` · ${detail}`}
-        </span>
+        <div className="flex-1 flex items-center gap-2 text-[12px] text-[#9ba0ad]">
+          <span>
+            {t({
+              ne: `${num(event.session_count ?? 0)} सत्र`,
+              en: `${event.session_count ?? 0} session${(event.session_count ?? 0) === 1 ? '' : 's'}`,
+            })}
+          </span>
+          <span>·</span>
+          <span>
+            {t({
+              ne: `${num(new Set((event.sessions ?? []).map((session) => session.speaker_name?.trim()).filter(Boolean)).size)} वक्ता`,
+              en: `${new Set((event.sessions ?? []).map((session) => session.speaker_name?.trim()).filter(Boolean)).size} speaker${new Set((event.sessions ?? []).map((session) => session.speaker_name?.trim()).filter(Boolean)).size === 1 ? '' : 's'}`,
+            })}
+          </span>
+          {detail && <span>· {detail}</span>}
+        </div>
         <button
           type="button"
           onClick={onOpen}
@@ -121,6 +130,27 @@ const Counts: React.FC<{ event: Event }> = ({ event }) => {
       {t({
         ne: `${num(n)} सत्र`,
         en: `${n} session${n === 1 ? '' : 's'}`,
+      })}
+    </span>
+  );
+};
+
+const SpeakerCounts: React.FC<{ event: Event }> = ({ event }) => {
+  const { t, num } = useOrganizer();
+  const speakers = Array.from(
+    new Set(
+      (event.sessions ?? [])
+        .map((session) => session.speaker_name?.trim())
+        .filter((name): name is string => Boolean(name)),
+    ),
+  );
+  const n = speakers.length;
+
+  return (
+    <span className="text-[12px] leading-[18px] text-[#64748b]">
+      {t({
+        ne: `${num(n)} वक्ता`,
+        en: `${n} speaker${n === 1 ? '' : 's'}`,
       })}
     </span>
   );
@@ -162,7 +192,7 @@ export const LiveEventCard: React.FC<{
       <span className="bg-[#efefef] rounded-full px-2.5 py-1 inline-flex
         items-center gap-1.5 text-[11px] font-semibold leading-[16.5px]
         text-[#bc1c1c]">
-        <span className="rounded-full size-[6px] bg-[#bc1c1c]" aria-hidden />
+        <span className="rounded-full size-[8px] bg-[#bc1c1c]" aria-hidden />
         {t({ ne: 'प्रत्यक्ष', en: 'Live' })}
       </span>
 
@@ -170,7 +200,11 @@ export const LiveEventCard: React.FC<{
         {event.title}
       </h3>
 
-      <p className="pt-2"><Counts event={event} /></p>
+      <div className="pt-2 flex items-center gap-2 text-[12px] leading-[18px] text-[#64748b]">
+        <Counts event={event} />
+        <span>·</span>
+        <SpeakerCounts event={event} />
+      </div>
 
       <div className="pt-2 flex justify-center">
         <button
@@ -227,7 +261,11 @@ export const UpcomingEventCard: React.FC<{
       )}
 
       <div className="pt-3 flex items-center justify-between gap-3">
-        <Counts event={event} />
+        <div className="flex items-center gap-2 text-[12px] leading-[18px] text-[#64748b]">
+          <Counts event={event} />
+          <span aria-hidden>·</span>
+          <SpeakerCounts event={event} />
+        </div>
         <Go onOpen={onOpen} />
       </div>
     </article>
@@ -237,9 +275,10 @@ export const UpcomingEventCard: React.FC<{
 /** Over. The title leads, because it is being recognised, not read. */
 export const CompletedEventCard: React.FC<{
   event: Event;
+  questionCount?: number;
   onOpen: () => void;
-}> = ({ event, onOpen }) => {
-  const { t } = useOrganizer();
+}> = ({ event, questionCount, onOpen }) => {
+  const { t, num } = useOrganizer();
 
   return (
     <article className="bg-white border-[0.711px] border-[#ccc] rounded-[16px] p-4
@@ -255,25 +294,116 @@ export const CompletedEventCard: React.FC<{
         </span>
       </div>
 
-      <p className="pt-2 flex items-center gap-1.5 text-[12px] leading-[18px]
+      <div className="pt-2 flex flex-col gap-1 text-[12px] leading-[18px]
         text-[#64748b]">
-        <span className="text-[#94a3b8]"><Cal /></span>
-        {day(event.event_date ?? event.scheduled_start)}
+        <p className="grid grid-cols-[13px_minmax(0,1fr)] items-start gap-x-1.5">
+          <span className="text-[#94a3b8] pt-[2px]"><Cal /></span>
+          <span className="min-w-0">
+            {day(event.event_date ?? event.scheduled_start)}
+          </span>
+        </p>
         {event.venue && (
-          <>
-            <span className="text-[#cbd5e1] text-[16px] leading-6" aria-hidden>·</span>
-            <span className="text-[#94a3b8]"><Pin /></span>
-            {event.venue}
-          </>
+          <p className="grid grid-cols-[13px_minmax(0,1fr)] items-start gap-x-1.5">
+            <span className="text-[#94a3b8] pt-[2px]"><Pin /></span>
+            <span className="min-w-0 break-words">{event.venue}</span>
+          </p>
         )}
-      </p>
+      </div>
 
       <div className="pt-2 flex items-center justify-between gap-3">
-        <span className="text-[12px] leading-[18px] text-[#94a3b8]">
+        <div className="flex min-w-0 items-center gap-2 text-[12px]
+          leading-[18px] text-[#64748b]">
           <Counts event={event} />
-        </span>
+          {questionCount !== undefined && (
+            <>
+              <span aria-hidden>·</span>
+              <span>
+                {t({
+                  ne: `${num(questionCount)} प्रश्न`,
+                  en: `${questionCount} question${questionCount === 1 ? '' : 's'}`,
+                })}
+              </span>
+            </>
+          )}
+        </div>
         <Go onOpen={onOpen} small />
       </div>
+    </article>
+  );
+};
+
+/** Completed event in My Events, with the denser details from its list design. */
+export const MyEventsCompletedCard: React.FC<{
+  event: Event;
+  questionCount: number;
+  summariesAvailable: boolean;
+  onOpen: () => void;
+}> = ({ event, questionCount, summariesAvailable, onOpen }) => {
+  const { t, num } = useOrganizer();
+  const date = new Date(event.event_date ?? event.scheduled_start)
+    .toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+
+  return (
+    <article className="bg-white border border-[#e8eaee] rounded-[24px] p-6
+      shadow-[0px_1px_3px_rgba(15,23,42,0.08)]">
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="min-w-0 text-[18px] font-semibold leading-[27px]
+          text-[#111827]">
+          {event.title}
+        </h3>
+        <span className="flex-none rounded-full bg-[#d1fae5] px-4 py-2
+          text-[10px] font-medium leading-[18px] text-[#15803d]">
+          {t({ ne: 'सकियो', en: 'COMPLETED' })}
+        </span>
+      </div>
+
+      <div className="pt-2 grid grid-cols-[minmax(0,1fr)_auto] grid-rows-2
+        items-center gap-x-3 gap-y-1 text-[12px] leading-[18px] text-[#64748b]">
+        <p className="flex min-w-0 items-center gap-2">
+          <span className="flex-none text-[#94a3b8]"><Cal size={16} /></span>
+          <span className="min-w-0">{date}</span>
+        </p>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="row-span-2 flex items-center gap-1 self-center text-[14px]
+            font-semibold leading-6 text-[#2563eb]"
+        >
+          {t({ ne: 'हेर्नुहोस्', en: 'View' })}
+          <span aria-hidden>→</span>
+        </button>
+        {event.venue && (
+          <p className="flex min-w-0 items-end gap-2">
+            <span className="flex-none pt-1 text-[#94a3b8]"><Pin size={16} /></span>
+            <span className="min-w-0 break-words">{event.venue}</span>
+          </p>
+        )}
+      </div>
+
+      <div className="pt-4 flex flex-wrap gap-2.5 text-[12px] leading-[18px]
+        text-[#64748b]">
+        <span className="rounded-full border border-[#e2e8f0] px-3 py-1">
+          {t({
+            ne: `${num(event.session_count ?? 0)} सत्र`,
+            en: `${event.session_count ?? 0} session${event.session_count === 1 ? '' : 's'}`,
+          })}
+        </span>
+        <span className="rounded-full border border-[#e2e8f0] px-3 py-1">
+          {t({
+            ne: `${num(questionCount)} प्रश्न`,
+            en: `${questionCount} question${questionCount === 1 ? '' : 's'}`,
+          })}
+        </span>
+      </div>
+
+      {summariesAvailable && (
+        <div className="pt-3">
+          <span className="inline-flex rounded-full bg-[#ecfdf3] px-3 py-1.5
+            text-[12px] leading-[18px] text-[#15803d]">
+            {t({ ne: 'सारांश उपलब्ध', en: 'Summaries available' })}
+          </span>
+        </div>
+      )}
     </article>
   );
 };
