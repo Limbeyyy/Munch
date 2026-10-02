@@ -808,9 +808,20 @@ class EventRoomViewSet(viewsets.ModelViewSet):
 
         attended = attended_users + attended_guests
 
+        # Who came is read off the participant rows as well as off the
+        # invitation's own stamp.
+        #
+        # The stamp is only written when somebody is invited after they
+        # have already joined - nothing wrote it when an invited person
+        # joined later, which is the ordinary way round - so an attendee
+        # who had sat through the whole event was reported as a no-show.
+        # Entering the room is what attending is; the stamp is a record
+        # of it, and a missing record is not an absence.
+        came = {p.user.email.lower() for p in participants if p.user.email}
         no_show = [
             {'email': i.email, 'invited_at': i.created_at}
-            for i in invites if i.joined_at is None
+            for i in invites
+            if i.joined_at is None and i.email.lower() not in came
         ]
 
         # The roll is everybody the event had: those invited, the guests
@@ -847,7 +858,10 @@ class EventRoomViewSet(viewsets.ModelViewSet):
             'absent_count': max(0, expected_total - len(attended)),
             'active_count': sum(1 for a in attended if a['is_active']),
             'inactive_count': sum(1 for a in attended if not a['is_active']),
-            'invited_who_attended': sum(1 for i in invites if i.joined_at),
+            'invited_who_attended': sum(
+                1 for i in invites
+                if i.joined_at or i.email.lower() in came
+            ),
             'invited_who_did_not': len(no_show),
             'guests_admitted': len(attended_guests),
             'walked_in_uninvited': walked_in,

@@ -250,6 +250,79 @@ class ClearingTheBacklogTests(APITestCase):
         self.assertIn('What is Kataho?', [q['body'] for q in board['questions']])
 
 
+class ApprovedQuestionsReachTheRoomTests(APITestCase):
+    """The room's own board reads two tables, not one.
+
+    A question put to the host privately is a ChatMessage; one written
+    into the hub from the app is a HubPost. The room's Questions panel
+    read only the first, so however many hub questions the host
+    approved it still said none were up.
+    """
+
+    def setUp(self):
+        self.host = make_host('host@example.com')
+        start = timezone.now() - timezone.timedelta(minutes=10)
+        self.event = make_event(self.host, start=start, minutes=120)
+        self.event.status = Event.Status.ACTIVE
+        self.event.started_at = start
+        self.event.save()
+        self.asker = User.objects.create_user(
+            username='asker', email='asker@example.com', password='pw'
+        )
+        EventParticipant.objects.create(
+            event=self.event, user=self.asker,
+            role=EventParticipant.Role.ATTENDEE, is_active=True,
+        )
+
+    def board(self):
+        self.client.force_authenticate(self.host)
+        answer = self.client.get(f'{API}/events/{self.event.id}/board/')
+        self.assertEqual(answer.status_code, 200, answer.content)
+        return answer.json()
+
+    def asked(self, status, kind=HubPost.Kind.QUESTION, body='Why the delay?'):
+        return HubPost.objects.create(
+            event=self.event, user=self.asker, kind=kind,
+            body=body, status=status,
+        )
+
+    def test_one_the_host_let_through_is_on_the_board(self):
+        self.asked(HubPost.Status.PUBLISHED)
+
+        self.assertIn(
+            'Why the delay?', [r['body'] for r in self.board()['faq']]
+        )
+
+    def test_one_still_waiting_is_not(self):
+        self.asked(HubPost.Status.PENDING)
+
+        self.assertEqual(self.board()['faq'], [])
+
+    def test_nor_one_turned_down(self):
+        self.asked(HubPost.Status.DECLINED)
+
+        self.assertEqual(self.board()['faq'], [])
+
+    def test_a_suggestion_never_reaches_it(self):
+        """The board is read by the room; a suggestion is not for them."""
+        self.asked(
+            HubPost.Status.ADDRESSED, kind=HubPost.Kind.SUGGESTION,
+            body='More signage, please.',
+        )
+
+        body = self.board()
+        self.assertEqual(body['suggestions'], [])
+        self.assertEqual(body['faq'], [])
+
+    def test_an_attendee_reads_the_same_board(self):
+        self.asked(HubPost.Status.PUBLISHED)
+        self.client.force_authenticate(self.asker)
+
+        body = self.client.get(f'{API}/events/{self.event.id}/board/').json()
+
+        self.assertIn('Why the delay?', [r['body'] for r in body['faq']])
+
+
 class TheHubOutlivesTheEventTests(APITestCase):
     """What was asked does not vanish the day the event ends."""
 

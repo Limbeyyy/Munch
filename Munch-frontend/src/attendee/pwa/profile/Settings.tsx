@@ -96,7 +96,7 @@ export const Settings: React.FC<{
         <div className="bg-white px-4 py-2">
           <div
             className="rounded-[16px] overflow-hidden px-4 py-2 flex gap-4
-              items-center shadow-[0_4px_16px_rgba(37,99,235,.25),0_1px_3px_rgba(15,23,42,.2)]"
+              items-center shadow-[0_4px_16px_rgba(255,255,255,.25),0_1px_3px_rgba(255,255,255,.2)]"
             style={{
               backgroundImage: 'linear-gradient(167.7deg,'
                 + ' rgb(15,23,42) 0%, rgb(30,58,138) 60%, rgb(37,99,235) 100%)',

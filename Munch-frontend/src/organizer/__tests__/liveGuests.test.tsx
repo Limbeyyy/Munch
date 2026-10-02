@@ -8,6 +8,7 @@ import { apiClient } from '../../services/api';
 jest.mock('../../services/api', () => ({
   apiClient: {
     getPendingMessages: jest.fn(),
+    getModerationQueue: jest.fn(),
     getGuests: jest.fn(),
     listSessions: jest.fn(),
     admitGuest: jest.fn(),
@@ -53,6 +54,9 @@ beforeEach(() => {
     'manch.organizer.prefs', JSON.stringify({ lang: 'en', a11y: {} })
   );
   api.getPendingMessages.mockResolvedValue([] as any);
+  api.getModerationQueue.mockResolvedValue({
+    pending: [], approved: [], rejected: [], sessions: [],
+  } as any);
   api.moderateMessage = jest.fn().mockResolvedValue({} as any);
   api.getGuests.mockResolvedValue([knocking] as any);
   api.listSessions.mockResolvedValue([] as any);
@@ -251,8 +255,9 @@ describe('the stage', () => {
     show();
     await screen.findByText('Rahul Ingnam');
 
-    // Started ten minutes ago in the fixture.
-    expect(screen.getByText(/\dm$/)).toBeInTheDocument();
+    // Started ten minutes ago in the fixture. Minutes and seconds, the
+    // same reading the room and the attendee's phone show.
+    expect(screen.getByText(/^\d{2}:\d{2}$/)).toBeInTheDocument();
     expect(screen.queryByText(/\d{1,2}:\d{2}\s?[AP]M-/)).toBeNull();
   });
 
@@ -425,16 +430,28 @@ describe('the photos tab', () => {
  * twenty questions is deciding about four talks, and the pile said
  * nothing about which.
  */
+/**
+ * The questions tab on the host's desk.
+ *
+ * Reading, not deciding. Approve and Reject are Message Requests'
+ * job; having them in both places meant the same question appeared
+ * twice with two sets of buttons and then vanished from here the
+ * moment it was let through.
+ */
 describe('the questions tab', () => {
-  const asked = (over: any = {}) => ({
+  const approved = (over: any = {}) => ({
     id: 'q1', body: 'What happens to the escalation list?',
     sender_name: 'John D.', sender_id: 'u2', sender_email: null,
     sender_is_guest: false, recipient_id: null, recipient_name: null,
     recipient_is_guest: false, is_direct: false,
-    moderation_status: 'pending',
+    moderation_status: 'approved',
     created_at: new Date(Date.now() - 120000).toISOString(),
     session: 's1', session_title: 'Opening Keynote',
     ...over,
+  });
+
+  const queue = (rows: any[]) => ({
+    pending: [], approved: rows, rejected: [], sessions: [],
   });
 
   const openQuestions = async () => {
@@ -453,11 +470,11 @@ describe('the questions tab', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Questions' }));
   };
 
-  it('files each one under the talk it was asked during', async () => {
-    api.getPendingMessages.mockResolvedValue([
-      asked({ id: 'q1', body: 'About the keynote.', session: 's1' }),
-      asked({ id: 'q2', body: 'About the field.', session: 's2' }),
-    ] as any);
+  it('shows what has been let through, filed under its talk', async () => {
+    api.getModerationQueue.mockResolvedValue(queue([
+      approved({ id: 'q1', body: 'About the keynote.', session: 's1' }),
+      approved({ id: 'q2', body: 'About the field.', session: 's2' }),
+    ]) as any);
 
     await openQuestions();
 
@@ -466,57 +483,52 @@ describe('the questions tab', () => {
     expect(within(group).queryByText('“About the field.”')).toBeNull();
   });
 
-  it('says how many each talk is waiting on', async () => {
-    api.getPendingMessages.mockResolvedValue([
-      asked({ id: 'q1', session: 's1' }),
-      asked({ id: 'q2', session: 's1' }),
-    ] as any);
-
-    await openQuestions();
-
-    expect(await screen.findByText('2 pending')).toBeInTheDocument();
-  });
-
-  /** Approving files it where the asker said, without being told again. */
-  it('approves without naming a board', async () => {
-    api.getPendingMessages.mockResolvedValue([asked()] as any);
-    await openQuestions();
-
-    const card = (await screen.findByText('“What happens to the escalation list?”'))
-      .closest('div.bg-white') as HTMLElement;
-    fireEvent.click(within(card).getByRole('button', { name: 'Approve' }));
-
-    await waitFor(() =>
-      expect(api.moderateMessage).toHaveBeenCalledWith('m1', 'q1', 'approve')
+  /** Deciding happens in Message Requests, not here. */
+  it('offers no way to decide one', async () => {
+    api.getModerationQueue.mockResolvedValue(
+      queue([approved()]) as any
     );
+
+    await openQuestions();
+    const card = (await screen.findByText(
+      '“What happens to the escalation list?”'
+    )).closest('div.bg-white') as HTMLElement;
+
+    expect(within(card).queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(within(card).queryByRole('button', { name: 'Reject' })).toBeNull();
   });
 
-  it('rejects one', async () => {
-    api.getPendingMessages.mockResolvedValue([asked()] as any);
+  /** It used to read the pending pile, so approving made it vanish. */
+  it('does not show one that is still waiting on the host', async () => {
+    api.getModerationQueue.mockResolvedValue({
+      pending: [approved({ id: 'q9', body: 'Not yet decided.',
+        moderation_status: 'pending' })],
+      approved: [], rejected: [], sessions: [],
+    } as any);
+
     await openQuestions();
 
-    const card = (await screen.findByText('“What happens to the escalation list?”'))
-      .closest('div.bg-white') as HTMLElement;
-    fireEvent.click(within(card).getByRole('button', { name: 'Reject' }));
-
-    await waitFor(() =>
-      expect(api.moderateMessage).toHaveBeenCalledWith('m1', 'q1', 'decline')
-    );
+    expect(
+      await screen.findByText('Nothing has been let through yet.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('“Not yet decided.”')).toBeNull();
   });
 
-  /** A decided question leaves at once; waiting for the poll to agree
-      would leave the host looking at a stale queue. */
-  it('takes a decided one off the list straight away', async () => {
-    api.getPendingMessages.mockResolvedValue([asked()] as any);
+  it('counts them per talk', async () => {
+    api.getModerationQueue.mockResolvedValue(queue([
+      approved({ id: 'q1', session: 's1' }),
+      approved({ id: 'q2', session: 's1' }),
+    ]) as any);
+
     await openQuestions();
 
-    const card = (await screen.findByText('“What happens to the escalation list?”'))
-      .closest('div.bg-white') as HTMLElement;
-    fireEvent.click(within(card).getByRole('button', { name: 'Approve' }));
+    expect(await screen.findByText('2 questions')).toBeInTheDocument();
+  });
 
-    await waitFor(() => expect(
-      screen.queryByText('“What happens to the escalation list?”')
-    ).toBeNull());
+  it('offers no Add on the questions tab', async () => {
+    await openQuestions();
+
+    expect(screen.queryByRole('button', { name: '+ Add' })).toBeNull();
   });
 });
 
