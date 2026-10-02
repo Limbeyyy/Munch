@@ -57,7 +57,11 @@ const OrganizerInner: React.FC = () => {
 
   const load = useCallback(async () => {
     try {
-      setEventRooms(await apiClient.listEventRooms());
+      // Scoped to what this person runs. These events feed every
+      // section of the panel - the live desk, the files, moderation,
+      // attendance, the speakers - so an unscoped read here put
+      // somebody else's event into all of them at once.
+      setEventRooms(await apiClient.listEvents('host'));
     } catch {
       toast.error(t({ ne: 'सत्रहरू ल्याउन सकिएन', en: 'Could not load the sessions' }));
     } finally {
