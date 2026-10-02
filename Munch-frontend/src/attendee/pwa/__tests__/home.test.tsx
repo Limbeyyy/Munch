@@ -579,6 +579,35 @@ describe('one event, opened', () => {
     expect(screen.queryByText('Deck.pdf')).toBeNull();
   });
 
+  /**
+   * The blue is the ground between the white blocks. A tab with
+   * nothing on it has no blocks, so showing the ground made an empty
+   * tab look like a rendering fault instead of an empty tab.
+   */
+  it('leaves an empty tab white, with no ground showing', async () => {
+    await openIt();
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Photos' }));
+    await screen.findByText('No photographs yet.');
+
+    expect(document.querySelector('[data-ground]')).toBeNull();
+  });
+
+  it('and shows it once there is something sitting on it', async () => {
+    api.getPhotos.mockResolvedValue({
+      folders: [{ id: 'f1', name: 'Event Opening', photo_count: 24,
+        is_default: false, created_by: '', is_mine: false, created_at: '' }],
+      photos: [],
+    } as any);
+
+    await openIt();
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Photos' }));
+    await screen.findByText('Event Opening');
+
+    expect(document.querySelector('[data-ground]')).not.toBeNull();
+  });
+
   it('says so where there are no albums', async () => {
     await openIt();
     fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
