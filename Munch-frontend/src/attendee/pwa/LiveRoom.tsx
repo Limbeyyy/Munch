@@ -59,6 +59,37 @@ export const LiveRoom: React.FC<{ onLeave: () => void }> = ({ onLeave }) => {
   }, [load]);
 
   const event = events.find((one) => one.id === eventId) ?? null;
+  const code = event?.code ?? '';
+
+  /**
+   * Say that somebody is here.
+   *
+   * Opening the room on a phone used to tell the server nothing at
+   * all - only the desktop room announced itself - so an attendee who
+   * sat through the whole event never appeared among the participants
+   * and was counted absent afterwards. Being in the room is the thing
+   * attendance is made of, and it has to be said out loud.
+   *
+   * Idempotent on the server, so a reconnection or a second tab adds
+   * nobody twice.
+   */
+  useEffect(() => {
+    if (!code) return undefined;
+    let gone = false;
+
+    apiClient.joinEvent(code).catch(() => {
+      // The room may not be open yet, or the network may have gone.
+      // Neither is a reason to keep somebody out of a screen that
+      // reads perfectly well without it.
+    });
+
+    return () => {
+      gone = true;
+      // Said on the way out as well, so "in the room" means in the
+      // room rather than "was here at some point today".
+      if (gone) apiClient.leaveEvent(eventId).catch(() => undefined);
+    };
+  }, [code, eventId]);
 
   const readSessions = useCallback(async () => {
     if (!eventId) { setSessions([]); return; }

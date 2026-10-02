@@ -251,13 +251,30 @@ describe('the message request queue', () => {
  * the way to end it - one sheet, because they are one thing.
  */
 describe('the stage', () => {
-  it('says how long the event has been running, not when it was meant to', async () => {
-    show();
-    await screen.findByText('Rahul Ingnam');
+  /**
+   * The clock reads the talk on stage, not the scheduled span. It was
+   * the event's elapsed time for a while; 3efe4be moved it to the
+   * agenda, which is what this follows.
+   */
+  it('says how long the talk has been running, not when it was meant to', async () => {
+    api.listSessions.mockResolvedValue([{
+      id: 's1', event: 'm1', title: 'Kataho 1', description: '',
+      speaker_name: 'Ram Rimal', speaker_visibility: 'public',
+      starts_at: new Date(Date.now() - 600000).toISOString(),
+      duration_minutes: 30,
+      ends_at: new Date(Date.now() + 1200000).toISOString(),
+      position: 0, status: 'live',
+      started_at: new Date(Date.now() - 600000).toISOString(),
+      ended_at: null, attendance_count: 0,
+    }] as any);
 
-    // Started ten minutes ago in the fixture. Minutes and seconds, the
-    // same reading the room and the attendee's phone show.
-    expect(screen.getByText(/^\d{2}:\d{2}$/)).toBeInTheDocument();
+    show();
+    await screen.findByText('Ram Rimal');
+
+    // Started ten minutes ago, so minutes and seconds.
+    await waitFor(() => expect(
+      screen.getByText(/^\d{2}:\d{2}$/)
+    ).toBeInTheDocument());
     expect(screen.queryByText(/\d{1,2}:\d{2}\s?[AP]M-/)).toBeNull();
   });
 
