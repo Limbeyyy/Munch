@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { apiClient } from '../../services/api';
 import { Event } from '../../types';
 import { useAuthStore } from '../../store/authStore';
 import { useOrganizer } from '../../organizer/i18n';
@@ -20,9 +21,9 @@ const firstName = (user: {
 /** Morning, afternoon or evening, by the reader's own clock. */
 const greeting = (t: (pair: { ne: string; en: string }) => string) => {
   const hour = new Date().getHours();
-  if (hour < 12) return t({ ne: 'शुभ प्रभात,', en: 'Good morning,' });
-  if (hour < 17) return t({ ne: 'शुभ दिन,', en: 'Good afternoon,' });
-  return t({ ne: 'शुभ सन्ध्या,', en: 'Good evening,' });
+  if (hour < 12) return t({ ne: 'शुभ प्रभात,', en: 'Good Morning,' });
+  if (hour < 17) return t({ ne: 'शुभ दिन,', en: 'Good Afternoon,' });
+  return t({ ne: 'शुभ सन्ध्या,', en: 'Good Evening,' });
 };
 
 const Head: React.FC<{
@@ -62,6 +63,7 @@ export const HomeScreen: React.FC<{
 }> = ({ events, onOpen, onSeeAll, onJoinLive }) => {
   const { t } = useOrganizer();
   const { user } = useAuthStore();
+  const [questionCounts, setQuestionCounts] = useState<Record<string, number>>({});
 
   const { live, ahead, behind } = useMemo(() => {
     const byStart = (a: Event, b: Event) =>
@@ -76,11 +78,38 @@ export const HomeScreen: React.FC<{
     };
   }, [events]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const recent = behind.slice(0, 3);
+
+    const loadQuestionCounts = async () => {
+      const entries = await Promise.all(recent.map(async (event) => {
+        try {
+          const board = await apiClient.getHub(event.code);
+          return [event.id, board.questions.length] as const;
+        } catch {
+          return [event.id, undefined] as const;
+        }
+      }));
+
+      if (!cancelled) {
+        setQuestionCounts(Object.fromEntries(
+          entries.filter((entry): entry is readonly [string, number] =>
+            entry[1] !== undefined
+          )
+        ));
+      }
+    };
+
+    loadQuestionCounts();
+    return () => { cancelled = true; };
+  }, [behind]);
+
   return (
     <div className="bg-white">
       <div
         className="mx-4 rounded-[18px] bg-[#12386e] text-white px-4 py-3"
-        style={{ marginTop: 'max(12px, env(safe-area-inset-top))' }}
+        style={{ marginTop: 'max(25px, env(safe-area-inset-top))' }}
       >
         <p className="text-[13px] leading-[19.5px] text-[#f3f3f3]">
           {greeting(t)}
@@ -151,6 +180,7 @@ export const HomeScreen: React.FC<{
                 <CompletedEventCard
                   key={one.id}
                   event={one}
+                  questionCount={questionCounts[one.id]}
                   onOpen={() => onOpen(one)}
                 />
               ))}

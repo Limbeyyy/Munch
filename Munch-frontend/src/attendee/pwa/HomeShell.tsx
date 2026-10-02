@@ -56,15 +56,16 @@ export const HomeShell: React.FC<{
   at: HomeSection;
   onGo: (to: HomeSection) => void;
   unread?: number;
+  showNav?: boolean;
   children: React.ReactNode;
-}> = ({ at, onGo, unread = 0, children }) => {
+}> = ({ at, onGo, unread = 0, showNav = true, children }) => {
   const { t } = useOrganizer();
 
   return (
     <div className="min-h-[100dvh] bg-white flex flex-col">
-      <main className="flex-1 pb-[76px]">{children}</main>
+      <main className={`flex-1 ${showNav ? 'pb-[76px]' : ''}`}>{children}</main>
 
-      <nav
+      {showNav && <nav
         aria-label={t({ ne: 'मुख्य', en: 'Sections' })}
         className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-[#e8eaee]
           flex"
@@ -79,12 +80,12 @@ export const HomeShell: React.FC<{
               aria-current={on ? 'page' : undefined}
               onClick={() => onGo(one)}
               className={`flex-1 pt-2.5 pb-2 flex flex-col items-center gap-1
-                ${on ? 'text-[#2440c9]' : 'text-[#8b90a0]'}`}
+                ${on ? 'text-[#194D97]' : 'text-[#8b90a0]'}`}
             >
               <span className="relative">
                 <svg
                   width="24" height="24" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="1.6"
+                  stroke={on ? '#194D97' : 'currentColor'} strokeWidth="1.6"
                   strokeLinecap="round" strokeLinejoin="round" aria-hidden
                 >
                   {GLYPH[one]}
@@ -97,7 +98,7 @@ export const HomeShell: React.FC<{
             </button>
           );
         })}
-      </nav>
+      </nav>}
     </div>
   );
 };

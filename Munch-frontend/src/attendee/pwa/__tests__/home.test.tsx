@@ -11,6 +11,7 @@ jest.mock('../../../services/api', () => ({
     getSubEvents: jest.fn(),
     getPhotos: jest.fn(),
     getResources: jest.fn(),
+    getSpeakers: jest.fn(),
     getHub: jest.fn(),
     voteHubPost: jest.fn(),
     getSessionSummary: jest.fn(),
@@ -61,6 +62,7 @@ const question = (over: any = {}) => ({
   status: 'published', anonymous: false, author: 'Suman',
   author_is_guest: false, mine: false, session_id: 's1', session_title: null,
   score: 31, my_vote: 0, answer: '', answered_by: '',
+  downvote_count: 0,
   created_at: '2026-10-15T05:00:00Z',
   ...over,
 }) as any;
@@ -76,6 +78,7 @@ beforeEach(() => {
   api.getSubEvents.mockResolvedValue([] as any);
   api.getPhotos.mockResolvedValue({ folders: [], photos: [] } as any);
   api.getResources.mockResolvedValue([] as any);
+  api.getSpeakers.mockResolvedValue([] as any);
   api.getHub.mockResolvedValue({ questions: [], ideas: [], suggestions: [] } as any);
   api.getSessionSummary.mockRejectedValue(new Error('not published'));
   api.getReminders.mockResolvedValue({
@@ -172,6 +175,27 @@ describe('home', () => {
     expect(screen.queryByRole('heading', { name: 'Live' })).toBeNull();
   });
 
+  it('shows the question total on completed cards only on Home', async () => {
+    api.listEvents.mockResolvedValue([
+      event({ id: 'e3', code: 'OLD-123', title: 'All Over', status: 'ended' }),
+    ] as any);
+    api.getHub.mockResolvedValue({
+      questions: [question({ id: 'h1' }), question({ id: 'h2' })],
+      ideas: [], suggestions: [],
+    } as any);
+
+    show();
+    const recentlyAttended = (await screen.findByRole('heading', {
+      name: 'Recently attended',
+    })).closest('section')!;
+    expect(await within(recentlyAttended).findByText('2 questions'))
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^Events/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Completed/ }));
+    expect(screen.queryByText('2 questions')).toBeNull();
+  });
+
   /** A running event offers the room, not a page about the room. */
   it('offers the room straight from a running event', async () => {
     api.listEvents.mockResolvedValue([
@@ -212,6 +236,34 @@ describe('the events list', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^Completed/ }));
     expect(await screen.findByText('All Over')).toBeInTheDocument();
+  });
+
+  it('renders completed events with questions and summary availability', async () => {
+    api.listEvents.mockResolvedValue([
+      event({
+        id: 'e3', code: 'OLD-123', title: 'Product Leadership Summit',
+        status: 'ended', venue: 'Kathmandu', event_date: '2026-06-18',
+        session_count: 3, sessions: [session({ id: 's3' })],
+      }),
+    ] as any);
+    api.getHub.mockResolvedValue({
+      questions: [question({ id: 'h1' }), question({ id: 'h2' })],
+      ideas: [], suggestions: [],
+    } as any);
+    api.getSessionSummary.mockResolvedValue({
+      is_published: true, body: 'Published summary',
+    } as any);
+
+    await go('Events');
+    fireEvent.click(await screen.findByRole('button', { name: /^Completed/ }));
+
+    expect(await screen.findByText('Product Leadership Summit'))
+      .toBeInTheDocument();
+    expect(screen.getByText('June 18, 2026')).toBeInTheDocument();
+    expect(screen.getByText('Kathmandu')).toBeInTheDocument();
+    expect(screen.getByText('3 sessions')).toBeInTheDocument();
+    expect(await screen.findByText('2 questions')).toBeInTheDocument();
+    expect(await screen.findByText('Summaries available')).toBeInTheDocument();
   });
 });
 
@@ -329,6 +381,28 @@ describe('one event, opened', () => {
     expect(await screen.findByText('From another day.')).toBeInTheDocument();
   });
 
+  it('puts unassigned questions under the only agenda', async () => {
+    api.getSubEvents.mockResolvedValue([
+      { id: 'g1', event: 'e1', title: 'Prabhat', description: '',
+        position: 0, sessions: [], created_at: '' },
+    ] as any);
+    api.listSessions.mockResolvedValue([
+      session({ id: 's1', sub_event: 'g1' }),
+    ] as any);
+    api.getHub.mockResolvedValue({
+      questions: [question({ id: 'h1', body: 'Where is Prabhat?' })],
+      ideas: [], suggestions: [],
+    } as any);
+
+    await openIt();
+    fireEvent.click(screen.getByRole('tab', { name: 'Questions' }));
+
+    const agenda = (await screen.findByRole('heading', { name: 'Prabhat' }))
+      .closest('section')!;
+    expect(within(agenda).getByText('Where is Prabhat?')).toBeInTheDocument();
+    expect(screen.queryByText('For the whole event')).toBeNull();
+  });
+
   it('files one that belongs to no talk where it can be seen', async () => {
     api.getResources.mockResolvedValue([
       { id: 'a1', session: null, display_name: 'Programme.pdf',
@@ -399,6 +473,7 @@ describe('one event, opened', () => {
 
     const up = await screen.findByRole('button', { name: 'Vote up' });
     expect(up).toHaveTextContent('31');
+    expect(screen.getByRole('button', { name: 'Vote down' })).toHaveTextContent('0');
     fireEvent.click(up);
     await waitFor(() => expect(api.voteHubPost)
       .toHaveBeenCalledWith('ABC-123', 'h1', 1));
