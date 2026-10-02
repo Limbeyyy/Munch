@@ -96,8 +96,6 @@ export const LiveDashboard: React.FC<Props> = ({
   const [tab, setTab] = useState<PanelTab>('photos');
   const [segments, setSegments] = useState<TranscriptionSegment[]>([]);
 
-  const running = useElapsed(event.started_at);
-
   const agenda = useMemo(
     () => [...sessions].sort(
       (a, b) => +new Date(a.starts_at) - +new Date(b.starts_at)
@@ -106,6 +104,7 @@ export const LiveDashboard: React.FC<Props> = ({
   );
 
   const onStage = live ?? agenda.find((s) => s.status === 'live') ?? agenda[0] ?? null;
+  const running = useElapsed(onStage?.started_at);
 
   /** The transcript of whatever the day has reached. */
   useEffect(() => {

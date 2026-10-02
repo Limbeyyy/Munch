@@ -130,16 +130,8 @@ const EventRoomInner: React.FC = () => {
   // websocket, the camera and the timer.
   const eventId = currentEvent?.id ?? null;
   const session = currentEvent?.current_session ?? null;
-  /*
-   * The clock counts the event, not the talk on stage.
-   *
-   * It used to count the talk, on the reasoning that what people are
-   * sitting through is one talk. True, but it meant the host's room
-   * read 03:46 while the same person's phone read 00:06 - two honest
-   * numbers measuring two different things under one label, which is
-   * worse than either. One event, one elapsed time, everywhere.
-   */
-  const startedAt = currentEvent?.started_at ?? session?.started_at ?? null;
+  // The room clock follows the current agenda's server-owned start time.
+  const startedAt = session?.started_at ?? null;
 
   useEffect(() => {
     eventIdRef.current = eventId;
