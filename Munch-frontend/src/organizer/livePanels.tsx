@@ -275,7 +275,9 @@ export const PendingQuestions: React.FC<{
   const { t, num } = useOrganizer();
   const [waiting, setWaiting] = useState<ChatMessage[]>([]);
   const [board, setBoard] = useState<EventBoard>({ faq: [], suggestions: [] });
-  const [shut, setShut] = useState<string[]>([]);
+  const [expandedGroup, setExpandedGroup] = useState<string | null | undefined>(
+    undefined
+  );
 
   const read = useCallback(() => {
     apiClient.getModerationQueue(eventId)
@@ -392,7 +394,9 @@ export const PendingQuestions: React.FC<{
   return (
     <div className="max-h-[360px] overflow-y-auto overscroll-contain p-4 flex flex-col gap-3">
       {groups.map((group) => {
-        const open = !shut.includes(group.id);
+        const open = expandedGroup === undefined
+          ? group.id === groups[0]?.id
+          : expandedGroup === group.id;
         return (
           <div
             key={group.id || 'loose'}
@@ -403,9 +407,7 @@ export const PendingQuestions: React.FC<{
             <button
               type="button"
               aria-expanded={open}
-              onClick={() => setShut((was) => (
-                open ? [...was, group.id] : was.filter((k) => k !== group.id)
-              ))}
+              onClick={() => setExpandedGroup(open ? null : group.id)}
               className={`w-full px-4 py-3 flex items-center justify-between gap-3
                 text-left ${open ? 'border-b-[0.6px] border-[#ccc]' : ''}`}
             >
@@ -478,18 +480,24 @@ export const PendingQuestions: React.FC<{
                           <div className="flex flex-none items-center gap-1.5">
                             <span
                               aria-label={`${num(one.upvote_count)} upvotes`}
-                              className="rounded-[8px] bg-[#194D97] px-2 py-1
-                                flex items-center gap-1 text-[12px] font-medium
-                                leading-4 text-white"
+                              className={`rounded-[8px] px-2 py-1 flex items-center
+                                gap-1 text-[12px] font-medium leading-4 ${
+                                  one.upvote_count > one.downvote_count
+                                    ? 'bg-[#194D97] text-white'
+                                    : 'bg-[#f3f4f6] text-[#6a7282]'
+                                }`}
                             >
                               <span aria-hidden>▲</span>
                               {num(one.upvote_count)}
                             </span>
                             <span
                               aria-label={`${num(one.downvote_count)} downvotes`}
-                              className="rounded-[8px] bg-[#f3f4f6] px-2 py-1
-                                flex items-center gap-1 text-[12px] font-medium
-                                leading-4 text-[#6a7282]"
+                              className={`rounded-[8px] px-2 py-1 flex items-center
+                                gap-1 text-[12px] font-medium leading-4 ${
+                                  one.downvote_count > one.upvote_count
+                                    ? 'bg-[#194D97] text-white'
+                                    : 'bg-[#f3f4f6] text-[#6a7282]'
+                                }`}
                             >
                               <span aria-hidden>▼</span>
                               {num(one.downvote_count)}

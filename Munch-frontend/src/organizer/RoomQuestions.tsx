@@ -317,7 +317,8 @@ export const RoomQuestions: React.FC<Props> = ({
       </div>
 
       <div className="max-h-[441px] overflow-y-auto">
-        <ul className="flex flex-col gap-[13px] px-2 py-3">
+        <ul className="max-h-[210px] overflow-y-auto overscroll-contain
+          flex flex-col gap-[13px] px-2 py-3">
           {rows.length === 0
             ? <li className="text-[13px] text-[#656565] px-2">{nothingYet}</li>
             : rows.map(entryRow)}
@@ -329,7 +330,8 @@ export const RoomQuestions: React.FC<Props> = ({
               text-[#4a5567]">
               {t({ ne: 'अनुरोध', en: 'REQUESTS' })}
             </h3>
-            <div className="flex flex-col gap-2">
+            <div className="max-h-[160px] overflow-y-auto overscroll-contain
+              flex flex-col gap-2">
               {tabRequests.map((message) => (
                 <div key={message.id} className="flex items-center gap-3 rounded-[8px]
                   border border-[#e3e8ef] bg-white p-3">
