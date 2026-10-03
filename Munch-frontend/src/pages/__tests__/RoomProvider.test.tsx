@@ -930,7 +930,7 @@ describe('the end choice', () => {
   });
 
   it('ends the talk from the card that shows it, and stays in the room', async () => {
-    api.endSession.mockResolvedValue({} as any);
+    api.endSession.mockResolvedValue({ event_ended: false } as any);
     asHost();
     showRoom();
 
@@ -942,6 +942,20 @@ describe('the end choice', () => {
     expect(
       await screen.findByRole('navigation', { name: 'Event controls' })
     ).toBeInTheDocument();
+  });
+
+  it('leaves the room when ending the last session ends the event', async () => {
+    api.endSession.mockResolvedValue({ event_ended: true } as any);
+    asHost();
+    showRoom();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'End Session' }));
+
+    await waitFor(() => expect(api.endSession).toHaveBeenCalledWith('s1'));
+    await waitFor(() =>
+      expect(screen.queryByRole('navigation', { name: 'Event controls' }))
+        .toBeNull()
+    );
   });
 
   it('offers it to nobody else', async () => {

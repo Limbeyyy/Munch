@@ -859,7 +859,9 @@ class ApiClient {
   }
 
   /** Close a session and record who was in the room for it. */
-  async endSession(sessionId: string): Promise<Session & { attendance_recorded: number }> {
+  async endSession(
+    sessionId: string
+  ): Promise<Session & { attendance_recorded: number; event_ended: boolean }> {
     const response = await this.client.post(`/sessions/${sessionId}/end/`);
     return response.data;
   }
