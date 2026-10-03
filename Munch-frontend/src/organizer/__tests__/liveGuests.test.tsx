@@ -582,6 +582,74 @@ describe('the questions tab', () => {
     expect(await screen.findByText('2 questions')).toBeInTheDocument();
   });
 
+  it('keeps only one question agenda expanded at a time', async () => {
+    api.getModerationQueue.mockResolvedValue(queue([
+      approved({ id: 'q1', session: 's1', body: 'Keynote question' }),
+      approved({ id: 'q2', session: 's2', body: 'Field question' }),
+    ]) as any);
+
+    await openQuestions();
+
+    const groupButton = async (title: RegExp) => {
+      await waitFor(() => expect(screen.getAllByRole('button').some((button) =>
+        button.hasAttribute('aria-expanded')
+        && title.test(button.textContent ?? '')
+      )).toBe(true));
+      return screen.getAllByRole('button').find((button) =>
+        button.hasAttribute('aria-expanded') && title.test(button.textContent ?? '')
+      )!;
+    };
+    const keynote = await groupButton(/Opening Keynote/);
+    const field = await groupButton(/Field Response/);
+
+    expect(keynote).toHaveAttribute('aria-expanded', 'true');
+    expect(field).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(field);
+    expect(keynote).toHaveAttribute('aria-expanded', 'false');
+    expect(field).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('highlights whichever vote total is larger', async () => {
+    api.getModerationQueue.mockResolvedValue(queue([
+      approved({ id: 'q1', session: 's1', body: 'Mostly upvoted' }),
+      approved({ id: 'q2', session: 's1', body: 'Mostly downvoted' }),
+      approved({ id: 'q3', session: 's1', body: 'Tied votes' }),
+    ]) as any);
+    api.getEventBoard.mockResolvedValue({
+      faq: [
+        { id: 'q1', body: 'Mostly upvoted', score: 2,
+          upvote_count: 3, downvote_count: 1 },
+        { id: 'q2', body: 'Mostly downvoted', score: -2,
+          upvote_count: 1, downvote_count: 3 },
+        { id: 'q3', body: 'Tied votes', score: 0,
+          upvote_count: 2, downvote_count: 2 },
+      ],
+      suggestions: [],
+    } as any);
+
+    await openQuestions();
+
+    const upvotes = await screen.findByLabelText('3 upvotes');
+    const downvotes = await screen.findByLabelText('1 downvotes');
+    expect(upvotes).toHaveClass('bg-[#194D97]', 'text-white');
+    expect(downvotes).toHaveClass('bg-[#f3f4f6]', 'text-[#6a7282]');
+
+    const mostlyDown = screen.getByText('“Mostly downvoted”')
+      .closest('.bg-white') as HTMLElement;
+    expect(within(mostlyDown).getByLabelText('1 upvotes'))
+      .toHaveClass('bg-[#f3f4f6]', 'text-[#6a7282]');
+    expect(within(mostlyDown).getByLabelText('3 downvotes'))
+      .toHaveClass('bg-[#194D97]', 'text-white');
+
+    const tied = screen.getByText('“Tied votes”')
+      .closest('.bg-white') as HTMLElement;
+    expect(within(tied).getByLabelText('2 upvotes'))
+      .toHaveClass('bg-[#f3f4f6]', 'text-[#6a7282]');
+    expect(within(tied).getByLabelText('2 downvotes'))
+      .toHaveClass('bg-[#f3f4f6]', 'text-[#6a7282]');
+  });
+
   it('shows all questions in a two-question-height scroll area with read-only totals', async () => {
     api.getModerationQueue.mockResolvedValue(queue([
       approved({ id: 'q1', session: 's1', body: 'Question one' }),
@@ -591,7 +659,8 @@ describe('the questions tab', () => {
     ]) as any);
     api.getEventBoard.mockResolvedValue({
       faq: [
-        { id: 'q1', score: 29, upvote_count: 31, downvote_count: 2 },
+        { id: 'q1', body: 'Question one', score: 29,
+          upvote_count: 31, downvote_count: 2 },
       ],
       suggestions: [],
     } as any);
@@ -618,17 +687,24 @@ describe('the questions tab', () => {
     ]) as any);
     api.getEventBoard.mockResolvedValue({
       faq: [
-        { id: 'q1', score: -2, upvote_count: 1, downvote_count: 3 },
-        { id: 'q2', score: 8, upvote_count: 9, downvote_count: 1 },
-        { id: 'q3', score: 2, upvote_count: 4, downvote_count: 2 },
+        { id: 'q1', body: 'Negative score', score: -2,
+          upvote_count: 1, downvote_count: 3 },
+        { id: 'q2', body: 'Most upvoted', score: 8,
+          upvote_count: 9, downvote_count: 1 },
+        { id: 'q3', body: 'Middle score', score: 2,
+          upvote_count: 4, downvote_count: 2 },
       ],
       suggestions: [],
     } as any);
 
     await openQuestions();
 
-    const group = screen.getByText('Opening Keynote')
-      .closest('.bg-white') as HTMLElement;
+    await screen.findByText('“Most upvoted”');
+    const groupButton = screen.getAllByRole('button').find((button) =>
+      button.hasAttribute('aria-expanded')
+      && button.textContent?.includes('Opening Keynote')
+    )!;
+    const group = groupButton.parentElement as HTMLElement;
     const cards = Array.from(group.querySelectorAll('p'))
       .map((card) => card.textContent)
       .filter((text) => text?.startsWith('“'));
@@ -645,7 +721,7 @@ describe('the questions tab', () => {
       approved({ id: 's1', topic: 'suggestion', body: 'A suggestion', session: 's1' }),
     ]) as any);
     api.getEventBoard.mockResolvedValue({
-      faq: [{ id: 'q1', asked_by: 'John D.', score: 0,
+      faq: [{ id: 'q1', body: 'A question', asked_by: 'John D.', score: 0,
         upvote_count: 0, downvote_count: 0 }],
       suggestions: [{ id: 's1', body: 'A suggestion', asked_by: 'John D.',
         created_at: new Date().toISOString(), score: 0,

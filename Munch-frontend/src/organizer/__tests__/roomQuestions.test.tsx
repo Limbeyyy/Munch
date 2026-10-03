@@ -161,6 +161,33 @@ describe('requests inside the live room boards', () => {
     expect(screen.queryByText('Please slow down the transcript speed')).toBeNull();
   });
 
+  it('keeps question and request lists bounded with the remaining rows scrollable', async () => {
+    api.getEventBoard.mockResolvedValue({
+      faq: [
+        entry({ id: 'q1', body: 'Question one' }),
+        entry({ id: 'q2', body: 'Question two' }),
+        entry({ id: 'q3', body: 'Question three' }),
+        entry({ id: 'q4', body: 'Question four' }),
+      ],
+      suggestions: [],
+    } as any);
+    api.getPendingMessages.mockResolvedValue([
+      held({ id: 'm1', topic: 'faq', body: 'Request one' }),
+      held({ id: 'm2', topic: 'faq', body: 'Request two' }),
+      held({ id: 'm3', topic: 'faq', body: 'Request three' }),
+    ] as any);
+    show({ canSort: true });
+
+    expect(await screen.findByText('Question one')).toBeInTheDocument();
+    expect(screen.getByText('Question four').closest('ul'))
+      .toHaveClass('max-h-[210px]', 'overflow-y-auto');
+    expect(screen.getByText('Request three')).toBeInTheDocument();
+
+    const requests = screen.getByRole('region', { name: 'Requests' });
+    expect(requests.querySelector('.max-h-\\[160px\\]'))
+      .toHaveClass('overflow-y-auto');
+  });
+
   it('keeps suggestion requests in Suggestions, with no vote controls', async () => {
     api.getPendingMessages.mockResolvedValue([
       held({ topic: 'suggestion', body: 'Please add a map.' }),

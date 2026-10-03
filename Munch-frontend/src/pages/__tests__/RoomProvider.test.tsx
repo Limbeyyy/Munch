@@ -228,6 +228,22 @@ describe('the room as the design lays it out', () => {
     useAuthStore.setState({ user: null });
   });
 
+  it('keeps the Resources list to a three-row scroll area', async () => {
+    api.getResources.mockResolvedValue([
+      { id: 'r1', display_name: 'Slide 1.pdf', file_size: 256 },
+      { id: 'r2', display_name: 'Slide 2.pdf', file_size: 256 },
+      { id: 'r3', display_name: 'Slide 3.pdf', file_size: 256 },
+      { id: 'r4', display_name: 'Slide 4.pdf', file_size: 256 },
+    ] as any);
+
+    showRoom();
+    await openSide('Resources');
+
+    const fourth = await screen.findByText('Slide 4.pdf');
+    expect(fourth.closest('.overflow-y-auto'))
+      .toHaveClass('max-h-[210px]', 'overscroll-contain');
+  });
+
   it('replaces slide ordering controls with a Drive delete action', async () => {
     const { useAuthStore } = require('../../store/authStore');
     useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });

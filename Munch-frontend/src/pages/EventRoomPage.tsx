@@ -1222,7 +1222,7 @@ const EventRoomInner: React.FC = () => {
                 <PhotoUploads eventRef={eventCode ?? ''} />
               </div>
             ) : (
-            <div className="max-h-[276px] overflow-y-auto">
+            <div className="max-h-[210px] overflow-y-auto overscroll-contain">
               {resources.length === 0 ? (
                 <p className="text-[14px] text-[#656565] px-4 py-3">
                   No files yet. Uploads are saved to the host's Google Drive and shared with
