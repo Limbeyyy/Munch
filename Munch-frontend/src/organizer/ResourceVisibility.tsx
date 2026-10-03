@@ -30,7 +30,9 @@ export const ResourceControls: React.FC<{
   index: number;
   total: number;
   onChanged: () => void;
-}> = ({ eventId, resource, index, total, onChanged }) => {
+  /** The live room only allows ordering; visibility is managed elsewhere. */
+  showVisibility?: boolean;
+}> = ({ eventId, resource, index, total, onChanged, showVisibility = true }) => {
   const { t } = useOrganizer();
   const [busy, setBusy] = useState(false);
 
@@ -58,16 +60,18 @@ export const ResourceControls: React.FC<{
 
   return (
     <span className="flex items-center gap-1.5 flex-none">
-      <select
-        value={resource.visibility ?? 'after_session'}
-        disabled={busy}
-        onChange={(e) => change({ visibility: e.target.value as Choice })}
-        className="border border-navy-800/15 rounded-md px-2 py-1 text-[12.5px] bg-white disabled:opacity-60"
-      >
-        {ORDER.map((choice) => (
-          <option key={choice} value={choice}>{t(LABEL[choice])}</option>
-        ))}
-      </select>
+      {showVisibility && (
+        <select
+          value={resource.visibility ?? 'after_session'}
+          disabled={busy}
+          onChange={(e) => change({ visibility: e.target.value as Choice })}
+          className="border border-navy-800/15 rounded-md px-2 py-1 text-[12.5px] bg-white disabled:opacity-60"
+        >
+          {ORDER.map((choice) => (
+            <option key={choice} value={choice}>{t(LABEL[choice])}</option>
+          ))}
+        </select>
+      )}
       {nudge(-1)}
       {nudge(1)}
     </span>

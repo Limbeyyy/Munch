@@ -11,10 +11,9 @@ import {
 } from '../types';
 import toast from 'react-hot-toast';
 import { ShareEventDialog } from '../components/ShareEventDialog';
-import { ResourceControls } from '../organizer/ResourceVisibility';
 import { PhotoUploads } from '../organizer/Photos';
 import { RoomQuestions } from '../organizer/RoomQuestions';
-import { FigmaIcon } from '../assets/icons';
+import { KindChip, kindOf } from '../organizer/filesAndSummaries/shared';
 import { RoomAgenda } from '../organizer/RoomAgenda';
 import { RoomBarButton, RoomCard, RoomPortrait, SidePanelHead } from './roomChrome';
 import { OrganizerProvider } from '../organizer/i18n';
@@ -44,6 +43,7 @@ const EventRoomInner: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [elapsed, setElapsed] = useState(0);
   const [resources, setResources] = useState<Artifact[]>([]);
+  const [deletingResource, setDeletingResource] = useState<string | null>(null);
   const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -259,41 +259,6 @@ const EventRoomInner: React.FC = () => {
     others.forEach((p) => offer(p.user.id, p.user.email));
     roomGuests.forEach((g) => offer(g.id, `${g.full_name} (guest)`));
   }
-
-  const [changingRole, setChangingRole] = useState<string | null>(null);
-
-  const changeRole = async (
-    participant: EventParticipant,
-    role: 'host' | 'co_host' | 'presenter' | 'attendee'
-  ) => {
-    const id = eventIdRef.current;
-    if (!id || role === participant.role) return;
-
-    if (role === 'host') {
-      const ok = window.confirm(
-        `Make ${participant.user.email} the host?\n\n` +
-        'You will be demoted to co-host and lose host controls, including ' +
-        'chat settings and role changes.'
-      );
-      if (!ok) return;
-    }
-
-    try {
-      setChangingRole(participant.id);
-      await apiClient.updateParticipantRole(id, participant.user.id, role);
-      await refreshParticipants();
-      if (role === 'host') {
-        await loadEvent();
-        toast.success(`${participant.user.email} is now the host`);
-      } else {
-        toast.success(`${participant.user.email} is now ${role.replace('_', '-')}`);
-      }
-    } catch (error: any) {
-      toast.error(error.response?.data?.error ?? 'Could not change role');
-    } finally {
-      setChangingRole(null);
-    }
-  };
 
   const loadChat = useCallback(async () => {
     const id = eventIdRef.current;
@@ -572,10 +537,10 @@ const EventRoomInner: React.FC = () => {
             recipient_id: data.recipient_id ?? null,
             recipient_name: data.recipient_name ?? null,
             recipient_is_guest: !!data.recipient_is_guest,
+            topic: data.topic ?? 'faq',
           }]
         );
-        // Something written to the host is an offer for the board, and
-        // that is the questions panel's business.
+        // Light the room's Questions control while the host is elsewhere.
         noteUnseen('questions');
       } else if (data.type === 'chat_moderated') {
         setMessages((prev) =>
@@ -769,6 +734,21 @@ const EventRoomInner: React.FC = () => {
       setUploadPercent(null);
       // Allow re-selecting the same file.
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleResourceDelete = async (resource: Artifact) => {
+    if (!eventId) return;
+    setDeletingResource(resource.id);
+    try {
+      await apiClient.deleteResource(eventId, resource.id);
+      setResources((previous) => previous.filter((item) => item.id !== resource.id));
+      toast.success(`Removed ${resource.display_name}`);
+    } catch (error: any) {
+      const detail = error.response?.data?.error ?? error.message;
+      toast.error(`Could not remove ${resource.display_name}: ${detail}`);
+    } finally {
+      setDeletingResource(null);
     }
   };
 
@@ -1247,20 +1227,23 @@ const EventRoomInner: React.FC = () => {
                   everyone here.
                 </p>
               ) : (
-                resources.map((r, i) => (
-                  <div key={r.id} className="border-b border-[#e3e8ef] last:border-0">
+                resources.map((r) => (
+                  <div key={r.id} className="mx-2 my-1 flex items-center gap-2
+                    rounded-[12px] border border-[#e3e8ef] bg-white px-4 py-2.5">
                     <a
                       href={r.web_view_link ?? '#'}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-[21px] px-4 py-2.5 hover:bg-cream"
+                      className="flex min-w-0 flex-1 items-center gap-4
+                        hover:opacity-80"
                     >
-                      <FigmaIcon name="folder" size={24} />
+                      <KindChip kind={kindOf(r.display_name ?? '')} />
                       <span className="min-w-0">
-                        <span className="block text-[14px] text-[#383838] tracking-[-0.07px] truncate">
+                        <span className="block text-[14px] font-medium text-[#101828]
+                          tracking-[-0.07px] truncate">
                           {r.display_name}
                         </span>
-                        <span className="block text-[12px] text-[#656565] truncate">
+                        <span className="block text-[12px] text-[#6a7282] truncate">
                           {formatFileSize(r.file_size)}
                           {r.metadata?.uploaded_by_email &&
                             ` · ${
@@ -1273,15 +1256,21 @@ const EventRoomInner: React.FC = () => {
                       </span>
                     </a>
                     {canOrganize && eventId && (
-                      <div className="px-4 pb-2.5">
-                        <ResourceControls
-                          eventId={eventId}
-                          resource={r}
-                          index={i}
-                          total={resources.length}
-                          onChanged={() => loadResources(eventId)}
-                        />
-                      </div>
+                      <button
+                        type="button"
+                        disabled={deletingResource === r.id}
+                        onClick={() => handleResourceDelete(r)}
+                        aria-label={`Delete ${r.display_name}`}
+                        className="size-10 grid flex-none place-items-center rounded-[10px]
+                          bg-[#f3f4f6] text-[#d81313] hover:bg-[#fee2e2]
+                          disabled:cursor-wait disabled:opacity-50"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24"
+                          fill="none" stroke="currentColor" strokeWidth="1.8"
+                          strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                          <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v5M14 11v5" />
+                        </svg>
+                      </button>
                     )}
                   </div>
                 ))
@@ -1350,27 +1339,6 @@ const EventRoomInner: React.FC = () => {
                             {p.is_muted && ' · muted'}
                           </p>
                         </div>
-                        {isHost && !isMe && !(p as any).is_guest && (
-                          <select
-                            value={p.role}
-                            disabled={changingRole === p.id}
-                            onChange={(e) =>
-                              changeRole(
-                                p,
-                                e.target.value as
-                                  'host' | 'co_host' | 'presenter' | 'attendee'
-                              )
-                            }
-                            aria-label={`Role for ${p.user.email}`}
-                            className="border border-[#e3e8ef] rounded-md px-1.5 py-1
-                              text-[12px] bg-white disabled:opacity-50 flex-none"
-                          >
-                            <option value="attendee">Attendee</option>
-                            <option value="presenter">Presenter</option>
-                            <option value="co_host">Co-host</option>
-                            <option value="host">Host (transfers ownership)</option>
-                          </select>
-                        )}
                       </div>
                     );
                   })
@@ -1457,6 +1425,7 @@ const EventRoomInner: React.FC = () => {
                 eventId={eventId}
                 refreshMs={20000}
                 canSort={canOrganize}
+                canVote={!canOrganize}
                 waiting={pending}
                 onNews={(many) => noteUnseen('questions', many)}
                 onAsk={canOrganize ? undefined : (body, topic) => askHost(body, topic)}

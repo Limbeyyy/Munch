@@ -296,34 +296,27 @@ export const LiveView: React.FC<Props> = ({ events, onChanged, onNavigate }) => 
           ))}
         </RequestCard>
 
-        {/* What has been written to the front of the room, and the only
-            question worth asking about it: which board it belongs on. */}
         <RequestCard
           title={{ ne: 'सन्देश अनुरोध', en: 'Message Requests' }}
           count={pending.length}
           empty={{ ne: 'लाइन सफा छ।', en: 'The queue is clear.' }}
         >
-          {pending.map((m) => (
+          {pending.map((message) => (
             <RequestRow
-              key={m.id}
-              name={m.body}
-              under={m.sender_name}
+              key={message.id}
+              name={message.body}
+              under={message.sender_name}
               actions={
                 <>
-                  {/* Which board it belongs on is not a question for the
-                      host: the person who wrote it chose it, under the
-                      questions board or the suggestions board, and it has
-                      carried that choice ever since. All that is left to
-                      decide is whether it goes up. */}
                   <RequestButton
                     tone="accept"
-                    onClick={() => moderate(m, 'approve')}
+                    onClick={() => moderate(message, 'approve')}
                   >
                     {t({ ne: 'स्वीकृत', en: 'Approve' })}
                   </RequestButton>
                   <RequestButton
                     tone="quiet"
-                    onClick={() => moderate(m, 'decline')}
+                    onClick={() => moderate(message, 'decline')}
                   >
                     {t({ ne: 'अस्वीकार', en: 'Reject' })}
                   </RequestButton>

@@ -79,9 +79,10 @@ class WhatTheHostIsAskedToSortTests(TransactionTestCase):
         assert connected, 'the guest could not reach the room'
         return comm
 
-    async def write(self, comm, body, to):
+    async def write(self, comm, body, to, topic=None):
         await comm.send_json_to({
             'type': 'chat_message', 'message': body, 'recipient_id': str(to.id),
+            **({'topic': topic} if topic else {}),
         })
         # The sender's own copy comes back either way; the status on it is
         # what says whether it is waiting.
@@ -141,11 +142,12 @@ class WhatTheHostIsAskedToSortTests(TransactionTestCase):
         writing = await self.speaking_as(self.attendee)
         await watching.receive_json_from()  # and the attendee's
 
-        await self.write(writing, 'Why this budget?', to=self.host)
+        await self.write(writing, 'Why this budget?', to=self.host, topic='faq')
 
         said = await watching.receive_json_from()
         self.assertEqual(said['type'], 'chat_pending')
         self.assertEqual(said['message'], 'Why this budget?')
+        self.assertEqual(said['topic'], 'faq')
         await watching.disconnect()
         await writing.disconnect()
 

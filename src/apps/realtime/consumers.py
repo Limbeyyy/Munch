@@ -265,6 +265,7 @@ class EventConsumer(AsyncWebsocketConsumer):
             'recipient_is_guest': saved['recipient_is_guest'],
             'is_direct': saved['recipient_id'] is not None,
             'moderation_status': saved['moderation_status'],
+            'topic': saved['topic'],
             'timestamp': self._get_timestamp(),
         }
 
@@ -395,6 +396,7 @@ class EventConsumer(AsyncWebsocketConsumer):
             'message': message['message'],
             'recipient_id': message.get('recipient_id'),
             'recipient_name': message.get('recipient_name'),
+            'topic': message.get('topic'),
             'timestamp': message['timestamp'],
         }))
 
@@ -629,6 +631,7 @@ class EventConsumer(AsyncWebsocketConsumer):
             'recipient_is_guest': recipient_guest is not None,
             'recipient_group': recipient_group,
             'moderation_status': moderation,
+            'topic': message.topic,
             'host_id': str(event.host_id),
         }
 
