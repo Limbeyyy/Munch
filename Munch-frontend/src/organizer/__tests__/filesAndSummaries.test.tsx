@@ -7,6 +7,7 @@ import { apiClient } from '../../services/api';
 jest.mock('../../services/api', () => ({
   apiClient: {
     listSessions: jest.fn(),
+    getSubEvents: jest.fn(),
     getResources: jest.fn(),
     getPhotos: jest.fn(),
     getSessionSummary: jest.fn(),
@@ -70,6 +71,7 @@ beforeEach(() => {
     'manch.organizer.prefs', JSON.stringify({ lang: 'en', a11y: {} })
   );
   api.listSessions.mockResolvedValue([session()] as any);
+  api.getSubEvents.mockResolvedValue([] as any);
   api.getResources.mockResolvedValue([artifact()] as any);
   api.getPhotos.mockResolvedValue({
     event_id: 'm1', code: 'EMG-1', event_title: 'Emergency Service Meeting',
@@ -165,6 +167,31 @@ describe('the files and summaries grid', () => {
 });
 
 describe('the summaries of one event', () => {
+  it('wraps summary cards under their populated subcategory', async () => {
+    api.listSessions.mockResolvedValue([
+      session({ sub_event: 'g1' }),
+    ] as any);
+    api.getSubEvents.mockResolvedValue([
+      {
+        id: 'g1', title: 'Presidential Suite', description: '',
+        position: 0, sessions: [], created_at: '',
+      },
+      {
+        id: 'g2', title: 'Vice-Presidential Suite', description: '',
+        position: 1, sessions: [], created_at: '',
+      },
+    ] as any);
+    await openEvent();
+
+    const panel = (await screen.findByRole('heading', {
+      name: 'Presidential Suite',
+    })).closest('section') as HTMLElement;
+    expect(within(panel).getByText('Emergency Response Overview'))
+      .toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Vice-Presidential Suite' }))
+      .not.toBeInTheDocument();
+  });
+
   it('counts the agendas, the published and the drafts', async () => {
     api.listSessions.mockResolvedValue([
       session(), session({ id: 's2', title: 'Field Response' }),
@@ -288,6 +315,33 @@ describe('the files of one event', () => {
     await openEvent();
     fireEvent.click(await screen.findByRole('tab', { name: 'Files' }));
   };
+
+  it('wraps agenda file cards under their populated subcategory', async () => {
+    api.listSessions.mockResolvedValue([
+      session({ sub_event: 'g1' }),
+    ] as any);
+    api.getSubEvents.mockResolvedValue([
+      {
+        id: 'g1', title: 'Presidential Suite', description: '',
+        position: 0, sessions: [], created_at: '',
+      },
+      {
+        id: 'g2', title: 'Vice-Presidential Suite', description: '',
+        position: 1, sessions: [], created_at: '',
+      },
+    ] as any);
+    await openFiles();
+
+    const panel = (await screen.findByRole('heading', {
+      name: 'Presidential Suite',
+    })).closest('section') as HTMLElement;
+    expect(within(panel).getByText('Emergency Response Overview'))
+      .toBeInTheDocument();
+    expect(within(panel).getByText('Response Plan Overview.pdf'))
+      .toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Vice-Presidential Suite' }))
+      .not.toBeInTheDocument();
+  });
 
   it('groups them under the agenda they were shared at', async () => {
     await openFiles();

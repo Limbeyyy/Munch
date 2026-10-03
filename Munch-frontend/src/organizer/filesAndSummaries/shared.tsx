@@ -33,6 +33,37 @@ export const Slab: React.FC<{
   </div>
 );
 
+/** The outer card for agendas grouped under an event subcategory. */
+export const SubcategoryPanel: React.FC<{
+  title: string;
+  description?: string;
+  count: number;
+  children: React.ReactNode;
+}> = ({ title, description, count, children }) => {
+  const { t, num } = useOrganizer();
+  return (
+    <section className="bg-white border-[0.6px] border-line rounded-[12px]
+      overflow-hidden">
+      <header className="bg-sheet border-b-[0.6px] border-line px-4 py-3
+        flex items-baseline gap-3 flex-wrap">
+        <h3 className="text-[14px] font-medium text-head">{title}</h3>
+        <span className="text-[12px] text-subtle">
+          {t({
+            ne: `${num(count)} सत्र`,
+            en: `${count} session${count === 1 ? '' : 's'}`,
+          })}
+        </span>
+        {description && (
+          <p className="w-full text-[12px] leading-4 text-subtle">
+            {description}
+          </p>
+        )}
+      </header>
+      <div className="px-4 py-3 flex flex-col gap-3">{children}</div>
+    </section>
+  );
+};
+
 export const SearchInput: React.FC<{
   value: string;
   onChange: (value: string) => void;

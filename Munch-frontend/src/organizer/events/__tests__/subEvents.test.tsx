@@ -55,12 +55,17 @@ beforeEach(() => {
   api.getSchedulingPrefs.mockResolvedValue({ session_gap_minutes: 0 } as any);
 });
 
-const show = (sessions: any[], groups: any[]) =>
+const show = (
+  sessions: any[],
+  groups: any[],
+  daySessions?: any[]
+) =>
   render(
     <OrganizerProvider>
       <GroupedAgenda
         event={event(sessions)}
         groups={groups}
+        sessions={daySessions}
         onChanged={jest.fn()}
         onEdit={jest.fn()}
       />
@@ -121,19 +126,30 @@ describe('the running order under its subcategories', () => {
       .toBeInTheDocument();
   });
 
-  /**
-   * The host wrote it a moment ago on the step before and is about to
-   * fill it. Dropping it would make what they just made appear not to
-   * have been made.
-   */
-  it('shows a part nothing has been filed under yet', async () => {
-    show([], [group()]);
+  it('hides named parts with no talks on the selected day', async () => {
+    show(
+      [
+        session({ id: 's1', title: 'Opening', sub_event: 'g2' }),
+        session({
+          id: 's2', title: 'Day two talk', sub_event: 'g1',
+          starts_at: '2026-09-16T04:00:00Z',
+        }),
+      ],
+      [
+        group({ id: 'g1', title: 'Presidential Suite' }),
+        group({ id: 'g2', title: 'Other agendas', position: 1 }),
+        group({ id: 'g3', title: 'Vice-Presidential Suite', position: 2 }),
+      ],
+      [session({ id: 's1', title: 'Opening', sub_event: 'g2' })]
+    );
 
-    expect(await screen.findByRole('heading', { name: 'Climate Change' }))
+    await screen.findByText('Opening');
+    expect(screen.queryByRole('heading', { name: 'Presidential Suite' }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Vice-Presidential Suite' }))
+      .not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Other agendas' }))
       .toBeInTheDocument();
-    expect(
-      screen.getByText('Nothing has been filed under this subcategory yet.')
-    ).toBeInTheDocument();
   });
 
   /**

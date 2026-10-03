@@ -11,6 +11,8 @@ jest.mock('../../services/api', () => ({
     getAttendance: jest.fn(),
     getProgrammeRoles: jest.fn(),
     listContactRequests: jest.fn(),
+    getSpeakers: jest.fn(),
+    getSubEvents: jest.fn(),
     hasSession: jest.fn(() => false),
   },
 }));
@@ -62,6 +64,8 @@ beforeEach(() => {
   api.getAttendance.mockResolvedValue(null as any);
   api.getProgrammeRoles.mockResolvedValue({ granted: [] } as any);
   api.listContactRequests.mockResolvedValue([] as any);
+  api.getSpeakers.mockResolvedValue([] as any);
+  api.getSubEvents.mockResolvedValue([] as any);
 });
 
 /**
@@ -111,5 +115,42 @@ describe('the speakers and team page', () => {
 
     expect(api.getParticipants).not.toHaveBeenCalled();
     expect(api.listContactRequests).not.toHaveBeenCalled();
+  });
+
+  it('places speaker cards under the matching populated subcategory', async () => {
+    api.listEvents.mockResolvedValue([{
+      ...event,
+      sessions: [{
+        id: 's1', title: 'Opening', starts_at: '2026-09-08T03:30:00Z',
+        speaker_name: 'Anjelika Sah', speaker_visibility: 'private',
+        sub_event: 'g1',
+      }],
+    }] as any);
+    api.getSpeakers.mockResolvedValue([{
+      id: 'sp1', full_name: 'Anjelika Sah', position: 'VP of Engineering',
+      organization: 'Prixa Technologies', photo_url: null,
+      sessions: [{ id: 's1', title: 'Opening' }],
+    }] as any);
+    api.getSubEvents.mockResolvedValue([
+      {
+        id: 'g1', title: 'Presidential Suite', description: '',
+        position: 0, sessions: [], created_at: '',
+      },
+      {
+        id: 'g2', title: 'Vice-Presidential Suite', description: '',
+        position: 1, sessions: [], created_at: '',
+      },
+    ] as any);
+
+    show();
+
+    const heading = await screen.findByRole('heading', {
+      name: 'Presidential Suite',
+    });
+    expect(heading.closest('section')).toHaveTextContent('Anjelika Sah');
+    expect(screen.queryByRole('heading', { name: 'Vice-Presidential Suite' }))
+      .not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Speakers' })
+      .closest('div.bg-white')).toHaveClass('rounded-[12px]');
   });
 });
