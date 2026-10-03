@@ -849,7 +849,11 @@ const EventRoomInner: React.FC = () => {
     if (!onStage) return;
     setEndingSession(true);
     try {
-      await apiClient.endSession(onStage);
+      const result = await apiClient.endSession(onStage);
+      if (result.event_ended) {
+        navigate('/');
+        return;
+      }
       setShowEndChoice(false);
       await refreshRef.current.event();
       await refreshAgenda();
