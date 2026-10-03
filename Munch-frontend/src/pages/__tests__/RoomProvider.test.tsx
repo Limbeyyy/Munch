@@ -190,6 +190,70 @@ describe('the room as the design lays it out', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('keeps participant role controls out of the live room', async () => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
+    api.getParticipants.mockResolvedValue([{
+      id: 'p2',
+      user: { id: 'u2', email: 'attendee@example.com' },
+      role: 'attendee',
+      is_guest: false,
+      is_muted: false,
+    }] as any);
+
+    showRoom();
+    await openSide('Participants');
+
+    expect(await screen.findByText('attendee@example.com')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Role for attendee@example.com')).toBeNull();
+    useAuthStore.setState({ user: null });
+  });
+
+  it('keeps resource visibility controls out of the live room', async () => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
+    api.getResources.mockResolvedValue([{
+      id: 'r1',
+      display_name: 'Slides.pdf',
+      file_size: 256,
+      visibility: 'now',
+      is_released: true,
+    }] as any);
+
+    showRoom();
+    await openSide('Resources');
+
+    expect(await screen.findByText('Slides.pdf')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).toBeNull();
+    useAuthStore.setState({ user: null });
+  });
+
+  it('replaces slide ordering controls with a Drive delete action', async () => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
+    api.getResources.mockResolvedValue([{
+      id: 'r1',
+      display_name: 'Slides.pdf',
+      file_size: 256,
+      visibility: 'now',
+      is_released: true,
+    }] as any);
+
+    showRoom();
+    await openSide('Resources');
+
+    expect(await screen.findByText('Slides.pdf')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete Slides.pdf' }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Move up' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Move down' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Slides.pdf' }));
+    await waitFor(() => expect(api.deleteResource).toHaveBeenCalledWith('m1', 'r1'));
+    await waitFor(() => expect(screen.queryByText('Slides.pdf')).toBeNull());
+    useAuthStore.setState({ user: null });
+  });
+
   it('has both halves of it: who is here, and who came', async () => {
     api.getAttendance.mockResolvedValue({
       expected_total: 2, attended_count: 2, active_count: 2, absent_count: 0,
@@ -224,26 +288,23 @@ describe('the room as the design lays it out', () => {
     expect(screen.getByRole('tab', { name: /Suggestions/ })).toBeInTheDocument();
   });
 
-  /**
-   * What is waiting is decided on the Message Request card in live
-   * control, which is a place dedicated to it. A second copy of the
-   * same queue in here meant two lists of the same thing, each able to
-   * go stale while the other was acted on.
-   */
-  it('does not carry a second copy of the queue', async () => {
+  it('shows question requests and their actions inside the room Questions panel', async () => {
     const { useAuthStore } = require('../../store/authStore');
     useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
     api.getPendingMessages.mockResolvedValue([{
-      id: 'm9', body: 'Please slow down', created_at: new Date().toISOString(),
+      id: 'm9', body: 'What time is it today?', created_at: new Date().toISOString(),
       is_direct: true, moderation_status: 'pending', sender_id: 'g1',
       sender_name: 'Rahul', sender_is_guest: true, recipient_name: 'The host',
+      topic: 'faq',
     }] as any);
 
     showRoom();
     await openSide('Questions');
 
-    expect(screen.queryByRole('tab', { name: /Requests/ })).toBeNull();
-    expect(screen.queryByText('Please slow down')).toBeNull();
+    expect(await screen.findByText('REQUESTS')).toBeInTheDocument();
+    expect(screen.getByText('What time is it today?')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Accept' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
     useAuthStore.setState({ user: null });
   });
 
@@ -1165,6 +1226,30 @@ describe('the count on a closed panel', () => {
              user_id: 'g1', user_name: 'Rahul', timestamp: new Date().toISOString() });
 
     await badgeOn(/Questions/, '2');
+  });
+
+  it('shows a new suggestion request in its room tab immediately', async () => {
+    asHost();
+    showRoom();
+    await screen.findByRole('navigation', { name: 'Event controls' });
+    await openSide('Questions');
+
+    const socket = (window as any).__roomSocket;
+    act(() => {
+      socket.onmessage({ data: JSON.stringify({
+        type: 'chat_pending',
+        message_id: 's1',
+        message: 'Please share the slides.',
+        topic: 'suggestion',
+        user_id: 'g1',
+        user_name: 'Rahul',
+        timestamp: new Date().toISOString(),
+      }) });
+    });
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Suggestions (1)' }));
+    expect(await screen.findByText('REQUESTS')).toBeInTheDocument();
+    expect(screen.getByText('Please share the slides.')).toBeInTheDocument();
   });
 
   it('counts a file somebody shared', async () => {

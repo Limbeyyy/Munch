@@ -118,6 +118,15 @@ describe('the questions panel', () => {
     expect(await screen.findByRole('button', { name: 'Vote up' }))
       .toHaveAttribute('aria-pressed', 'true');
   });
+
+  it('does not let the host cast a vote', async () => {
+    show({ canSort: true, canVote: false });
+
+    expect(await screen.findByText(/purpose of spending/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Vote up' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Vote down' })).toBeNull();
+    expect(api.voteOnBoard).not.toHaveBeenCalled();
+  });
 });
 
 
@@ -138,25 +147,65 @@ describe('a guest reading the same board', () => {
   });
 });
 
-/**
- * The queue that used to live here has a container of its own.
- *
- * Every message in the room is written to the host, and somebody has to
- * decide whether it goes up. That decision is made on the Message
- * Request card in live control - a place dedicated to it - and having a
- * second copy of the same queue inside the questions panel meant two
- * lists of the same thing, each able to go stale while the other was
- * acted on.
- */
-describe('what is waiting for the host', () => {
-  it('is not a tab in here', async () => {
+describe('requests inside the live room boards', () => {
+  it('shows question requests under Questions and increments its tab count', async () => {
+    api.getPendingMessages.mockResolvedValue([
+      held({ topic: 'faq', body: 'What time is it today?' }),
+    ] as any);
     show({ canSort: true });
-    await screen.findByText(/purpose of spending/);
 
-    expect(screen.queryByRole('tab', { name: /Requests/ })).toBeNull();
+    expect(await screen.findByRole('tab', { name: 'Questions (2)' }))
+      .toBeInTheDocument();
+    expect(screen.getByText('REQUESTS')).toBeInTheDocument();
+    expect(screen.getByText('What time is it today?')).toBeInTheDocument();
+    expect(screen.queryByText('Please slow down the transcript speed')).toBeNull();
   });
 
-  it('leaves the two boards, and the composer under them', async () => {
+  it('keeps suggestion requests in Suggestions, with no vote controls', async () => {
+    api.getPendingMessages.mockResolvedValue([
+      held({ topic: 'suggestion', body: 'Please add a map.' }),
+    ] as any);
+    show({ canSort: true });
+    fireEvent.click(screen.getByRole('tab', { name: /Suggestions/ }));
+
+    expect(await screen.findByRole('tab', { name: 'Suggestions (1)' }))
+      .toBeInTheDocument();
+    expect(screen.getByText('Please add a map.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Vote up' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Vote down' })).toBeNull();
+  });
+
+  it('accepts a request onto its selected board and removes it immediately', async () => {
+    api.getPendingMessages.mockResolvedValue([
+      held({ id: 'm9', topic: 'faq', body: 'What time is it today?' }),
+    ] as any);
+    api.moderateMessage.mockResolvedValue({} as any);
+    show({ canSort: true });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Accept' }));
+
+    await waitFor(() => expect(api.moderateMessage).toHaveBeenCalledWith(
+      'm1', 'm9', 'approve', 'faq'
+    ));
+    await waitFor(() => expect(screen.queryByText('What time is it today?')).toBeNull());
+  });
+
+  it('rejects a request and removes it immediately', async () => {
+    api.getPendingMessages.mockResolvedValue([
+      held({ topic: 'faq', body: 'What time is it today?' }),
+    ] as any);
+    api.moderateMessage.mockResolvedValue({} as any);
+    show({ canSort: true });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+
+    await waitFor(() => expect(api.moderateMessage).toHaveBeenCalledWith(
+      'm1', 'm1', 'decline', undefined
+    ));
+    await waitFor(() => expect(screen.queryByText('What time is it today?')).toBeNull());
+  });
+
+  it('leaves the boards and the composer available', async () => {
     show({ canSort: true, onAsk: jest.fn() });
     await screen.findByText(/purpose of spending/);
 

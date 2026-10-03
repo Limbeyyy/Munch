@@ -21,6 +21,8 @@ interface Props {
    * co-hosts'; everybody else only reads the board and votes on it.
    */
   canSort?: boolean;
+  /** The host reads the tally; only attendees cast a vote. */
+  canVote?: boolean;
   /**
    * What the room's own socket has heard arrive since the last read.
    *
@@ -59,16 +61,12 @@ interface Props {
  * to, and what the host did with the other messages are not the reader's
  * business and are not here.
  *
- * The third tab is the host's, and it is the reason this exists. Every
- * message written in the room is written to somebody - the host or the
- * speaker - and somebody has to decide which of them are questions the
- * room should see, which are suggestions, and which are neither. That
- * could only be done from the moderation screen, which means leaving the
- * room in the middle of the event the queue belongs to. It is the same
- * decision, taken where it happens.
+ * The host sees the pending requests directly under their matching board
+ * tab, while attendees can read, vote, and send their own messages here.
  */
 export const RoomQuestions: React.FC<Props> = ({
-  eventId, guestToken, refreshMs, canSort, waiting: alsoWaiting, onNews, onAsk,
+  eventId, guestToken, refreshMs, canSort, canVote = true,
+  waiting: alsoWaiting, onNews, onAsk,
 }) => {
   const { t, num } = useOrganizer();
   const [board, setBoard] = useState<EventBoard | null>(null);
@@ -81,7 +79,7 @@ export const RoomQuestions: React.FC<Props> = ({
    * comes back in the next answer until the server catches up, and the
    * count against the tab should not flicker back up in the meantime.
    */
-  const [settled] = useState<string[]>([]);
+  const [settled, setSettled] = useState<string[]>([]);
   const [tab, setTab] = useState<Tab>('faq');
   const [busy, setBusy] = useState<string | null>(null);
   const [writing, setWriting] = useState('');
@@ -141,6 +139,7 @@ export const RoomQuestions: React.FC<Props> = ({
 
   /** One vote each. The room decides what most wants answering. */
   const vote = async (entry: BoardEntry, value: 1 | -1) => {
+    if (!canVote) return;
     try {
       setBusy(entry.id);
       const updated = guestToken
@@ -168,15 +167,69 @@ export const RoomQuestions: React.FC<Props> = ({
 
   const rows: BoardEntry[] =
     (tab === 'faq' ? board?.faq : tab === 'suggestions' ? board?.suggestions : []) ?? [];
+  const tabRequests = canSort
+    ? waiting.filter((message) =>
+        message.moderation_status === 'pending'
+        && (tab === 'faq'
+          ? message.topic !== 'suggestion'
+          : message.topic === 'suggestion')
+      )
+    : [];
 
   const tabs: { id: Tab; label: string; count: number }[] = [
-    { id: 'faq', label: t({ ne: 'प्रश्न', en: 'Questions' }), count: board?.faq.length ?? 0 },
+    {
+      id: 'faq',
+      label: t({ ne: 'प्रश्न', en: 'Questions' }),
+      count: (board?.faq.length ?? 0) + (canSort
+        ? waiting.filter((message) =>
+            message.moderation_status === 'pending' && message.topic !== 'suggestion'
+          ).length
+        : 0),
+    },
     {
       id: 'suggestions',
       label: t({ ne: 'सुझाव', en: 'Suggestions' }),
-      count: board?.suggestions.length ?? 0,
+      count: (board?.suggestions.length ?? 0) + (canSort
+        ? waiting.filter((message) =>
+            message.moderation_status === 'pending' && message.topic === 'suggestion'
+          ).length
+        : 0),
     },
   ];
+
+  const decideRequest = async (message: ChatMessage, decision: 'approve' | 'decline') => {
+    if (!eventId) return;
+    setBusy(message.id);
+    try {
+      await apiClient.moderateMessage(
+        eventId,
+        message.id,
+        decision,
+        decision === 'approve' ? (message.topic === 'suggestion' ? 'suggestion' : 'faq') : undefined
+      );
+      setSettled((previous) => [...previous, message.id]);
+      toast.success(decision === 'approve'
+        ? t({ ne: 'अनुरोध स्वीकार गरियो', en: 'Request accepted' })
+        : t({ ne: 'अनुरोध अस्वीकार गरियो', en: 'Request rejected' }));
+      if (decision === 'approve') {
+        try {
+          setBoard(await apiClient.getEventBoard(eventId));
+        } catch (e: any) {
+          toast.error(errorText(
+            e,
+            t({ ne: 'बोर्ड ताजा गर्न सकिएन', en: 'Could not refresh the board' })
+          ));
+        }
+      }
+    } catch (e: any) {
+      toast.error(errorText(
+        e,
+        t({ ne: 'अनुरोध पूरा गर्न सकिएन', en: 'Could not process request' })
+      ));
+    } finally {
+      setBusy(null);
+    }
+  };
 
   /** One question, with the room's vote on it. */
   const entryRow = (entry: BoardEntry) => (
@@ -194,7 +247,7 @@ export const RoomQuestions: React.FC<Props> = ({
 
           Only on the questions: a vote sorts a queue, and a suggestion
           is not queued. */}
-      {tab === 'faq' && (
+      {tab === 'faq' && canVote && (
         <div className="ps-9">
           <BoardVote
             entry={entry}
@@ -263,11 +316,56 @@ export const RoomQuestions: React.FC<Props> = ({
         ))}
       </div>
 
-      <ul className="flex flex-col gap-[13px] px-2 py-3 max-h-[441px] overflow-y-auto">
-        {rows.length === 0
-          ? <li className="text-[13px] text-[#656565] px-2">{nothingYet}</li>
-          : rows.map(entryRow)}
-      </ul>
+      <div className="max-h-[441px] overflow-y-auto">
+        <ul className="flex flex-col gap-[13px] px-2 py-3">
+          {rows.length === 0
+            ? <li className="text-[13px] text-[#656565] px-2">{nothingYet}</li>
+            : rows.map(entryRow)}
+        </ul>
+        {tabRequests.length > 0 && (
+          <section className="mx-3 mb-3 rounded-[10px] border border-[#e3e8ef]
+            bg-[#fcfcfc] p-3" aria-label={t({ ne: 'अनुरोध', en: 'Requests' })}>
+            <h3 className="mb-2 text-[11px] font-semibold tracking-[0.04em]
+              text-[#4a5567]">
+              {t({ ne: 'अनुरोध', en: 'REQUESTS' })}
+            </h3>
+            <div className="flex flex-col gap-2">
+              {tabRequests.map((message) => (
+                <div key={message.id} className="flex items-center gap-3 rounded-[8px]
+                  border border-[#e3e8ef] bg-white p-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] leading-5 text-[#101828]">{message.body}</p>
+                    <p className="text-[11px] leading-4 text-[#6a7282]">
+                      {message.sender_name}
+                    </p>
+                  </div>
+                  <div className="flex flex-none gap-2">
+                    <button
+                      type="button"
+                      disabled={busy === message.id}
+                      onClick={() => decideRequest(message, 'approve')}
+                      className="rounded-[7px] bg-navy-800 px-3 py-1.5 text-[12px]
+                        font-medium text-white hover:bg-navy-700 disabled:opacity-50"
+                    >
+                      {t({ ne: 'स्वीकार', en: 'Accept' })}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy === message.id}
+                      onClick={() => decideRequest(message, 'decline')}
+                      className="rounded-[7px] border border-[#e3e8ef] bg-white
+                        px-3 py-1.5 text-[12px] font-medium text-[#4a5567]
+                        hover:bg-[#f3f4f6] disabled:opacity-50"
+                    >
+                      {t({ ne: 'अस्वीकार', en: 'Reject' })}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
 
       {/* What anybody in the room can put to the host, on the board it
           would appear on. There is nowhere else to write now: a message
