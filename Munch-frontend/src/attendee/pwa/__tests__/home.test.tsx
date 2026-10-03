@@ -505,6 +505,35 @@ describe('one event, opened', () => {
     expect(screen.queryByText('Why the delay?')).toBeNull();
   });
 
+  it('explains that questions and suggestions become available during the event', async () => {
+    api.getSubEvents.mockResolvedValue([
+      { id: 'g1', event: 'e1', title: 'Software Development Cycle',
+        description: '', position: 0, sessions: [], created_at: '' },
+      { id: 'g2', event: 'e1', title: 'Artificial Intelligence Development',
+        description: '', position: 1, sessions: [], created_at: '' },
+    ] as any);
+    api.listSessions.mockResolvedValue([
+      session({ id: 's1', sub_event: 'g1' }),
+      session({ id: 's2', sub_event: 'g2' }),
+    ] as any);
+    api.getHub.mockResolvedValue({
+      questions: [], ideas: [], suggestions: [],
+    } as any);
+
+    await openIt();
+    fireEvent.click(screen.getByRole('tab', { name: 'Questions' }));
+    await screen.findByRole('heading', { name: 'Artificial Intelligence Development' });
+    expect(await screen.findAllByText('Questions will be available during the event.'))
+      .toHaveLength(2);
+    expect(screen.queryByText('Nothing here yet.')).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Suggestions' }));
+    await screen.findByRole('heading', { name: 'Artificial Intelligence Development' });
+    expect(await screen.findAllByText('Suggestions will be available during the event.'))
+      .toHaveLength(2);
+    expect(screen.queryByText('Nothing here yet.')).toBeNull();
+  });
+
   /**
    * A popular talk collects thirty questions, and the point of
    * grouping them under their talk is lost if one talk fills the

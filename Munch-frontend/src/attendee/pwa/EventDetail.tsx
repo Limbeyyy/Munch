@@ -499,7 +499,17 @@ export const EventDetail: React.FC<{
           tab === 'questions' && Boolean(questionAgenda) && looseQuestions.length > 0
         ) ? (
           <p className="bg-white px-4 py-8 text-center text-[13px] text-[#8b90a0]">
-            {t({ ne: 'यहाँ केही छैन।', en: 'Nothing here yet.' })}
+            {tab === 'questions'
+              ? t({
+                  ne: 'कार्यक्रम सुरु भएपछि प्रश्नहरू यहाँ उपलब्ध हुनेछन्।',
+                  en: 'Questions will be available during the event.',
+                })
+              : tab === 'suggestions'
+              ? t({
+                  ne: 'कार्यक्रम सुरु भएपछि सुझावहरू यहाँ उपलब्ध हुनेछन्।',
+                  en: 'Suggestions will be available during the event.',
+                })
+              : t({ ne: 'यहाँ केही छैन।', en: 'Nothing here yet.' })}
           </p>
         ) : (
           <>
@@ -509,6 +519,22 @@ export const EventDetail: React.FC<{
                 className="bg-white px-4 py-2.5 flex flex-col gap-2.5"
               >
                 <GroupHead title={group.title} />
+                {(tab === 'questions' || tab === 'suggestions')
+                  && group.sessions.every(
+                    (one) => postsOf(one, tab).length === 0
+                  ) && (
+                  <p className="text-[13px] text-[#8b90a0]">
+                    {tab === 'questions'
+                      ? t({
+                          ne: 'कार्यक्रम सुरु भएपछि प्रश्नहरू यहाँ उपलब्ध हुनेछन्।',
+                          en: 'Questions will be available during the event.',
+                        })
+                      : t({
+                          ne: 'कार्यक्रम सुरु भएपछि सुझावहरू यहाँ उपलब्ध हुनेछन्।',
+                          en: 'Suggestions will be available during the event.',
+                        })}
+                  </p>
+                )}
 
                 {tab === 'agendas' && (
                   <div className="flex flex-col gap-3">
