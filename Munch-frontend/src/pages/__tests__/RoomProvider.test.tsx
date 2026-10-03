@@ -1054,18 +1054,31 @@ describe('the agenda cards', () => {
     expect(second.textContent).toMatch(/\d{1,2}:\d{2}/);
   });
 
-  it('offers the host a start on a talk still to run', async () => {
+  it('keeps starting a session on the main room card, not the agenda summary', async () => {
     asHost();
     api.startSession.mockResolvedValue({} as any);
+    api.getEvent.mockResolvedValue({
+      ...event,
+      current_session: {
+        id: null,
+        title: '',
+        started_at: null,
+        ends_at: null,
+        is_over: false,
+        between_sessions: true,
+        awaiting_next: true,
+        next_id: 's2',
+        next_title: 'Mehendi',
+      },
+    } as any);
     showRoom();
 
     const list = await screen.findByRole('list', { name: 'Running order' });
-    const starts = within(list).getAllByRole('button', { name: 'Start Session' });
-    expect(starts).toHaveLength(1);
+    expect(within(list).queryByRole('button', { name: 'Start Session' })).toBeNull();
+    const startNext = await screen.findByRole('button', { name: 'Start Mehendi' });
 
-    fireEvent.click(starts[0]);
+    fireEvent.click(startNext);
 
-    // That one, not whichever the server thinks is next.
     await waitFor(() => expect(api.startSession).toHaveBeenCalledWith('s2'));
   });
 

@@ -1023,9 +1023,7 @@ const EventRoomInner: React.FC = () => {
             liveSessionId={session?.id ?? null}
             canEdit={isHost}
             onChanged={refreshAgenda}
-            onStart={startSession}
             summaries={summaries}
-
           />
         </RoomCard>
 
