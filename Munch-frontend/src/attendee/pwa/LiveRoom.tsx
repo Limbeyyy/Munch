@@ -158,7 +158,7 @@ export const LiveRoom: React.FC<{ onLeave: () => void }> = ({ onLeave }) => {
           onDetailChange={setAgendaDetailOpen}
         />
       )}
-      {at === 'board' && <BoardScreen event={event} />}
+      {at === 'board' && <BoardScreen event={event} sessions={sessions} />}
       {at === 'files' && (
         <FilesScreen
           event={event}

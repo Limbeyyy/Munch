@@ -23,17 +23,19 @@ PUBLIC_KINDS = (HubPost.Kind.QUESTION, HubPost.Kind.IDEA)
 def visible_to(event, *, user=None, guest=None):
     """The posts this person may read.
 
-    Everything the organizer has let through, plus their own - including
-    what is still in moderation, so somebody can see that their question
-    arrived, and including their suggestions, which nobody else ever sees.
+    Everything the organizer has let through, plus their own still-active
+    posts - including what is still in moderation, so somebody can see that
+    their question arrived, and including their suggestions, which nobody
+    else ever sees. Declined posts stay in the host's moderation history,
+    not the author's Questions list.
     """
     published = Q(status=HubPost.Status.PUBLISHED, kind__in=PUBLIC_KINDS)
 
     mine = Q(pk__in=[])
     if user is not None and getattr(user, 'is_authenticated', False):
-        mine = Q(user=user)
+        mine = Q(user=user) & ~Q(status=HubPost.Status.DECLINED)
     elif guest is not None:
-        mine = Q(guest=guest)
+        mine = Q(guest=guest) & ~Q(status=HubPost.Status.DECLINED)
 
     return (
         HubPost.objects.filter(event=event)

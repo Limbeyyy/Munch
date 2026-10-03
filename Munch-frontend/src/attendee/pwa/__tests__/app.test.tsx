@@ -371,6 +371,60 @@ describe('the board', () => {
     ).toBeInTheDocument();
   });
 
+  it('groups questions and suggestions under their linked agendas', async () => {
+    api.listSessions.mockResolvedValue([
+      session({ id: 's1', title: 'Opening agenda' }),
+      session({ id: 's2', title: 'Closing agenda' }),
+    ] as any);
+    api.getHub.mockResolvedValue({
+      questions: [
+        post({ id: 'q1', body: 'Opening question', session_id: 's1' }),
+        post({ id: 'q2', body: 'Closing question', session_id: 's2' }),
+      ],
+      ideas: [],
+      suggestions: [
+        post({
+          id: 'suggestion-1', kind: 'suggestion', body: 'Closing suggestion',
+          session_id: 's2',
+        }),
+      ],
+    } as any);
+    await go('Q&A');
+
+    const opening = (await screen.findByRole('heading', { name: 'Opening agenda' }))
+      .closest('section') as HTMLElement;
+    const closing = screen.getByRole('heading', { name: 'Closing agenda' })
+      .closest('section') as HTMLElement;
+    expect(within(opening).getByText('Opening question')).toBeInTheDocument();
+    expect(within(opening).queryByText('Closing question')).toBeNull();
+    expect(within(closing).getByText('Closing question')).toBeInTheDocument();
+    expect(within(closing).queryByText('Opening question')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Suggestions' }));
+    const suggestionAgenda = screen.getByRole('heading', { name: 'Closing agenda' })
+      .closest('section') as HTMLElement;
+    expect(within(suggestionAgenda).getByText('Closing suggestion'))
+      .toBeInTheDocument();
+  });
+
+  it('shows the Figma pending approval card and omits rejected posts', async () => {
+    api.getHub.mockResolvedValue({
+      questions: [
+        post({ status: 'pending', mine: true, body: 'Waiting for approval' }),
+        post({ id: 'rejected', status: 'declined', body: 'Rejected question' }),
+      ],
+      ideas: [],
+      suggestions: [],
+    } as any);
+    await go('Q&A');
+
+    expect(await screen.findByText('Pending approval')).toBeInTheDocument();
+    expect(screen.getByText('Waiting for approval')).toBeInTheDocument();
+    expect(screen.getByText('You')).toBeInTheDocument();
+    expect(screen.queryByText('Rejected question')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Vote up' })).toBeNull();
+  });
+
   it('asks one from the sheet', async () => {
     api.addHubPost.mockResolvedValue(post() as any);
     await go('Q&A');

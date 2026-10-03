@@ -140,6 +140,14 @@ class HubTests(TestCase):
         self.assertEqual(mine[0]['status'], 'pending')
         self.assertTrue(mine[0]['mine'])
 
+    def test_a_declined_question_is_hidden_from_its_asker(self):
+        asked = self.post(kind='question', body='Turned down').json()
+        post = HubPost.objects.get(id=asked['id'])
+        post.status = HubPost.Status.DECLINED
+        post.save(update_fields=['status'])
+
+        self.assertEqual(self.board()['questions'], [])
+
     def test_a_published_question_is_shown_to_everyone(self):
         asked = self.post(kind='question', body='How is the grant released?').json()
         self.publish(HubPost.objects.get(id=asked['id']))

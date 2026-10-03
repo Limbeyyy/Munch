@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { Event, HubKind, HubPost } from '../../types';
+import { Event, HubKind, HubPost, Session } from '../../types';
 import { errorText } from '../../organizer/errors';
 import { useOrganizer } from '../../organizer/i18n';
 import { Switcher } from './PhoneShell';
+import pendingApprovalClock from './icons/pending-approval-clock.svg';
 
 const MOST = 500;
 
@@ -105,6 +106,83 @@ const AskSheet: React.FC<{
   );
 };
 
+const BoardPostCard: React.FC<{
+  post: HubPost;
+  showVotes: boolean;
+  onVote: (post: HubPost, value: 1 | -1) => void;
+}> = ({ post, showVotes, onVote }) => {
+  const { t, num } = useOrganizer();
+
+  if (post.status === 'pending') {
+    return (
+      <div className="border-[0.72px] border-[#fee685] rounded-[16px]
+        bg-white p-4 flex flex-col items-start">
+        <div className="h-[31.238px] relative w-full shrink-0">
+          <span className="absolute left-0 top-[2.77px] flex h-[20.473px]
+            items-center gap-1 rounded-full bg-[#fef3c6] px-2 py-0.5">
+            <img src={pendingApprovalClock} alt="" />
+            <span className="text-[11px] font-medium leading-[16.5px] text-[#e17100]">
+              {t({ ne: 'स्वीकृतिको पर्खाइमा', en: 'Pending approval' })}
+            </span>
+          </span>
+        </div>
+        <p className="w-full break-words text-[14px] leading-[22.75px] text-[#1e2939]">
+          {post.body}
+        </p>
+        <div className="flex w-full items-center pt-3">
+          <span className="flex items-center gap-2 text-[12px] leading-4 text-[#99a1af]">
+            <span>{post.mine ? t({ ne: 'तपाईं', en: 'You' }) : post.author}</span>
+            <span className="text-[#e5e7eb]">·</span>
+            <span>{since(post.created_at, t)}</span>
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border border-[#e8eaee] rounded-[12px] px-3.5 py-3">
+      <p className="text-[14px] leading-6 text-[#111726]">{post.body}</p>
+      <div className="pt-2 flex items-center gap-3">
+        <span className="flex-1 text-[11px] text-[#9ba0ad]">
+          {since(post.created_at, t)}
+        </span>
+        {showVotes && (
+          <span className="flex gap-1.5 flex-none">
+            <button
+              type="button"
+              onClick={() => onVote(post, 1)}
+              aria-label={t({ ne: 'माथि भोट', en: 'Vote up' })}
+              aria-pressed={post.my_vote === 1}
+              className={`rounded-[8px] px-2.5 py-1 flex items-center gap-1
+                text-[12px] font-medium ${
+                post.my_vote === 1
+                  ? 'bg-[#12386e] text-white'
+                  : 'bg-[#f2f3f5] text-[#5b6070]'
+              }`}
+            >
+              ▲ {num(Math.max(0, post.score))}
+            </button>
+            <button
+              type="button"
+              onClick={() => onVote(post, -1)}
+              aria-label={t({ ne: 'तल भोट', en: 'Vote down' })}
+              aria-pressed={post.my_vote === -1}
+              className={`rounded-[8px] px-2.5 py-1 text-[12px] font-medium ${
+                post.my_vote === -1
+                  ? 'bg-[#12386e] text-white'
+                  : 'bg-[#f2f3f5] text-[#5b6070]'
+              }`}
+            >
+              ▼ {num(Math.max(0, post.downvote_count ?? 0))}
+            </button>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+};
+
 /**
  * What the room has asked, and what it has suggested.
  *
@@ -113,7 +191,9 @@ const AskSheet: React.FC<{
  * top. Suggestions do not - nobody reads them in order, so a tally
  * against one measures nothing.
  */
-export const BoardScreen: React.FC<{ event: Event }> = ({ event }) => {
+export const BoardScreen: React.FC<{ event: Event; sessions: Session[] }> = ({
+  event, sessions,
+}) => {
   const { t, num } = useOrganizer();
   const [tab, setTab] = useState<'questions' | 'suggestions'>('questions');
   const [order, setOrder] = useState<'top' | 'newest'>('top');
@@ -125,8 +205,8 @@ export const BoardScreen: React.FC<{ event: Event }> = ({ event }) => {
   const read = useCallback(async () => {
     try {
       const board = await apiClient.getHub(event.code);
-      setQuestions(board.questions ?? []);
-      setSuggestions(board.suggestions ?? []);
+      setQuestions((board.questions ?? []).filter((post) => post.status !== 'declined'));
+      setSuggestions((board.suggestions ?? []).filter((post) => post.status !== 'declined'));
     } catch {
       setQuestions([]);
       setSuggestions([]);
@@ -149,6 +229,37 @@ export const BoardScreen: React.FC<{ event: Event }> = ({ event }) => {
     return list.sort((a, b) => (b.score - a.score)
       || (+new Date(b.created_at) - +new Date(a.created_at)));
   }, [tab, questions, suggestions, order]);
+
+  const agendaGroups = useMemo(() => {
+    const agendaIds = new Set(sessions.map((one) => one.id));
+    const groups = sessions.flatMap((session) => {
+      const posts = rows.filter((post) => post.session_id === session.id);
+      return posts.length ? [{ id: session.id, title: session.title, posts }] : [];
+    });
+    const otherAgendaPosts = new Map<string, { title: string; posts: HubPost[] }>();
+    const unassigned: HubPost[] = [];
+
+    rows.forEach((post) => {
+      if (post.session_id && !agendaIds.has(post.session_id)) {
+        const group = otherAgendaPosts.get(post.session_id) ?? {
+          title: post.session_title || t({ ne: 'बाँकी', en: 'Other agenda' }),
+          posts: [],
+        };
+        group.posts.push(post);
+        otherAgendaPosts.set(post.session_id, group);
+      } else if (!post.session_id) {
+        unassigned.push(post);
+      }
+    });
+
+    return {
+      linked: [
+        ...groups,
+        ...Array.from(otherAgendaPosts, ([id, group]) => ({ id, ...group })),
+      ],
+      unassigned,
+    };
+  }, [rows, sessions, t]);
 
   const send = async (body: string) => {
     setBusy(true);
@@ -244,60 +355,48 @@ export const BoardScreen: React.FC<{ event: Event }> = ({ event }) => {
             : t({ ne: 'तपाईंले अझै सुझाव दिनुभएको छैन।', en: 'You have not suggested anything yet.' })}
         </p>
       ) : (
-        <ul className="px-4 pt-3 pb-4 flex flex-col gap-3">
-          {rows.map((one) => (
-            <li
-              key={one.id}
-              className="border border-[#e8eaee] rounded-[12px] px-3.5 py-3"
-            >
-              <p className="text-[14px] leading-6 text-[#111726]">{one.body}</p>
-              <div className="pt-2 flex items-center gap-3">
-                <span className="flex-1 text-[11px] text-[#9ba0ad]">
-                  {since(one.created_at, t)}
-                  {one.status === 'pending' && (
-                    <span className="ps-2 text-[#bb4d00]">
-                      {t({ ne: 'स्वीकृतिको पर्खाइमा', en: 'waiting for approval' })}
-                    </span>
-                  )}
-                </span>
-
-                {/* Questions only. A vote sorts a queue, and nobody reads
-                    suggestions in order. */}
-                {tab === 'questions' && (
-                  <span className="flex gap-1.5 flex-none">
-                    <button
-                      type="button"
-                      onClick={() => vote(one, 1)}
-                      aria-label={t({ ne: 'माथि भोट', en: 'Vote up' })}
-                      aria-pressed={one.my_vote === 1}
-                      className={`rounded-[8px] px-2.5 py-1 flex items-center gap-1
-                        text-[12px] font-medium ${
-                        one.my_vote === 1
-                          ? 'bg-[#12386e] text-white'
-                          : 'bg-[#f2f3f5] text-[#5b6070]'
-                      }`}
-                    >
-                      ▲ {num(Math.max(0, one.score))}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => vote(one, -1)}
-                      aria-label={t({ ne: 'तल भोट', en: 'Vote down' })}
-                      aria-pressed={one.my_vote === -1}
-                      className={`rounded-[8px] px-2.5 py-1 text-[12px] font-medium ${
-                        one.my_vote === -1
-                          ? 'bg-[#12386e] text-white'
-                          : 'bg-[#f2f3f5] text-[#5b6070]'
-                      }`}
-                    >
-                      ▼ {num(Math.max(0, one.downvote_count ?? 0))}
-                    </button>
-                  </span>
-                )}
-              </div>
-            </li>
+        <div className="px-4 pt-3 pb-4 flex flex-col gap-4">
+          {agendaGroups.linked.map((group) => (
+            <section key={group.id} aria-labelledby={`board-agenda-${group.id}`}>
+              <h2
+                id={`board-agenda-${group.id}`}
+                className="pb-2 text-[14px] font-semibold text-[#111726]"
+              >
+                {group.title}
+              </h2>
+              <ul className="flex flex-col gap-3">
+                {group.posts.map((one) => (
+                  <li key={one.id}>
+                    <BoardPostCard
+                      post={one}
+                      showVotes={tab === 'questions'}
+                      onVote={vote}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </section>
           ))}
-        </ul>
+          {agendaGroups.unassigned.length > 0 && (
+            <section aria-labelledby="board-agenda-unassigned">
+              <h2 id="board-agenda-unassigned" className="pb-2 text-[14px]
+                font-semibold text-[#111726]">
+                {t({ ne: 'कार्यक्रमभरि', en: 'For the whole event' })}
+              </h2>
+              <ul className="flex flex-col gap-3">
+                {agendaGroups.unassigned.map((one) => (
+                  <li key={one.id}>
+                    <BoardPostCard
+                      post={one}
+                      showVotes={tab === 'questions'}
+                      onVote={vote}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
       )}
 
       {asking && (
