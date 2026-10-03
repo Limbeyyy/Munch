@@ -226,7 +226,9 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
       return;
     }
 
-    const from = new Date(startsAt);
+    const from = new Date(
+      hasOpened && saved ? saved.scheduled_start : startsAt
+    );
     // The day is the day it starts on; there is no separate date to
     // disagree with the hours any more.
     const day = toLocalInput(from).slice(0, 10);
@@ -242,8 +244,10 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
           title: title.trim(),
           venue: venue.trim(),
           description,
-          event_date: day,
-          scheduled_start: from.toISOString(),
+          ...(!hasOpened && {
+            event_date: day,
+            scheduled_start: from.toISOString(),
+          }),
           scheduled_end: new Date(+from + minutes * 60000).toISOString(),
         });
         setSaved(made);

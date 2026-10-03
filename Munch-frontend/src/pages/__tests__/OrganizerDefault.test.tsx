@@ -161,17 +161,15 @@ describe('opening the organizer', () => {
     ]);
   });
 
-  /** The design's own glyph, not one drawn here. */
-  it('draws notifications with the exported icon', async () => {
+  it('draws notifications with the same line icon treatment as the other controls', async () => {
     showOrganizer();
     await waitFor(() => expect(api.listEvents).toHaveBeenCalled());
 
     const bar = screen.getByRole('button', { name: 'Logout' })
       .parentElement as HTMLElement;
-    const bell = within(bar).getByRole('button', { name: 'Notifications' })
-      .querySelector('img') as HTMLImageElement;
+    const bell = within(bar).getByRole('button', { name: 'Notifications' });
 
-    expect(bell.getAttribute('src')).toContain('notifications');
+    expect(bell.querySelector('svg')).toHaveAttribute('stroke', 'currentColor');
   });
 
   it('opens the notifications page when the bell is pressed', async () => {
@@ -186,6 +184,10 @@ describe('opening the organizer', () => {
     expect(
       await screen.findByRole('heading', { name: /Notifications/ })
     ).toBeInTheDocument();
+    const bell = within(bar).getByRole('button', { name: 'Notifications' });
+    expect(bell).toHaveAttribute('aria-current', 'page');
+    expect(bell).toHaveClass('bg-black/[.04]', 'text-navy-800');
+    expect(bell).not.toHaveClass('bg-navy-800');
   });
 
   it('no longer names the event in the bar', async () => {

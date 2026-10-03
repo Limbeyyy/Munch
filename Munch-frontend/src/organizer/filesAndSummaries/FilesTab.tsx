@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { Artifact, Event, Session } from '../../types';
+import { Artifact, Event, Session, SubEvent } from '../../types';
+import { groupSessions } from '../../attendee/pwa/grouping';
 import { errorText } from '../errors';
 import { useOrganizer } from '../i18n';
 import { Modal } from '../OrganizerShell';
 import {
   FilledButton, KindChip, NothingYet, QuietButton, SearchInput, Slab,
-  clockOf, dayOf, formatSize, kindOf,
+  SubcategoryPanel, clockOf, dayOf, formatSize, kindOf,
 } from './shared';
 
 /** The agendas a file may be filed against, and the loose pile. */
@@ -23,6 +24,7 @@ const LOOSE = '';
 export const FilesTab: React.FC<{ event: Event }> = ({ event }) => {
   const { t, num } = useOrganizer();
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [subEvents, setSubEvents] = useState<SubEvent[]>([]);
   const [files, setFiles] = useState<Artifact[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -37,12 +39,14 @@ export const FilesTab: React.FC<{ event: Event }> = ({ event }) => {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [own, shared] = await Promise.all([
+    const [own, shared, parts] = await Promise.all([
       apiClient.listSessions(event.id).catch(() => [] as Session[]),
       apiClient.getResources(event.id).catch(() => [] as Artifact[]),
+      apiClient.getSubEvents(event.id).catch(() => [] as SubEvent[]),
     ]);
     setSessions(own);
     setFiles(shared);
+    setSubEvents(parts);
     setLoading(false);
   }, [event.id]);
 
@@ -80,6 +84,49 @@ export const FilesTab: React.FC<{ event: Event }> = ({ event }) => {
         }]
       : byAgenda;
   }, [sessions, matching, t]);
+  const otherAgendas = t({ ne: 'अन्य कार्यसूची', en: 'Other agendas' });
+  const subEventIds = new Set(subEvents.map((part) => part.id));
+  const agendaParts = subEvents.length > 0
+    ? groupSessions(
+      sessions.map((session) => session.sub_event
+        && !subEventIds.has(session.sub_event)
+        ? { ...session, sub_event: null }
+        : session),
+      subEvents,
+      otherAgendas
+    )
+    : [];
+  const groupsByAgenda = new Map(groups.map((group) => [group.id, group] as const));
+  const looseFiles = groupsByAgenda.get(LOOSE);
+  const displayParts = subEvents.length > 0
+    ? [
+      ...agendaParts.map((part) => ({
+        grouped: true,
+        id: part.id,
+        title: part.title,
+        description: part.description,
+        sessions: part.sessions,
+        loose: part.id === LOOSE ? looseFiles : undefined,
+      })),
+      ...(looseFiles && !agendaParts.some((part) => part.id === LOOSE)
+        ? [{
+          grouped: true,
+          id: LOOSE,
+          title: otherAgendas,
+          description: '',
+          sessions: [] as Session[],
+          loose: looseFiles,
+        }]
+        : []),
+    ]
+    : groups.map((group) => ({
+      grouped: false,
+      id: '',
+      title: '',
+      description: '',
+      sessions: [] as Session[],
+      loose: group,
+    }));
 
   const openAdd = (agendaId: string) => {
     setTarget(agendaId);
@@ -152,7 +199,16 @@ export const FilesTab: React.FC<{ event: Event }> = ({ event }) => {
           })}
         />
       ) : (
-        groups.map((group) => (
+        displayParts.map((part) => {
+          const sessionGroups = part.sessions.flatMap((session) => {
+            const group = groupsByAgenda.get(session.id);
+            return group ? [group] : [];
+          });
+          const visibleGroups = [
+            ...sessionGroups,
+            ...(part.loose ? [part.loose] : []),
+          ];
+          const cards = visibleGroups.map((group) => (
           <Slab key={group.id || 'loose'}>
             <div className="border-b-[0.6px] border-[#f3f4f6] px-5 py-4
               flex items-center justify-between gap-4">
@@ -237,7 +293,18 @@ export const FilesTab: React.FC<{ event: Event }> = ({ event }) => {
               </div>
             )}
           </Slab>
-        ))
+          ));
+          return part.grouped ? (
+            <SubcategoryPanel
+              key={part.id || 'loose'}
+              title={part.title}
+              description={part.description}
+              count={part.sessions.length}
+            >
+              {cards}
+            </SubcategoryPanel>
+          ) : cards;
+        })
       )}
 
       {/* 641-18755 */}

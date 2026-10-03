@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { Event, Session, SessionSummary } from '../../types';
+import { Event, Session, SessionSummary, SubEvent } from '../../types';
+import { groupSessions } from '../../attendee/pwa/grouping';
 import { errorText } from '../errors';
 import { Pair, useOrganizer } from '../i18n';
 import { Modal } from '../OrganizerShell';
 import {
-  FilterPills, NothingYet, QuietButton, SearchInput, StatCard, clockOf,
+  FilterPills, NothingYet, QuietButton, SearchInput, StatCard,
+  SubcategoryPanel, clockOf,
 } from './shared';
 
 /** What a summary is, as the list files it. */
@@ -49,6 +51,7 @@ const stateOf = (summary?: SessionSummary): State => {
 export const SummariesTab: React.FC<{ event: Event }> = ({ event }) => {
   const { t, num } = useOrganizer();
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [subEvents, setSubEvents] = useState<SubEvent[]>([]);
   const [summaries, setSummaries] = useState<Record<string, SessionSummary>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -63,13 +66,12 @@ export const SummariesTab: React.FC<{ event: Event }> = ({ event }) => {
 
   const load = useCallback(async () => {
     setLoading(true);
-    let own: Session[] = [];
-    try {
-      own = await apiClient.listSessions(event.id);
-    } catch {
-      own = [];
-    }
+    const [own, parts] = await Promise.all([
+      apiClient.listSessions(event.id).catch(() => [] as Session[]),
+      apiClient.getSubEvents(event.id).catch(() => [] as SubEvent[]),
+    ]);
     setSessions(own);
+    setSubEvents(parts);
 
     const results = await Promise.allSettled(
       own.map((one) =>
@@ -99,6 +101,17 @@ export const SummariesTab: React.FC<{ event: Event }> = ({ event }) => {
     return row.session.title.toLowerCase()
       .includes(search.trim().toLowerCase());
   });
+  const otherAgendas = t({ ne: 'अन्य कार्यसूची', en: 'Other agendas' });
+  const agendaParts = subEvents.length > 0
+    ? groupSessions(
+      shown.map((row) => row.session),
+      subEvents,
+      otherAgendas
+    )
+    : [];
+  const shownBySession = new Map(
+    shown.map((row) => [row.session.id, row] as const)
+  );
 
   const counted = (state: State) => rows.filter((r) => r.state === state).length;
 
@@ -217,8 +230,27 @@ export const SummariesTab: React.FC<{ event: Event }> = ({ event }) => {
           })}
         />
       ) : (
-        <div className="flex flex-col gap-3">
-          {shown.map((row) => {
+        <div className="flex flex-col gap-4">
+          {(agendaParts.length > 0
+            ? agendaParts.map((part) => ({
+              grouped: true,
+              id: part.id,
+              title: part.title,
+              description: part.description,
+              rows: part.sessions.flatMap((session) => {
+                const row = shownBySession.get(session.id);
+                return row ? [row] : [];
+              }),
+            }))
+            : [{
+              grouped: false,
+              id: '',
+              title: '',
+              description: '',
+              rows: shown,
+            }]
+          ).map((part) => {
+            const cards = part.rows.map((row) => {
             const tint = STATE_TINT[row.state];
             const working = busy === row.session.id;
             return (
@@ -348,6 +380,17 @@ export const SummariesTab: React.FC<{ event: Event }> = ({ event }) => {
                 </div>
               </article>
             );
+            });
+            return part.grouped ? (
+              <SubcategoryPanel
+                key={part.id || 'loose'}
+                title={part.title}
+                description={part.description}
+                count={part.rows.length}
+              >
+                {cards}
+              </SubcategoryPanel>
+            ) : cards;
           })}
         </div>
       )}

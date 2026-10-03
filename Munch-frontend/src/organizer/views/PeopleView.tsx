@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
-import { Event, Session, Speaker as SpeakerProfile } from '../../types';
+import { Event, Session, Speaker as SpeakerProfile, SubEvent } from '../../types';
+import { groupSessions } from '../../attendee/pwa/grouping';
 import { useOrganizer } from '../i18n';
 import { groupBySpeaker } from '../speakers';
 import { Card, Head } from '../ui';
 import { SpeakerFace } from '../events/SpeakersStep';
+import { SubcategoryPanel } from '../filesAndSummaries/shared';
 
 
 interface Slot { session: Session; event: Event; }
@@ -20,6 +22,7 @@ interface Speaker {
   photo: string | null;
   slots: Slot[];
   visibility: 'public' | 'private' | 'mixed';
+  sessionIds: string[];
 }
 
 interface Props { events: any[]; currentUserId?: string; }
@@ -39,14 +42,20 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
   const [loading, setLoading] = useState(true);
   /** The profiles written for the chosen event, and what is typed. */
   const [profiles, setProfiles] = useState<SpeakerProfile[]>([]);
+  const [subEvents, setSubEvents] = useState<SubEvent[]>([]);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
     if (!eventId) { setProfiles([]); return; }
     let alive = true;
-    apiClient.getSpeakers(eventId)
-      .then((rows) => { if (alive) setProfiles(rows); })
-      .catch(() => { if (alive) setProfiles([]); });
+    Promise.all([
+      apiClient.getSpeakers(eventId).catch(() => [] as SpeakerProfile[]),
+      apiClient.getSubEvents(eventId).catch(() => [] as SubEvent[]),
+    ]).then(([rows, groups]) => {
+      if (!alive) return;
+      setProfiles(rows);
+      setSubEvents(groups);
+    });
     return () => { alive = false; };
   }, [eventId]);
 
@@ -95,6 +104,7 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
           .map((r) => r.session.speaker_photo_url)
           .find(Boolean) ?? null,
         slots: rows,
+        sessionIds: rows.map((row) => row.session.id),
         // Held public on one session and private on another is neither:
         // the card says so rather than picking one at random.
         visibility: states.length === 1 ? states[0] : 'mixed',
@@ -121,6 +131,7 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
       organization: one.organization,
       photo: one.photo_url,
       agendas: one.sessions.map((s) => s.title),
+      sessionIds: one.sessions.map((s) => s.id),
       // The profile has no visibility of its own: who may read a
       // speaker's details is a property of the talk they give, which is
       // where the rule has always lived.
@@ -138,6 +149,7 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
         organization: '',
         photo: one.photo,
         agendas: one.slots.map((slot) => slot.session.title),
+        sessionIds: one.sessionIds,
         onSessions: one,
       }));
 
@@ -146,6 +158,34 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
       one.name.toLowerCase().includes(wanted)
     );
   }, [profiles, speakers, search]);
+
+  const subEventIds = new Set(subEvents.map((group) => group.id));
+  const agendaParts = event && subEvents.length > 0
+    ? groupSessions(
+      event.sessions ?? [],
+      subEvents,
+      t({ ne: 'अन्य कार्यसूची', en: 'Other agendas' })
+    )
+    : [];
+  const speakerParts = agendaParts.map((part) => {
+    const sessionIds = new Set(part.sessions.map((session) => session.id));
+    return {
+      ...part,
+      speakers: shown.filter((speaker) => {
+        const firstCategorized = speaker.sessionIds.find((id) => {
+          const session = event?.sessions?.find((one) => one.id === id);
+          return session?.sub_event && subEventIds.has(session.sub_event);
+        });
+        if (!firstCategorized) {
+          return part.id === '';
+        }
+        const session = event?.sessions?.find((one) => one.id === firstCategorized);
+        return part.id === (session?.sub_event ?? '');
+      }).filter((speaker) =>
+        part.id === '' || speaker.sessionIds.some((id) => sessionIds.has(id))
+      ),
+    };
+  });
 
   const unnamed = useMemo(() => {
     if (!event) return [];
@@ -157,8 +197,47 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
   }, [event]);
 
 
+  const speakerCards = (cards: typeof shown) => (
+    <div className="grid gap-5"
+      style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))' }}>
+      {cards.map((one) => (
+        <article
+          key={one.key}
+          className="bg-white border-[0.6px] border-line rounded-[12px] p-4
+            flex flex-col
+            shadow-[0px_4px_3px_rgba(0,0,0,0.04),0px_2px_2px_rgba(0,0,0,0.03)]"
+        >
+          <SpeakerFace
+            name={one.name}
+            src={one.photo}
+            className="rounded-[8px] w-full aspect-square text-[36px]"
+          />
+          <p className="pt-3 text-[14px] font-medium text-head text-center">
+            {one.name}
+          </p>
+          {one.position && (
+            <p className="text-[12px] text-[#c2410c] text-center">
+              {one.position}
+            </p>
+          )}
+          {one.organization && (
+            <p className="text-[12px] text-subtle text-center">
+              {one.organization}
+            </p>
+          )}
+          <p className="mt-3 bg-[#f3f4f6] rounded-[6px] px-2 py-1
+            text-[11px] text-subtle text-center truncate">
+            {one.agendas.length === 0
+              ? t({ ne: 'कुनै कार्यसूची छैन', en: 'No agenda assigned' })
+              : one.agendas.join(', ')}
+          </p>
+        </article>
+      ))}
+    </div>
+  );
+
   return (
-    <>
+    <Card className="p-5 sm:p-6">
       <Head
         title={{ ne: 'वक्ताहरू', en: 'Speakers' }}
         lede={{
@@ -168,11 +247,11 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
       />
 
       {!loading && events.length === 0 ? (
-        <Card className="text-center py-10">
+        <div className="text-center py-10">
           <p className="text-[#6E7C8E]">
             {t({ ne: 'अझै कुनै कार्यक्रम छैन।', en: 'No events yet.' })}
           </p>
-        </Card>
+        </div>
       ) : (
         <>
           {/* What is being looked for, and which event's speakers to
@@ -222,52 +301,29 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
           ) : (
             <>
               {shown.length === 0 ? (
-                <Card className="text-center py-10">
+                <div className="text-center py-10">
                   <p className="text-[#6E7C8E] max-w-md mx-auto">
                     {t({
                       ne: 'कुनै वक्ता छैन। कार्यक्रमको तेस्रो चरणबाट थप्नुहोस्।',
                       en: 'No speakers yet. Add them on the Speakers step of the event.',
                     })}
                   </p>
-                </Card>
-              ) : (
-                <div className="grid gap-5"
-                  style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))' }}>
-                  {shown.map((one) => (
-                    <article
-                      key={one.key}
-                      className="bg-white border-[0.6px] border-line rounded-[12px] p-4
-                        flex flex-col
-                        shadow-[0px_4px_3px_rgba(0,0,0,0.04),0px_2px_2px_rgba(0,0,0,0.03)]"
-                    >
-                      <SpeakerFace
-                        name={one.name}
-                        src={one.photo}
-                        className="rounded-[8px] w-full aspect-square text-[36px]"
-                      />
-                      <p className="pt-3 text-[14px] font-medium text-head text-center">
-                        {one.name}
-                      </p>
-                      {one.position && (
-                        <p className="text-[12px] text-[#c2410c] text-center">
-                          {one.position}
-                        </p>
-                      )}
-                      {one.organization && (
-                        <p className="text-[12px] text-subtle text-center">
-                          {one.organization}
-                        </p>
-                      )}
-                      <p className="mt-3 bg-[#f3f4f6] rounded-[6px] px-2 py-1
-                        text-[11px] text-subtle text-center truncate">
-                        {one.agendas.length === 0
-                          ? t({ ne: 'कुनै कार्यसूची छैन', en: 'No agenda assigned' })
-                          : one.agendas.join(', ')}
-                      </p>
-
-                    </article>
-                  ))}
                 </div>
+              ) : (
+                speakerParts.length > 0 ? (
+                  <div className="flex flex-col gap-4">
+                    {speakerParts.map((part) => part.speakers.length > 0 && (
+                      <SubcategoryPanel
+                        key={part.id || 'loose'}
+                        title={part.title}
+                        description={part.description}
+                        count={part.sessions.length}
+                      >
+                        {speakerCards(part.speakers)}
+                      </SubcategoryPanel>
+                    ))}
+                  </div>
+                ) : speakerCards(shown)
               )}
 
               {unnamed.length > 0 && (
@@ -288,8 +344,6 @@ export const PeopleView: React.FC<Props> = ({ currentUserId }) => {
           )}
         </>
       )}
-    </>
+    </Card>
   );
 };
-
-

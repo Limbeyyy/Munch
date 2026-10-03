@@ -5,6 +5,9 @@ import { Btn, Ic } from './ui';
 import { FigmaIcon, FigmaIconName } from '../assets/icons';
 import manchMark from '../assets/icons/manch-mark.svg';
 
+const REMINDERS_ICON =
+  'M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0';
+
 export interface NavItem {
   id: string;
   group: 1 | 2 | 3 | 4;
@@ -41,8 +44,7 @@ export const NAV: NavItem[] = [
   { id: 'appearance', group: 3, label: { ne: 'रूपरंग', en: 'Appearance' },
     icon: 'M12 3a9 9 0 100 18 2 2 0 001.6-3.2 2 2 0 011.6-3.2H18a3 3 0 003-3A9 9 0 0012 3zM7.5 10.5h.01M10.5 7.5h.01M14 7.5h.01M16.5 10.5h.01' },
   { id: 'reminders', group: 3, label: { ne: 'सूचना र सम्झना', en: 'Notifications' },
-    icon: 'M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0',
-    figma: 'notifications' },
+    icon: REMINDERS_ICON },
 
   // Kept reachable, below the three groups the design names.
   { id: 'reports', group: 4, label: { ne: 'रिपोर्ट', en: 'Reports' },
@@ -254,15 +256,11 @@ export const OrganizerShell: React.FC<Props> = ({
                 title={t({ ne: 'सूचना', en: 'Notifications' })}
                 className={`relative w-8 h-8 rounded-[10px] grid place-items-center ${
                   view === 'reminders'
-                    ? 'bg-navy-800'
-                    : 'hover:bg-black/[.04]'
+                    ? 'bg-black/[.04] text-navy-800'
+                    : 'text-subtle hover:bg-black/[.04]'
                 }`}
               >
-                <FigmaIcon
-                  name="notifications"
-                  size={18}
-                  title={t({ ne: 'सूचना', en: 'Notifications' })}
-                />
+                <Ic d={REMINDERS_ICON} size={18} />
                 {badges.reminders && (
                   <span className="absolute -top-0.5 -right-0.5 bg-[#ef4444] text-white
                     rounded-full min-w-[16px] h-4 px-1 grid place-items-center

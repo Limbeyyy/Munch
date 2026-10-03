@@ -307,6 +307,21 @@ describe('the start time once an event has opened', () => {
     expect(starts()).toBeDisabled();
   });
 
+  it('does not resend a locked start time when saving other event details', async () => {
+    open({ ...made, status: 'active', started_at: '2026-09-18T09:30:00' });
+    fireEvent.change(screen.getByLabelText(/Event name/), {
+      target: { value: 'Updated event name' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(api.updateEvent).toHaveBeenCalled());
+    const [, patch] = api.updateEvent.mock.calls[0];
+    expect(patch).toMatchObject({ title: 'Updated event name' });
+    expect(patch).not.toHaveProperty('scheduled_start');
+    expect(patch).not.toHaveProperty('event_date');
+  });
+
   it('is open on one that has not', () => {
     open(made);
 

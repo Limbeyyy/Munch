@@ -248,8 +248,19 @@ export const GroupedAgenda: React.FC<{
   }
 
   const parts = groupSessions(
-    shown, groups, t({ ne: 'अन्य कार्यसूची', en: 'Other agendas' }), true
+    shown, groups, t({ ne: 'अन्य कार्यसूची', en: 'Other agendas' })
   );
+
+  if (parts.length === 0) {
+    return (
+      <AgendaBoard
+        event={sessions ? { ...event, sessions } : event}
+        onChanged={onChanged}
+        onAdd={onAdd}
+        onEdit={onEdit}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">
