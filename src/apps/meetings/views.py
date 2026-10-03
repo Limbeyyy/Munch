@@ -1321,8 +1321,8 @@ class EventRoomViewSet(viewsets.ModelViewSet):
     def vote_board(self, request, pk=None):
         """Vote a question up or down, or take the vote back.
 
-        Everybody in the event gets one. The room deciding what most
-        wants answering is the point of a board.
+        Attendees get one. The host reads the tally and works down from
+        the top, rather than voting on their own board.
 
         Questions only. A vote sorts a queue - it says which question the
         room most wants answered, and the host works down from the top.
@@ -1333,6 +1333,12 @@ class EventRoomViewSet(viewsets.ModelViewSet):
         from src.apps.meetings.board import board_for, cast
 
         event = self.get_object()
+        if event.host_id == request.user.id:
+            return Response(
+                {'error': 'The host cannot vote on the board.',
+                 'code': 'host_cannot_vote'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         value = request.data.get('value')
         if value not in (1, -1):

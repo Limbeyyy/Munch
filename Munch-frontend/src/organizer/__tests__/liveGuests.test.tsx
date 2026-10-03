@@ -18,7 +18,9 @@ jest.mock('../../services/api', () => ({
     getTranscript: jest.fn(),
     getEventSegments: jest.fn(),
     getPhotos: jest.fn(),
+    getPhotoObjectUrl: jest.fn(),
     createPhotoFolder: jest.fn(),
+    uploadPhoto: jest.fn(),
     getSchedulingPrefs: jest.fn(),
     hasSession: () => false,
   },
@@ -71,7 +73,9 @@ beforeEach(() => {
   api.getPhotos.mockResolvedValue({
     folders: [], photos: [], can_arrange: true,
   } as any);
+  api.getPhotoObjectUrl.mockResolvedValue('blob:photo' as any);
   api.createPhotoFolder.mockResolvedValue({ id: 'f1', name: 'Prabhat' } as any);
+  api.uploadPhoto.mockResolvedValue({ id: 'p1' } as any);
   api.getSchedulingPrefs.mockResolvedValue({ session_gap_minutes: 15 } as any);
 });
 
@@ -188,15 +192,7 @@ describe('the live dashboard', () => {
 });
 
 
-/**
- * What is waiting for the host, and the one decision left on it.
- *
- * Which board a message belongs on is not the host's to choose: the
- * person who wrote it chose, under the questions board or the
- * suggestions board, and it has carried that choice ever since. Asking
- * the host to pick again meant two people deciding one thing, and the
- * second one guessing.
- */
+/** The live dashboard retains its separate Message Requests queue. */
 describe('the message request queue', () => {
   const waiting = (over: any = {}) => ({
     id: 'q9', body: 'who is prabhat?', created_at: new Date().toISOString(),
@@ -205,7 +201,6 @@ describe('the message request queue', () => {
     recipient_name: 'The host', topic: 'faq',
     ...over,
   });
-
   it('offers approving and rejecting, not two boards', async () => {
     api.getPendingMessages.mockResolvedValue([waiting()] as any);
     show();
@@ -216,18 +211,15 @@ describe('the message request queue', () => {
     expect(screen.queryByRole('button', { name: 'Suggestions' })).toBeNull();
   });
 
-  /** Approving files it where the asker said, without being told again. */
   it('puts one up without naming a board', async () => {
     api.getPendingMessages.mockResolvedValue([waiting()] as any);
     show();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
 
-    await waitFor(() =>
-      expect(api.moderateMessage).toHaveBeenCalledWith(
-        'm1', 'q9', 'approve', undefined
-      )
-    );
+    await waitFor(() => expect(api.moderateMessage).toHaveBeenCalledWith(
+      'm1', 'q9', 'approve', undefined
+    ));
   });
 
   it('turns one down', async () => {
@@ -236,11 +228,9 @@ describe('the message request queue', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
 
-    await waitFor(() =>
-      expect(api.moderateMessage).toHaveBeenCalledWith(
-        'm1', 'q9', 'decline', undefined
-      )
-    );
+    await waitFor(() => expect(api.moderateMessage).toHaveBeenCalledWith(
+      'm1', 'q9', 'decline', undefined
+    ));
   });
 });
 
@@ -366,15 +356,6 @@ describe('the request queues', () => {
     expect(arrow.getAttribute('src')).toContain('chevron-down-dark');
   });
 
-  it('turns it over when the queue is open', async () => {
-    show();
-    const head = (await screen.findByText('Message Requests'))
-      .closest('button') as HTMLElement;
-
-    const before = head.querySelector('img')!.className;
-    fireEvent.click(head);
-    expect(head.querySelector('img')!.className).not.toEqual(before);
-  });
 });
 
 /**
@@ -463,6 +444,43 @@ describe('the photos tab', () => {
     fireEvent.click(screen.getByRole('button', { name: /New Folder/ }));
     expect(await screen.findByLabelText('Folder name')).toHaveValue('');
   });
+
+  it('replaces the folder shelf with the selected folder preview and upload controls', async () => {
+    api.getPhotos.mockResolvedValue({
+      folders: [{ id: 'f1', name: 'WTF', photo_count: 1 }],
+      photos: [{ id: 'p1', folder_id: 'f1', image_url: '/photo.jpg' }],
+      can_arrange: true,
+      can_upload: true,
+    } as any);
+    await openPhotos();
+    fireEvent.click(await screen.findByRole('button', { name: /WTF/ }));
+
+    expect(screen.queryByRole('button', { name: /New Folder/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /WTF/ })).toBeNull();
+    expect(screen.getByRole('button', { name: '← Back' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '+ Add Photos' }));
+    const input = document.querySelector('input[type="file"][accept="image/*"]');
+    expect(input).toBeInTheDocument();
+    expect(screen.getByRole('img')).toBeInTheDocument();
+  });
+
+  it('uploads selected photos into the open folder', async () => {
+    api.getPhotos.mockResolvedValue({
+      folders: [{ id: 'f1', name: 'WTF', photo_count: 0 }],
+      photos: [],
+      can_arrange: true,
+      can_upload: true,
+    } as any);
+    await openPhotos();
+    fireEvent.click(await screen.findByRole('button', { name: /WTF/ }));
+    const input = document.querySelector('input[type="file"][accept="image/*"]')!;
+    const photo = new File(['image'], 'photo.png', { type: 'image/png' });
+    fireEvent.change(input, { target: { files: [photo] } });
+
+    await waitFor(() =>
+      expect(api.uploadPhoto).toHaveBeenCalledWith('ABC123', 'f1', photo)
+    );
+  });
 });
 
 /**
@@ -473,16 +491,13 @@ describe('the photos tab', () => {
  * nothing about which.
  */
 /**
- * The questions tab on the host's desk.
- *
- * Reading, not deciding. Approve and Reject are Message Requests'
- * job; having them in both places meant the same question appeared
- * twice with two sets of buttons and then vanished from here the
- * moment it was let through.
+ * Published questions on the host's desk, with pending requests shown
+ * separately underneath them.
  */
 describe('the questions tab', () => {
   const approved = (over: any = {}) => ({
     id: 'q1', body: 'What happens to the escalation list?',
+    topic: 'faq',
     sender_name: 'John D.', sender_id: 'u2', sender_email: null,
     sender_is_guest: false, recipient_id: null, recipient_name: null,
     recipient_is_guest: false, is_direct: false,
@@ -525,7 +540,7 @@ describe('the questions tab', () => {
     expect(within(group).queryByText('“About the field.”')).toBeNull();
   });
 
-  /** Deciding happens in Message Requests, not here. */
+  /** Published questions are read-only; requests have their own controls. */
   it('offers no way to decide one', async () => {
     api.getModerationQueue.mockResolvedValue(
       queue([approved()]) as any
@@ -565,6 +580,86 @@ describe('the questions tab', () => {
     await openQuestions();
 
     expect(await screen.findByText('2 questions')).toBeInTheDocument();
+  });
+
+  it('shows all questions in a two-question-height scroll area with read-only totals', async () => {
+    api.getModerationQueue.mockResolvedValue(queue([
+      approved({ id: 'q1', session: 's1', body: 'Question one' }),
+      approved({ id: 'q2', session: 's1', body: 'Question two' }),
+      approved({ id: 'q3', session: 's1', body: 'Question three' }),
+      approved({ id: 'q4', session: 's1', body: 'Question four' }),
+    ]) as any);
+    api.getEventBoard.mockResolvedValue({
+      faq: [
+        { id: 'q1', score: 29, upvote_count: 31, downvote_count: 2 },
+      ],
+      suggestions: [],
+    } as any);
+
+    await openQuestions();
+
+    expect(await screen.findByText('“Question one”')).toBeInTheDocument();
+    expect(screen.getByText('“Question two”')).toBeInTheDocument();
+    expect(screen.getByText('“Question three”')).toBeInTheDocument();
+    expect(screen.getByText('“Question four”')).toBeInTheDocument();
+    expect(screen.getByLabelText('31 upvotes')).toBeInTheDocument();
+    expect(screen.getByLabelText('2 downvotes')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Vote up' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Vote down' })).toBeNull();
+    expect(screen.getByText('“Question one”').closest('.overflow-y-auto'))
+      .toHaveClass('max-h-[210px]');
+  });
+
+  it('ranks questions by net votes, leaving the most upvoted first', async () => {
+    api.getModerationQueue.mockResolvedValue(queue([
+      approved({ id: 'q1', session: 's1', body: 'Negative score' }),
+      approved({ id: 'q2', session: 's1', body: 'Most upvoted' }),
+      approved({ id: 'q3', session: 's1', body: 'Middle score' }),
+    ]) as any);
+    api.getEventBoard.mockResolvedValue({
+      faq: [
+        { id: 'q1', score: -2, upvote_count: 1, downvote_count: 3 },
+        { id: 'q2', score: 8, upvote_count: 9, downvote_count: 1 },
+        { id: 'q3', score: 2, upvote_count: 4, downvote_count: 2 },
+      ],
+      suggestions: [],
+    } as any);
+
+    await openQuestions();
+
+    const group = screen.getByText('Opening Keynote')
+      .closest('.bg-white') as HTMLElement;
+    const cards = Array.from(group.querySelectorAll('p'))
+      .map((card) => card.textContent)
+      .filter((text) => text?.startsWith('“'));
+    expect(cards).toEqual([
+      '“Most upvoted”',
+      '“Middle score”',
+      '“Negative score”',
+    ]);
+  });
+
+  it('shows suggestions separately from questions', async () => {
+    api.getModerationQueue.mockResolvedValue(queue([
+      approved({ id: 'q1', topic: 'faq', body: 'A question', session: 's1' }),
+      approved({ id: 's1', topic: 'suggestion', body: 'A suggestion', session: 's1' }),
+    ]) as any);
+    api.getEventBoard.mockResolvedValue({
+      faq: [{ id: 'q1', asked_by: 'John D.', score: 0,
+        upvote_count: 0, downvote_count: 0 }],
+      suggestions: [{ id: 's1', body: 'A suggestion', asked_by: 'John D.',
+        created_at: new Date().toISOString(), score: 0,
+        upvote_count: 5, downvote_count: 2 }],
+    } as any);
+
+    await openQuestions();
+    expect(await screen.findByText('“A question”')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Suggestions' }));
+
+    expect(await screen.findByText('“A suggestion”')).toBeInTheDocument();
+    expect(screen.queryByText('“A question”')).toBeNull();
+    expect(screen.queryByLabelText(/upvotes/)).toBeNull();
+    expect(screen.queryByLabelText(/downvotes/)).toBeNull();
   });
 
   it('offers no Add on the questions tab', async () => {

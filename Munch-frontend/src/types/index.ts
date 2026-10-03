@@ -752,6 +752,9 @@ export interface BoardEntry {
   sent_to: string | null;
   /** Upvotes less downvotes — the room's sense of what wants answering. */
   score: number;
+  /** Individual totals, shown read-only on the host's live desk. */
+  upvote_count?: number;
+  downvote_count?: number;
   /** How this reader voted: 1, -1, or 0 for not yet. */
   my_vote: number;
   /** The answer from the front of the room; empty until one is written. */
