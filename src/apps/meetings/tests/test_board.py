@@ -559,7 +559,7 @@ class AnsweringTests(TestCase):
 
 
 class BoardVotingTests(TestCase):
-    """Everybody in the event gets one vote on what is up there."""
+    """Attendees get one vote; the host reads the tally without voting."""
 
     def setUp(self):
         self.host = make_host('host@example.com')
@@ -622,10 +622,16 @@ class BoardVotingTests(TestCase):
 
     def test_votes_from_different_people_add_up(self):
         self.cast(1)
-        self.cast(1, client=self.host_client)
         self.cast(1, client=signed_in(self.asker))
 
-        self.assertEqual(self.board()['faq'][0]['score'], 3)
+        self.assertEqual(self.board()['faq'][0]['score'], 2)
+
+    def test_the_host_cannot_vote(self):
+        response = self.cast(1, client=self.host_client)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()['code'], 'host_cannot_vote')
+        self.assertEqual(HubVote.objects.filter(message=self.question).count(), 0)
 
     def test_a_guest_gets_one_too(self):
         from src.apps.meetings.guest_tokens import make_guest_token
@@ -644,6 +650,8 @@ class BoardVotingTests(TestCase):
 
         self.assertEqual(self.board()['faq'][0]['my_vote'], 1)
         self.assertEqual(self.board(self.host_client)['faq'][0]['my_vote'], 0)
+        self.assertEqual(self.board()['faq'][0]['upvote_count'], 1)
+        self.assertEqual(self.board()['faq'][0]['downvote_count'], 0)
 
     def test_the_most_wanted_question_comes_first(self):
         quiet = ChatMessage.objects.create(
@@ -654,7 +662,7 @@ class BoardVotingTests(TestCase):
         )
         self.cast(1, message=quiet)
         self.cast(1)
-        self.cast(1, client=self.host_client)
+        self.cast(1, client=signed_in(self.asker))
 
         self.assertEqual(self.board()['faq'][0]['body'], 'When is the reception?')
 

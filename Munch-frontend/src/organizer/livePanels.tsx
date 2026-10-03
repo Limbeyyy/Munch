@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
-import { Artifact, ChatMessage, PhotoPage, Session } from '../types';
+import { Artifact, ChatMessage, EventBoard, PhotoPage, Session } from '../types';
 import { Pair, useOrganizer } from './i18n';
 import { errorText } from './errors';
 import {
@@ -257,13 +257,10 @@ const ago = (iso: string, t: (pair: Pair) => string, num: (n: number | string) =
 };
 
 /**
- * The questions the host has let through.
+ * The questions or suggestions the host has put on their respective boards.
  *
- * Reading, not deciding. Approve and Reject live in Message Requests
- * beside this panel, and having them in both places meant the same
- * question appeared twice with two sets of buttons, and vanished from
- * here the moment it was approved - which is backwards. This is where
- * a question arrives *after* it has been let through.
+ * Published entries and their pending requests, filed together under
+ * the talk they belong to. Approving a request puts it on the same board.
  *
  * Grouped under the talk it was asked during, because a host looking
  * at twenty questions is looking at four talks.
@@ -271,16 +268,21 @@ const ago = (iso: string, t: (pair: Pair) => string, num: (n: number | string) =
 export const PendingQuestions: React.FC<{
   eventId: string;
   sessions: Session[];
-  /** Polled, because they are approved from the panel beside this one. */
+  topic: 'faq' | 'suggestions';
+  /** Refresh the published board entries and their vote totals. */
   refreshMs?: number;
-}> = ({ eventId, sessions, refreshMs = 15000 }) => {
+}> = ({ eventId, sessions, topic, refreshMs = 15000 }) => {
   const { t, num } = useOrganizer();
   const [waiting, setWaiting] = useState<ChatMessage[]>([]);
+  const [board, setBoard] = useState<EventBoard>({ faq: [], suggestions: [] });
   const [shut, setShut] = useState<string[]>([]);
 
   const read = useCallback(() => {
     apiClient.getModerationQueue(eventId)
       .then((queue) => setWaiting(queue.approved))
+      .catch(() => undefined);
+    apiClient.getEventBoard(eventId)
+      .then(setBoard)
       .catch(() => undefined);
   }, [eventId]);
 
@@ -297,17 +299,68 @@ export const PendingQuestions: React.FC<{
     [sessions]
   );
 
+  const messages = useMemo(() => {
+    const fromQueue = new Map(
+      waiting.filter((message) => topic === 'faq'
+        ? message.topic === 'faq'
+        : message.topic === 'suggestion')
+        .map((message) => [message.id, message])
+    );
+    const entries = topic === 'faq' ? board.faq : board.suggestions;
+    const fromBoard = entries.map((entry) => {
+      const details = fromQueue.get(entry.id);
+      return {
+        id: entry.id,
+        body: entry.body,
+        sender_name: details?.sender_name ?? entry.asked_by,
+        created_at: entry.created_at,
+        session: details?.session ?? null,
+        session_title: details?.session_title ?? null,
+        upvote_count: entry.upvote_count ?? 0,
+        downvote_count: entry.downvote_count ?? 0,
+        score: entry.score ?? (entry.upvote_count ?? 0) - (entry.downvote_count ?? 0),
+      };
+    });
+    const boardIds = new Set(fromBoard.map((entry) => entry.id));
+    const queueOnly = Array.from(fromQueue.values())
+      .filter((message) => !boardIds.has(message.id))
+      .map((message) => {
+        const entry = entries.find((item) => item.id === message.id);
+        return {
+          id: message.id,
+          body: message.body,
+          sender_name: message.sender_name,
+          created_at: message.created_at,
+          session: message.session,
+          session_title: message.session_title,
+          upvote_count: entry?.upvote_count ?? 0,
+          downvote_count: entry?.downvote_count ?? 0,
+          score: entry?.score
+            ?? (entry?.upvote_count ?? 0) - (entry?.downvote_count ?? 0),
+        };
+      });
+    const combined = [...fromBoard, ...queueOnly];
+    return topic === 'faq'
+      ? combined.sort((a, b) =>
+          b.score - a.score
+          || b.upvote_count - a.upvote_count
+          || a.downvote_count - b.downvote_count
+          || +new Date(a.created_at) - +new Date(b.created_at)
+        )
+      : combined;
+  }, [board, topic, waiting]);
+
   const groups = useMemo(() => {
     const named = order
       .map((one) => ({
         id: one.id,
         title: one.title,
         under: one.speaker_name || '',
-        mine: waiting.filter((m) => m.session === one.id),
+        mine: messages.filter((m) => m.session === one.id),
       }))
       .filter((g) => g.mine.length > 0);
 
-    const loose = waiting.filter(
+    const loose = messages.filter(
       (m) => !m.session || !order.some((s) => s.id === m.session)
     );
     return loose.length > 0
@@ -318,21 +371,26 @@ export const PendingQuestions: React.FC<{
           mine: loose,
         }]
       : named;
-  }, [order, waiting, t]);
+  }, [messages, order, t]);
 
   if (groups.length === 0) {
     return (
       <p className="px-4 py-6 text-[12.5px] text-[#99a1af]">
-        {t({
-          ne: 'अझै कुनै प्रश्न स्वीकृत भएको छैन।',
-          en: 'Nothing has been let through yet.',
-        })}
+        {topic === 'faq'
+          ? t({
+              ne: 'अझै कुनै प्रश्न स्वीकृत भएको छैन।',
+              en: 'Nothing has been let through yet.',
+            })
+          : t({
+              ne: 'अझै कुनै सुझाव छैन।',
+              en: 'No suggestions yet.',
+            })}
       </p>
     );
   }
 
   return (
-    <div className="max-h-[280px] overflow-y-auto overscroll-contain p-4 flex flex-col gap-3">
+    <div className="max-h-[360px] overflow-y-auto overscroll-contain p-4 flex flex-col gap-3">
       {groups.map((group) => {
         const open = !shut.includes(group.id);
         return (
@@ -375,46 +433,73 @@ export const PendingQuestions: React.FC<{
               <span className="flex-none bg-[#f3f4f6] rounded-full px-2 py-0.5
                 text-[12px] font-medium leading-4 text-[#6a7282]">
                 {t({
-                  ne: `${num(group.mine.length)} प्रश्न`,
-                  en: `${group.mine.length} question`
-                    + `${group.mine.length === 1 ? '' : 's'}`,
+                  ne: topic === 'faq'
+                    ? `${num(group.mine.length)} प्रश्न`
+                    : `${num(group.mine.length)} सुझाव`,
+                  en: topic === 'faq'
+                    ? `${group.mine.length} question${group.mine.length === 1 ? '' : 's'}`
+                    : `${group.mine.length} suggestion${group.mine.length === 1 ? '' : 's'}`,
                 })}
               </span>
             </button>
 
             {open && (
-              <div className="px-4 pt-1 pb-4 flex flex-col gap-2">
-                {group.mine.map((one) => (
-                  <div
-                    key={one.id}
-                    className="bg-white border-[0.612px] border-[#b3b3b3]
-                      rounded-[12px] p-4"
-                  >
-                    <div className="flex gap-3 items-start">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[14px] leading-[22.75px] text-[#101828]">
-                          “{one.body}”
-                        </p>
-                        <div className="pt-2 flex gap-3 items-center flex-wrap">
-                          <span className="text-[12px] font-medium leading-4
-                            text-[#6a7282]">
-                            {one.sender_name}
-                          </span>
-                          <span className="text-[12px] leading-4 text-[#99a1af]">
-                            {ago(one.created_at, t, num)}
-                          </span>
-                          {one.session_title && (
-                            <span className="bg-[#f3f4f6] rounded-[4px] px-1.5 py-0.5
-                              text-[11px] leading-[14.667px] text-[#6a7282]">
-                              {one.session_title}
+              <div className="max-h-[210px] overflow-y-auto overscroll-contain
+                px-4 pt-1 pb-4 flex flex-col gap-2">
+                {group.mine.map((one) => {
+                  return (
+                    <div
+                      key={one.id}
+                      className="bg-white border-[0.612px] border-[#b3b3b3]
+                        rounded-[12px] p-4"
+                    >
+                      <div className="flex gap-3 items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[14px] leading-[22.75px] text-[#101828]">
+                            “{one.body}”
+                          </p>
+                          <div className="pt-2 flex gap-3 items-center flex-wrap">
+                            <span className="text-[12px] font-medium leading-4
+                              text-[#6a7282]">
+                              {one.sender_name}
                             </span>
-                          )}
+                            <span className="text-[12px] leading-4 text-[#99a1af]">
+                              {ago(one.created_at, t, num)}
+                            </span>
+                            {one.session_title && (
+                              <span className="bg-[#f3f4f6] rounded-[4px] px-1.5 py-0.5
+                                text-[11px] leading-[14.667px] text-[#6a7282]">
+                                {one.session_title}
+                              </span>
+                            )}
+                          </div>
                         </div>
+                        {topic === 'faq' && (
+                          <div className="flex flex-none items-center gap-1.5">
+                            <span
+                              aria-label={`${num(one.upvote_count)} upvotes`}
+                              className="rounded-[8px] bg-[#194D97] px-2 py-1
+                                flex items-center gap-1 text-[12px] font-medium
+                                leading-4 text-white"
+                            >
+                              <span aria-hidden>▲</span>
+                              {num(one.upvote_count)}
+                            </span>
+                            <span
+                              aria-label={`${num(one.downvote_count)} downvotes`}
+                              className="rounded-[8px] bg-[#f3f4f6] px-2 py-1
+                                flex items-center gap-1 text-[12px] font-medium
+                                leading-4 text-[#6a7282]"
+                            >
+                              <span aria-hidden>▼</span>
+                              {num(one.downvote_count)}
+                            </span>
+                          </div>
+                        )}
                       </div>
-
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -449,6 +534,8 @@ export const PhotoFolderStrip: React.FC<{ eventRef: string }> = ({ eventRef }) =
   const [open, setOpen] = useState<string | null>(null);
   const [naming, setNaming] = useState(false);
   const [making, setMaking] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const photoInput = useRef<HTMLInputElement>(null);
 
   const read = useCallback(() => {
     apiClient.getPhotos(eventRef).then(setPage).catch(() => setPage(null));
@@ -470,13 +557,39 @@ export const PhotoFolderStrip: React.FC<{ eventRef: string }> = ({ eventRef }) =
     }
   };
 
+  const addPhotos = async (files: File[]) => {
+    if (!open || files.length === 0) return;
+    setUploading(true);
+    let added = 0;
+    for (const file of files) {
+      try {
+        await apiClient.uploadPhoto(eventRef, open, file);
+        added += 1;
+      } catch (e: any) {
+        toast.error(errorText(
+          e,
+          t({ ne: `${file.name} थप्न सकिएन`, en: `Could not add ${file.name}` })
+        ));
+      }
+    }
+    if (added > 0) {
+      toast.success(t({
+        ne: `${num(added)} तस्बिर थपियो`,
+        en: `${added} photo${added === 1 ? '' : 's'} added`,
+      }));
+      read();
+    }
+    setUploading(false);
+    if (photoInput.current) photoInput.current.value = '';
+  };
+
   const folders = page?.folders ?? [];
   const inside = page?.photos.filter((p) => p.folder_id === open) ?? [];
 
   return (
     <div className="p-4">
       <div className="flex gap-2 items-stretch flex-wrap">
-        {page?.can_arrange && (
+        {!open && page?.can_arrange && (
           <button
             type="button"
             disabled={making}
@@ -498,11 +611,11 @@ export const PhotoFolderStrip: React.FC<{ eventRef: string }> = ({ eventRef }) =
           </button>
         )}
 
-        {folders.length === 0 ? (
+        {!open && folders.length === 0 ? (
           <p className="self-center text-[12.5px] text-[#99a1af]">
             {t({ ne: 'अझै कुनै फोल्डर छैन।', en: 'No folders yet.' })}
           </p>
-        ) : (
+        ) : !open ? (
           folders.map((one) => (
             <button
               key={one.id}
@@ -533,7 +646,7 @@ export const PhotoFolderStrip: React.FC<{ eventRef: string }> = ({ eventRef }) =
               </span>
             </button>
           ))
-        )}
+        ) : null}
       </div>
 
       {/* 641-19229 */}
@@ -544,28 +657,63 @@ export const PhotoFolderStrip: React.FC<{ eventRef: string }> = ({ eventRef }) =
         onCreate={make}
       />
 
-      {/* What is in the one that was opened. The shelf on its own would
-          say how many photographs there are and never show one. */}
       {open && (
-        inside.length === 0 ? (
-          <p className="pt-4 text-[12.5px] text-[#99a1af]">
-            {t({ ne: 'यो फोल्डर खाली छ।', en: 'This folder is empty.' })}
-          </p>
-        ) : (
-          <div
-            className="pt-4 grid gap-2"
-            style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(96px,1fr))' }}
-          >
-            {inside.map((photo) => (
-              <PhotoImage
-                key={photo.id}
-                photo={photo}
-                className="w-full aspect-square object-cover rounded-[8px]
-                  bg-[#f3f4f6]"
-              />
-            ))}
+        <div className="mt-1 min-h-[240px] rounded-[10px] border border-[#e3e8ef] bg-white p-4">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setOpen(null)}
+              className="text-[13px] font-medium text-[#194d97] hover:underline"
+            >
+              {t({ ne: '← पछाडि', en: '← Back' })}
+            </button>
+            <h3 className="min-w-0 flex-1 truncate text-center text-[14px]
+              font-semibold text-[#101828]">
+              {folders.find((folder) => folder.id === open)?.name}
+            </h3>
+            {page?.can_upload ? (
+              <button
+                type="button"
+                disabled={uploading}
+                onClick={() => photoInput.current?.click()}
+                className="flex-none rounded-[8px] bg-navy-800 px-3 py-2
+                  text-[12px] font-medium text-white hover:bg-navy-700
+                  disabled:opacity-50"
+              >
+                {uploading
+                  ? t({ ne: 'थपिँदै…', en: 'Adding…' })
+                  : t({ ne: '+ तस्बिर थप्नुहोस्', en: '+ Add Photos' })}
+              </button>
+            ) : <span className="flex-none w-[58px]" />}
           </div>
-        )
+          <input
+            ref={photoInput}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={(event) => addPhotos(Array.from(event.target.files ?? []))}
+          />
+          {inside.length === 0 ? (
+            <p className="py-12 text-center text-[12.5px] text-[#99a1af]">
+              {t({ ne: 'यो फोल्डर खाली छ।', en: 'This folder is empty.' })}
+            </p>
+          ) : (
+            <div
+              className="grid gap-3"
+              style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))' }}
+            >
+              {inside.map((photo) => (
+                <PhotoImage
+                  key={photo.id}
+                  photo={photo}
+                  className="w-full aspect-square object-cover rounded-[8px]
+                    bg-[#f3f4f6]"
+                />
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

@@ -81,6 +81,8 @@ def _entry(message, *, user=None, guest=None):
         'answered_at': message.answered_at,
         # The room's own sense of what most wants answering.
         'score': score_of(message),
+        'upvote_count': message.votes.filter(value=1).count(),
+        'downvote_count': message.votes.filter(value=-1).count(),
         'my_vote': vote_of(message, user=user, guest=guest),
         # Who a question was put to, shown at the host's request: on a
         # board of questions it usually says which speaker is meant to
@@ -110,6 +112,8 @@ def _hub_entry(post, *, user=None, guest=None):
         'answered_by': post.answered_by,
         'answered_at': None,
         'score': hub.score_of(post),
+        'upvote_count': post.votes.filter(value=1).count(),
+        'downvote_count': post.votes.filter(value=-1).count(),
         'my_vote': hub.my_vote(post, user=user, guest=guest),
         'sent_to': None,
         'created_at': post.created_at,

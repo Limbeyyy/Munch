@@ -62,7 +62,7 @@ const Portrait: React.FC<{
   </span>
 );
 
-type PanelTab = 'slides' | 'questions' | 'photos';
+type PanelTab = 'slides' | 'questions' | 'suggestions' | 'photos';
 
 interface Props {
   /** The room this desk is driving. */
@@ -72,7 +72,7 @@ interface Props {
   live: Session | null;
   /** The controls that belong on the stage card: start it, end it. */
   stageActions?: React.ReactNode;
-  /** The two queues, and the chat switches, down the right-hand side. */
+  /** The other live queues, down the right-hand side. */
   queues?: React.ReactNode;
   /** Re-read the day after the running order has been rearranged. */
   onChanged: () => Promise<void> | void;
@@ -83,7 +83,7 @@ interface Props {
  * The host's live dashboard.
  *
  * What is on stage across the top, what is being said beside it, what the
- * day has come to underneath, and the two queues waiting on the host down
+ * day has come to underneath, and the queues waiting on the host down
  * the right. It is the host's own screen rather than the attendee's with
  * things bolted on: the two are laid out differently, and a shared
  * component pulled in both directions would serve neither.
@@ -139,6 +139,7 @@ export const LiveDashboard: React.FC<Props> = ({
   const TABS: { id: PanelTab; label: Pair }[] = [
     { id: 'slides', label: { ne: 'स्लाइड', en: 'Slides' } },
     { id: 'questions', label: { ne: 'प्रश्न', en: 'Questions' } },
+    { id: 'suggestions', label: { ne: 'सुझाव', en: 'Suggestions' } },
     { id: 'photos', label: { ne: 'तस्बिर', en: 'Photos' } },
   ];
 
@@ -232,7 +233,7 @@ export const LiveDashboard: React.FC<Props> = ({
               )}
             </div>
 
-            {/* Slides, questions, photos - the three things a room
+            {/* Slides, questions, suggestions and photos - the four things a room
                 carries. On the same sheet as the talk they belong to
                 rather than adrift underneath it. */}
             <div className="bg-[#fcfcfc] h-12 flex items-stretch
@@ -243,7 +244,7 @@ export const LiveDashboard: React.FC<Props> = ({
                   role="tab"
                   aria-selected={tab === one.id}
                   onClick={() => setTab(one.id)}
-                  className={`w-[125px] text-[14px] -mb-px border-b-[3px] ${
+                  className={`min-w-0 flex-1 px-1 text-[14px] -mb-px border-b-[3px] ${
                     tab === one.id
                       ? 'border-black text-black font-semibold'
                       : 'border-transparent text-[#49454f]'
@@ -268,7 +269,18 @@ export const LiveDashboard: React.FC<Props> = ({
                 />
               )}
               {tab === 'questions' && (
-                <PendingQuestions eventId={event.id} sessions={sessions} />
+                <PendingQuestions
+                  eventId={event.id}
+                  sessions={sessions}
+                  topic="faq"
+                />
+              )}
+              {tab === 'suggestions' && (
+                <PendingQuestions
+                  eventId={event.id}
+                  sessions={sessions}
+                  topic="suggestions"
+                />
               )}
               {tab === 'photos' && <PhotoFolderStrip eventRef={event.code} />}
             </div>
