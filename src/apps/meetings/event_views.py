@@ -25,7 +25,9 @@ from src.apps.meetings.lifecycle import (
     session_is_over as _session_is_over,
 )
 from src.apps.meetings.scheduling import absorb_overrun, begin_now
-from src.apps.meetings.views import EventRoomViewSet
+from src.apps.meetings.views import (
+    EventRoomViewSet, other_active_event_for_host,
+)
 from src.apps.meetings.models import (
     RoleGrant,
     SessionSummary,
@@ -651,6 +653,19 @@ class SessionViewSet(viewsets.ModelViewSet):
 
         if session.status == Session.Status.LIVE:
             return Response(SessionSerializer(session).data)
+
+        other = other_active_event_for_host(session.event)
+        if other is not None:
+            return Response(
+                {
+                    'error': (
+                        f'You are already hosting "{other.title}". '
+                        'End it before starting another event.'
+                    ),
+                    'code': 'host_already_live',
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
 
         now = timezone.now()
 

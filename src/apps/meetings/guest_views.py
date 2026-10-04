@@ -177,9 +177,15 @@ def guest_knock(request):
             )
 
     if returning is not None:
+        fields = ['status', 'left_at', 'updated_at']
         if returning.status != GuestAttendee.Status.ADMITTED:
             returning.status = GuestAttendee.Status.ADMITTED
-            returning.save(update_fields=['status', 'updated_at'])
+            returning.left_at = None
+        device_id = (data.get('device_id') or '').strip()
+        if device_id and not returning.device_id:
+            returning.device_id = device_id
+            fields.append('device_id')
+        returning.save(update_fields=fields)
         logger.info(
             f"Guest {returning.full_name} rejoined {event.code} "
             f"without re-approval"
@@ -196,6 +202,51 @@ def guest_knock(request):
             },
             status=status.HTTP_200_OK
         )
+
+    # A random id kept by this browser lets the same guest return after
+    # session storage (and its signed pass) has gone away. Requiring both
+    # that credential and the name avoids treating a name alone as proof.
+    device_id = (data.get('device_id') or '').strip()
+    if device_id:
+        returning = GuestAttendee.objects.filter(
+            event=event,
+            device_id=device_id,
+            full_name__iexact=data['full_name'],
+        ).order_by('-created_at').first()
+        if returning is not None:
+            if returning.status == GuestAttendee.Status.DENIED:
+                return Response(
+                    {'error': 'The host declined your request to join this event'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            if returning.status in (
+                GuestAttendee.Status.ADMITTED, GuestAttendee.Status.LEFT
+            ):
+                returning.status = GuestAttendee.Status.ADMITTED
+                returning.left_at = None
+                returning.save(update_fields=['status', 'left_at', 'updated_at'])
+                logger.info(
+                    f"Guest {returning.full_name} rejoined {event.code} "
+                    f"from their approved device without re-approval"
+                )
+                return Response(
+                    {
+                        'guest_token': make_guest_token(returning),
+                        'guest': GuestAttendeeSerializer(returning).data,
+                        'event': {'code': event.code, 'title': event.title},
+                        'rejoined': True,
+                    },
+                    status=status.HTTP_200_OK
+                )
+            return Response(
+                {
+                    'guest_token': make_guest_token(returning),
+                    'guest': GuestAttendeeSerializer(returning).data,
+                    'event': {'code': event.code, 'title': event.title},
+                    'rejoined': False,
+                },
+                status=status.HTTP_200_OK
+            )
 
     # Somebody who has been at this door before under this name is that
     # same person as far as the register is concerned, so their row is
@@ -220,7 +271,9 @@ def guest_knock(request):
             )
         again.status = GuestAttendee.Status.PENDING
         again.left_at = None
-        again.save(update_fields=['status', 'left_at', 'updated_at'])
+        if device_id:
+            again.device_id = device_id
+        again.save(update_fields=['status', 'left_at', 'device_id', 'updated_at'])
         notify_host_of_guest(again)
         logger.info(
             f"Guest {again.full_name} asked to rejoin {event.code} by name"
@@ -238,6 +291,7 @@ def guest_knock(request):
     guest = GuestAttendee.objects.create(
         event=event,
         full_name=data['full_name'],
+        device_id=device_id,
     )
     notify_host_of_guest(guest)
 

@@ -31,13 +31,14 @@ class GuestDoorTests(TestCase):
         self.event.save()
         self.session = make_session(self.event, start, 60, 'Haldi')
 
-    def knock(self, name, phone='9812345678'):
+    def knock(self, name, phone='9812345678', device_id=''):
         return self.client.post(
             f'{API}/events/guest/knock/',
             {
                 'code': self.event.code,
                 'full_name': name,
                 'phone': phone,
+                **({'device_id': device_id} if device_id else {}),
             },
             content_type='application/json',
         )
@@ -281,6 +282,47 @@ class GuestsAreNotKeptTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()['rejoined'])
+
+    def test_approved_guest_returns_from_the_same_device_and_name(self):
+        guest = self.admit(GuestAttendee.objects.create(
+            event=self.event,
+            full_name='Bishnu Prasad',
+            device_id='random-browser-credential',
+        ))
+
+        response = self.knock(
+            'bishnu prasad', device_id='random-browser-credential'
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['rejoined'])
+        self.assertEqual(response.json()['guest']['id'], str(guest.id))
+
+    def test_a_different_device_still_needs_approval(self):
+        self.admit(GuestAttendee.objects.create(
+            event=self.event,
+            full_name='Bishnu Prasad',
+            device_id='original-browser',
+        ))
+
+        response = self.knock('Bishnu Prasad', device_id='another-browser')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()['rejoined'])
+        self.assertEqual(response.json()['guest']['status'], 'pending')
+
+    def test_a_matching_device_with_a_different_name_still_needs_approval(self):
+        self.admit(GuestAttendee.objects.create(
+            event=self.event,
+            full_name='Bishnu Prasad',
+            device_id='original-browser',
+        ))
+
+        response = self.knock('Somebody Else', device_id='original-browser')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(response.json()['rejoined'])
+        self.assertEqual(response.json()['guest']['status'], 'pending')
 
     def test_a_name_alone_does_not_walk_in_on_somebody_elses_approval(self):
         # The old rule looked guests up by what they typed, so anybody who

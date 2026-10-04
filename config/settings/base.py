@@ -211,10 +211,10 @@ CELERY_BEAT_SCHEDULE = {
     },
     'evict-idle-attendees': {
         # Nobody sends a message saying they have stopped paying
-        # attention, so something has to come round and notice. Every
-        # minute, because the register should not be a minute out.
+        # attention, so something has to come round and notice. Keep the
+        # room's response close to the host's configured timeout.
         'task': 'src.apps.meetings.tasks.evict_idle_attendees',
-        'schedule': 60.0,
+        'schedule': 5.0,
     },
     'cleanup-old-meetings-daily': {
         'task': 'src.workers.meeting_worker.cleanup_old_meetings',

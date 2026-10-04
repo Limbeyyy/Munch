@@ -29,6 +29,15 @@ from src.utilities.exceptions import MeetingException, PermissionDeniedException
 
 logger = logging.getLogger(__name__)
 
+
+def other_active_event_for_host(event):
+    """Return another live event owned by this host, if there is one."""
+    return Event.objects.filter(
+        host_id=event.host_id,
+        status=Event.Status.ACTIVE,
+    ).exclude(pk=event.pk).first()
+
+
 MAX_RESOURCE_UPLOAD_BYTES = 25 * 1024 * 1024
 
 
@@ -406,6 +415,19 @@ class EventRoomViewSet(viewsets.ModelViewSet):
             return Response(
                 {'error': 'This event has already ended'},
                 status=status.HTTP_400_BAD_REQUEST
+            )
+
+        other = other_active_event_for_host(event)
+        if other is not None:
+            return Response(
+                {
+                    'error': (
+                        f'You are already hosting "{other.title}". '
+                        'End it before starting another event.'
+                    ),
+                    'code': 'host_already_live',
+                },
+                status=status.HTTP_409_CONFLICT,
             )
 
         # Starting before its hour is allowed, and means the event is

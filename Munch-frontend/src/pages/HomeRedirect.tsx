@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { apiClient } from '../services/api';
+import { useAuthStore } from '../store/authStore';
 import { OrganizerProvider } from '../organizer/i18n';
 import type { UserRoles } from '../types';
 
@@ -140,11 +141,12 @@ const Loading: React.FC = () => (
  */
 const HomeRedirectInner: React.FC = () => {
   const [target, setTarget] = useState<string | null>(null);
+  const userId = useAuthStore((state) => state.user?.id);
 
-  const settle = useCallback((portal: Portal) => {
+  const settle = useCallback((portal: Portal, destination = PATH[portal]) => {
     clearFreshSignIn();
     rememberPortal(portal);
-    setTarget(PATH[portal]);
+    setTarget(destination);
   }, []);
 
   useEffect(() => {
@@ -156,18 +158,56 @@ const HomeRedirectInner: React.FC = () => {
       .then(async (found) => {
         if (cancelled) return;
 
-        // Anything other than a fresh sign-in follows what they last
-        // said, while it is still true of them: somebody who switched
-        // portals should not be sent back on the next visit.
+        // Keep a valid preference for ordinary visits, but let a room
+        // already in progress take precedence over the dashboard.
+        let portal: Portal;
         if (!justSignedIn) {
           const saved = rememberedPortal();
           if (saved && found.portals.includes(saved)) {
-            setTarget(PATH[saved]);
-            return;
+            portal = saved;
+          } else {
+            portal = portalFor(found, looksLikeDesktop());
           }
+        } else {
+          portal = portalFor(found, looksLikeDesktop());
         }
 
-        const portal = portalFor(found, looksLikeDesktop());
+        let active: Awaited<ReturnType<typeof apiClient.getActiveEvents>> = [];
+        try {
+          active = await apiClient.getActiveEvents();
+        } catch {
+          // A room lookup must not prevent somebody from reaching a portal.
+        }
+
+        let preferredCode = '';
+        try {
+          preferredCode = sessionStorage.getItem('manch.pending_live_event') ?? '';
+          sessionStorage.removeItem('manch.pending_live_event');
+        } catch {
+          // Continue with the active room list.
+        }
+        const preferred = active.find(
+          (event) => event.code.toUpperCase() === preferredCode.toUpperCase()
+        );
+        const live = preferred
+          ?? active.find((event) => String(event.host?.id ?? '') === String(userId ?? ''))
+          ?? active[0];
+
+        if (live) {
+          if (String(live.host?.id ?? '') === String(userId ?? '')) {
+            if (!cancelled) settle('host', `/event/${live.code}`);
+          } else if (found.portals.includes('attendee')) {
+            try {
+              sessionStorage.setItem('manch.pending_live_event', live.code);
+            } catch {
+              // The attendee room will select the first live event.
+            }
+            if (!cancelled) settle('attendee');
+          } else if (!cancelled) {
+            settle(portal, `/event/${live.code}`);
+          }
+          return;
+        }
 
         // Sending somebody to the host portal who is not a host yet has
         // to actually make them one, or they arrive at a locked door.
@@ -193,7 +233,7 @@ const HomeRedirectInner: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [settle]);
+  }, [settle, userId]);
 
   if (target) return <Navigate to={target} replace />;
   return <Loading />;

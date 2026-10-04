@@ -304,7 +304,7 @@ describe('the room as the design lays it out', () => {
     expect(screen.getByRole('tab', { name: /Suggestions/ })).toBeInTheDocument();
   });
 
-  it('shows question requests and their actions inside the room Questions panel', async () => {
+  it('keeps question requests out of Questions and handles them in Requests', async () => {
     const { useAuthStore } = require('../../store/authStore');
     useAuthStore.setState({ user: { id: 'u1', email: 'host@example.com' } });
     api.getPendingMessages.mockResolvedValue([{
@@ -317,7 +317,9 @@ describe('the room as the design lays it out', () => {
     showRoom();
     await openSide('Questions');
 
-    expect(await screen.findByText('REQUESTS')).toBeInTheDocument();
+    expect(screen.queryByText('REQUESTS')).toBeNull();
+    await openSide('Requests');
+    fireEvent.click(await screen.findByRole('tab', { name: /Board/ }));
     expect(screen.getByText('What time is it today?')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Accept' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
@@ -733,9 +735,7 @@ describe('the room without a chat', () => {
 /**
  * A guest at the door.
  *
- * Moderation used to carry a queue of them; it does not any more, so
- * these two are the whole of how somebody is let in - this popup, and
- * the Join Request card on live control. Both call the same endpoint.
+ * Room entry and board requests share the host's Requests panel.
  */
 describe('letting a guest in from the room', () => {
   const knocking = {
@@ -750,19 +750,22 @@ describe('letting a guest in from the room', () => {
     api.getGuests.mockResolvedValue([knocking] as any);
     api.admitGuest.mockResolvedValue({} as any);
     showRoom();
-    return screen.findByLabelText('Rahul Ingnam is asking to join');
+    await waitFor(() => expect(api.getGuests).toHaveBeenCalledWith('m1'));
   };
 
-  it('shows who is asking, without being gone in a moment', async () => {
+  it('shows guest join requests in the Room tab', async () => {
     await withGuest();
 
-    expect(screen.getByText('Asking to come in (1)')).toBeInTheDocument();
+    await openSide('Requests');
+    expect(await screen.findByRole('tab', { name: /Room \(1\)/ })).toBeInTheDocument();
+    expect(screen.getByText('Rahul Ingnam')).toBeInTheDocument();
   });
 
   it('lets them in', async () => {
     await withGuest();
+    await openSide('Requests');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Let in' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
 
     await waitFor(() =>
       expect(api.admitGuest).toHaveBeenCalledWith('m1', 'g9', 'admit')
@@ -771,8 +774,9 @@ describe('letting a guest in from the room', () => {
 
   it('turns them away', async () => {
     await withGuest();
+    await openSide('Requests');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
 
     await waitFor(() =>
       expect(api.admitGuest).toHaveBeenCalledWith('m1', 'g9', 'deny')
@@ -1245,7 +1249,7 @@ describe('the count on a closed panel', () => {
   const badgeOn = async (name: RegExp, count: string) =>
     waitFor(async () => expect(await barButton(name)).toHaveTextContent(count));
 
-  it('counts a question waiting to be sorted', async () => {
+  it('counts a question waiting to be sorted on Requests', async () => {
     asHost();
     showRoom();
     await screen.findByRole('navigation', { name: 'Event controls' });
@@ -1255,7 +1259,7 @@ describe('the count on a closed panel', () => {
       user_id: 'g1', user_name: 'Rahul', timestamp: new Date().toISOString(),
     });
 
-    await badgeOn(/Questions/, '1');
+    await badgeOn(/Requests/, '1');
   });
 
   it('adds them up while nobody looks', async () => {
@@ -1268,14 +1272,14 @@ describe('the count on a closed panel', () => {
     arrive({ type: 'chat_pending', message_id: 'm2', message: 'Two',
              user_id: 'g1', user_name: 'Rahul', timestamp: new Date().toISOString() });
 
-    await badgeOn(/Questions/, '2');
+    await badgeOn(/Requests/, '2');
   });
 
-  it('shows a new suggestion request in its room tab immediately', async () => {
+  it('shows a new suggestion request in the Board tab immediately', async () => {
     asHost();
     showRoom();
     await screen.findByRole('navigation', { name: 'Event controls' });
-    await openSide('Questions');
+    await openSide('Requests');
 
     const socket = (window as any).__roomSocket;
     act(() => {
@@ -1290,8 +1294,7 @@ describe('the count on a closed panel', () => {
       }) });
     });
 
-    fireEvent.click(await screen.findByRole('tab', { name: 'Suggestions (1)' }));
-    expect(await screen.findByText('REQUESTS')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('tab', { name: 'Board (1)' }));
     expect(screen.getByText('Please share the slides.')).toBeInTheDocument();
   });
 
@@ -1304,28 +1307,37 @@ describe('the count on a closed panel', () => {
     await badgeOn(/Resources/, '1');
   });
 
-  it('clears the moment that panel is opened', async () => {
+  it('keeps the request badge until the host decides it', async () => {
     asHost();
+    api.getPendingMessages.mockResolvedValue([{
+      id: 'm1', body: 'One', sender_id: 'g1', sender_name: 'Rahul',
+      created_at: new Date().toISOString(), moderation_status: 'pending',
+      topic: 'faq',
+    }] as any);
     showRoom();
     await screen.findByRole('navigation', { name: 'Event controls' });
     arrive({ type: 'chat_pending', message_id: 'm1', message: 'One',
              user_id: 'g1', user_name: 'Rahul', timestamp: new Date().toISOString() });
-    await badgeOn(/Questions/, '1');
+    await badgeOn(/Requests/, '1');
 
-    await openSide('Questions');
+    await openSide('Requests');
+    fireEvent.click(await screen.findByRole('tab', { name: /Board/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
 
-    expect(await barButton(/Questions/)).not.toHaveTextContent('1');
+    await waitFor(async () =>
+      expect(await barButton(/Requests/)).not.toHaveTextContent('1')
+    );
   });
 
-  it('and does not count what arrives while it is open', async () => {
+  it('counts a request that arrives while the panel is open', async () => {
     asHost();
     showRoom();
-    await openSide('Questions');
+    await openSide('Requests');
 
     arrive({ type: 'chat_pending', message_id: 'm3', message: 'Three',
              user_id: 'g1', user_name: 'Rahul', timestamp: new Date().toISOString() });
 
-    expect(await barButton(/Questions/)).not.toHaveTextContent('1');
+    await badgeOn(/Requests/, '1');
   });
 
   it('keeps each count to its own panel', async () => {
@@ -1336,7 +1348,7 @@ describe('the count on a closed panel', () => {
     arrive({ type: 'resources_update' });
 
     await badgeOn(/Resources/, '1');
-    expect(await barButton(/Questions/)).not.toHaveTextContent('1');
+    expect(await barButton(/Requests/)).not.toHaveTextContent('1');
   });
 });
 

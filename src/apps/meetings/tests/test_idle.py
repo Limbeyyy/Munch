@@ -5,6 +5,8 @@ afterwards as a record of who was actually there, so a tab left running
 in a window nobody is looking at must not be counted as an afternoon of
 attendance.
 """
+from unittest.mock import patch
+
 from channels.db import database_sync_to_async
 from channels.routing import URLRouter
 from channels.testing import WebsocketCommunicator
@@ -20,6 +22,7 @@ from src.apps.accounts.models import HostAccount
 from src.apps.accounts.tokens import issue_tokens
 from src.apps.meetings.idle import evict_idle, timeout_for
 from src.apps.meetings.models import Event, EventParticipant, GuestAttendee
+from src.apps.meetings.serializers import EventSerializer
 from src.apps.meetings.tests.factories import make_event, make_host
 
 API = '/api/v1'
@@ -133,6 +136,27 @@ class LettingGoOfTheIdleTests(TestCase):
         self.seen(50)
         self.assertEqual(evict_idle(self.event), 1)
 
+    def test_one_minute_setting_drops_somebody_after_one_minute_of_inactivity(self):
+        HostAccount.objects.create(user=self.host, idle_timeout_minutes=1)
+        self.seen(2)
+
+        self.assertEqual(evict_idle(self.event), 1)
+
+        self.row.refresh_from_db()
+        self.assertFalse(self.row.is_active)
+        self.assertAlmostEqual(
+            self.row.left_at.timestamp(),
+            self.row.last_seen_at.timestamp() + 60,
+            delta=0.01,
+        )
+
+    def test_event_exposes_its_hosts_timeout_for_attendee_polling(self):
+        HostAccount.objects.create(user=self.host, idle_timeout_minutes=1)
+
+        self.assertEqual(
+            EventSerializer(self.event).data['idle_timeout_minutes'], 1
+        )
+
     def test_nought_turns_it_off_altogether(self):
         HostAccount.objects.create(user=self.host, idle_timeout_minutes=0)
         self.seen(600)
@@ -160,6 +184,18 @@ class LettingGoOfTheIdleTests(TestCase):
         self.seen(40)
 
         self.assertEqual(evict_idle_attendees(), 1)
+
+    def test_the_sweep_logs_when_there_is_nobody_to_drop(self):
+        from src.apps.meetings.tasks import evict_idle_attendees
+
+        self.seen(0)
+
+        with patch('src.apps.meetings.tasks.logger.info') as log_info:
+            self.assertEqual(evict_idle_attendees(), 0)
+
+        log_info.assert_called_once()
+        self.assertIn('dropped %d idle attendee(s)', log_info.call_args.args[0])
+        self.assertEqual(log_info.call_args.args[1:], (0, 1))
 
 
 class TheIdleSettingTests(TestCase):

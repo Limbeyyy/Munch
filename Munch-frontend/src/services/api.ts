@@ -1033,6 +1033,7 @@ class ApiClient {
     code: string;
     full_name: string;
     token?: string;
+    device_id?: string;
   }): Promise<GuestSession> {
     // Deliberately bypasses the auth interceptor's token: guests have none.
     const response = await axios.post(`${API_BASE_URL}/events/guest/knock/`, data);

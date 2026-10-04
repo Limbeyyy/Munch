@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from './store/authStore';
 import { apiClient } from './services/api';
@@ -77,6 +77,11 @@ const HostRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return allowed ? <>{children}</> : <Navigate to="/" replace />;
 };
 
+const EventLinkRedirect: React.FC = () => {
+  const { eventCode = '' } = useParams<{ eventCode: string }>();
+  return <Navigate to={`/login?join=${encodeURIComponent(eventCode)}`} replace />;
+};
+
 function App() {
   const { getCurrentUser } = useAuthStore();
 
@@ -94,6 +99,7 @@ function App() {
           <Route path="/pricing" element={<PricingPage />} />
 
           {/* Guests: no account, no dashboard */}
+          <Route path="/events/:eventCode" element={<EventLinkRedirect />} />
           <Route path="/guest/waiting" element={<GuestWaitingPage />} />
           <Route path="/guest/event" element={<GuestEventPage />} />
           <Route

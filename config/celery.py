@@ -18,7 +18,7 @@ app.autodiscover_tasks()
 # unregistered and anything scheduled against them is discarded.
 app.conf.imports = (
     'src.workers.drive_worker',
-    'src.workers.meeting_worker',
+    'src.workers.event_worker',
     'src.workers.recording_worker',
     'src.workers.summarization_worker',
     'src.workers.transcription_worker',

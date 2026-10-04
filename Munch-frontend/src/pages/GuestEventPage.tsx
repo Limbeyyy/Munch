@@ -227,6 +227,19 @@ const GuestEventRoom: React.FC = () => {
       `${protocol}//${apiUrl.host}/ws/event/${eventCode}/?guest_token=${encodeURIComponent(token)}`
     );
     wsRef.current = ws;
+    let lastBeat = 0;
+    const beat = () => {
+      const now = Date.now();
+      if (now - lastBeat < 15000 || ws.readyState !== WebSocket.OPEN) return;
+      lastBeat = now;
+      ws.send(JSON.stringify({ type: 'heartbeat' }));
+    };
+    const watched: (keyof WindowEventMap)[] = [
+      'pointerdown', 'keydown', 'wheel', 'touchstart', 'focus',
+    ];
+    watched.forEach((name) => window.addEventListener(name, beat));
+    document.addEventListener('visibilitychange', beat);
+    ws.onopen = beat;
 
     ws.onmessage = (message) => {
       const data = JSON.parse(message.data);
@@ -257,6 +270,10 @@ const GuestEventRoom: React.FC = () => {
         // The only way a event ends now: somebody decided it had.
         toast('The host ended the event', { icon: '👋' });
         leave();
+      } else if (data.type === 'idle_evicted') {
+        sessionStorage.clear();
+        toast('You were away, so the room let you go', { icon: '💤' });
+        navigate('/login');
       } else if (data.type === 'chat_settings_update') {
         // The room is always open; what the host turns on and off is
         // whether anybody may write in it.
@@ -280,8 +297,12 @@ const GuestEventRoom: React.FC = () => {
       }
     };
 
-    return () => ws.close();
-  }, [token, eventCode, leave]);
+    return () => {
+      watched.forEach((name) => window.removeEventListener(name, beat));
+      document.removeEventListener('visibilitychange', beat);
+      ws.close();
+    };
+  }, [token, eventCode, leave, navigate]);
 
   useEffect(() => {
     if (showChat) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

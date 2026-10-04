@@ -27,6 +27,7 @@ import { API_BASE_URL } from '../../services/apiConfig';
 export const LiveRoom: React.FC<{ onLeave: () => void }> = ({ onLeave }) => {
   const { t } = useOrganizer();
   const leaveRef = useRef(onLeave);
+  const joinedEventIdRef = useRef('');
 
   useEffect(() => { leaveRef.current = onLeave; }, [onLeave]);
 
@@ -64,6 +65,7 @@ export const LiveRoom: React.FC<{ onLeave: () => void }> = ({ onLeave }) => {
 
   const event = events.find((one) => one.id === eventId) ?? null;
   const code = event?.code ?? '';
+  const idleTimeoutMinutes = event?.idle_timeout_minutes ?? 15;
 
   useEffect(() => {
     if (!code) return undefined;
@@ -76,16 +78,40 @@ export const LiveRoom: React.FC<{ onLeave: () => void }> = ({ onLeave }) => {
     const socket = new window.WebSocket(
       `${protocol}//${apiUrl.host}/ws/event/${code}/?token=${encodeURIComponent(token)}`
     );
+    let lastBeat = 0;
+    const beat = () => {
+      const now = Date.now();
+      if (now - lastBeat < 15000 || socket.readyState !== WebSocket.OPEN) return;
+      lastBeat = now;
+      socket.send(JSON.stringify({ type: 'heartbeat' }));
+    };
+    const watched: (keyof WindowEventMap)[] = [
+      'pointerdown', 'keydown', 'wheel', 'touchstart', 'focus',
+    ];
+    watched.forEach((name) => window.addEventListener(name, beat));
+    document.addEventListener('visibilitychange', beat);
+    socket.onopen = beat;
     socket.onmessage = (message) => {
       const data = JSON.parse(message.data);
       if (data.type === 'event_ended') leaveRef.current();
+      if (data.type === 'idle_evicted') {
+        toast(t({
+          ne: 'तपाईं निष्क्रिय रहनुभयो, त्यसैले कोठाबाट बाहिरिनुभयो।',
+          en: 'You were away, so the room let you go.',
+        }));
+        leaveRef.current();
+      }
     };
     socket.onerror = (error) => {
       console.error('Attendee room WebSocket error:', error);
     };
 
-    return () => socket.close();
-  }, [code]);
+    return () => {
+      watched.forEach((name) => window.removeEventListener(name, beat));
+      document.removeEventListener('visibilitychange', beat);
+      socket.close();
+    };
+  }, [code, t]);
 
   useEffect(() => {
     if (event?.status === 'ended') leaveRef.current();
@@ -107,7 +133,10 @@ export const LiveRoom: React.FC<{ onLeave: () => void }> = ({ onLeave }) => {
     if (!code) return undefined;
     let gone = false;
 
-    apiClient.joinEvent(code).catch(() => {
+    joinedEventIdRef.current = '';
+    apiClient.joinEvent(code).then(() => {
+      if (!gone) joinedEventIdRef.current = eventId;
+    }).catch(() => {
       // The room may not be open yet, or the network may have gone.
       // Neither is a reason to keep somebody out of a screen that
       // reads perfectly well without it.
@@ -115,11 +144,28 @@ export const LiveRoom: React.FC<{ onLeave: () => void }> = ({ onLeave }) => {
 
     return () => {
       gone = true;
+      if (joinedEventIdRef.current === eventId) joinedEventIdRef.current = '';
       // Said on the way out as well, so "in the room" means in the
       // room rather than "was here at some point today".
       if (gone) apiClient.leaveEvent(eventId).catch(() => undefined);
     };
   }, [code, eventId]);
+
+  useEffect(() => {
+    if (!eventId || idleTimeoutMinutes <= 0) return undefined;
+    const id = window.setInterval(async () => {
+      if (joinedEventIdRef.current !== eventId) return;
+      try {
+        const activeEvents = await apiClient.getActiveEvents();
+        if (!activeEvents.some((activeEvent) => activeEvent.id === eventId)) {
+          leaveRef.current();
+        }
+      } catch (error) {
+        console.error('Could not verify attendee room membership:', error);
+      }
+    }, idleTimeoutMinutes * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, [eventId, idleTimeoutMinutes]);
 
   const readSessions = useCallback(async () => {
     if (!eventId) { setSessions([]); return; }
