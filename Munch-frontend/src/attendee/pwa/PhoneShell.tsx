@@ -73,12 +73,18 @@ export const PhoneShell: React.FC<{
   /** Unread counts against the tabs that carry them. */
   pips?: Partial<Record<Section, number>>;
   hideSectionHeader?: boolean;
+  hideProfile?: boolean;
   eventTitle?: string;
   children: React.ReactNode;
-}> = ({ at, onGo, pips = {}, hideSectionHeader = false, eventTitle, children }) => {
+}> = ({
+  at, onGo, pips = {}, hideSectionHeader = false, hideProfile = false,
+  eventTitle, children,
+}) => {
   const { t } = useOrganizer();
   const horizontalHeader = !hideSectionHeader &&
     (at === 'agenda' || at === 'board' || at === 'files');
+  const sections = (Object.keys(LABEL) as Section[])
+    .filter((one) => !hideProfile || one !== 'profile');
 
   return (
     <div className="min-h-[100dvh] bg-white flex flex-col">
@@ -103,7 +109,7 @@ export const PhoneShell: React.FC<{
           flex"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        {(Object.keys(LABEL) as Section[]).map((one) => {
+        {sections.map((one) => {
           const on = one === at;
           return (
             <button

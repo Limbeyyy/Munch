@@ -3,8 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../services/api';
 import { GuestStatus } from '../types';
 import toast from 'react-hot-toast';
-import { isMobileDevice } from '../services/device';
-import { GuestMobileOnlyPage } from './GuestMobileOnlyPage';
 import { API_BASE_URL } from '../services/apiConfig';
 
 const POLL_MS = 4000;
@@ -171,5 +169,4 @@ const GuestWaitingRoom: React.FC = () => {
   );
 };
 
-export const GuestWaitingPage: React.FC = () =>
-  isMobileDevice() ? <GuestWaitingRoom /> : <GuestMobileOnlyPage />;
+export const GuestWaitingPage: React.FC = () => <GuestWaitingRoom />;

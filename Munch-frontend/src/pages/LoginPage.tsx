@@ -8,14 +8,12 @@ import { apiClient } from '../services/api';
 import {
   googleRedirectUri, oauthOrigin, whyGoogleWillRefuse,
 } from '../services/oauthOrigin';
-import { isMobileDevice } from '../services/device';
 import { getGuestDeviceId } from '../services/guestDevice';
 
 export const LoginPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { googleLogin, isLoading } = useAuthStore();
-  const guestSupported = isMobileDevice();
 
   // Guest join: no account, host must admit.
   const [showGuest, setShowGuest] = useState(false);
@@ -40,14 +38,14 @@ export const LoginPage: React.FC = () => {
       setGuestCode(scanned.toUpperCase());
       setShowGuest(true);
       setArrivedByLink(true);
-      if (guestSupported) setAskingName(true);
+      setAskingName(true);
       try {
         sessionStorage.setItem('manch.pending_live_event', scanned.toUpperCase());
       } catch {
         // Link navigation still works without session storage.
       }
     }
-  }, [searchParams, guestSupported]);
+  }, [searchParams]);
 
   useEffect(() => {
     if (searchParams.has('guest-mobile-only')) setShowGuest(true);
@@ -102,10 +100,6 @@ export const LoginPage: React.FC = () => {
   };
 
   const handleGuestJoin = async (typedName: string) => {
-    if (!guestSupported) {
-      toast.error('Guest mode is only supported on mobile devices for now.');
-      return;
-    }
     const code = guestCode.trim().toUpperCase();
     const name = typedName.trim();
 
@@ -229,44 +223,34 @@ export const LoginPage: React.FC = () => {
           </button>
         ) : (
           <div className="space-y-3">
-            {!guestSupported ? (
-              <p role="alert" className="rounded-lg border border-amber/40
-                bg-navy-900/50 px-4 py-3 text-sm text-[#FFD98F]">
-                Guest mode is only supported on mobile devices for now. Open this
-                event link on a phone or tablet, or sign in to continue on desktop.
-              </p>
-            ) : (
-              <>
-                <p className="text-sm text-[#BFD1EC]">
-                  {arrivedByLink
-                    ? 'The event code came with your link. Press below to go in as a guest — you give a name at the door and the host decides.'
-                    : 'Joining as a guest. You give a name at the door and the host decides; nothing else is asked for, and nothing is kept afterwards but your name on the attendance.'}
-                </p>
+            <p className="text-sm text-[#BFD1EC]">
+              {arrivedByLink
+                ? 'The event code came with your link. Press below to go in as a guest — you give a name at the door and the host decides.'
+                : 'Joining as a guest. You give a name at the door and the host decides; nothing else is asked for, and nothing is kept afterwards but your name on the attendance.'}
+            </p>
 
-                <input
-                  type="text"
-                  value={guestCode}
-                  onChange={(e) => setGuestCode(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && guestCode.trim()) setAskingName(true);
-                  }}
-                  placeholder="Event code"
-                  aria-label="Event code"
-                  className="w-full px-4 py-3 rounded-lg uppercase tracking-wide bg-navy-900/50 border border-white/25 text-white placeholder-[#8FA6C6] focus:outline-none focus:ring-2 focus:ring-amber"
-                />
+            <input
+              type="text"
+              value={guestCode}
+              onChange={(e) => setGuestCode(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && guestCode.trim()) setAskingName(true);
+              }}
+              placeholder="Event code"
+              aria-label="Event code"
+              className="w-full px-4 py-3 rounded-lg uppercase tracking-wide bg-navy-900/50 border border-white/25 text-white placeholder-[#8FA6C6] focus:outline-none focus:ring-2 focus:ring-amber"
+            />
 
-                <button
-                  onClick={() =>
-                    guestCode.trim()
-                      ? setAskingName(true)
-                      : toast.error('Enter the event code')
-                  }
-                  className="w-full bg-ok hover:bg-[#166F4C] text-white font-semibold py-3 px-4 rounded-lg disabled:opacity-50"
-                >
-                  Enter event room
-                </button>
-              </>
-            )}
+            <button
+              onClick={() =>
+                guestCode.trim()
+                  ? setAskingName(true)
+                  : toast.error('Enter the event code')
+              }
+              className="w-full bg-ok hover:bg-[#166F4C] text-white font-semibold py-3 px-4 rounded-lg disabled:opacity-50"
+            >
+              Enter event room
+            </button>
             <button
               onClick={() => setShowGuest(false)}
               className="w-full text-[#9FB8DC] text-sm py-1 hover:text-white"

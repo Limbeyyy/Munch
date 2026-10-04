@@ -201,13 +201,12 @@ describe('arriving with the code already', () => {
       .toBeInTheDocument();
   });
 
-  it('explains guest mode is mobile-only when a desktop opens an event link', async () => {
+  it('allows desktop visitors to open the guest join form from an event link', async () => {
     showWithLink(false);
 
-    expect(await screen.findByRole('alert'))
-      .toHaveTextContent('Guest mode is only supported on mobile devices for now.');
-    expect(screen.queryByLabelText('Event code')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Enter event room' })).toBeNull();
+    expect(await screen.findByLabelText('Event code')).toHaveValue('ABC123');
+    expect(await screen.findByRole('dialog', { name: 'Enter event info' }))
+      .toBeInTheDocument();
   });
 
   it('says where the code came from, rather than asking for it', async () => {

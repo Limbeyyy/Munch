@@ -191,8 +191,12 @@ const BoardPostCard: React.FC<{
  * top. Suggestions do not - nobody reads them in order, so a tally
  * against one measures nothing.
  */
-export const BoardScreen: React.FC<{ event: Event; sessions: Session[] }> = ({
-  event, sessions,
+export const BoardScreen: React.FC<{
+  event: Event;
+  sessions: Session[];
+  guestToken?: string;
+}> = ({
+  event, sessions, guestToken,
 }) => {
   const { t, num } = useOrganizer();
   const [tab, setTab] = useState<'questions' | 'suggestions'>('questions');
@@ -204,14 +208,16 @@ export const BoardScreen: React.FC<{ event: Event; sessions: Session[] }> = ({
 
   const read = useCallback(async () => {
     try {
-      const board = await apiClient.getHub(event.code);
+      const board = guestToken
+        ? await apiClient.getHub(event.code, guestToken)
+        : await apiClient.getHub(event.code);
       setQuestions((board.questions ?? []).filter((post) => post.status !== 'declined'));
       setSuggestions((board.suggestions ?? []).filter((post) => post.status !== 'declined'));
     } catch {
       setQuestions([]);
       setSuggestions([]);
     }
-  }, [event.code]);
+  }, [event.code, guestToken]);
 
   useEffect(() => {
     read();
@@ -265,7 +271,11 @@ export const BoardScreen: React.FC<{ event: Event; sessions: Session[] }> = ({
     setBusy(true);
     try {
       const kind: HubKind = tab === 'questions' ? 'question' : 'suggestion';
-      await apiClient.addHubPost(event.code, { kind, body });
+      if (guestToken) {
+        await apiClient.addHubPost(event.code, { kind, body }, guestToken);
+      } else {
+        await apiClient.addHubPost(event.code, { kind, body });
+      }
       toast.success(t({
         ne: 'पठाइयो — स्वीकृत भएपछि देखिनेछ।',
         en: 'Sent. It appears once it has been approved.',
@@ -281,7 +291,11 @@ export const BoardScreen: React.FC<{ event: Event; sessions: Session[] }> = ({
 
   const vote = async (post: HubPost, value: 1 | -1) => {
     try {
-      await apiClient.voteHubPost(event.code, post.id, value);
+      if (guestToken) {
+        await apiClient.voteHubPost(event.code, post.id, value, guestToken);
+      } else {
+        await apiClient.voteHubPost(event.code, post.id, value);
+      }
       await read();
     } catch (e: any) {
       toast.error(errorText(e, t({ ne: 'भोट पुगेन', en: 'That vote did not land' })));
