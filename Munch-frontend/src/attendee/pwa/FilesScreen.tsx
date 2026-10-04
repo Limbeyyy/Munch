@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../../services/api';
-import { Artifact, Event, EventPhoto, PhotoFolder, Session } from '../../types';
+import {
+  Artifact, Event, EventPhoto, GuestResource, PhotoFolder, Session,
+} from '../../types';
 import { useOrganizer } from '../../organizer/i18n';
 import { formatSize, kindOf } from '../../organizer/filesAndSummaries/shared';
 import { Switcher } from './PhoneShell';
+import { API_BASE_URL } from '../../services/apiConfig';
 
 /** The tinted square a file's kind sits in. */
 const TINT: Record<string, { bg: string; ink: string }> = {
@@ -54,8 +57,10 @@ const Tile: React.FC<{ photo: EventPhoto }> = ({ photo }) => {
 export const FilesScreen: React.FC<{
   event: Event;
   sessions: Session[];
+  guestToken?: string;
+  guestResources?: GuestResource[];
   onFolderOpenChange: (open: boolean) => void;
-}> = ({ event, sessions, onFolderOpenChange }) => {
+}> = ({ event, sessions, guestToken, guestResources, onFolderOpenChange }) => {
   const { t, num } = useOrganizer();
   const [tab, setTab] = useState<'files' | 'photos'>('files');
   const [files, setFiles] = useState<Artifact[]>([]);
@@ -70,13 +75,26 @@ export const FilesScreen: React.FC<{
 
   const read = useCallback(async () => {
     const [shared, album] = await Promise.all([
-      apiClient.getResources(event.id).catch(() => [] as Artifact[]),
+      guestToken
+        ? Promise.resolve((guestResources ?? []).map((resource) => ({
+            id: resource.id,
+            event_id: event.id,
+            artifact_type: 'file',
+            display_name: resource.display_name,
+            web_view_link: new URL(resource.download_url, API_BASE_URL).toString(),
+            mime_type: resource.mime_type ?? undefined,
+            file_size: resource.file_size,
+            sync_status: 'synced' as const,
+            created_at: resource.created_at,
+            uploaded_by_name: resource.uploaded_by,
+          })))
+        : apiClient.getResources(event.id).catch(() => [] as Artifact[]),
       apiClient.getPhotos(event.code).catch(() => null),
     ]);
     setFiles(shared);
     setFolders(album?.folders ?? []);
     setPhotos(album?.photos ?? []);
-  }, [event.id, event.code]);
+  }, [event.id, event.code, guestToken, guestResources]);
 
   useEffect(() => { read(); }, [read]);
 

@@ -20,7 +20,8 @@ export const TranscriptScreen: React.FC<{
   event: Event;
   live: Session | null;
   onLeave?: () => void;
-}> = ({ event, live, onLeave }) => {
+  guestToken?: string;
+}> = ({ event, live, onLeave, guestToken }) => {
   const { t } = useOrganizer();
   const [lines, setLines] = useState<TranscriptionSegment[]>([]);
   const [following, setFollowing] = useState(true);
@@ -30,12 +31,14 @@ export const TranscriptScreen: React.FC<{
 
   const read = useCallback(async () => {
     try {
-      setLines(await apiClient.getEventSegments(event.code));
+      setLines(guestToken
+        ? await apiClient.getGuestSegments(event.code, guestToken)
+        : await apiClient.getEventSegments(event.code));
     } catch {
       // A transcript that cannot be read is an empty one, not an error
       // worth a banner: the hall may simply not have started.
     }
-  }, [event.code]);
+  }, [event.code, guestToken]);
 
   useEffect(() => {
     read();

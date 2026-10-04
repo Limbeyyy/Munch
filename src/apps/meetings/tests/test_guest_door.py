@@ -283,6 +283,38 @@ class GuestsAreNotKeptTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()['rejoined'])
 
+    def test_a_guest_can_rejoin_after_leaving_with_their_retained_pass(self):
+        from src.apps.meetings.guest_tokens import make_guest_token
+
+        guest = self.admit(GuestAttendee.objects.create(
+            event=self.event, full_name='Bishnu Prasad',
+        ))
+        token = make_guest_token(guest)
+        leave = self.client.post(
+            f'{API}/events/guest/leave/',
+            {'token': token},
+            content_type='application/json',
+        )
+        self.assertEqual(leave.status_code, 200)
+        self.assertEqual(leave.json()['status'], GuestAttendee.Status.LEFT)
+
+        rejoin = self.knock('Bishnu Prasad', token=token)
+        self.assertEqual(rejoin.status_code, 200)
+        self.assertTrue(rejoin.json()['rejoined'])
+        self.assertEqual(
+            rejoin.json()['guest']['status'], GuestAttendee.Status.ADMITTED
+        )
+
+        new_token = rejoin.json()['guest_token']
+        hub = self.client.get(
+            f'{API}/events/{self.event.code}/hub/?guest_token={new_token}'
+        )
+        transcript = self.client.get(
+            f'{API}/events/{self.event.code}/segments/?guest_token={new_token}'
+        )
+        self.assertEqual(hub.status_code, 200)
+        self.assertEqual(transcript.status_code, 200)
+
     def test_approved_guest_returns_from_the_same_device_and_name(self):
         guest = self.admit(GuestAttendee.objects.create(
             event=self.event,

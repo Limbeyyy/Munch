@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../../services/api';
-import { Artifact, Event, Session, SessionSummary, SubEvent } from '../../types';
+import {
+  Artifact, Event, GuestResource, Session, SessionSummary, SubEvent,
+} from '../../types';
 import { useOrganizer } from '../../organizer/i18n';
 import { daysOf } from '../../organizer/events/days';
 import { Grouped, groupSessions } from './grouping';
+import { API_BASE_URL } from '../../services/apiConfig';
 
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -208,8 +211,10 @@ export const AgendaScreen: React.FC<{
   event: Event;
   sessions: Session[];
   live: Session | null;
+  guestToken?: string;
+  guestResources?: GuestResource[];
   onDetailChange?: (isOpen: boolean) => void;
-}> = ({ event, sessions, live, onDetailChange }) => {
+}> = ({ event, sessions, live, guestToken, guestResources, onDetailChange }) => {
   const { t, num } = useOrganizer();
   const [opened, setOpened] = useState<string>('');
   const [day, setDay] = useState('');
@@ -219,9 +224,27 @@ export const AgendaScreen: React.FC<{
 
   const read = useCallback(async () => {
     const [parts, shared, hub] = await Promise.all([
-      apiClient.getSubEvents(event.id).catch(() => [] as SubEvent[]),
-      apiClient.getResources(event.id).catch(() => [] as Artifact[]),
-      apiClient.getHub(event.code).catch(() => null),
+      guestToken
+        ? Promise.resolve([] as SubEvent[])
+        : apiClient.getSubEvents(event.id).catch(() => [] as SubEvent[]),
+      guestToken
+        ? Promise.resolve((guestResources ?? []).map((resource) => ({
+            id: resource.id,
+            event_id: event.id,
+            artifact_type: 'file',
+            display_name: resource.display_name,
+            web_view_link: new URL(resource.download_url, API_BASE_URL).toString(),
+            mime_type: resource.mime_type ?? undefined,
+            file_size: resource.file_size,
+            sync_status: 'synced' as const,
+            created_at: resource.created_at,
+            uploaded_by_name: resource.uploaded_by,
+          })))
+        : apiClient.getResources(event.id).catch(() => [] as Artifact[]),
+      (guestToken
+        ? apiClient.getHub(event.code, guestToken)
+        : apiClient.getHub(event.code)
+      ).catch(() => null),
     ]);
     setGroups(parts);
     setFiles(shared);
@@ -230,7 +253,7 @@ export const AgendaScreen: React.FC<{
       if (post.session_id) tally[post.session_id] = (tally[post.session_id] ?? 0) + 1;
     });
     setAsked(tally);
-  }, [event.id, event.code]);
+  }, [event.id, event.code, guestToken, guestResources]);
 
   useEffect(() => { read(); }, [read]);
 

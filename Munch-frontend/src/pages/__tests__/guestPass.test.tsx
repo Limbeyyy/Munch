@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { GuestWaitingPage } from '../GuestWaitingPage';
 import { GuestEventPage } from '../GuestEventPage';
@@ -9,6 +9,12 @@ jest.mock('../../services/api', () => ({
   apiClient: {
     guestStatus: jest.fn(),
     guestLeave: jest.fn(),
+    guestChat: jest.fn(),
+    guestPresenters: jest.fn(),
+    guestResources: jest.fn(),
+    getGuestSegments: jest.fn(),
+    getHub: jest.fn(),
+    getSchedulingPrefs: jest.fn(),
     hasSession: () => false,
   },
 }));
@@ -24,6 +30,10 @@ const api = apiClient as jest.Mocked<typeof apiClient>;
 
 beforeEach(() => {
   window.sessionStorage.clear();
+  Object.defineProperty(Element.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: jest.fn(),
+  });
   api.guestLeave.mockResolvedValue(undefined);
   Object.defineProperty(navigator, 'userAgent', {
     configurable: true,
@@ -32,6 +42,14 @@ beforeEach(() => {
   window.sessionStorage.setItem('guest_token', 'a-pass-for-a-event-that-ended');
   window.sessionStorage.setItem('guest_event_code', 'RY0-SDV');
   window.sessionStorage.setItem('guest_name', 'Rahul Ingnam');
+  api.guestChat.mockResolvedValue({ settings: {}, messages: [] } as any);
+  api.guestPresenters.mockResolvedValue([]);
+  api.guestResources.mockResolvedValue([]);
+  api.getGuestSegments.mockResolvedValue([]);
+  api.getHub.mockResolvedValue({
+    questions: [], ideas: [], suggestions: [],
+  } as any);
+  api.getSchedulingPrefs.mockResolvedValue({ session_gap_minutes: 0 } as any);
   (window as any).WebSocket = class {
     onmessage: any; onopen: any; onerror: any; onclose: any;
     static OPEN = 1;
@@ -111,35 +129,74 @@ describe('a guest pass that has stopped meaning anything', () => {
     expect(screen.queryByText('the door')).toBeNull();
   });
 
-  it('blocks desktop access to the guest waiting room and releases its pass', async () => {
+  it('allows desktop guests to wait for host approval without releasing their pass', async () => {
     Object.defineProperty(navigator, 'userAgent', {
       configurable: true,
       value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0',
     });
+    api.guestStatus.mockResolvedValue({
+      guest: { status: 'pending' },
+    } as any);
 
     show();
 
-    expect(await screen.findByText('Guest mode is for mobile devices'))
+    expect(await screen.findByText('The host can see your name, and will admit you shortly.'))
       .toBeInTheDocument();
-    await waitFor(() => expect(api.guestLeave).toHaveBeenCalledWith(
+    expect(api.guestLeave).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem('guest_token')).toBe(
       'a-pass-for-a-event-that-ended'
-    ));
-    expect(window.sessionStorage.getItem('guest_token')).toBeNull();
+    );
   });
 
-  it('blocks desktop access to an admitted guest room as well', async () => {
+  it('allows desktop guests into the admitted guest room', async () => {
     Object.defineProperty(navigator, 'userAgent', {
       configurable: true,
       value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0',
     });
+    api.guestStatus.mockResolvedValue({
+      guest: { status: 'admitted' },
+      event: {
+        id: 'event-1',
+        code: 'RY0-SDV',
+        title: 'Guest test event',
+        status: 'active',
+        scheduled_start: '2026-10-05T00:00:00Z',
+        scheduled_end: '2026-10-05T01:00:00Z',
+        sessions: [],
+      },
+    } as any);
 
     showEvent();
 
-    expect(await screen.findByText('Guest mode is for mobile devices'))
-      .toBeInTheDocument();
+    expect((await screen.findAllByRole('button', { name: 'Leave' })).length)
+      .toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Transcript' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Agenda' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Q&A' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Files' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Profile' })).toBeNull();
+    await waitFor(() => expect(api.getGuestSegments).toHaveBeenCalledWith(
+      'RY0-SDV',
+      'a-pass-for-a-event-that-ended'
+    ));
+    fireEvent.click(screen.getByRole('button', { name: 'Q&A' }));
+    await waitFor(() => expect(api.getHub).toHaveBeenCalledWith(
+      'RY0-SDV',
+      'a-pass-for-a-event-that-ended'
+    ));
+    expect(api.guestLeave).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem('guest_token')).toBe(
+      'a-pass-for-a-event-that-ended'
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Transcript' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Leave' }));
+    expect(await screen.findByText('the door')).toBeInTheDocument();
     await waitFor(() => expect(api.guestLeave).toHaveBeenCalledWith(
       'a-pass-for-a-event-that-ended'
     ));
-    expect(window.sessionStorage.getItem('guest_token')).toBeNull();
+    expect(window.sessionStorage.getItem('guest_token')).toBe(
+      'a-pass-for-a-event-that-ended'
+    );
   });
 });
