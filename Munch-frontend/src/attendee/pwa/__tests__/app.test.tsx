@@ -9,6 +9,7 @@ import { LIST_POLL_MS } from '../../../services/polling';
 jest.mock('../../../services/api', () => ({
   apiClient: {
     listEvents: jest.fn(),
+    getActiveEvents: jest.fn(),
     listSessions: jest.fn(),
     getEventSegments: jest.fn(),
     getSessionSummary: jest.fn(),
@@ -29,7 +30,9 @@ jest.mock('../../../services/api', () => ({
 
 jest.mock('react-hot-toast', () => ({
   __esModule: true,
-  default: { error: jest.fn(), success: jest.fn(), loading: jest.fn(), dismiss: jest.fn() },
+  default: Object.assign(jest.fn(), {
+    error: jest.fn(), success: jest.fn(), loading: jest.fn(), dismiss: jest.fn(),
+  }),
 }));
 
 const api = apiClient as jest.Mocked<typeof apiClient>;
@@ -43,6 +46,7 @@ beforeAll(() => {
 const event = {
   id: 'e1', code: 'ABC-123', title: 'Emergency Service Meeting',
   description: '', venue: 'Kathmandu', status: 'active',
+  idle_timeout_minutes: 1,
   event_date: '2026-09-15',
   scheduled_start: '2026-09-15T04:15:00Z',
   scheduled_end: '2026-09-15T06:15:00Z',
@@ -75,9 +79,12 @@ beforeEach(() => {
   window.localStorage.clear();
   (window as any).__attendeeSocket = null;
   const MockWebSocket = class {
+    static OPEN = 1;
     onmessage: ((event: { data: string }) => void) | null = null;
+    onopen: (() => void) | null = null;
     onerror: ((event: unknown) => void) | null = null;
     readyState = 1;
+    send = jest.fn();
     constructor() { (window as any).__attendeeSocket = this; }
     close() {}
   };
@@ -88,6 +95,7 @@ beforeEach(() => {
     'manch.organizer.prefs', JSON.stringify({ lang: 'en', a11y: {} })
   );
   api.listEvents.mockResolvedValue([event] as any);
+  api.getActiveEvents.mockResolvedValue([event] as any);
   api.listSessions.mockResolvedValue([session()] as any);
   api.getEventSegments.mockResolvedValue([] as any);
   api.getHub.mockResolvedValue({ questions: [], ideas: [], suggestions: [] } as any);
@@ -202,6 +210,49 @@ describe('the five things along the bottom', () => {
     socket.onmessage({ data: JSON.stringify({ type: 'event_ended' }) });
 
     expect(onLeave).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends activity heartbeats and leaves when the server evicts an idle attendee', async () => {
+    const onLeave = jest.fn();
+    window.localStorage.setItem('access_token', 'valid-access-token');
+    show(onLeave);
+    await screen.findByText('Emergency Service Meeting');
+    await waitFor(() => expect((window as any).__attendeeSocket).not.toBeNull());
+
+    const socket = (window as any).__attendeeSocket;
+    act(() => socket.onopen());
+    expect(socket.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'heartbeat' })
+    );
+
+    act(() => socket.onmessage({
+      data: JSON.stringify({ type: 'idle_evicted', reason: 'idle' }),
+    }));
+    expect(onLeave).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves when the attendee membership check no longer finds the live event', async () => {
+    const onLeave = jest.fn();
+    const intervalSpy = jest.spyOn(window, 'setInterval');
+    try {
+      show(onLeave);
+      await screen.findByText('Emergency Service Meeting');
+      await waitFor(() => expect(api.joinEvent).toHaveBeenCalledWith('ABC-123'));
+      api.getActiveEvents.mockResolvedValue([]);
+
+      const check = intervalSpy.mock.calls.find(
+        ([, delay]) => delay === 60000
+      )?.[0];
+      expect(typeof check).toBe('function');
+      if (typeof check !== 'function') {
+        throw new Error('One-minute attendee membership check was not registered');
+      }
+
+      await act(async () => { await check(); });
+      expect(onLeave).toHaveBeenCalledTimes(1);
+    } finally {
+      intervalSpy.mockRestore();
+    }
   });
 
   it('does not show a Leave room button on any live-room tab', async () => {

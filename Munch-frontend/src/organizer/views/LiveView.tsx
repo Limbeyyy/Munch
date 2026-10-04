@@ -6,6 +6,7 @@ import { ACTIVE_POLL_MS } from '../../services/polling';
 import { deskSession, startableNow } from '../sessionState';
 import { RequestButton, RequestCard, RequestRow } from '../RequestCard';
 import { LiveDashboard } from '../LiveDashboard';
+import { ensureSingleLiveEvent } from '../ensureSingleLiveEvent';
 import { ChatMessage, GuestAttendee, Event, Session } from '../../types';
 import { useOrganizer } from '../i18n';
 import { Btn, Card, Head } from '../ui';
@@ -133,15 +134,20 @@ export const LiveView: React.FC<Props> = ({ events, onChanged, onNavigate }) => 
   // server, so every screen still agrees about them.
 
   const start = async () => {
-    if (!stage) return;
+    if (!stage || !current) return;
     try {
       setBusy(true);
+      await ensureSingleLiveEvent(current.id, String(current.host?.id ?? ''));
       await apiClient.startSession(stage.id);
       toast.success(t({ ne: 'सत्र सुरु भयो', en: 'Session started' }));
       await load();
       onChanged();
     } catch (e: any) {
-      toast.error(e.response?.data?.error ?? t({ ne: 'सुरु गर्न सकिएन', en: 'Could not start' }));
+      toast.error(
+        e.response?.data?.error
+          ?? e.message
+          ?? t({ ne: 'सुरु गर्न सकिएन', en: 'Could not start' })
+      );
     } finally { setBusy(false); }
   };
 

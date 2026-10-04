@@ -9,6 +9,7 @@ import {
   googleRedirectUri, oauthOrigin, whyGoogleWillRefuse,
 } from '../services/oauthOrigin';
 import { isMobileDevice } from '../services/device';
+import { getGuestDeviceId } from '../services/guestDevice';
 
 export const LoginPage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -39,8 +40,14 @@ export const LoginPage: React.FC = () => {
       setGuestCode(scanned.toUpperCase());
       setShowGuest(true);
       setArrivedByLink(true);
+      if (guestSupported) setAskingName(true);
+      try {
+        sessionStorage.setItem('manch.pending_live_event', scanned.toUpperCase());
+      } catch {
+        // Link navigation still works without session storage.
+      }
     }
-  }, [searchParams]);
+  }, [searchParams, guestSupported]);
 
   useEffect(() => {
     if (searchParams.has('guest-mobile-only')) setShowGuest(true);
@@ -114,6 +121,7 @@ export const LoginPage: React.FC = () => {
         // than a new arrival: it puts them back in their seat without the
         // host being asked twice.
         token: sessionStorage.getItem('guest_token') ?? undefined,
+        device_id: getGuestDeviceId(),
       });
 
       sessionStorage.setItem('guest_token', session.guest_token);

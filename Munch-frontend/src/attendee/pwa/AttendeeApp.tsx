@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { LIST_POLL_MS } from '../../services/polling';
@@ -37,10 +37,33 @@ export const AttendeeApp: React.FC = () => {
   const [inRoom, setInRoom] = useState(false);
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(true);
+  const initialRoomChosen = useRef(false);
 
   const load = useCallback(async () => {
     try {
-      setEvents(await apiClient.listEvents('attendee'));
+      const listed = await apiClient.listEvents('attendee');
+      setEvents(listed);
+      if (!initialRoomChosen.current) {
+        initialRoomChosen.current = true;
+        let preferredCode = '';
+        try {
+          preferredCode = sessionStorage.getItem('manch.pending_live_event') ?? '';
+        } catch {
+          // The list still tells us whether a live event is available.
+        }
+        const preferred = listed.find(
+          (one) => one.code.toUpperCase() === (preferredCode ?? '').toUpperCase()
+            && one.status === 'active'
+        );
+        if (preferred || listed.some((one) => one.status === 'active')) {
+          setInRoom(true);
+          try {
+            sessionStorage.removeItem('manch.pending_live_event');
+          } catch {
+            // Selecting the live room does not depend on storage.
+          }
+        }
+      }
     } catch {
       toast.error(t({ ne: 'कार्यक्रम ल्याउन सकिएन', en: 'Could not load your events' }));
     } finally {

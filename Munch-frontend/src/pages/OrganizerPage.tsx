@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { apiClient } from '../services/api';
@@ -32,6 +32,7 @@ const OrganizerInner: React.FC = () => {
   const { t, num } = useOrganizer();
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const initialRoomRedirect = useRef(false);
 
   /**
    * The desk, on every arrival.
@@ -61,13 +62,29 @@ const OrganizerInner: React.FC = () => {
       // section of the panel - the live desk, the files, moderation,
       // attendance, the speakers - so an unscoped read here put
       // somebody else's event into all of them at once.
-      setEventRooms(await apiClient.listEvents('host'));
+      const hosted = await apiClient.listEvents('host');
+      setEventRooms(hosted);
+      if (!initialRoomRedirect.current) {
+        initialRoomRedirect.current = true;
+        let returningFromRoom = false;
+        try {
+          returningFromRoom =
+            sessionStorage.getItem('manch.return_to_organizer') === '1';
+          if (returningFromRoom) {
+            sessionStorage.removeItem('manch.return_to_organizer');
+          }
+        } catch {
+          // Keep normal initial-entry routing when storage is unavailable.
+        }
+        const live = hosted.find((event) => event.status === 'active');
+        if (live && !returningFromRoom) navigate(`/event/${live.code}`);
+      }
     } catch {
       toast.error(t({ ne: 'सत्रहरू ल्याउन सकिएन', en: 'Could not load the sessions' }));
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [t, navigate]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -123,7 +140,6 @@ const OrganizerInner: React.FC = () => {
   }, [events, queue, nudges.unread, seen, t, num]);
 
   const running = events.find((m) => m.status === 'active') ?? null;
-  const activeTitle = running?.title;
 
   // A event ending should reach every screen at once rather than on the
   // next poll, so the dashboard listens to the room while one is running.

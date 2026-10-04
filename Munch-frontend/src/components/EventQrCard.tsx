@@ -13,7 +13,7 @@ interface Props {
 
 export const EventQrCard: React.FC<Props> = ({ eventName, eventCode }) => {
   const { t } = useOrganizer();
-  const guestLink = `${window.location.origin}/login?join=${eventCode}`;
+  const guestLink = `${window.location.origin}/events/${encodeURIComponent(eventCode)}`;
   const qrSrc = `${API_ROOT}/events/${eventCode}/qr/?url=${encodeURIComponent(guestLink)}`;
 
   const qrFile = async () => {

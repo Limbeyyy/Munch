@@ -17,11 +17,13 @@ import { KindChip, kindOf } from '../organizer/filesAndSummaries/shared';
 import { RoomAgenda } from '../organizer/RoomAgenda';
 import { RoomBarButton, RoomCard, RoomPortrait, SidePanelHead } from './roomChrome';
 import { OrganizerProvider } from '../organizer/i18n';
+import { RequestButton, RequestRow } from '../organizer/RequestCard';
+import { ensureSingleLiveEvent } from '../organizer/ensureSingleLiveEvent';
 import { API_BASE_URL } from '../services/apiConfig';
 
 
 /** The only things allowed to sit beside the room. */
-type SidePanelId = 'resources' | 'questions' | 'participants';
+type SidePanelId = 'resources' | 'questions' | 'participants' | 'requests';
 
 const formatFileSize = (bytes?: number | null): string => {
   if (!bytes) return '—';
@@ -63,6 +65,7 @@ const EventRoomInner: React.FC = () => {
   const [roomGuests, setRoomGuests] = useState<GuestAttendee[]>([]);
   /** Which half of the participants panel is being read. */
   const [peopleTab, setPeopleTab] = useState<'here' | 'attendance'>('here');
+  const [requestTab, setRequestTab] = useState<'room' | 'board'>('room');
   /**
    * What has arrived while nobody was looking at it.
    *
@@ -210,6 +213,9 @@ const EventRoomInner: React.FC = () => {
     (participants as EventParticipant[]).some(
       (p) => p.user?.id === user?.id && ['host', 'co_host'].includes(p.role)
     );
+  const boardRequests = pending.filter(
+    (message) => message.topic === 'faq' || message.topic === 'suggestion'
+  );
   /*
    * Every message in the room is written to somebody.
    *
@@ -315,6 +321,29 @@ const EventRoomInner: React.FC = () => {
     }
   };
 
+  const decideBoardRequest = async (
+    message: ChatMessage, decision: 'approve' | 'decline'
+  ) => {
+    if (!eventId) return;
+    try {
+      setDecidingGuest(message.id);
+      await apiClient.moderateMessage(
+        eventId,
+        message.id,
+        decision,
+        decision === 'approve'
+          ? (message.topic === 'suggestion' ? 'suggestion' : 'faq')
+          : undefined
+      );
+      setPending((previous) => previous.filter((item) => item.id !== message.id));
+      toast.success(decision === 'approve' ? 'Request accepted' : 'Request rejected');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error ?? 'Could not process request');
+    } finally {
+      setDecidingGuest(null);
+    }
+  };
+
   const loadAttendance = useCallback(async () => {
     const id = eventIdRef.current;
     if (!id) return;
@@ -331,13 +360,13 @@ const EventRoomInner: React.FC = () => {
    * Presence is measured by what somebody does, not by whether their
    * socket is open - a tab left running in a window nobody is looking at
    * holds one all afternoon. So moving, typing or coming back to the tab
-   * says so, throttled to once a minute because the room only needs to
-   * know within a minute and a mousemove fires hundreds of times.
+   * says so, throttled to every fifteen seconds because mouse events fire
+   * hundreds of times.
    */
   const lastBeat = useRef(0);
   const beat = useCallback(() => {
     const now = Date.now();
-    if (now - lastBeat.current < 60000) return;
+    if (now - lastBeat.current < 15000) return;
     const socket = wsRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     lastBeat.current = now;
@@ -351,7 +380,7 @@ const EventRoomInner: React.FC = () => {
   useEffect(() => {
     const wake = () => beat();
     const watched: (keyof WindowEventMap)[] = [
-      'pointerdown', 'keydown', 'wheel', 'focus',
+      'pointerdown', 'keydown', 'wheel', 'touchstart', 'focus',
     ];
     watched.forEach((name) => window.addEventListener(name, wake));
     // Coming back to a tab is the clearest sign of all that somebody is
@@ -542,8 +571,6 @@ const EventRoomInner: React.FC = () => {
             session: data.session_id ?? null,
           }]
         );
-        // Light the room's Questions control while the host is elsewhere.
-        noteUnseen('questions');
       } else if (data.type === 'chat_moderated') {
         setMessages((prev) =>
           prev.map((m) =>
@@ -682,11 +709,17 @@ const EventRoomInner: React.FC = () => {
   }, [eventId, loadChat]);
 
   useEffect(() => {
-    if (eventId && isHost && chatSettings.chat_enabled) loadPending();
+    if (!eventId || !isHost || !chatSettings.chat_enabled) return undefined;
+    loadPending();
+    const id = window.setInterval(loadPending, 15000);
+    return () => window.clearInterval(id);
   }, [eventId, isHost, chatSettings.chat_enabled, loadPending]);
 
   useEffect(() => {
-    if (eventId && isHost) loadGuests();
+    if (!eventId || !isHost) return undefined;
+    loadGuests();
+    const id = window.setInterval(loadGuests, 15000);
+    return () => window.clearInterval(id);
   }, [eventId, isHost, loadGuests]);
 
   // Keep the newest message in view while the panel is open.
@@ -787,11 +820,18 @@ const EventRoomInner: React.FC = () => {
     if (!nextId) return;
     setStarting(true);
     try {
+      if (isHost && currentEvent && user?.id) {
+        await ensureSingleLiveEvent(currentEvent.id, user.id);
+      }
       await apiClient.startSession(nextId);
       await refreshRef.current.event();
       await refreshAgenda();
     } catch (error: any) {
-      toast.error(error.response?.data?.error ?? 'Could not start that session');
+      toast.error(
+        error.response?.data?.error
+          ?? error.message
+          ?? 'Could not start that session'
+      );
     } finally {
       setStarting(false);
     }
@@ -875,7 +915,16 @@ const EventRoomInner: React.FC = () => {
     } catch {
       // Leaving is best-effort; navigate away regardless.
     }
-    navigate('/');
+    if (isHost) {
+      try {
+        sessionStorage.setItem('manch.return_to_organizer', '1');
+      } catch {
+        // Continue to the dashboard even when session storage is unavailable.
+      }
+      navigate('/organizer');
+    } else {
+      navigate('/');
+    }
   };
 
   if (isLoading) {
@@ -966,46 +1015,6 @@ const EventRoomInner: React.FC = () => {
           onClose={() => setShowShare(false)}
           onInvited={() => loadAttendance()}
         />
-      )}
-
-      {/* Who is in the room, and what the host may do about it */}
-      {/* Guests knocking. They wait here rather than in a notification
-          that has already gone. */}
-      {isHost && waitingGuests.length > 0 && (
-        <div className="fixed right-4 top-4 z-40 w-[300px] bg-white border border-[#e3e8ef]
-          rounded-[12px] shadow-lg overflow-hidden">
-          <p className="bg-[#fcfcfc] border-b border-[#e3e8ef] px-4 py-2.5 text-[14px] font-medium">
-            Asking to come in ({waitingGuests.length})
-          </p>
-          {waitingGuests.map((g) => (
-            <div
-              key={g.id}
-              aria-label={`${g.full_name} is asking to join`}
-              className="px-4 py-3 border-b border-[#e3e8ef] last:border-0"
-            >
-              <p className="text-[14px] font-medium truncate">{g.full_name}</p>
-              <p className="text-[12px] text-[#656565]">Joining as a guest</p>
-              <div className="flex gap-2 mt-2">
-                <button
-                  onClick={() => decideGuest(g.id, 'admit')}
-                  disabled={decidingGuest === g.id}
-                  className="flex-1 bg-navy-800 hover:bg-navy-700 text-white rounded-lg py-1.5
-                    text-[13px] font-medium disabled:opacity-50"
-                >
-                  Let in
-                </button>
-                <button
-                  onClick={() => decideGuest(g.id, 'deny')}
-                  disabled={decidingGuest === g.id}
-                  className="flex-1 border border-[#e3e8ef] hover:bg-cream rounded-lg py-1.5
-                    text-[13px] font-medium disabled:opacity-50"
-                >
-                  Decline
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
       )}
 
       {/* The room itself: the running order, the stage, and the side panels */}
@@ -1421,6 +1430,103 @@ const EventRoomInner: React.FC = () => {
             </div>
           </RoomCard>
                 )}
+                {panel === 'requests' && isHost && (
+                  <RoomCard>
+                    <SidePanelHead
+                      title="Requests"
+                      badge={waitingGuests.length + boardRequests.length}
+                      onClose={() => closeSide('requests')}
+                    />
+                    <div className="flex border-b border-[#e3e8ef]" role="tablist">
+                      {([
+                        ['room', 'Room'],
+                        ['board', 'Board'],
+                      ] as const).map(([key, label]) => (
+                        <button
+                          key={key}
+                          role="tab"
+                          aria-selected={requestTab === key}
+                          onClick={() => setRequestTab(key)}
+                          className={`flex-1 py-2 text-[13px] font-medium transition ${
+                            requestTab === key
+                              ? 'text-black border-b-2 border-black'
+                              : 'text-[#49454f] hover:text-black'
+                          }`}
+                        >
+                          {label}
+                          {key === 'room' && waitingGuests.length > 0
+                            ? ` (${waitingGuests.length})`
+                            : key === 'board' && boardRequests.length > 0
+                            ? ` (${boardRequests.length})`
+                            : ''}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="max-h-[460px] overflow-y-auto">
+                      {requestTab === 'room' ? (
+                        waitingGuests.length === 0 ? (
+                          <p className="px-4 py-3 text-[13px] text-[#656565]">
+                            No guest join requests.
+                          </p>
+                        ) : waitingGuests.map((guest) => (
+                          <RequestRow
+                            key={guest.id}
+                            name={guest.full_name}
+                            under="Joining as a guest"
+                            actions={(
+                              <>
+                                <RequestButton
+                                  tone="accept"
+                                  disabled={decidingGuest === guest.id}
+                                  onClick={() => decideGuest(guest.id, 'admit')}
+                                >
+                                  Accept
+                                </RequestButton>
+                                <RequestButton
+                                  tone="decline"
+                                  disabled={decidingGuest === guest.id}
+                                  onClick={() => decideGuest(guest.id, 'deny')}
+                                >
+                                  Reject
+                                </RequestButton>
+                              </>
+                            )}
+                          />
+                        ))
+                      ) : boardRequests.length === 0 ? (
+                        <p className="px-4 py-3 text-[13px] text-[#656565]">
+                          No question or suggestion requests.
+                        </p>
+                      ) : boardRequests.map((message) => (
+                        <RequestRow
+                          key={message.id}
+                          name={message.body}
+                          under={`${message.sender_name} · ${
+                            message.topic === 'suggestion' ? 'Suggestion' : 'Question'
+                          }`}
+                          actions={(
+                            <>
+                              <RequestButton
+                                tone="accept"
+                                disabled={decidingGuest === message.id}
+                                onClick={() => decideBoardRequest(message, 'approve')}
+                              >
+                                Accept
+                              </RequestButton>
+                              <RequestButton
+                                tone="decline"
+                                disabled={decidingGuest === message.id}
+                                onClick={() => decideBoardRequest(message, 'decline')}
+                              >
+                                Reject
+                              </RequestButton>
+                            </>
+                          )}
+                        />
+                      ))}
+                    </div>
+                  </RoomCard>
+                )}
                 {panel === 'questions' && (
           <RoomCard>
             <SidePanelHead title="Questions" onClose={() => closeSide('questions')} />
@@ -1430,8 +1536,8 @@ const EventRoomInner: React.FC = () => {
                 agendaSessionId={currentEvent?.current_session?.id ?? null}
                 refreshMs={20000}
                 canSort={canOrganize}
+                showRequests={false}
                 canVote={!canOrganize}
-                waiting={pending}
                 onNews={(many) => noteUnseen('questions', many)}
                 onAsk={canOrganize ? undefined : (body, topic) => askHost(body, topic)}
               />
@@ -1458,6 +1564,17 @@ const EventRoomInner: React.FC = () => {
             open={side.includes('participants')}
             onClick={() => toggleSide('participants')}
           />
+          {isHost && (
+            <RoomBarButton
+              icon="questions"
+              label="Requests"
+              badge={waitingGuests.length + boardRequests.length}
+              open={side.includes('requests')}
+              onClick={() => {
+                toggleSide('requests');
+              }}
+            />
+          )}
           <RoomBarButton
             icon="questions"
             label="Questions"

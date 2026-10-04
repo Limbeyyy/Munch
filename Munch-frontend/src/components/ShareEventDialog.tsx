@@ -39,7 +39,7 @@ export const ShareEventDialog: React.FC<Props> = ({
   // Anyone with an account opens the room directly; a guest scanning the
   // QR is sent to the join form instead, since they have no account.
   const link = `${window.location.origin}/event/${eventCode}`;
-  const guestLink = `${window.location.origin}/login?join=${eventCode}`;
+  const guestLink = `${window.location.origin}/events/${encodeURIComponent(eventCode)}`;
   const qrSrc =
     `${API_ROOT}/events/${eventCode}/qr/?url=${encodeURIComponent(guestLink)}`;
   const parsed = splitEmails(raw);

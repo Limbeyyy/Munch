@@ -47,6 +47,8 @@ export interface Event {
     can_start: boolean;
     entry_window_minutes: number;
   };
+  /** Host-configured inactivity threshold for this event, in minutes. */
+  idle_timeout_minutes?: number;
 
   id: string;
   /** What is on the invitation, and what somebody types to get in. */

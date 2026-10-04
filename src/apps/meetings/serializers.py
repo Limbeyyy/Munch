@@ -13,6 +13,7 @@ class EventSerializer(serializers.ModelSerializer):
     duration_seconds = serializers.IntegerField(read_only=True)
     entry = serializers.SerializerMethodField()
     current_session = serializers.SerializerMethodField()
+    idle_timeout_minutes = serializers.SerializerMethodField()
 
     class Meta:
         model = Event
@@ -24,7 +25,7 @@ class EventSerializer(serializers.ModelSerializer):
             'chat_enabled', 'direct_messages_enabled',
             'event_metadata', 'created_at', 'updated_at',
             'participant_count', 'is_active', 'duration_seconds', 'entry',
-            'current_session',
+            'current_session', 'idle_timeout_minutes',
         ]
         read_only_fields = [
             'id', 'code', 'host', 'created_at', 'updated_at',
@@ -46,6 +47,11 @@ class EventSerializer(serializers.ModelSerializer):
         from src.apps.meetings.lifecycle import session_room_state
 
         return session_room_state(obj)
+
+    def get_idle_timeout_minutes(self, obj):
+        from src.apps.meetings.idle import timeout_for
+
+        return timeout_for(obj)
 
     def get_participant_count(self, obj):
         return obj.get_participant_count()
@@ -177,6 +183,9 @@ class GuestJoinSerializer(serializers.Serializer):
     full_name = serializers.CharField(max_length=120)
     phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
     token = serializers.CharField(required=False, allow_blank=True)
+    device_id = serializers.CharField(
+        max_length=64, required=False, allow_blank=True
+    )
 
     def validate_full_name(self, value):
         name = ' '.join(value.split())

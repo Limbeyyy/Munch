@@ -26,6 +26,15 @@ const api = apiClient as jest.Mocked<typeof apiClient>;
 beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
+  Object.defineProperty(window, 'crypto', {
+    configurable: true,
+    value: {
+      getRandomValues: (values: Uint8Array) => {
+        values.fill(7);
+        return values;
+      },
+    },
+  });
   Object.defineProperty(navigator, 'userAgent', {
     configurable: true,
     value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile',
@@ -92,11 +101,14 @@ describe('the guest door', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Join' }));
 
-    await waitFor(() => expect(api.guestKnock).toHaveBeenCalledWith({
-      code: 'ABC123',
-      full_name: 'Bishnu Prasad',
-      token: 'held-token',
-    }));
+    await waitFor(() => expect(api.guestKnock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'ABC123',
+        full_name: 'Bishnu Prasad',
+        token: 'held-token',
+      })
+    ));
+    expect(api.guestKnock.mock.calls[0][0].device_id).toMatch(/^[a-f0-9]{48}$/);
   });
 
   it('says what becomes of the name, because that is the question', async () => {
@@ -167,12 +179,19 @@ describe('remembering a name', () => {
  * an account signs in instead and needs no code at all.
  */
 describe('arriving with the code already', () => {
-  const showWithLink = () =>
-    render(
+  const showWithLink = (mobile = true) => {
+    Object.defineProperty(navigator, 'userAgent', {
+      configurable: true,
+      value: mobile
+        ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile'
+        : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0',
+    });
+    return render(
       <MemoryRouter initialEntries={['/login?join=abc123']}>
         <LoginPage />
       </MemoryRouter>
     );
+  };
 
   it('opens the guest door and fills the code in', async () => {
     showWithLink();
@@ -183,11 +202,7 @@ describe('arriving with the code already', () => {
   });
 
   it('explains guest mode is mobile-only when a desktop opens an event link', async () => {
-    Object.defineProperty(navigator, 'userAgent', {
-      configurable: true,
-      value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0',
-    });
-    showWithLink();
+    showWithLink(false);
 
     expect(await screen.findByRole('alert'))
       .toHaveTextContent('Guest mode is only supported on mobile devices for now.');
@@ -201,21 +216,20 @@ describe('arriving with the code already', () => {
     expect(await screen.findByText(/code came with your link/)).toBeInTheDocument();
   });
 
-  it('waits to be pressed rather than going in by itself', async () => {
+  it('opens the guest join form without requiring another button press', async () => {
     showWithLink();
 
     await screen.findByLabelText('Event code');
-    expect(screen.queryByRole('dialog', { name: 'Enter event info' })).toBeNull();
+    expect(await screen.findByRole('dialog', { name: 'Enter event info' }))
+      .toBeInTheDocument();
     expect(api.guestKnock).not.toHaveBeenCalled();
   });
 
-  it('asks for the name once it is pressed', async () => {
+  it('prefills a remembered name for a QR arrival', async () => {
+    window.localStorage.setItem('manch.guest.name', 'Bishnu Prasad');
     showWithLink();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Enter event room' }));
-
-    expect(await screen.findByRole('dialog', { name: 'Enter event info' }))
-      .toBeInTheDocument();
+    expect(await screen.findByLabelText(/Your Name/)).toHaveValue('Bishnu Prasad');
   });
 
   it('leaves signing in right there for anybody who has an account', async () => {

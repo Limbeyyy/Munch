@@ -23,6 +23,8 @@ interface Props {
    * co-hosts'; everybody else only reads the board and votes on it.
    */
   canSort?: boolean;
+  /** The live room handles moderation in its separate Requests panel. */
+  showRequests?: boolean;
   /** The host reads the tally; only attendees cast a vote. */
   canVote?: boolean;
   /**
@@ -63,12 +65,12 @@ interface Props {
  * to, and what the host did with the other messages are not the reader's
  * business and are not here.
  *
- * The host sees the pending requests directly under their matching board
- * tab, while attendees can read, vote, and send their own messages here.
+ * The host may show pending requests with the matching board tab, while
+ * attendees can read, vote, and send their own messages here.
  */
 export const RoomQuestions: React.FC<Props> = ({
   eventId, guestToken, agendaSessionId, refreshMs, canSort, canVote = true,
-  waiting: alsoWaiting, onNews, onAsk,
+  showRequests = true, waiting: alsoWaiting, onNews, onAsk,
 }) => {
   const { t, num } = useOrganizer();
   const [board, setBoard] = useState<EventBoard | null>(null);
@@ -106,7 +108,7 @@ export const RoomQuestions: React.FC<Props> = ({
       setBoard({ faq: [], suggestions: [] });
     }
 
-    if (!canSort || !eventId) { setFetched([]); return; }
+    if (!canSort || !showRequests || !eventId) { setFetched([]); return; }
     try {
       /*
        * Two kinds of thing are waiting to be given a place.
@@ -130,7 +132,7 @@ export const RoomQuestions: React.FC<Props> = ({
       // The queue is the host's own view; a dropped refresh is not worth
       // interrupting a event for.
     }
-  }, [eventId, guestToken, canSort, onNews]);
+  }, [eventId, guestToken, canSort, showRequests, onNews]);
 
   useEffect(() => {
     load();
@@ -178,7 +180,7 @@ export const RoomQuestions: React.FC<Props> = ({
   const agendaWaiting = agendaSessionId === undefined
     ? waiting
     : waiting.filter((message) => message.session === agendaSessionId);
-  const tabRequests = canSort
+  const tabRequests = canSort && showRequests
     ? agendaWaiting.filter((message) =>
         message.moderation_status === 'pending'
         && (tab === 'faq'
@@ -191,7 +193,7 @@ export const RoomQuestions: React.FC<Props> = ({
     {
       id: 'faq',
       label: t({ ne: 'प्रश्न', en: 'Questions' }),
-      count: questions.length + (canSort
+      count: questions.length + (canSort && showRequests
         ? agendaWaiting.filter((message) =>
             message.moderation_status === 'pending' && message.topic !== 'suggestion'
           ).length
@@ -200,7 +202,7 @@ export const RoomQuestions: React.FC<Props> = ({
     {
       id: 'suggestions',
       label: t({ ne: 'सुझाव', en: 'Suggestions' }),
-      count: suggestions.length + (canSort
+      count: suggestions.length + (canSort && showRequests
         ? agendaWaiting.filter((message) =>
             message.moderation_status === 'pending' && message.topic === 'suggestion'
           ).length

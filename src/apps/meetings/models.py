@@ -484,6 +484,9 @@ class GuestAttendee(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='guests')
     full_name = models.CharField(max_length=120)
+    # A random browser-held credential, not a hardware fingerprint. It
+    # lets an already-approved guest return from the same browser.
+    device_id = models.CharField(max_length=64, blank=True, default='')
     # Asked for once, and no longer. A name is what the host needs to
     # decide whether to let somebody in, and it is all the register keeps;
     # a telephone number was a piece of personal data collected for no

@@ -67,7 +67,11 @@ def evict_idle_attendees():
         status=Event.Status.ACTIVE
     ).select_related('host', 'host__host_account')
 
-    let_go = sum(evict_idle(event) for event in running)
-    if let_go:
-        logger.info(f"Let go of {let_go} idle attendee(s)")
+    events = list(running)
+    let_go = sum(evict_idle(event) for event in events)
+    logger.info(
+        "AFK sweep: dropped %d idle attendee(s) across %d active event(s)",
+        let_go,
+        len(events),
+    )
     return let_go

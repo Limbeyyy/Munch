@@ -373,7 +373,7 @@ const IdlePanel: React.FC = () => {
             type="number"
             min={0}
             max={most}
-            step={5}
+            step={1}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             aria-describedby="manch-idle-timeout-hint"

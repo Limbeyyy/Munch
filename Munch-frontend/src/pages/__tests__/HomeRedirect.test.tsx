@@ -6,9 +6,15 @@ import {
 } from '../HomeRedirect';
 import { apiClient } from '../../services/api';
 import { UserRoles } from '../../types';
+import { useAuthStore } from '../../store/authStore';
 
 jest.mock('../../services/api', () => ({
-  apiClient: { getMyRoles: jest.fn(), startHosting: jest.fn() },
+  apiClient: {
+    getMyRoles: jest.fn(),
+    getActiveEvents: jest.fn(),
+    startHosting: jest.fn(),
+    hasSession: () => false,
+  },
 }));
 
 const roles = (over: Partial<UserRoles> = {}): UserRoles => ({
@@ -60,6 +66,7 @@ const show = () =>
           <Route path="/" element={<HomeRedirect />} />
           <Route path="/organizer" element={<p>organizer portal</p>} />
           <Route path="/app" element={<p>attendee portal</p>} />
+          <Route path="/event/:eventCode" element={<p>live room</p>} />
         </Routes>
       </MemoryRouter>
     </React.StrictMode>
@@ -70,6 +77,10 @@ beforeEach(() => {
   forgetPortal();
   window.sessionStorage.clear();
   (apiClient.startHosting as jest.Mock).mockResolvedValue({});
+  (apiClient.getActiveEvents as jest.Mock).mockResolvedValue([]);
+  useAuthStore.setState({
+    user: { id: 'host-1', email: 'host@example.com' } as any,
+  });
   usingA('mouse');
 });
 
@@ -166,6 +177,42 @@ describe('signing in', () => {
 
     expect(await screen.findByText('organizer portal')).toBeInTheDocument();
     expect(apiClient.startHosting).not.toHaveBeenCalled();
+  });
+
+  it('takes a host with an active event straight to that room', async () => {
+    (apiClient.getMyRoles as jest.Mock).mockResolvedValue(roles());
+    (apiClient.getActiveEvents as jest.Mock).mockResolvedValue([{
+      id: 'event-1',
+      code: 'ABC123',
+      title: 'Opening day',
+      status: 'active',
+      host: { id: 'host-1' },
+    }]);
+    markFreshSignIn();
+
+    show();
+
+    expect(await screen.findByText('live room')).toBeInTheDocument();
+  });
+
+  it('takes an attendee with an active event to the attendee app', async () => {
+    usingA('finger');
+    (apiClient.getMyRoles as jest.Mock).mockResolvedValue(
+      roles({ is_host: false, is_attendee: true, portals: ['attendee'] })
+    );
+    (apiClient.getActiveEvents as jest.Mock).mockResolvedValue([{
+      id: 'event-2',
+      code: 'XYZ789',
+      title: 'Another event',
+      status: 'active',
+      host: { id: 'someone-else' },
+    }]);
+    markFreshSignIn();
+
+    show();
+
+    expect(await screen.findByText('attendee portal')).toBeInTheDocument();
+    expect(window.sessionStorage.getItem('manch.pending_live_event')).toBe('XYZ789');
   });
 
   /** The trial is what makes the dashboard worth opening. */
