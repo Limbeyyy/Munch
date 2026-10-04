@@ -509,6 +509,8 @@ export const EventDetail: React.FC<{
                   ne: 'कार्यक्रम सुरु भएपछि सुझावहरू यहाँ उपलब्ध हुनेछन्।',
                   en: 'Suggestions will be available during the event.',
                 })
+              : tab === 'files' && filesAt === 'agenda'
+              ? t({ ne: 'अझै फाइल थपिएको छैन।', en: 'No files added yet.' })
               : t({ ne: 'यहाँ केही छैन।', en: 'Nothing here yet.' })}
           </p>
         ) : (
@@ -624,12 +626,16 @@ export const EventDetail: React.FC<{
 
                 {tab === 'files' && group.sessions.map((one) => {
                   const mine = files.filter((f) => f.session === one.id);
-                  if (mine.length === 0) return null;
                   return (
                     <div key={one.id}>
                       <TalkHead title={one.title} />
-                      <ul className="pt-3 flex flex-col gap-2">
-                        {mine.map((file) => (
+                      {mine.length === 0 ? (
+                        <p className="pt-2 text-[13px] text-[#8b90a0]">
+                          {t({ ne: 'अझै फाइल थपिएको छैन।', en: 'No files added yet.' })}
+                        </p>
+                      ) : (
+                        <ul className="pt-3 flex flex-col gap-2">
+                          {mine.map((file) => (
                           <li
                             key={file.id}
                             className="border-[0.72px] border-[#b3b3b3]
@@ -666,8 +672,9 @@ export const EventDetail: React.FC<{
                               </a>
                             )}
                           </li>
-                        ))}
-                      </ul>
+                          ))}
+                        </ul>
+                      )}
                     </div>
                   );
                 })}

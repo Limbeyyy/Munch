@@ -10,6 +10,9 @@ import {
   FilterPills, NothingYet, QuietButton, SearchInput, StatCard,
   SubcategoryPanel, clockOf,
 } from './shared';
+import { Pagination } from '../../components/Pagination';
+
+const PAGE_SIZE = 8;
 
 /** What a summary is, as the list files it. */
 type State = 'published' | 'draft' | 'missing';
@@ -56,6 +59,7 @@ export const SummariesTab: React.FC<{ event: Event }> = ({ event }) => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  const [page, setPage] = useState(1);
   const [busy, setBusy] = useState('');
 
   /** The agenda whose summary is open for rewriting, and the words in it. */
@@ -101,16 +105,17 @@ export const SummariesTab: React.FC<{ event: Event }> = ({ event }) => {
     return row.session.title.toLowerCase()
       .includes(search.trim().toLowerCase());
   });
+  const pageRows = shown.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const otherAgendas = t({ ne: 'अन्य कार्यसूची', en: 'Other agendas' });
   const agendaParts = subEvents.length > 0
     ? groupSessions(
-      shown.map((row) => row.session),
+      pageRows.map((row) => row.session),
       subEvents,
       otherAgendas
     )
     : [];
   const shownBySession = new Map(
-    shown.map((row) => [row.session.id, row] as const)
+    pageRows.map((row) => [row.session.id, row] as const)
   );
 
   const counted = (state: State) => rows.filter((r) => r.state === state).length;
@@ -206,12 +211,12 @@ export const SummariesTab: React.FC<{ event: Event }> = ({ event }) => {
       <div className="flex gap-4 items-center flex-wrap">
         <SearchInput
           value={search}
-          onChange={setSearch}
+          onChange={(value) => { setSearch(value); setPage(1); }}
           label={t({ ne: 'सारांश खोज्नुहोस्', en: 'Search summaries' })}
         />
         <FilterPills<Filter>
           value={filter}
-          onChange={setFilter}
+          onChange={(value) => { setFilter(value); setPage(1); }}
           options={[
             { id: 'all', label: { ne: 'सबै', en: 'All' } },
             { id: 'published', label: STATE_LABEL.published },
@@ -247,7 +252,7 @@ export const SummariesTab: React.FC<{ event: Event }> = ({ event }) => {
               id: '',
               title: '',
               description: '',
-              rows: shown,
+              rows: pageRows,
             }]
           ).map((part) => {
             const cards = part.rows.map((row) => {
@@ -394,6 +399,14 @@ export const SummariesTab: React.FC<{ event: Event }> = ({ event }) => {
           })}
         </div>
       )}
+
+      <Pagination
+        page={page}
+        pageSize={PAGE_SIZE}
+        totalItems={shown.length}
+        onPageChange={setPage}
+        theme="host"
+      />
 
       {/* 641-17972: the agenda and its speaker read-only above the words,
           because which summary is being rewritten is not itself editable. */}

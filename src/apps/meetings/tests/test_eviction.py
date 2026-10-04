@@ -210,6 +210,12 @@ class EvictionTests(TransactionTestCase):
         self.assertTrue(response.json()['event_ended'])
         self.assertEqual(response.json()['event_status'], Event.Status.ENDED)
 
+        # Closing the live session broadcasts its state before the final
+        # event-ended message is sent.
+        session_update = await comm.receive_json_from()
+        self.assertEqual(session_update['type'], 'state_update')
+        attendance_update = await comm.receive_json_from()
+        self.assertEqual(attendance_update['type'], 'attendance_update')
         said = await comm.receive_json_from()
         self.assertEqual(said['type'], 'event_ended')
         self.assertEqual(said['reason'], 'last_session')

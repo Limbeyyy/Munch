@@ -1,8 +1,10 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { OrganizerProvider } from '../../../organizer/i18n';
 import { LiveRoom } from '../LiveRoom';
+import { NotificationsScreen } from '../NotificationsScreen';
 import { apiClient } from '../../../services/api';
+import { LIST_POLL_MS } from '../../../services/polling';
 
 jest.mock('../../../services/api', () => ({
   apiClient: {
@@ -19,6 +21,8 @@ jest.mock('../../../services/api', () => ({
     getPhotoObjectUrl: jest.fn(),
     joinEvent: jest.fn(),
     leaveEvent: jest.fn(),
+    getReminders: jest.fn(),
+    markRemindersRead: jest.fn(),
     hasSession: jest.fn(() => false),
   },
 }));
@@ -92,6 +96,8 @@ beforeEach(() => {
   api.getPhotos.mockResolvedValue({ folders: [], photos: [] } as any);
   api.joinEvent.mockResolvedValue({} as any);
   api.leaveEvent.mockResolvedValue(undefined as any);
+  api.getReminders.mockResolvedValue({ reminders: [], unread: 0 } as any);
+  api.markRemindersRead.mockResolvedValue({ marked: 0 } as any);
   api.getSessionSummary.mockResolvedValue({
     session: 's1', session_title: 'Emergency Response Overview',
     body: 'An exploration of how the response was coordinated.',
@@ -156,6 +162,31 @@ describe('the five things along the bottom', () => {
     api.listEvents.mockResolvedValue([{ ...event, status: 'ended' }] as any);
     show(onLeave);
     await waitFor(() => expect(onLeave).toHaveBeenCalledTimes(1));
+  });
+
+  it('leaves when a refresh finds that the event has ended', async () => {
+    const onLeave = jest.fn();
+    api.listEvents.mockResolvedValue([event] as any);
+    const intervalSpy = jest.spyOn(window, 'setInterval');
+
+    try {
+      show(onLeave);
+      await screen.findByText('Emergency Service Meeting');
+      api.listEvents.mockResolvedValue([{ ...event, status: 'ended' }] as any);
+
+      const refresh = intervalSpy.mock.calls.find(
+        ([, delay]) => delay === LIST_POLL_MS
+      )?.[0];
+      expect(typeof refresh).toBe('function');
+      if (typeof refresh !== 'function') {
+        throw new Error('Attendee event refresh interval was not registered');
+      }
+
+      await act(async () => { await refresh(); });
+      expect(onLeave).toHaveBeenCalledTimes(1);
+    } finally {
+      intervalSpy.mockRestore();
+    }
   });
 
   it('leaves immediately when the event-ended room message arrives', async () => {
@@ -566,6 +597,11 @@ describe('the files', () => {
     expect(screen.queryByRole('button', { name: /Add|Upload/ })).toBeNull();
   });
 
+  it('shows the no-files message in the live room', async () => {
+    await go('Files');
+    expect(await screen.findByText('No files added yet.')).toBeInTheDocument();
+  });
+
   it('opens a folder of photographs', async () => {
     api.getPhotos.mockResolvedValue({
       folders: [{
@@ -582,5 +618,37 @@ describe('the files', () => {
     expect(
       await screen.findByRole('heading', { name: 'Event Opening' })
     ).toBeInTheDocument();
+  });
+
+  describe('attendee notifications', () => {
+    it('shows the 10 newest notifications first and paginates older ones', async () => {
+      api.getReminders.mockResolvedValue({
+        reminders: Array.from({ length: 12 }, (_, index) => ({
+          id: `r${index}`,
+          kind: index % 2 === 0 ? 'event' : 'session',
+          event_title: `Notification ${index}`,
+          session_title: `Agenda ${index}`,
+          due_at: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+        })),
+        unread: 0,
+      } as any);
+      render(
+        <OrganizerProvider>
+          <NotificationsScreen onRead={jest.fn()} />
+        </OrganizerProvider>
+      );
+
+      const rows = await screen.findAllByRole('listitem');
+      expect(rows).toHaveLength(10);
+      expect(rows[0]).toHaveTextContent('Notification 11');
+      expect(rows[9]).toHaveTextContent('Notification 2');
+      expect(screen.queryByText(/Notification 1 is about to begin/)).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+      const older = screen.getAllByRole('listitem');
+      expect(older).toHaveLength(2);
+      expect(older[0]).toHaveTextContent('Notification 1');
+      expect(older[1]).toHaveTextContent('Notification 0');
+    });
   });
 });

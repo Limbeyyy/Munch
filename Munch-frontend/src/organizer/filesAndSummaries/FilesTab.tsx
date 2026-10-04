@@ -10,6 +10,9 @@ import {
   FilledButton, KindChip, NothingYet, QuietButton, SearchInput, Slab,
   SubcategoryPanel, clockOf, dayOf, formatSize, kindOf,
 } from './shared';
+import { Pagination } from '../../components/Pagination';
+
+const PAGE_SIZE = 8;
 
 /** The agendas a file may be filed against, and the loose pile. */
 const LOOSE = '';
@@ -28,6 +31,7 @@ export const FilesTab: React.FC<{ event: Event }> = ({ event }) => {
   const [files, setFiles] = useState<Artifact[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [busy, setBusy] = useState(false);
 
   /** The dialog, and which agenda it opened against. */
@@ -59,6 +63,11 @@ export const FilesTab: React.FC<{ event: Event }> = ({ event }) => {
       (one.display_name ?? '').toLowerCase().includes(wanted)
     );
   }, [files, search]);
+  const visibleIds = new Set(
+    matching
+      .slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+      .map((one) => one.id)
+  );
 
   /**
    * The groups, in the running order's order.
@@ -181,7 +190,7 @@ export const FilesTab: React.FC<{ event: Event }> = ({ event }) => {
       <div className="flex gap-4 items-center justify-between flex-wrap">
         <SearchInput
           value={search}
-          onChange={setSearch}
+          onChange={(value) => { setSearch(value); setPage(1); }}
           label={t({ ne: 'फाइल खोज्नुहोस्', en: 'Search Files' })}
         />
         <FilledButton onClick={() => openAdd(sessions[0]?.id ?? LOOSE)}>
@@ -245,11 +254,13 @@ export const FilesTab: React.FC<{ event: Event }> = ({ event }) => {
               </p>
             ) : (
               <div className="flex flex-col">
-                {group.rows.map((one, i) => (
+                {group.rows
+                  .filter((one) => visibleIds.has(one.id))
+                  .map((one, i, visibleRows) => (
                   <div
                     key={one.id}
                     className={`px-5 py-3 flex gap-4 items-center ${
-                      i < group.rows.length - 1
+                      i < visibleRows.length - 1
                         ? 'border-b-[0.6px] border-[#f9fafb]' : ''
                     }`}
                   >
@@ -306,6 +317,14 @@ export const FilesTab: React.FC<{ event: Event }> = ({ event }) => {
           ) : cards;
         })
       )}
+
+      <Pagination
+        page={page}
+        pageSize={PAGE_SIZE}
+        totalItems={matching.length}
+        onPageChange={setPage}
+        theme="host"
+      />
 
       {/* 641-18755 */}
       <Modal

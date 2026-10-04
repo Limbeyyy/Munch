@@ -3,6 +3,9 @@ import { apiClient } from '../../services/api';
 import { Reminder } from '../../types';
 import { useOrganizer } from '../../organizer/i18n';
 import { ScreenHead } from './PhoneShell';
+import { Pagination } from '../../components/Pagination';
+
+const PAGE_SIZE = 10;
 
 /** When it arrived, in the words a feed uses for it. */
 const when = (iso: string, t: (pair: { ne: string; en: string }) => string) => {
@@ -60,6 +63,7 @@ export const NotificationsScreen: React.FC<{
   const { t } = useOrganizer();
   const [rows, setRows] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
 
   const read = useCallback(async () => {
     try {
@@ -81,6 +85,11 @@ export const NotificationsScreen: React.FC<{
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const ordered = [...rows].sort(
+    (a, b) => +new Date(b.due_at) - +new Date(a.due_at)
+  );
+  const visible = ordered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   return (
     <div>
       <ScreenHead title={t({ ne: 'सूचना', en: 'Notifications' })} />
@@ -94,34 +103,43 @@ export const NotificationsScreen: React.FC<{
           {t({ ne: 'केही छैन।', en: 'Nothing here yet.' })}
         </p>
       ) : (
-        <ul className="divide-y divide-[#eceef2]">
-          {rows.map((one) => (
-            <li key={one.id} className="px-4 py-4 flex gap-3">
-              <Mark kind={one.kind} />
-              <div className="min-w-0 flex-1">
-                <p className="text-[14px] font-semibold text-[#111726]">
-                  {one.kind === 'event'
-                    ? t({ ne: 'आउँदो कार्यक्रम', en: 'Upcoming event' })
-                    : t({ ne: 'आउँदो सत्र', en: 'Upcoming session' })}
-                </p>
-                <p className="pt-0.5 text-[13px] leading-5 text-[#5b6070]">
-                  {one.kind === 'event'
-                    ? t({
-                        ne: `${one.event_title} सुरु हुँदैछ।`,
-                        en: `${one.event_title} is about to begin.`,
-                      })
-                    : t({
-                        ne: `“${one.session_title}” ${one.event_title} मा सुरु हुँदैछ।`,
-                        en: `“${one.session_title}” is about to begin at ${one.event_title}.`,
-                      })}
-                </p>
-                <p className="pt-1 text-[12px] text-[#9ba0ad]">
-                  {when(one.due_at, t)}
-                </p>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="divide-y divide-[#eceef2]">
+            {visible.map((one) => (
+              <li key={one.id} className="px-4 py-4 flex gap-3">
+                <Mark kind={one.kind} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14px] font-semibold text-[#111726]">
+                    {one.kind === 'event'
+                      ? t({ ne: 'आउँदो कार्यक्रम', en: 'Upcoming event' })
+                      : t({ ne: 'आउँदो सत्र', en: 'Upcoming session' })}
+                  </p>
+                  <p className="pt-0.5 text-[13px] leading-5 text-[#5b6070]">
+                    {one.kind === 'event'
+                      ? t({
+                          ne: `${one.event_title} सुरु हुँदैछ।`,
+                          en: `${one.event_title} is about to begin.`,
+                        })
+                      : t({
+                          ne: `“${one.session_title}” ${one.event_title} मा सुरु हुँदैछ।`,
+                          en: `“${one.session_title}” is about to begin at ${one.event_title}.`,
+                        })}
+                  </p>
+                  <p className="pt-1 text-[12px] text-[#9ba0ad]">
+                    {when(one.due_at, t)}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <Pagination
+            page={page}
+            pageSize={PAGE_SIZE}
+            totalItems={ordered.length}
+            onPageChange={setPage}
+            theme="attendee"
+          />
+        </>
       )}
     </div>
   );

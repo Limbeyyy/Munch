@@ -124,6 +124,27 @@ describe('the attendance grid', () => {
     expect(screen.getByText('City Hall, Room 201', { exact: false })).toBeInTheDocument();
   });
 
+  it('loads eight attendance event reports per page', async () => {
+    api.listEvents.mockResolvedValue(Array.from({ length: 10 }, (_, index) =>
+      event({
+        id: `e${index + 1}`,
+        title: `Attendance event ${index + 1}`,
+        scheduled_start: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+        event_date: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+      })
+    ) as any);
+    show();
+
+    expect(await screen.findByText('Attendance event 10')).toBeInTheDocument();
+    expect(screen.getByText('Attendance event 3')).toBeInTheDocument();
+    expect(screen.queryByText('Attendance event 2')).toBeNull();
+    await waitFor(() => expect(api.getAttendance).toHaveBeenCalledTimes(8));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('Attendance event 2')).toBeInTheDocument();
+    await waitFor(() => expect(api.getAttendance).toHaveBeenCalledTimes(10));
+  });
+
   /**
    * Everybody the day counted, and the two ways they got there: an
    * invitation, or the door.
