@@ -202,7 +202,7 @@ describe('home', () => {
     expect(screen.getByText('Upcoming 4')).toBeInTheDocument();
   });
 
-  it('paginates My Events newest-first in pages of 10', async () => {
+  it('paginates My Events newest-first in pages of five', async () => {
     api.listEvents.mockResolvedValue(Array.from({ length: 12 }, (_, index) =>
       event({
         id: `up-${index}`,
@@ -214,12 +214,57 @@ describe('home', () => {
     show();
     fireEvent.click(await screen.findByRole('button', { name: /^Events/ }));
     expect(await screen.findByText('My event 11')).toBeInTheDocument();
-    expect(screen.getByText('My event 2')).toBeInTheDocument();
-    expect(screen.queryByText('My event 1')).toBeNull();
+    expect(screen.getByText('My event 7')).toBeInTheDocument();
+    expect(screen.queryByText('My event 6')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    expect(await screen.findByText('My event 1')).toBeInTheDocument();
-    expect(screen.getByText('My event 0')).toBeInTheDocument();
+    expect(await screen.findByText('My event 6')).toBeInTheDocument();
+    expect(screen.getByText('My event 2')).toBeInTheDocument();
+    expect(screen.queryByText('My event 1')).toBeNull();
+  });
+
+  it('also paginates the completed My Events tab by five newest first', async () => {
+    api.listEvents.mockResolvedValue(Array.from({ length: 7 }, (_, index) =>
+      event({
+        id: `done-${index}`,
+        title: `Completed event ${index}`,
+        status: 'ended',
+        created_at: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+      })
+    ) as any);
+
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: /^Events/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Completed/ }));
+    expect(await screen.findByText('Completed event 6')).toBeInTheDocument();
+    expect(screen.getByText('Completed event 2')).toBeInTheDocument();
+    expect(screen.queryByText('Completed event 1')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('Completed event 1')).toBeInTheDocument();
+    expect(screen.getByText('Completed event 0')).toBeInTheDocument();
+  });
+
+  it('searches My Events by name and resets pagination', async () => {
+    api.listEvents.mockResolvedValue(Array.from({ length: 7 }, (_, index) =>
+      event({
+        id: `up-${index}`,
+        title: index === 0 ? 'Matching event' : `Other event ${index}`,
+        created_at: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+      })
+    ) as any);
+
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: /^Events/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('Other event 1')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search event names' }), {
+      target: { value: 'Matching' },
+    });
+    expect(await screen.findByText('Matching event')).toBeInTheDocument();
+    expect(screen.queryByText('Other event 1')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Next' })).toBeNull();
   });
 
   it('shows the question total on completed cards only on Home', async () => {

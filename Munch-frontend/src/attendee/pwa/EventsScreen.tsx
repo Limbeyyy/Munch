@@ -8,7 +8,7 @@ import { stateOf } from './HomeShell';
 import { Pagination } from '../../components/Pagination';
 
 type Deck = 'upcoming' | 'completed';
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 5;
 
 /**
  * Every event this person is part of, split into upcoming and completed.
@@ -25,6 +25,7 @@ export const EventsScreen: React.FC<{
     summariesAvailable: boolean;
   }>>({});
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     if (deck) {
@@ -46,9 +47,15 @@ export const EventsScreen: React.FC<{
     };
   }, [events]);
 
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return query
+      ? decks[at].filter((event) => event.title.toLowerCase().includes(query))
+      : decks[at];
+  }, [decks, at, search]);
   const shown = useMemo(
-    () => decks[at].slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-    [decks, at, page]
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page]
   );
 
   useEffect(() => {
@@ -104,9 +111,38 @@ export const EventsScreen: React.FC<{
         ))}
       </div>
 
+      <label className="mx-4 mt-3 h-10 rounded-[10px] border border-[#d6e4f8]
+        bg-white px-3 flex items-center gap-2.5 focus-within:border-[#194d97]">
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#8b90a0"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-4-4" />
+        </svg>
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          placeholder={t({ ne: 'कार्यक्रमको नाम खोज्नुहोस्', en: 'Search event names' })}
+          aria-label={t({ ne: 'कार्यक्रमको नाम खोज्नुहोस्', en: 'Search event names' })}
+          className="min-w-0 flex-1 bg-transparent text-[14px] text-[#111726]
+            placeholder:text-[#8b90a0] outline-none"
+        />
+      </label>
+
       {shown.length === 0 ? (
         <p className="px-4 pt-8 text-center text-[13px] text-[#8b90a0]">
-          {at === 'upcoming'
+          {filtered.length === 0 && search.trim()
+            ? t({ ne: 'कुनै कार्यक्रम भेटिएन।', en: 'No matching events.' })
+            : at === 'upcoming'
             ? t({ ne: 'आउँदो कार्यक्रम छैन।', en: 'Nothing coming up.' })
             : t({ ne: 'सकिएको कार्यक्रम छैन।', en: 'Nothing finished yet.' })}
         </p>
@@ -130,7 +166,7 @@ export const EventsScreen: React.FC<{
       <Pagination
         page={page}
         pageSize={PAGE_SIZE}
-        totalItems={decks[at].length}
+        totalItems={filtered.length}
         onPageChange={setPage}
         theme="attendee"
       />
