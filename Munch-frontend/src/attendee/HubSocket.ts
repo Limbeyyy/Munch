@@ -1,3 +1,5 @@
+import { API_BASE_URL } from '../services/apiConfig';
+
 /** Opens the event's own websocket so the hub can speak into the room.
 
 The chat path is the event socket; the hub is simply another client of
@@ -14,7 +16,7 @@ export const openHubSocket = (
   onMessage: () => void,
   guestToken?: string
 ): HubSocket => {
-  const apiUrl = new URL(process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1');
+  const apiUrl = new URL(API_BASE_URL);
   const protocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
 
   // A websocket handshake cannot carry an Authorization header, so the

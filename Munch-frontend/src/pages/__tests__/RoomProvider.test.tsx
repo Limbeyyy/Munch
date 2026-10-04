@@ -960,7 +960,7 @@ describe('the end choice', () => {
     ).toBeInTheDocument();
   });
 
-  it('leaves the room when ending the last session ends the event', async () => {
+  it('leaves the room when the session response reports the event has ended', async () => {
     api.endSession.mockResolvedValue({ event_ended: true } as any);
     asHost();
     showRoom();

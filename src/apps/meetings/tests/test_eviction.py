@@ -191,16 +191,8 @@ class EvictionTests(TransactionTestCase):
             1,
         )
 
-    async def test_ending_the_last_session_leaves_the_room_standing(self):
-        """The room has nothing left to be open for, so it closes.
-
-        Ending a session ends the session and the room goes on, offering
-        the host the next one - but when there is no next one there is
-        nothing to offer. Leaving it open meant a host had to end the
-        session and then end the event as two separate acts, and a room
-        stood open with an event reading as live for hours after its last
-        talk had finished.
-        """
+    async def test_ending_the_last_session_ends_and_evicts_the_room(self):
+        """Finishing the last agenda ends the event and closes its room."""
         comm = await joined(self.event, self.attendee)
         await comm.receive_json_from()
 
@@ -217,7 +209,12 @@ class EvictionTests(TransactionTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()['event_ended'])
         self.assertEqual(response.json()['event_status'], Event.Status.ENDED)
-        await comm.disconnect()
+
+        said = await comm.receive_json_from()
+        self.assertEqual(said['type'], 'event_ended')
+        self.assertEqual(said['reason'], 'last_session')
+        shut = await comm.receive_output()
+        self.assertEqual(shut['type'], 'websocket.close')
 
         still_in = await database_sync_to_async(
             lambda: EventParticipant.objects.filter(
@@ -225,6 +222,7 @@ class EvictionTests(TransactionTestCase):
             ).count()
         )()
         self.assertEqual(still_in, 0)
+        await comm.disconnect()
 
     def test_the_meeting_stays_open_while_a_session_is_still_to_come(self):
         # Ending the first of two is not ending the event.

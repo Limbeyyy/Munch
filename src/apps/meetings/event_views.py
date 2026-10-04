@@ -453,23 +453,6 @@ class EventViewSet(EventRoomViewSet):
         )
 
 
-def _anything_left(event) -> bool:
-    """Whether the day still has a talk to give.
-
-    Skipped counts as finished: the host has already said it is not
-    happening, so a programme whose remaining items were all skipped is
-    a programme that is over. An event with no running order at all is
-    not ended by this - there was never a last session to finish, and
-    closing the room out from under a host who is using it as a room
-    would be a surprise.
-    """
-    if not event.sessions.exists():
-        return True
-    return event.sessions.exclude(
-        status__in=[Session.Status.DONE, Session.Status.SKIPPED]
-    ).exists()
-
-
 class SessionViewSet(viewsets.ModelViewSet):
     """Segments of the running order inside a event."""
     serializer_class = SessionSerializer
@@ -757,30 +740,28 @@ class SessionViewSet(viewsets.ModelViewSet):
 
         broadcast_attendance_changed(session.event)
 
-        # The event is the room, and the room is not one talk: ending a
-        # session closes that session and leaves the room open for the
-        # next. But when there is no next one the room has nothing left
-        # to be open for, and asking the host to end the event as a
-        # separate act only leaves rooms standing open after everybody
-        # has gone home - and an event reading as live for hours after
-        # its last talk finished.
+        # A session ending only closes that session. The event room stays
+        # open while any agenda remains; closing the final agenda ends it.
         event = session.event
         event.refresh_from_db()
-
-        ended_here = False
-        if event.status == Event.Status.ACTIVE and not _anything_left(event):
+        event_ended = False
+        if (
+            event.status == Event.Status.ACTIVE
+            and not event.sessions.exclude(
+                status__in=[Session.Status.DONE, Session.Status.SKIPPED]
+            ).exists()
+        ):
             from src.apps.meetings.services.event_service import EventService
 
-            EventService.end_event(str(event.id))
-            event.refresh_from_db()
-            ended_here = True
+            event = EventService.end_event(str(event.id))
             broadcast_event_ended(event, reason='last_session')
+            event_ended = True
 
         return Response({
             **SessionSerializer(session).data,
             'attendance_recorded': recorded,
             'event_status': event.status,
-            'event_ended': ended_here,
+            'event_ended': event_ended,
             'sessions_moved': [str(s.id) for s in moved],
             'event_scheduled_end': (
                 event.scheduled_end.isoformat()

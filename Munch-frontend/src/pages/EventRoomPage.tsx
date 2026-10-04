@@ -17,6 +17,7 @@ import { KindChip, kindOf } from '../organizer/filesAndSummaries/shared';
 import { RoomAgenda } from '../organizer/RoomAgenda';
 import { RoomBarButton, RoomCard, RoomPortrait, SidePanelHead } from './roomChrome';
 import { OrganizerProvider } from '../organizer/i18n';
+import { API_BASE_URL } from '../services/apiConfig';
 
 
 /** The only things allowed to sit beside the room. */
@@ -462,7 +463,7 @@ const EventRoomInner: React.FC = () => {
   const connectWebSocket = useCallback(() => {
     // The websocket lives on the Django backend, not on the dev server that
     // serves this page, so derive the host from the API URL.
-    const apiUrl = new URL(process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1');
+    const apiUrl = new URL(API_BASE_URL);
     const protocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
 
     // A websocket handshake cannot carry an Authorization header, so the
