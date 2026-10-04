@@ -72,6 +72,7 @@ def _entry(message, *, user=None, guest=None):
     return {
         'id': str(message.id),
         'body': message.body,
+        'session_id': str(message.session_id) if message.session_id else None,
         'asked_by': message.sender_label,
         'asker_is_guest': message.guest_sender_id is not None,
         'was_direct': message.is_direct,
@@ -105,6 +106,7 @@ def _hub_entry(post, *, user=None, guest=None):
     return {
         'id': str(post.id),
         'body': post.body,
+        'session_id': str(post.session_id) if post.session_id else None,
         'asked_by': post.author_label,
         'asker_is_guest': post.guest_id is not None or bool(post.guest_name),
         'was_direct': False,

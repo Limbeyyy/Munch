@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../services/api';
 import { LIST_POLL_MS } from '../../services/polling';
@@ -10,6 +10,7 @@ import { AgendaScreen } from './AgendaScreen';
 import { BoardScreen } from './BoardScreen';
 import { FilesScreen } from './FilesScreen';
 import { Settings } from './profile/Settings';
+import { API_BASE_URL } from '../../services/apiConfig';
 
 /**
  * The live room, on a phone.
@@ -25,6 +26,9 @@ import { Settings } from './profile/Settings';
  */
 export const LiveRoom: React.FC<{ onLeave: () => void }> = ({ onLeave }) => {
   const { t } = useOrganizer();
+  const leaveRef = useRef(onLeave);
+
+  useEffect(() => { leaveRef.current = onLeave; }, [onLeave]);
 
   const [at, setAt] = useState<Section>('transcript');
   const [events, setEvents] = useState<Event[]>([]);
@@ -60,6 +64,32 @@ export const LiveRoom: React.FC<{ onLeave: () => void }> = ({ onLeave }) => {
 
   const event = events.find((one) => one.id === eventId) ?? null;
   const code = event?.code ?? '';
+
+  useEffect(() => {
+    if (!code) return undefined;
+
+    const apiUrl = new URL(API_BASE_URL);
+    const protocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+    const token = localStorage.getItem('access_token');
+    if (!token) return undefined;
+
+    const socket = new window.WebSocket(
+      `${protocol}//${apiUrl.host}/ws/event/${code}/?token=${encodeURIComponent(token)}`
+    );
+    socket.onmessage = (message) => {
+      const data = JSON.parse(message.data);
+      if (data.type === 'event_ended') leaveRef.current();
+    };
+    socket.onerror = (error) => {
+      console.error('Attendee room WebSocket error:', error);
+    };
+
+    return () => socket.close();
+  }, [code]);
+
+  useEffect(() => {
+    if (event?.status === 'ended') leaveRef.current();
+  }, [event?.status]);
 
   /**
    * Say that somebody is here.

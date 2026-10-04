@@ -69,6 +69,17 @@ const post = (over: any = {}) => ({
 beforeEach(() => {
   jest.clearAllMocks();
   window.localStorage.clear();
+  (window as any).__attendeeSocket = null;
+  const MockWebSocket = class {
+    onmessage: ((event: { data: string }) => void) | null = null;
+    onerror: ((event: unknown) => void) | null = null;
+    readyState = 1;
+    constructor() { (window as any).__attendeeSocket = this; }
+    close() {}
+  };
+  Object.defineProperty(window, 'WebSocket', {
+    configurable: true, writable: true, value: MockWebSocket,
+  });
   window.localStorage.setItem(
     'manch.organizer.prefs', JSON.stringify({ lang: 'en', a11y: {} })
   );
@@ -89,10 +100,10 @@ beforeEach(() => {
   } as any);
 });
 
-const show = () =>
+const show = (onLeave = () => {}) =>
   render(
     <OrganizerProvider>
-      <LiveRoom onLeave={() => {}} />
+      <LiveRoom onLeave={onLeave} />
     </OrganizerProvider>
   );
 
@@ -138,6 +149,28 @@ describe('the five things along the bottom', () => {
     show();
 
     expect(await screen.findByText('Live transcription')).toBeInTheDocument();
+  });
+
+  it('leaves the transcript room when the event status is ended', async () => {
+    const onLeave = jest.fn();
+    api.listEvents.mockResolvedValue([{ ...event, status: 'ended' }] as any);
+    show(onLeave);
+    await waitFor(() => expect(onLeave).toHaveBeenCalledTimes(1));
+  });
+
+  it('leaves immediately when the event-ended room message arrives', async () => {
+    const onLeave = jest.fn();
+    window.localStorage.setItem('access_token', 'valid-access-token');
+    show(onLeave);
+    await screen.findByText('Emergency Service Meeting');
+    expect(window.localStorage.getItem('access_token')).toBe('valid-access-token');
+    await waitFor(() => expect(api.joinEvent).toHaveBeenCalledWith('ABC-123'));
+
+    const socket = (window as any).__attendeeSocket;
+    expect(socket).not.toBeNull();
+    socket.onmessage({ data: JSON.stringify({ type: 'event_ended' }) });
+
+    expect(onLeave).toHaveBeenCalledTimes(1);
   });
 
   it('does not show a Leave room button on any live-room tab', async () => {

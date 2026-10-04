@@ -14,6 +14,8 @@ interface Props {
   eventId?: string;
   /** Read as a guest, with the token they hold. */
   guestToken?: string;
+  /** Limit the host's panel to one agenda; null means none is running. */
+  agendaSessionId?: string | null;
   /** Poll, since this is watched while a event runs. */
   refreshMs?: number;
   /**
@@ -65,7 +67,7 @@ interface Props {
  * tab, while attendees can read, vote, and send their own messages here.
  */
 export const RoomQuestions: React.FC<Props> = ({
-  eventId, guestToken, refreshMs, canSort, canVote = true,
+  eventId, guestToken, agendaSessionId, refreshMs, canSort, canVote = true,
   waiting: alsoWaiting, onNews, onAsk,
 }) => {
   const { t, num } = useOrganizer();
@@ -165,10 +167,19 @@ export const RoomQuestions: React.FC<Props> = ({
     waiting.push(m);
   });
 
+  const agendaRows = (items: BoardEntry[]) =>
+    agendaSessionId === undefined
+      ? items
+      : items.filter((entry) => entry.session_id === agendaSessionId);
+  const questions = agendaRows(board?.faq ?? []);
+  const suggestions = agendaRows(board?.suggestions ?? []);
   const rows: BoardEntry[] =
-    (tab === 'faq' ? board?.faq : tab === 'suggestions' ? board?.suggestions : []) ?? [];
+    tab === 'faq' ? questions : tab === 'suggestions' ? suggestions : [];
+  const agendaWaiting = agendaSessionId === undefined
+    ? waiting
+    : waiting.filter((message) => message.session === agendaSessionId);
   const tabRequests = canSort
-    ? waiting.filter((message) =>
+    ? agendaWaiting.filter((message) =>
         message.moderation_status === 'pending'
         && (tab === 'faq'
           ? message.topic !== 'suggestion'
@@ -180,8 +191,8 @@ export const RoomQuestions: React.FC<Props> = ({
     {
       id: 'faq',
       label: t({ ne: 'प्रश्न', en: 'Questions' }),
-      count: (board?.faq.length ?? 0) + (canSort
-        ? waiting.filter((message) =>
+      count: questions.length + (canSort
+        ? agendaWaiting.filter((message) =>
             message.moderation_status === 'pending' && message.topic !== 'suggestion'
           ).length
         : 0),
@@ -189,8 +200,8 @@ export const RoomQuestions: React.FC<Props> = ({
     {
       id: 'suggestions',
       label: t({ ne: 'सुझाव', en: 'Suggestions' }),
-      count: (board?.suggestions.length ?? 0) + (canSort
-        ? waiting.filter((message) =>
+      count: suggestions.length + (canSort
+        ? agendaWaiting.filter((message) =>
             message.moderation_status === 'pending' && message.topic === 'suggestion'
           ).length
         : 0),

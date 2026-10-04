@@ -29,6 +29,7 @@ const api = apiClient as jest.Mocked<typeof apiClient>;
 const entry = (over: any = {}) => ({
   id: 'q1',
   body: 'What is the purpose of spending all those budget on this agenda alone?',
+  session_id: null,
   asked_by: 'Rahul Ingnam',
   asker_is_guest: false,
   was_direct: true,
@@ -54,6 +55,7 @@ const held = (over: any = {}) => ({
   recipient_id: 'u1',
   recipient_name: 'Dr Darpan Pandey',
   recipient_is_guest: false,
+  session: null,
   ...over,
 });
 
@@ -148,6 +150,33 @@ describe('a guest reading the same board', () => {
 });
 
 describe('requests inside the live room boards', () => {
+  it('shows only board entries and requests linked to the running agenda', async () => {
+    api.getEventBoard.mockResolvedValue({
+      faq: [
+        entry({ id: 'q1', body: 'Question for agenda one', session_id: 's1' }),
+        entry({ id: 'q2', body: 'Question for agenda two', session_id: 's2' }),
+      ],
+      suggestions: [
+        entry({ id: 'sg1', body: 'Suggestion for agenda one', session_id: 's1' }),
+        entry({ id: 'sg2', body: 'Suggestion for agenda two', session_id: 's2' }),
+      ],
+    } as any);
+    api.getPendingMessages.mockResolvedValue([
+      held({ id: 'm1', body: 'Request for agenda one', session: 's1' }),
+      held({ id: 'm2', body: 'Request for agenda two', session: 's2' }),
+    ] as any);
+    show({ canSort: true, agendaSessionId: 's1' });
+
+    expect(await screen.findByText('Question for agenda one')).toBeInTheDocument();
+    expect(screen.queryByText('Question for agenda two')).toBeNull();
+    expect(screen.getByText('Request for agenda one')).toBeInTheDocument();
+    expect(screen.queryByText('Request for agenda two')).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Suggestions/ }));
+    expect(await screen.findByText('Suggestion for agenda one')).toBeInTheDocument();
+    expect(screen.queryByText('Suggestion for agenda two')).toBeNull();
+  });
+
   it('shows question requests under Questions and increments its tab count', async () => {
     api.getPendingMessages.mockResolvedValue([
       held({ topic: 'faq', body: 'What time is it today?' }),
