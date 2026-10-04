@@ -180,6 +180,48 @@ describe('home', () => {
     expect(screen.queryByRole('heading', { name: 'Live' })).toBeNull();
   });
 
+  it('shows the three newest upcoming events and links to their full list', async () => {
+    api.listEvents.mockResolvedValue(Array.from({ length: 5 }, (_, index) =>
+      event({
+        id: `up-${index}`,
+        title: `Upcoming ${index}`,
+        created_at: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+      })
+    ) as any);
+
+    show();
+    const section = (await screen.findByRole('heading', { name: 'Upcoming' }))
+      .closest('section')!;
+    expect(within(section).getByText('Upcoming 4')).toBeInTheDocument();
+    expect(within(section).getByText('Upcoming 3')).toBeInTheDocument();
+    expect(within(section).getByText('Upcoming 2')).toBeInTheDocument();
+    expect(within(section).queryByText('Upcoming 1')).toBeNull();
+
+    fireEvent.click(within(section).getByRole('button', { name: 'View all' }));
+    expect(await screen.findByText('Upcoming 0')).toBeInTheDocument();
+    expect(screen.getByText('Upcoming 4')).toBeInTheDocument();
+  });
+
+  it('paginates My Events newest-first in pages of 10', async () => {
+    api.listEvents.mockResolvedValue(Array.from({ length: 12 }, (_, index) =>
+      event({
+        id: `up-${index}`,
+        title: `My event ${index}`,
+        created_at: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+      })
+    ) as any);
+
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: /^Events/ }));
+    expect(await screen.findByText('My event 11')).toBeInTheDocument();
+    expect(screen.getByText('My event 2')).toBeInTheDocument();
+    expect(screen.queryByText('My event 1')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('My event 1')).toBeInTheDocument();
+    expect(screen.getByText('My event 0')).toBeInTheDocument();
+  });
+
   it('shows the question total on completed cards only on Home', async () => {
     api.listEvents.mockResolvedValue([
       event({ id: 'e3', code: 'OLD-123', title: 'All Over', status: 'ended' }),
@@ -282,6 +324,12 @@ describe('one event, opened', () => {
     ['Agendas', 'Speaker', 'Files', 'Questions', 'Suggestions'].forEach((one) => {
       expect(screen.getByRole('tab', { name: one })).toBeInTheDocument();
     });
+  });
+
+  it('says no files have been added in the normal event flow', async () => {
+    await openIt();
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+    expect(await screen.findByText('No files added yet.')).toBeInTheDocument();
   });
 
   /**

@@ -107,6 +107,21 @@ describe('sorting events onto decks', () => {
     expect(screen.getByText('Last year')).toBeInTheDocument();
     expect(screen.queryByText('Emergency Service Event')).toBeNull();
   });
+
+  it('shows and paginates ten host events at a time', () => {
+    show(Array.from({ length: 12 }, (_, index) =>
+      anEvent({ id: `e${index}`, title: `Host event ${index}` })
+    ));
+
+    expect(screen.getByText('Host event 9')).toBeInTheDocument();
+    expect(screen.getByText('Host event 0')).toBeInTheDocument();
+    expect(screen.queryByText('Host event 10')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(screen.getByText('Host event 10')).toBeInTheDocument();
+    expect(screen.getByText('Host event 11')).toBeInTheDocument();
+    expect(screen.queryByText('Host event 9')).toBeNull();
+  });
 });
 
 /**

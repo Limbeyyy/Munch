@@ -568,6 +568,31 @@ describe('the reminders page', () => {
     expect(screen.getAllByText(/Reminds 15 min before/)).toHaveLength(2);
   });
 
+  it('shows the 10 newest reminders first and paginates older ones', async () => {
+    api.getReminders.mockResolvedValue({
+      reminders: Array.from({ length: 12 }, (_, index) => reminder({
+        id: `r${index}`,
+        kind: 'session',
+        session_title: `Agenda ${index}`,
+        due_at: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+      })),
+      unread: 0, event_lead_minutes: 60, session_lead_minutes: 15,
+    } as any);
+
+    show(<Reminders />);
+    const rows = await screen.findAllByRole('listitem');
+    expect(rows).toHaveLength(10);
+    expect(rows[0]).toHaveTextContent('Agenda 11');
+    expect(rows[9]).toHaveTextContent('Agenda 2');
+    expect(screen.queryByText('Agenda 1')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    const older = screen.getAllByRole('listitem');
+    expect(older).toHaveLength(2);
+    expect(older[0]).toHaveTextContent('Agenda 1');
+    expect(older[1]).toHaveTextContent('Agenda 0');
+  });
+
   it('hides what has already finished until All is asked for', async () => {
     api.getReminders.mockResolvedValue({
       reminders: [

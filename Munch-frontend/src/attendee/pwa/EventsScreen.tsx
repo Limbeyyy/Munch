@@ -5,8 +5,10 @@ import { useOrganizer } from '../../organizer/i18n';
 import { EventCard, MyEventsCompletedCard } from './EventCard';
 import { ScreenHead } from './PhoneShell';
 import { stateOf } from './HomeShell';
+import { Pagination } from '../../components/Pagination';
 
 type Deck = 'upcoming' | 'completed';
+const PAGE_SIZE = 10;
 
 /**
  * Every event this person is part of, split into upcoming and completed.
@@ -22,24 +24,39 @@ export const EventsScreen: React.FC<{
     questionCount: number;
     summariesAvailable: boolean;
   }>>({});
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    if (deck) {
+      setAt(deck);
+      setPage(1);
+    }
+  }, [deck]);
 
   const decks = useMemo(() => {
-    const byStart = (a: Event, b: Event) =>
-      +new Date(a.scheduled_start) - +new Date(b.scheduled_start);
+    const newestFirst = (a: Event, b: Event) =>
+      +new Date(b.created_at) - +new Date(a.created_at);
     return {
-      upcoming: events.filter((one) => stateOf(one) === 'upcoming').sort(byStart),
+      upcoming: events
+        .filter((one) => stateOf(one) === 'upcoming')
+        .sort(newestFirst),
       completed: events
         .filter((one) => stateOf(one) === 'completed')
-        .sort((a, b) => -byStart(a, b)),
+        .sort(newestFirst),
     };
   }, [events]);
+
+  const shown = useMemo(
+    () => decks[at].slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [decks, at, page]
+  );
 
   useEffect(() => {
     if (at !== 'completed') return;
     let cancelled = false;
 
     const loadCompletedDetails = async () => {
-      const entries = await Promise.all(decks.completed.map(async (event) => {
+      const entries = await Promise.all(shown.map(async (event) => {
         const [board, summaries] = await Promise.all([
           apiClient.getHub(event.code).catch(() => null),
           Promise.all((event.sessions ?? []).map((session) =>
@@ -59,9 +76,7 @@ export const EventsScreen: React.FC<{
 
     loadCompletedDetails();
     return () => { cancelled = true; };
-  }, [at, decks.completed]);
-
-  const shown = decks[at];
+  }, [at, shown]);
 
   return (
     <div>
@@ -76,7 +91,7 @@ export const EventsScreen: React.FC<{
             key={id}
             type="button"
             aria-pressed={at === id}
-            onClick={() => setAt(id)}
+            onClick={() => { setAt(id); setPage(1); }}
             className={`flex-1 py-2 rounded-[8px] text-[13px] ${
               at === id
                 ? 'bg-white text-[#111726] font-medium shadow-[0_1px_2px_rgba(0,0,0,.08)]'
@@ -112,6 +127,13 @@ export const EventsScreen: React.FC<{
           ))}
         </div>
       )}
+      <Pagination
+        page={page}
+        pageSize={PAGE_SIZE}
+        totalItems={decks[at].length}
+        onPageChange={setPage}
+        theme="attendee"
+      />
     </div>
   );
 };

@@ -140,7 +140,7 @@ export const FilesScreen: React.FC<{
 
         {inside.length === 0 ? (
           <p className="px-4 pt-8 text-center text-[13px] text-[#8b90a0]">
-            {t({ ne: 'यो फोल्डर खाली छ।', en: 'This folder is empty.' })}
+            {t({ ne: 'यो फोल्डरमा तस्बिर थपिएको छैन।', en: 'No photos added yet.' })}
           </p>
         ) : (
           <div className="p-4 grid grid-cols-4 gap-2">
@@ -165,7 +165,7 @@ export const FilesScreen: React.FC<{
       {tab === 'files' ? (
         grouped.length === 0 ? (
           <p className="px-4 pt-8 text-center text-[13px] text-[#8b90a0]">
-            {t({ ne: 'अझै केही बाँडिएको छैन।', en: 'Nothing has been shared yet.' })}
+            {t({ ne: 'अझै फाइल थपिएको छैन।', en: 'No files added yet.' })}
           </p>
         ) : (
           <div className="px-4 pt-4 pb-4 flex flex-col gap-5">

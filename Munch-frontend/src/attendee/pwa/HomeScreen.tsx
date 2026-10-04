@@ -58,7 +58,7 @@ const Head: React.FC<{
 export const HomeScreen: React.FC<{
   events: Event[];
   onOpen: (event: Event) => void;
-  onSeeAll: () => void;
+  onSeeAll: (deck: 'upcoming' | 'completed') => void;
   onJoinLive?: (event: Event) => void;
 }> = ({ events, onOpen, onSeeAll, onJoinLive }) => {
   const { t } = useOrganizer();
@@ -66,15 +66,19 @@ export const HomeScreen: React.FC<{
   const [questionCounts, setQuestionCounts] = useState<Record<string, number>>({});
 
   const { live, ahead, behind } = useMemo(() => {
+    const newestFirst = (a: Event, b: Event) =>
+      +new Date(b.created_at) - +new Date(a.created_at);
     const byStart = (a: Event, b: Event) =>
       +new Date(a.scheduled_start) - +new Date(b.scheduled_start);
 
     return {
       live: events.filter((one) => stateOf(one) === 'live').sort(byStart),
-      ahead: events.filter((one) => stateOf(one) === 'upcoming').sort(byStart),
+      ahead: events
+        .filter((one) => stateOf(one) === 'upcoming')
+        .sort(newestFirst),
       behind: events
         .filter((one) => stateOf(one) === 'completed')
-        .sort((a, b) => -byStart(a, b)),
+        .sort(newestFirst),
     };
   }, [events]);
 
@@ -142,14 +146,20 @@ export const HomeScreen: React.FC<{
         )}
 
         <section>
-          <Head title={t({ ne: 'आउँदै', en: 'Upcoming' })} />
+          <Head
+            title={t({ ne: 'आउँदै', en: 'Upcoming' })}
+            action={ahead.length > 0
+              ? { label: t({ ne: 'सबै हेर्नुहोस्', en: 'View all' }),
+                  onGo: () => onSeeAll('upcoming') }
+              : undefined}
+          />
           {ahead.length === 0 ? (
             <p className="pt-3 text-[13px] text-[#94a3b8]">
               {t({ ne: 'आउँदो कार्यक्रम छैन।', en: 'Nothing coming up.' })}
             </p>
           ) : (
             <div className="pt-3 flex flex-col gap-3">
-              {ahead.slice(0, 2).map((one) => (
+              {ahead.slice(0, 3).map((one) => (
                 <UpcomingEventCard
                   key={one.id}
                   event={one}
@@ -164,7 +174,8 @@ export const HomeScreen: React.FC<{
           <Head
             title={t({ ne: 'भर्खरै सहभागी', en: 'Recently attended' })}
             action={behind.length > 0
-              ? { label: t({ ne: 'सबै हेर्नुहोस्', en: 'View all' }), onGo: onSeeAll }
+              ? { label: t({ ne: 'सबै हेर्नुहोस्', en: 'View all' }),
+                  onGo: () => onSeeAll('completed') }
               : undefined}
           />
           {behind.length === 0 ? (

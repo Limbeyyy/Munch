@@ -8,6 +8,9 @@ import { Card, Chip, Empty, Ic } from '../ui';
 import {
   EVENT_STATE_LABEL, EVENT_STATE_TONE, EventState, eventState,
 } from '../sessionState';
+import { Pagination } from '../../components/Pagination';
+
+const PAGE_SIZE = 8;
 
 /** The day and the room, on one line under the title. */
 const whenAndWhere = (event: Event) => [
@@ -101,6 +104,7 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | EventState>('all');
   const [order, setOrder] = useState<'newest' | 'oldest'>('newest');
+  const [page, setPage] = useState(1);
   const [query, setQuery] = useState('');
   const [cameFilter, setCameFilter] = useState<'all' | 'attended' | 'no-show'>('all');
 
@@ -116,31 +120,6 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
   }, [t]);
 
   const event = events.find((e) => e.id === eventId) ?? null;
-
-  /**
-   * The headline figures for every event, for the cards.
-   *
-   * One request each, settled rather than chained: a report that will not
-   * come back leaves its card without numbers instead of emptying the
-   * whole grid.
-   */
-  useEffect(() => {
-    if (events.length === 0) return;
-    let live = true;
-    Promise.allSettled(
-      events.map((one) =>
-        apiClient.getAttendance(one.id).then((report) => [one.id, report] as const)
-      )
-    ).then((results) => {
-      if (!live) return;
-      const next: Record<string, AttendanceReport> = {};
-      results.forEach((r) => {
-        if (r.status === 'fulfilled') next[r.value[0]] = r.value[1];
-      });
-      setCards(next);
-    });
-    return () => { live = false; };
-  }, [events]);
 
   /**
    * One line of the register: who, and what the day did with them.
@@ -227,6 +206,35 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
         return order === 'newest' ? -gap : gap;
       });
   }, [events, search, statusFilter, order]);
+
+  const pageEvents = useMemo(
+    () => shown.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [shown, page]
+  );
+
+  /**
+   * Load report figures only for the eight cards currently on screen.
+   * Opening another page fetches that page's figures when it is needed.
+   */
+  useEffect(() => {
+    if (pageEvents.length === 0) return;
+    let live = true;
+    Promise.allSettled(
+      pageEvents.map((one) =>
+        apiClient.getAttendance(one.id).then((report) => [one.id, report] as const)
+      )
+    ).then((results) => {
+      if (!live) return;
+      setCards((previous) => {
+        const next = { ...previous };
+        results.forEach((result) => {
+          if (result.status === 'fulfilled') next[result.value[0]] = result.value[1];
+        });
+        return next;
+      });
+    });
+    return () => { live = false; };
+  }, [pageEvents]);
 
   /** Read every session's attendance, then roll it up per event. */
   const load = useCallback(async () => {
@@ -380,7 +388,7 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
             <div className="flex gap-3 flex-wrap items-center">
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               placeholder={t({ ne: 'खोज्नुहोस्', en: 'Search' })}
               aria-label={t({ ne: 'कार्यक्रम खोज्नुहोस्', en: 'Search events' })}
               className="flex-1 min-w-[200px] max-w-[280px] bg-white border border-line
@@ -388,7 +396,10 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
             />
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as 'all' | EventState)}
+              onChange={(e) => {
+                setStatusFilter(e.target.value as 'all' | EventState);
+                setPage(1);
+              }}
               aria-label={t({ ne: 'अवस्था', en: 'Status' })}
               className="bg-white border border-line rounded-[8px] px-3 py-2
                 text-[14px] text-head"
@@ -400,7 +411,10 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
             </select>
             <select
               value={order}
-              onChange={(e) => setOrder(e.target.value as 'newest' | 'oldest')}
+              onChange={(e) => {
+                setOrder(e.target.value as 'newest' | 'oldest');
+                setPage(1);
+              }}
               aria-label={t({ ne: 'क्रम', en: 'Order' })}
               className="bg-white border border-line rounded-[8px] px-3 py-2
                 text-[14px] text-head"
@@ -419,7 +433,7 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
           ) : (
             <div className="grid gap-5"
               style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))' }}>
-              {shown.map((one) => {
+              {pageEvents.map((one) => {
                 const report = cards[one.id];
                 // Everybody the day counted, and the two ways they got
                 // there: an invitation, or the door. The total is neither
@@ -506,6 +520,13 @@ export const AttendanceView: React.FC<{ events: any[] }> = () => {
               })}
             </div>
           )}
+          <Pagination
+            page={page}
+            pageSize={PAGE_SIZE}
+            totalItems={shown.length}
+            onPageChange={setPage}
+            theme="host"
+          />
           </div>
       ) : (
         /*

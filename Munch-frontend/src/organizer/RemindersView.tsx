@@ -3,6 +3,9 @@ import { Reminder, ReminderPage } from '../types';
 import { announcePermission, askToAnnounce, canAnnounce } from './nudges';
 import { Pair, useOrganizer } from './i18n';
 import { Btn, Chip, Empty, Head, Panel } from './ui';
+import { Pagination } from '../components/Pagination';
+
+const PAGE_SIZE = 10;
 
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
@@ -104,13 +107,16 @@ export const RemindersView: React.FC<{
   const { t, num } = useOrganizer();
   const [tab, setTab] = useState<Tab>('upcoming');
   const [permission, setPermission] = useState(announcePermission);
+  const [pageNumber, setPageNumber] = useState(1);
 
   const shown = useMemo(() => {
     const all = page?.reminders ?? [];
-    if (tab === 'all') return all;
     const now = Date.now();
-    return all.filter((r) => new Date(r.ends_at).getTime() >= now);
+    return all
+      .filter((r) => tab === 'all' || new Date(r.ends_at).getTime() >= now)
+      .sort((a, b) => +new Date(b.due_at) - +new Date(a.due_at));
   }, [page, tab]);
+  const visible = shown.slice((pageNumber - 1) * PAGE_SIZE, pageNumber * PAGE_SIZE);
 
   if (loading) {
     return <p className="text-[#6E7C8E]">{t({ ne: 'ल्याउँदै…', en: 'Loading…' })}</p>;
@@ -166,7 +172,7 @@ export const RemindersView: React.FC<{
               type="button"
               role="tab"
               aria-selected={tab === key}
-              onClick={() => setTab(key)}
+              onClick={() => { setTab(key); setPageNumber(1); }}
               className={`text-[13px] px-3 py-1.5 rounded-lg border ${
                 tab === key
                   ? 'border-navy-700 bg-navy-700 text-white'
@@ -205,12 +211,19 @@ export const RemindersView: React.FC<{
           </Empty>
         ) : (
           <ul>
-            {shown.map((r) => (
+            {visible.map((r) => (
               <Row key={r.id} reminder={r} onRead={onRead} />
             ))}
           </ul>
         )}
       </Panel>
+      <Pagination
+        page={pageNumber}
+        pageSize={PAGE_SIZE}
+        totalItems={shown.length}
+        onPageChange={setPageNumber}
+        theme="host"
+      />
     </>
   );
 };

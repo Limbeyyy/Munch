@@ -4,6 +4,9 @@ import { Pair, useOrganizer } from '../i18n';
 import { EVENT_STATE_LABEL, EventState, eventState } from '../sessionState';
 import { Btn } from '../ui';
 import { DeckTabs, PenGlyph, PlusGlyph, Sheet } from './chrome';
+import { Pagination } from '../../components/Pagination';
+
+const PAGE_SIZE = 10;
 
 /** Which deck an event belongs on. 'all' is every deck at once. */
 export type Deck = 'all' | 'draft' | 'upcoming' | 'live' | 'done';
@@ -215,6 +218,7 @@ export const EventsDashboard: React.FC<Props> = ({
   const { t, num } = useOrganizer();
   const [deck, setDeck] = useState<Deck>('upcoming');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
 
   const on = (which: Deck) =>
     which === 'all' ? events : events.filter((e) => deckOf(e) === which);
@@ -234,6 +238,7 @@ export const EventsDashboard: React.FC<Props> = ({
   const showing = on(deck).filter((e) =>
     e.title.toLowerCase().includes(search.trim().toLowerCase())
   );
+  const visible = showing.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <Sheet>
@@ -259,7 +264,7 @@ export const EventsDashboard: React.FC<Props> = ({
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <DeckTabs
           active={deck}
-          onChange={(id) => setDeck(id as Deck)}
+          onChange={(id) => { setDeck(id as Deck); setPage(1); }}
           tabs={(['all', 'draft', 'upcoming', 'live', 'done'] as Deck[]).map((id) => ({
             id, label: DECK_TAG[id], count: on(id).length,
           }))}
@@ -273,7 +278,7 @@ export const EventsDashboard: React.FC<Props> = ({
           </svg>
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             placeholder={t({ ne: 'खोज्नुहोस्', en: 'Search' })}
             aria-label={t({ ne: 'कार्यक्रम खोज्नुहोस्', en: 'Search events' })}
             className="flex-1 min-w-0 bg-transparent text-[14px] text-head
@@ -298,7 +303,7 @@ export const EventsDashboard: React.FC<Props> = ({
               : t({ ne: 'कुनै कार्यक्रम छैन।', en: 'No events.' })}
           </p>
         ) : (
-          showing.map((event) => {
+          visible.map((event) => {
             const head = counts[event.id];
 
             // A finished event is read back rather than worked on, so its
@@ -372,6 +377,13 @@ export const EventsDashboard: React.FC<Props> = ({
             );
           })
         )}
+        <Pagination
+          page={page}
+          pageSize={PAGE_SIZE}
+          totalItems={showing.length}
+          onPageChange={setPage}
+          theme="host"
+        />
       </div>
     </Sheet>
   );

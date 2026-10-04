@@ -10,6 +10,9 @@ import {
   FilledButton, NothingYet, SearchInput, Sheet, UnderlineTabs, FilterPills,
   whenAndWhere,
 } from '../filesAndSummaries/shared';
+import { Pagination } from '../../components/Pagination';
+
+const PAGE_SIZE = 8;
 
 interface Props { events: Event[]; }
 
@@ -50,16 +53,30 @@ export const ContentView: React.FC<Props> = ({ events }) => {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [tallies, setTallies] = useState<Record<string, Tally>>({});
+  const [page, setPage] = useState(1);
+
+  const event = events.find((one) => one.id === opened);
+
+  const shown = useMemo(() => {
+    const wanted = search.trim().toLowerCase();
+    return events.filter((one) => {
+      if (!one.title.toLowerCase().includes(wanted)) return false;
+      if (filter === 'all') return true;
+      const done = eventState(one) === 'finished';
+      return filter === 'completed' ? done : !done;
+    });
+  }, [events, search, filter]);
+
+  const visibleEvents = useMemo(
+    () => shown.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [shown, page]
+  );
 
   /**
-   * What each card counts.
-   *
-   * Four numbers from three places, so they are gathered here rather
-   * than by each card: a grid of cards each fetching its own would open
-   * three requests per event the moment the page loads.
+   * Load counts only for the event cards on the current page.
    */
   const count = useCallback(async () => {
-    const got = await Promise.all(events.map(async (one) => {
+    const got = await Promise.all(visibleEvents.map(async (one) => {
       const [sessions, files, photos] = await Promise.all([
         apiClient.listSessions(one.id).catch(() => [] as Session[]),
         apiClient.getResources(one.id).catch(() => [] as Artifact[]),
@@ -79,22 +96,10 @@ export const ContentView: React.FC<Props> = ({ events }) => {
         files: files.length,
       }] as const;
     }));
-    setTallies(Object.fromEntries(got));
-  }, [events]);
+    setTallies((previous) => ({ ...previous, ...Object.fromEntries(got) }));
+  }, [visibleEvents]);
 
   useEffect(() => { count(); }, [count]);
-
-  const event = events.find((one) => one.id === opened);
-
-  const shown = useMemo(() => {
-    const wanted = search.trim().toLowerCase();
-    return events.filter((one) => {
-      if (!one.title.toLowerCase().includes(wanted)) return false;
-      if (filter === 'all') return true;
-      const done = eventState(one) === 'finished';
-      return filter === 'completed' ? done : !done;
-    });
-  }, [events, search, filter]);
 
   // -- the events --------------------------------------------------------
 
@@ -116,12 +121,12 @@ export const ContentView: React.FC<Props> = ({ events }) => {
         <div className="flex gap-4 items-center flex-wrap">
           <SearchInput
             value={search}
-            onChange={setSearch}
+            onChange={(value) => { setSearch(value); setPage(1); }}
             label={t({ ne: 'खोज्नुहोस्', en: 'Search' })}
           />
           <FilterPills<Filter>
             value={filter}
-            onChange={setFilter}
+            onChange={(value) => { setFilter(value); setPage(1); }}
             options={[
               { id: 'all', label: { ne: 'सबै', en: 'All' } },
               { id: 'completed', label: { ne: 'सकिएका', en: 'Completed' } },
@@ -137,7 +142,7 @@ export const ContentView: React.FC<Props> = ({ events }) => {
         ) : (
           <div className="grid gap-8"
             style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))' }}>
-            {shown.map((one) => {
+            {visibleEvents.map((one) => {
               const done = eventState(one) === 'finished';
               const tally = tallies[one.id];
               return (
@@ -225,6 +230,13 @@ export const ContentView: React.FC<Props> = ({ events }) => {
             })}
           </div>
         )}
+        <Pagination
+          page={page}
+          pageSize={PAGE_SIZE}
+          totalItems={shown.length}
+          onPageChange={setPage}
+          theme="host"
+        />
       </Sheet>
     );
   }

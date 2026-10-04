@@ -31,6 +31,7 @@ export const AttendeeApp: React.FC = () => {
 
   const [at, setAt] = useState<HomeSection>('home');
   const [events, setEvents] = useState<Event[]>([]);
+  const [eventsDeck, setEventsDeck] = useState<'upcoming' | 'completed'>('upcoming');
   const [openId, setOpenId] = useState('');
   const [profileSubpageOpen, setProfileSubpageOpen] = useState(false);
   const [inRoom, setInRoom] = useState(false);
@@ -102,12 +103,19 @@ export const AttendeeApp: React.FC = () => {
             <HomeScreen
               events={events}
               onOpen={(one) => setOpenId(one.id)}
-              onSeeAll={() => setAt('events')}
+              onSeeAll={(deck) => {
+                setEventsDeck(deck);
+                setAt('events');
+              }}
               onJoinLive={() => setInRoom(true)}
             />
           )}
           {at === 'events' && (
-            <EventsScreen events={events} onOpen={(one) => setOpenId(one.id)} />
+            <EventsScreen
+              events={events}
+              deck={eventsDeck}
+              onOpen={(one) => setOpenId(one.id)}
+            />
           )}
           {at === 'notifications' && (
             <NotificationsScreen onRead={() => setUnread(0)} />

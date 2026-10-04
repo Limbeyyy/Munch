@@ -117,6 +117,47 @@ describe('the files and summaries grid', () => {
     expect(screen.getByText('1 Folders')).toBeInTheDocument();
   });
 
+  it('loads eight event cards and their counts per page', async () => {
+    show(Array.from({ length: 10 }, (_, index) =>
+      event({ id: `m${index}`, code: `EMG-${index}`, title: `Event ${index}` })
+    ));
+
+    expect(await screen.findByText('Event 7')).toBeInTheDocument();
+    expect(screen.queryByText('Event 8')).toBeNull();
+    await waitFor(() => expect(api.getResources).toHaveBeenCalledTimes(8));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('Event 8')).toBeInTheDocument();
+    await waitFor(() => expect(api.getResources).toHaveBeenCalledTimes(10));
+  });
+
+  it('paginates a host event file list by eight files', async () => {
+    api.getResources.mockResolvedValue(Array.from({ length: 10 }, (_, index) =>
+      artifact({ id: `a${index}`, display_name: `File ${index}.pdf` })
+    ) as any);
+    await openEvent();
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+
+    expect(await screen.findByText('File 7.pdf')).toBeInTheDocument();
+    expect(screen.queryByText('File 8.pdf')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('File 8.pdf')).toBeInTheDocument();
+    expect(screen.getByText('File 9.pdf')).toBeInTheDocument();
+  });
+
+  it('paginates host summaries by eight agendas', async () => {
+    api.listSessions.mockResolvedValue(Array.from({ length: 10 }, (_, index) =>
+      session({ id: `s${index}`, title: `Agenda ${index}` })
+    ) as any);
+    await openEvent();
+
+    expect(await screen.findByText('Agenda 7')).toBeInTheDocument();
+    expect(screen.queryByText('Agenda 8')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('Agenda 8')).toBeInTheDocument();
+    expect(screen.getByText('Agenda 9')).toBeInTheDocument();
+  });
+
   /** An event that has run is tinted and says so; one still to come is not. */
   it('says whether an event has happened', async () => {
     show([event(), event({ id: 'm2', title: 'Budget Hearing', status: 'scheduled', started_at: null })]);
