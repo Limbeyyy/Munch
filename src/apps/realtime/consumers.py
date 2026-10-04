@@ -266,6 +266,7 @@ class EventConsumer(AsyncWebsocketConsumer):
             'is_direct': saved['recipient_id'] is not None,
             'moderation_status': saved['moderation_status'],
             'topic': saved['topic'],
+            'session_id': saved['session_id'],
             'timestamp': self._get_timestamp(),
         }
 
@@ -382,6 +383,7 @@ class EventConsumer(AsyncWebsocketConsumer):
             'recipient_is_guest': message.get('recipient_is_guest', False),
             'is_direct': message.get('is_direct', False),
             'moderation_status': message.get('moderation_status'),
+            'session_id': message.get('session_id'),
             'timestamp': message['timestamp']
         }))
 
@@ -397,6 +399,7 @@ class EventConsumer(AsyncWebsocketConsumer):
             'recipient_id': message.get('recipient_id'),
             'recipient_name': message.get('recipient_name'),
             'topic': message.get('topic'),
+            'session_id': message.get('session_id'),
             'timestamp': message['timestamp'],
         }))
 
@@ -632,6 +635,7 @@ class EventConsumer(AsyncWebsocketConsumer):
             'recipient_group': recipient_group,
             'moderation_status': moderation,
             'topic': message.topic,
+            'session_id': str(message.session_id) if message.session_id else None,
             'host_id': str(event.host_id),
         }
 

@@ -95,6 +95,18 @@ class BoardTests(TestCase):
         self.assertEqual(board['faq'][0]['body'], 'When does it start?')
         self.assertEqual(board['faq'][0]['asked_by'], self.asker.email)
 
+    def test_board_entry_includes_its_agenda_id(self):
+        session = self.event.sessions.first()
+        message = self.approved_direct('Agenda-linked question')
+        message.session = session
+        message.save(update_fields=['session'])
+        self.sort(message, 'faq')
+
+        self.assertEqual(
+            self.board()['faq'][0]['session_id'],
+            str(session.id),
+        )
+
     def test_a_room_message_cannot_go_on_the_board(self):
         # Everybody present has already read it; the board is for what was
         # said privately.

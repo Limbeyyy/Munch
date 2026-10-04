@@ -539,6 +539,7 @@ const EventRoomInner: React.FC = () => {
             recipient_name: data.recipient_name ?? null,
             recipient_is_guest: !!data.recipient_is_guest,
             topic: data.topic ?? 'faq',
+            session: data.session_id ?? null,
           }]
         );
         // Light the room's Questions control while the host is elsewhere.
@@ -1426,6 +1427,7 @@ const EventRoomInner: React.FC = () => {
             {eventId && (
               <RoomQuestions
                 eventId={eventId}
+                agendaSessionId={currentEvent?.current_session?.id ?? null}
                 refreshMs={20000}
                 canSort={canOrganize}
                 canVote={!canOrganize}

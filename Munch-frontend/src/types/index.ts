@@ -745,6 +745,8 @@ export type MessageTopic = 'none' | 'faq' | 'suggestion';
 export interface BoardEntry {
   id: string;
   body: string;
+  /** Agenda the question or suggestion belongs to, when it was asked. */
+  session_id?: string | null;
   asked_by: string;
   asker_is_guest: boolean;
   was_direct: boolean;
