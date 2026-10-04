@@ -9,13 +9,15 @@ import { RoomQuestions } from '../organizer/RoomQuestions';
 import { OrganizerProvider } from '../organizer/i18n';
 import { RoomAgenda } from '../organizer/RoomAgenda';
 import { RoomBarButton, RoomCard, RoomPortrait, SidePanelHead } from './roomChrome';
+import { isMobileDevice } from '../services/device';
+import { KindChip, kindOf } from '../organizer/filesAndSummaries/shared';
+import { GuestMobileOnlyPage } from './GuestMobileOnlyPage';
+import { API_BASE_URL } from '../services/apiConfig';
 
 /** The only three things allowed to sit beside a guest's room. */
 type GuestPanel = 'questions' | 'resources';
 
-const API_BASE = (
-  process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1'
-).replace(/\/api\/v1\/?$/, '');
+const API_BASE = API_BASE_URL.replace(/\/api\/v1\/?$/, '');
 
 
 const formatFileSize = (bytes?: number | null): string => {
@@ -44,7 +46,7 @@ const formatElapsed = (totalSeconds: number): string => {
  * Guests have no account, so anything attributed to a user - chat, presence,
  * role - is not available to them. They get their own camera and mic.
  */
-export const GuestEventPage: React.FC = () => {
+const GuestEventRoom: React.FC = () => {
   const navigate = useNavigate();
 
   const token = sessionStorage.getItem('guest_token');
@@ -219,7 +221,7 @@ export const GuestEventPage: React.FC = () => {
   useEffect(() => {
     if (!token || !eventCode) return;
 
-    const apiUrl = new URL(process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1');
+    const apiUrl = new URL(API_BASE_URL);
     const protocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(
       `${protocol}//${apiUrl.host}/ws/event/${eventCode}/?guest_token=${encodeURIComponent(token)}`
@@ -574,32 +576,39 @@ export const GuestEventPage: React.FC = () => {
                       title="Resources"
                       onClose={() => closeSide('resources')}
                     />
-                    <div className="p-3 max-h-[420px] overflow-y-auto flex flex-col gap-2">
+                    <div className="max-h-[210px] overflow-y-auto overscroll-contain">
                       {resources.length === 0 ? (
-                        <p className="text-[13px] text-[#656565]">
+                        <p className="px-4 py-3 text-[13px] text-[#656565]">
                           Nothing shared yet. Files the host or presenters add
                           will appear here.
                         </p>
                       ) : (
                         resources.map((file) => (
-                          <a
-                            key={file.id}
-                            href={`${API_BASE}${file.download_url}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block border border-[#e3e8ef] hover:border-navy-800/40
-                              rounded-[10px] px-3 py-2"
-                          >
-                            <p className="text-[14px] font-medium truncate">
-                              {file.display_name}
-                            </p>
-                            <p className="text-[12px] text-[#656565] truncate">
-                              {formatFileSize(file.file_size)}
-                              {file.uploaded_by && ` · ${file.uploaded_by}`}
-                            </p>
-                          </a>
+                          <div key={file.id} className="mx-2 my-1 flex items-center gap-2
+                            rounded-[12px] border border-[#e3e8ef] bg-white px-4 py-2.5">
+                            <a
+                              href={`${API_BASE}${file.download_url}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex min-w-0 flex-1 items-center gap-4 hover:opacity-80"
+                            >
+                              <KindChip kind={kindOf(file.display_name ?? '')} />
+                              <span className="min-w-0">
+                                <span className="block text-[14px] font-medium
+                                  tracking-[-0.07px] text-[#101828] truncate">
+                                  {file.display_name}
+                                </span>
+                                <span className="block text-[12px] text-[#6a7282] truncate">
+                                  {formatFileSize(file.file_size)}
+                                  {file.uploaded_by && ` · ${file.uploaded_by}`}
+                                </span>
+                              </span>
+                            </a>
+                          </div>
                         ))
                       )}
+                    </div>
+                    <div className="px-4 pb-3">
                       <p className="text-[11px] text-[#656565] mt-1">
                         Files are downloaded through this event — you do not
                         need a Google account.
@@ -671,3 +680,6 @@ export const GuestEventPage: React.FC = () => {
     </OrganizerProvider>
   );
 };
+
+export const GuestEventPage: React.FC = () =>
+  isMobileDevice() ? <GuestEventRoom /> : <GuestMobileOnlyPage />;

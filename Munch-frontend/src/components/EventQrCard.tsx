@@ -2,8 +2,9 @@ import React from 'react';
 import toast from 'react-hot-toast';
 import { FigmaIcon } from '../assets/icons';
 import { useOrganizer } from '../organizer/i18n';
+import { API_BASE_URL } from '../services/apiConfig';
 
-const API_ROOT = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
+const API_ROOT = API_BASE_URL;
 
 interface Props {
   eventName: string;

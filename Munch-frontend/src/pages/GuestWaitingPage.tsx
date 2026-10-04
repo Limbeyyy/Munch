@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../services/api';
 import { GuestStatus } from '../types';
 import toast from 'react-hot-toast';
+import { isMobileDevice } from '../services/device';
+import { GuestMobileOnlyPage } from './GuestMobileOnlyPage';
+import { API_BASE_URL } from '../services/apiConfig';
 
 const POLL_MS = 4000;
 
@@ -12,7 +15,7 @@ const POLL_MS = 4000;
  * The websocket delivers the decision instantly; polling is a fallback for
  * when that connection cannot be established.
  */
-export const GuestWaitingPage: React.FC = () => {
+const GuestWaitingRoom: React.FC = () => {
   const navigate = useNavigate();
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -41,7 +44,7 @@ export const GuestWaitingPage: React.FC = () => {
   useEffect(() => {
     if (!token || !eventCode) return;
 
-    const apiUrl = new URL(process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1');
+    const apiUrl = new URL(API_BASE_URL);
     const protocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(
       `${protocol}//${apiUrl.host}/ws/event/${eventCode}/?guest_token=${encodeURIComponent(token)}`
@@ -167,3 +170,6 @@ export const GuestWaitingPage: React.FC = () => {
     </div>
   );
 };
+
+export const GuestWaitingPage: React.FC = () =>
+  isMobileDevice() ? <GuestWaitingRoom /> : <GuestMobileOnlyPage />;

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { API_BASE_URL } from '../services/apiConfig';
 
 /**
  * Listen to one event's room from a dashboard.
@@ -23,9 +24,7 @@ export const useEventPulse = (
   useEffect(() => {
     if (!eventCode) return;
 
-    const apiUrl = new URL(
-      process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1'
-    );
+    const apiUrl = new URL(API_BASE_URL);
     const protocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
     const token = localStorage.getItem('access_token');
     if (!token) return;

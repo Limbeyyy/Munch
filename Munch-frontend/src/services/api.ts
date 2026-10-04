@@ -1,7 +1,7 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { User, Event, AuthTokens, Transcript, TranscriptSummary, Artifact, Recording, Organization, Team, OrganizationMember, OrganizationInvite, SubscriptionData, Invoice, PaymentMethod, DriveFile, DriveSyncStatus, OrganizationAnalytics, ChatSettings, ChatMessage, EventParticipant, GuestAttendee, GuestSession, EventInviteList, AttendanceReport, ChatPerson, GuestResource, TranscriptionSegment, EventDraft, Session, SessionDraft, SessionAttendanceRow, SpeakerContact, ContactRequestRow, UserRoles, ProfileSummary, ReminderPage, EventPhoto, PhotoFolder, PhotoPage, ConclusionAction, ConclusionPage, SchedulingPrefs, SheetExport, UpgradeRequestRow, ResourceVisibility, HubBoard, HubKind, HubPost, SessionSummary, EventBoard, MessageTopic, ModerationQueue, ProgrammeRoles, Speaker, SpeakerDraft, SubEvent, NotificationPrefs, RoleGrantRow, RoleScope } from '../types';
+import { API_BASE_URL } from './apiConfig';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
 const PAYMENT_API_ROOT = API_BASE_URL.replace(/\/api\/v1\/?$/, '');
 
 /**

@@ -26,6 +26,10 @@ const api = apiClient as jest.Mocked<typeof apiClient>;
 beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
+  Object.defineProperty(navigator, 'userAgent', {
+    configurable: true,
+    value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile',
+  });
 });
 
 const showLogin = () =>
@@ -176,6 +180,19 @@ describe('arriving with the code already', () => {
     expect(await screen.findByLabelText('Event code')).toHaveValue('ABC123');
     expect(screen.getByRole('button', { name: 'Enter event room' }))
       .toBeInTheDocument();
+  });
+
+  it('explains guest mode is mobile-only when a desktop opens an event link', async () => {
+    Object.defineProperty(navigator, 'userAgent', {
+      configurable: true,
+      value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0',
+    });
+    showWithLink();
+
+    expect(await screen.findByRole('alert'))
+      .toHaveTextContent('Guest mode is only supported on mobile devices for now.');
+    expect(screen.queryByLabelText('Event code')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Enter event room' })).toBeNull();
   });
 
   it('says where the code came from, rather than asking for it', async () => {

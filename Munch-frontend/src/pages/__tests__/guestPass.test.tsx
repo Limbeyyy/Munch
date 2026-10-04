@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { GuestWaitingPage } from '../GuestWaitingPage';
+import { GuestEventPage } from '../GuestEventPage';
 import { apiClient } from '../../services/api';
 
 jest.mock('../../services/api', () => ({
@@ -23,6 +24,11 @@ const api = apiClient as jest.Mocked<typeof apiClient>;
 
 beforeEach(() => {
   window.sessionStorage.clear();
+  api.guestLeave.mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'userAgent', {
+    configurable: true,
+    value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile',
+  });
   window.sessionStorage.setItem('guest_token', 'a-pass-for-a-event-that-ended');
   window.sessionStorage.setItem('guest_event_code', 'RY0-SDV');
   window.sessionStorage.setItem('guest_name', 'Rahul Ingnam');
@@ -40,6 +46,16 @@ const show = () =>
     <MemoryRouter initialEntries={['/guest/waiting']}>
       <Routes>
         <Route path="/guest/waiting" element={<GuestWaitingPage />} />
+        <Route path="/login" element={<p>the door</p>} />
+      </Routes>
+    </MemoryRouter>
+  );
+
+const showEvent = () =>
+  render(
+    <MemoryRouter initialEntries={['/guest/event']}>
+      <Routes>
+        <Route path="/guest/event" element={<GuestEventPage />} />
         <Route path="/login" element={<p>the door</p>} />
       </Routes>
     </MemoryRouter>
@@ -93,5 +109,37 @@ describe('a guest pass that has stopped meaning anything', () => {
 
     await waitFor(() => expect(api.guestStatus).toHaveBeenCalled());
     expect(screen.queryByText('the door')).toBeNull();
+  });
+
+  it('blocks desktop access to the guest waiting room and releases its pass', async () => {
+    Object.defineProperty(navigator, 'userAgent', {
+      configurable: true,
+      value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0',
+    });
+
+    show();
+
+    expect(await screen.findByText('Guest mode is for mobile devices'))
+      .toBeInTheDocument();
+    await waitFor(() => expect(api.guestLeave).toHaveBeenCalledWith(
+      'a-pass-for-a-event-that-ended'
+    ));
+    expect(window.sessionStorage.getItem('guest_token')).toBeNull();
+  });
+
+  it('blocks desktop access to an admitted guest room as well', async () => {
+    Object.defineProperty(navigator, 'userAgent', {
+      configurable: true,
+      value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0',
+    });
+
+    showEvent();
+
+    expect(await screen.findByText('Guest mode is for mobile devices'))
+      .toBeInTheDocument();
+    await waitFor(() => expect(api.guestLeave).toHaveBeenCalledWith(
+      'a-pass-for-a-event-that-ended'
+    ));
+    expect(window.sessionStorage.getItem('guest_token')).toBeNull();
   });
 });

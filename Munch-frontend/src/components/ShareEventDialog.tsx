@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { apiClient } from '../services/api';
+import { API_BASE_URL } from '../services/apiConfig';
 import toast from 'react-hot-toast';
 import { FigmaIcon } from '../assets/icons';
 
-const API_ROOT = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
+const API_ROOT = API_BASE_URL;
 
 interface Props {
   eventId: string;
