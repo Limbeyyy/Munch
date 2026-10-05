@@ -23,6 +23,27 @@ browser ──────────▶ Windows ──▶ nginx ────�
                                                       PostgreSQL + Redis
 ```
 
+Each step below ends in a **check**. Run it. A step that half-worked is
+much cheaper to find where it happened than three steps later, where it
+shows up as something unrelated.
+
+---
+
+## 0. Fix the build first
+
+`update.sh` builds the frontend with `CI=true`, which makes eslint
+warnings fatal — and the tree currently has one, so the first deploy
+will stop there. One line, in
+`Munch-frontend/src/attendee/pwa/BoardScreen.tsx:201`:
+
+```diff
+-  const { t, num } = useOrganizer();
++  const { t } = useOrganizer();
+```
+
+**Check:** `cd Munch-frontend && CI=true npm run build` ends in
+`Compiled successfully.`
+
 ---
 
 ## 1. Prepare the Windows host
@@ -48,6 +69,9 @@ instead.
 wsl --shutdown
 ```
 
+**Check:** `wsl -l -v` shows the distro `Stopped`, and `wsl --version`
+reports 0.67.6 or newer.
+
 ## 2. Turn on systemd inside the distro
 
 ```bash
@@ -62,7 +86,11 @@ wsl --shutdown
 wsl -d Ubuntu-24.04
 ```
 
-Confirm: `pidof systemd` should print a number.
+**Check:** inside the distro, `pidof systemd` prints a number, and
+`systemctl list-units --type=service` lists services rather than
+erroring. If it says *System has not been booted with systemd*, the
+`wsl --shutdown` did not happen or `/etc/wsl.conf` is not where it
+should be.
 
 ## 3. Get the code in place
 
@@ -79,6 +107,9 @@ Node 18+ is needed to build the frontend:
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 ```
+
+**Check:** `node --version` is v18 or newer, and
+`ls /opt/munch/manage.py` exists.
 
 ## 4. Write the environment file
 
@@ -106,6 +137,10 @@ ways that are hard to read:
 
 Leave `SECURE_SSL_REDIRECT=False` until a certificate exists.
 
+**Check:** no value is left blank except the optional ones —
+`grep -nE '^[A-Z_]+=$' /opt/munch/.env.prod` should print only the
+lines you meant to skip.
+
 ## 5. Install
 
 ```bash
@@ -115,6 +150,17 @@ sudo bash /opt/munch/deploy/wsl2/bin/install.sh
 Installs PostgreSQL, Redis and nginx; creates the `munch` service
 account, the role and the database; installs the systemd units and the
 nginx site; then runs `update.sh` for the rest.
+
+**Check:**
+
+```bash
+systemctl is-active munch-daphne munch-worker munch-beat nginx
+curl -I http://localhost/            # 200, and the React index.html
+curl -I http://localhost/django-static/admin/css/base.css   # 200
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost/api/v1/   # 401, not 000 or 502
+```
+
+A 502 means nginx is up but Daphne is not — `journalctl -u munch-daphne -n 50`.
 
 Create the first administrator:
 
@@ -134,6 +180,11 @@ Back in an elevated PowerShell, from the repository:
 
 This registers a startup task that boots WSL and — under NAT — rebuilds
 the port forwarding, since the distro's address changes on every boot.
+
+**Check:** from another machine on the network, `http://<server ip>/`
+loads the app. Then reboot the Windows box and check again without
+logging in — that is the thing the startup task exists for, and the
+only way to know it works.
 
 ## 7. TLS
 
