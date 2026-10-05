@@ -68,8 +68,24 @@ python -m venv venv
 .\venv\Scripts\pip install -r requirements.txt -r deploy\windows\requirements-windows.txt
 ```
 
-The database. Each of these asks for the **postgres** superuser
-password set during installation:
+The database:
+
+```powershell
+.\deploy\windows\Setup-Database.ps1
+```
+
+It finds `psql.exe` wherever the installer put it - the version is in
+the path, so `...\PostgreSQL\16\bin\` is wrong on 15 and on 17 -
+takes the password from `.env.prod` so the two cannot disagree,
+creates the role and the database with the right ownership, applies
+`init.sql`, and ends by checking that the application's role can
+actually create tables. Safe to run again.
+
+It asks for the **postgres** superuser password, which is the one set
+when PostgreSQL was installed, not `DB_PASSWORD`.
+
+<details>
+<summary>By hand, if you would rather</summary>
 
 ```powershell
 $psql = "C:\Program Files\PostgreSQL\16\bin\psql.exe"
@@ -108,6 +124,8 @@ useful against another:
 
 `f` means the grant did not apply. Refusing to connect at all means
 the password does not match `DB_PASSWORD` in `.env.prod`.
+
+</details>
 
 The environment:
 
