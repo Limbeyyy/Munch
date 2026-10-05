@@ -37,7 +37,20 @@ param(
     [string] $AppDir      = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path,
     [string] $CaddyDir    = 'C:\caddy',
     [string] $Nssm        = 'nssm.exe',
-    [int]    $UpstreamPort = 8000
+    [int]    $UpstreamPort = 8000,
+
+    # For a machine where port 80 cannot be had. Windows reserves it
+    # readily - IIS, or anything else registered with HTTP.sys, or a
+    # kernel port exclusion that survives stopping the service that
+    # caused it. Check with:
+    #     netsh int ipv4 show excludedportrange protocol=tcp
+    #
+    # The certificate is then obtained over TLS-ALPN-01, which is
+    # answered inside the TLS handshake on 443 and needs nothing on
+    # 80, at issue or at renewal. The cost is the HTTP->HTTPS
+    # redirect: somebody typing http://... reaches nothing, because
+    # nothing is listening there to redirect them.
+    [switch] $NoPort80
 )
 
 $ErrorActionPreference = 'Stop'
@@ -150,6 +163,14 @@ $config  = $config -replace 'munch\.example\.np', $Hostname
 $config  = $config -replace 'C:/munch', $appPath
 $config  = $config -replace '127\.0\.0\.1:8000', "127.0.0.1:$UpstreamPort"
 
+if ($NoPort80) {
+    Write-Note "Port 80 left alone - certificate over TLS-ALPN-01 on 443."
+    $config = "{`r`n`tauto_https disable_redirects`r`n}`r`n`r`n" + $config
+    $config = $config.Replace(
+        "$Hostname {",
+        "$Hostname {`r`n`ttls {`r`n`t`tissuer acme {`r`n`t`t`tdisable_http_challenge`r`n`t`t}`r`n`t}")
+}
+
 $caddyfile = Join-Path $CaddyDir 'Caddyfile'
 Set-Content -Path $caddyfile -Value $config -Encoding UTF8
 Write-Note $caddyfile
@@ -157,8 +178,9 @@ Write-Note $caddyfile
 & $exe validate --config $caddyfile --adapter caddyfile
 if ($LASTEXITCODE -ne 0) { throw "Caddy rejected the config." }
 
-Write-Step "Opening 80 and 443"
-foreach ($port in 80, 443) {
+$open = if ($NoPort80) { ,443 } else { 80, 443 }
+Write-Step "Opening $($open -join ' and ')"
+foreach ($port in $open) {
     $name = "Caddy TCP $port"
     if (-not (Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue)) {
         New-NetFirewallRule -DisplayName $name -Direction Inbound `
