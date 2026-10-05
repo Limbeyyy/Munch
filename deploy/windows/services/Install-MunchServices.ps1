@@ -27,7 +27,8 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $AppDir        = 'C:\munch',
+    # Derived from where this script is; see Start-Munch.ps1.
+    [string] $AppDir        = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path,
     [string] $Nssm          = 'nssm.exe',
     [int]    $Port          = 8000,
     [int]    $WorkerThreads = 4

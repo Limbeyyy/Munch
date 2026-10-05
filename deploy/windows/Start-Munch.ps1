@@ -33,7 +33,11 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $AppDir    = 'C:\munch',
+    # Worked out from where this script is, rather than guessed. The
+    # checkout is not always at C:\munch, and a wrong default here
+    # fails later and somewhere else - as a missing .env.prod, or a
+    # venv that is not there.
+    [string] $AppDir    = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path,
     [int]    $Port      = 8000,
     [string] $BindHost  = '0.0.0.0',
     [switch] $Pull,

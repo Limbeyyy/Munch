@@ -25,6 +25,26 @@ browser ──▶ :443 Caddy ──▶ 127.0.0.1:8000 uvicorn ──▶ Django
 
 ---
 
+## Use PowerShell, not Command Prompt
+
+Every script here is PowerShell. In `cmd.exe` they do not run and the
+errors do not say why:
+
+| What you typed | cmd says | What it means |
+|---|---|---|
+| `.\deploy\...\Install-Caddy.ps1` | `The system cannot find the file specified.` | cmd cannot execute a `.ps1` |
+| `$env:REACT_APP_API_URL = '...'` | `The filename, directory name, or volume label syntax is incorrect.` | `$env:` is PowerShell syntax; cmd uses `set` |
+
+Open **Windows PowerShell as Administrator**. You can tell them apart
+by the prompt: PowerShell starts with `PS`, Command Prompt does not.
+
+If a script is refused with *"running scripts is disabled on this
+system"*, allow signed and local scripts for your account, once:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
 ## What you need
 
 | | Where | Note |
@@ -38,9 +58,12 @@ No IIS, no ARR, no URL Rewrite, no NSSM.
 
 ## First time
 
+The checkout can live anywhere - the scripts work out where they are
+rather than assuming `C:\munch`. These examples use `C:\projects\Munch`.
+
 ```powershell
-git clone <your remote> C:\munch
-cd C:\munch
+git clone <your remote> C:\projects\Munch
+cd C:\projects\Munch
 python -m venv venv
 .\venv\Scripts\pip install -r requirements.txt -r deploy\windows\requirements-windows.txt
 ```
@@ -54,9 +77,14 @@ The database:
 
 The environment:
 
+Note the destination: the **repository root**, beside `manage.py`.
+Django looks for it there and nowhere else, so a copy left in
+`deploy\windows\` is not read and the failure is a missing
+`SECRET_KEY` rather than a missing file.
+
 ```powershell
-copy deploy\windows\env.prod.example C:\munch\.env.prod
-notepad C:\munch\.env.prod
+copy deploy\windows\env.prod.example .\.env.prod
+notepad .\.env.prod
 ```
 
 Set `DB_PASSWORD`, and these three — which here are **the machine's own
