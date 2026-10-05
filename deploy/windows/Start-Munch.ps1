@@ -69,6 +69,23 @@ if ($Pull) {
     & $py -m pip install --quiet -r requirements.txt -r deploy\windows\requirements-windows.txt
 }
 
+# -- Is everything installed? ----------------------------------------
+#
+# Django imports INSTALLED_APPS before it does anything else, so a
+# missing package surfaces as a ModuleNotFoundError forty frames deep
+# in app registry setup - during `migrate`, which makes it look like
+# a database problem. Asking directly costs a second and says what is
+# actually wrong.
+Write-Step "Dependencies"
+$probe = & $py -c "import daphne, channels, uvicorn, whitenoise, psycopg2, celery, rest_framework, allauth, drf_yasg, django_celery_beat, corsheaders, cryptography; print('ok')" 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "    $probe" -ForegroundColor Red
+    throw ("A package is missing, so Django cannot load its apps. Install them:`n" +
+           "     .\venv\Scripts\pip install -r requirements.txt -r deploy\windows\requirements-windows.txt`n" +
+           "   Then run this again.")
+}
+Write-Note "all present"
+
 Write-Step "Migrations"
 & $py manage.py migrate --noinput
 if ($LASTEXITCODE -ne 0) { throw "Migrations failed." }
