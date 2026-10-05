@@ -50,7 +50,34 @@ param(
     # 80, at issue or at renewal. The cost is the HTTP->HTTPS
     # redirect: somebody typing http://... reaches nothing, because
     # nothing is listening there to redirect them.
-    [switch] $NoPort80
+    [switch] $NoPort80,
+
+    # -- DNS-01, for a machine whose 80 and 443 are not reachable ------
+    #
+    # Let's Encrypt validates on port 80 or on port 443 and nowhere
+    # else; the ports are fixed by the ACME specification, so serving
+    # on 8090 does not move them. Where an ISP blocks both - which is
+    # ordinary on a business line - the only remaining proof is a DNS
+    # record, and that needs no inbound connection at all.
+    #
+    # The snag is that the record has to be written automatically at
+    # renewal, and most DNS hosts offer no API for it. So the one
+    # record ACME looks at is delegated, once and by hand, to a
+    # service that does: a CNAME from
+    # _acme-challenge.<your domain> to an acme-dns account. Nothing
+    # else about your DNS moves, and the delegation is permanent.
+    [switch] $AcmeDns,
+
+    # Where the delegated account lives. The public instance is run by
+    # acme-dns's author and holds nothing but challenge tokens for a
+    # name that exists only to carry them. Self-host it by pointing
+    # this elsewhere - though that needs inbound UDP 53, which is the
+    # problem this is working around.
+    [string] $AcmeDnsServer = 'https://auth.acme-dns.io',
+
+    # What the site listens on. 443 by default; with -AcmeDns it is
+    # usually a high port, because 443 is the one that is blocked.
+    [int]    $ListenPort = 443
 )
 
 $ErrorActionPreference = 'Stop'
@@ -136,6 +163,64 @@ try {
     Write-Warn "$Hostname does not resolve. Caddy will keep retrying, but no certificate will be issued until it does."
 }
 
+# -- The delegated account -------------------------------------------
+$acme = $null
+if ($AcmeDns) {
+    $store = Join-Path $CaddyDir 'acmedns.json'
+
+    if (Test-Path $store) {
+        $acme = Get-Content $store -Raw | ConvertFrom-Json
+        Write-Step "Using the existing acme-dns account"
+    } else {
+        Write-Step "Registering an acme-dns account"
+        # Anonymous and free: the account owns one meaningless
+        # hostname whose only job is to hold a TXT record for a
+        # minute at a time.
+        $acme = Invoke-RestMethod -Method Post -UseBasicParsing `
+            -Uri "$AcmeDnsServer/register"
+        $acme | ConvertTo-Json | Set-Content $store -Encoding UTF8
+        # The password renews the certificate for as long as this
+        # deployment lives, and it is not recoverable.
+        icacls $store /inheritance:r /grant:r "SYSTEM:(R)" "Administrators:(R)" | Out-Null
+    }
+    Write-Note "delegation target: $($acme.fulldomain)"
+
+    Write-Step "Checking the delegation"
+    $cname = "_acme-challenge.$Hostname"
+    $points = $null
+    try {
+        $points = (Resolve-DnsName $cname -Type CNAME -ErrorAction Stop |
+                   Where-Object { $_.NameHost }).NameHost
+    } catch { }
+
+    if ($points -ne $acme.fulldomain) {
+        Write-Warn "The delegation is not in place yet."
+        Write-Host @"
+
+  Add this one record where $Hostname's DNS is managed, then run
+  this script again. It is added once and never changes.
+
+      Type   CNAME
+      Name   _acme-challenge
+      Value  $($acme.fulldomain)
+
+  Some control panels want the name in full:
+
+      _acme-challenge.$Hostname
+
+  $(if ($points) { "Right now it points at '$points' instead." }
+    else { "Right now there is no such record." })
+
+  It can take a few minutes to propagate. Check with:
+
+      Resolve-DnsName _acme-challenge.$Hostname -Type CNAME
+
+"@ -ForegroundColor Yellow
+        exit 1
+    }
+    Write-Note "$cname -> $points"
+}
+
 Write-Step "Downloading Caddy"
 New-Item -ItemType Directory -Force -Path $CaddyDir | Out-Null
 $exe = Join-Path $CaddyDir 'caddy.exe'
@@ -145,9 +230,11 @@ if (-not (Test-Path $exe)) {
     # to unzip it fails with "Split or spanned archives are not
     # supported", which reads as a corrupt download rather than as
     # there being nothing to unpack.
-    Invoke-WebRequest -UseBasicParsing `
-        -Uri 'https://caddyserver.com/api/download?os=windows&arch=amd64' `
-        -OutFile $exe
+    # A DNS provider is a compiled-in module, not a plugin loaded at
+    # runtime, so the build service assembles a binary that has it.
+    $url = 'https://caddyserver.com/api/download?os=windows&arch=amd64'
+    if ($AcmeDns) { $url += '&p=github.com/caddy-dns/acmedns' }
+    Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $exe
 
     # A captive portal or a proxy answers with an HTML page and the
     # same 200, which would otherwise be saved as caddy.exe and fail
@@ -176,6 +263,21 @@ $config  = $config -replace 'munch\.example\.np', $Hostname
 $config  = $config -replace 'C:/munch', $appPath
 $config  = $config -replace '127\.0\.0\.1:8000', "127.0.0.1:$UpstreamPort"
 
+if ($AcmeDns) {
+    # Nothing binds 80 - there is no redirect worth serving from a
+    # port that cannot be reached - and the site answers on its own.
+    $config = "{`r`n`tauto_https disable_redirects`r`n}`r`n`r`n" + $config
+    $config = $config.Replace(
+        "$Hostname {",
+        ("{0}:{1} {{`r`n`ttls {{`r`n`t`tdns acmedns {{`r`n" +
+         "`t`t`tusername   {2}`r`n`t`t`tpassword   {3}`r`n" +
+         "`t`t`tsubdomain  {4}`r`n`t`t`tserver_url {5}`r`n" +
+         "`t`t}}`r`n`t}}") -f $Hostname, $ListenPort,
+            $acme.username, $acme.password, $acme.subdomain, $AcmeDnsServer)
+} elseif ($ListenPort -ne 443) {
+    $config = $config.Replace("$Hostname {", "${Hostname}:${ListenPort} {")
+}
+
 if ($NoPort80) {
     Write-Note "Port 80 left alone - certificate over TLS-ALPN-01 on 443."
     $config = "{`r`n`tauto_https disable_redirects`r`n}`r`n`r`n" + $config
@@ -191,7 +293,9 @@ Write-Note $caddyfile
 & $exe validate --config $caddyfile --adapter caddyfile
 if ($LASTEXITCODE -ne 0) { throw "Caddy rejected the config." }
 
-$open = if ($NoPort80) { ,443 } else { 80, 443 }
+$open = if ($AcmeDns) { ,$ListenPort }
+        elseif ($NoPort80) { ,443 }
+        else { 80, 443 }
 Write-Step "Opening $($open -join ' and ')"
 foreach ($port in $open) {
     $name = "Caddy TCP $port"
@@ -222,6 +326,9 @@ if (Get-Service -Name Caddy -ErrorAction SilentlyContinue) {
 & $Nssm set Caddy AppExit Default Restart                         | Out-Null
 & $Nssm start Caddy | Out-Null
 
+$siteUrl = if ($ListenPort -eq 443) { "https://$Hostname" }
+           else { "https://${Hostname}:${ListenPort}" }
+
 Start-Sleep -Seconds 5
 $state = (Get-Service Caddy).Status
 if ($state -eq 'Running') {
@@ -237,18 +344,20 @@ if ($state -eq 'Running') {
 
 Write-Host @"
 
+  Reachable at: $siteUrl
+
   Now, in $AppDir\.env.prod:
 
       ALLOWED_HOSTS=$Hostname
-      CSRF_TRUSTED_ORIGINS=https://$Hostname
-      CORS_ALLOWED_ORIGINS=https://$Hostname
+      CSRF_TRUSTED_ORIGINS=$siteUrl
+      CORS_ALLOWED_ORIGINS=$siteUrl
       TRUST_PROXY_HEADER=True
       SECURE_SSL_REDIRECT=True
 
   Then rebuild, so the bundle calls the new origin, and bind the
   application server to loopback - Caddy is what the internet talks to:
 
-      `$env:REACT_APP_API_URL = 'https://$Hostname/api/v1'
+      `$env:REACT_APP_API_URL = '$siteUrl/api/v1'
       .\deploy\windows\Start-Munch.ps1 -BindHost 127.0.0.1
 
   The first certificate takes up to a minute. Watch it:

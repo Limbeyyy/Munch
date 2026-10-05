@@ -290,7 +290,53 @@ Get-Content C:\caddy\caddy.err.log -Wait -Tail 30
 **Check:** `https://munch.example.np/` loads with a valid certificate;
 `http://munch.example.np/` redirects to it; the live room connects.
 
-### If port 80 cannot be had
+### When 80 and 443 cannot be reached at all
+
+An ISP that blocks inbound 80 and 443 - ordinary on a business line -
+leaves no port for Let's Encrypt to validate on. **Serving on 8090
+does not help**: ACME validates on 80 or 443 and nowhere else, and
+that is fixed by the specification, not by Caddy.
+
+What is left is DNS-01, which proves the name by a TXT record and
+needs no inbound connection at all. The record has to be written
+automatically at each renewal, though, and most DNS hosts have no API
+for it - so the one record ACME looks at is delegated, once and by
+hand, to a service that does. Nothing else about your DNS moves.
+
+```powershell
+.\deploy\windows\caddy\Install-Caddy.ps1 `
+    -Hostname munch.example.np -AcmeDns -ListenPort 8090
+```
+
+The first run registers an anonymous acme-dns account, saves it to
+`C:\caddy\acmedns.json`, prints one CNAME record and stops:
+
+```
+Type   CNAME
+Name   _acme-challenge
+Value  <something>.auth.acme-dns.io
+```
+
+Add that where your DNS is managed, wait for it to propagate, and run
+the same command again. It checks the delegation, fetches a Caddy
+build with the acme-dns module compiled in, and gets the certificate
+over DNS-01. Renewals then need nothing from you - the delegation is
+permanent.
+
+**Keep `C:\caddy\acmedns.json`.** It renews the certificate for as
+long as this deployment lives and cannot be recovered; losing it means
+registering again and changing the CNAME.
+
+The site is then at `https://munch.example.np:8090`. A certificate is
+issued for a *name*, not a port, so the port in the URL costs nothing
+in validity - but it has to appear in every link, and in
+`CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS` and
+`REACT_APP_API_URL`. The script prints all three with the port
+already in them.
+
+Nothing listens on 80, so `http://munch.example.np` reaches nothing.
+
+### If port 80 is taken locally but reachable
 
 Windows reserves it readily, and not only through IIS. Anything
 registered with HTTP.sys takes it in a way that reports
