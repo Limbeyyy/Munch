@@ -1,0 +1,37 @@
+[Unit]
+Description=Munch periodic scheduler (Celery beat)
+Documentation=file:///opt/munch/deploy/wsl2/README.md
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+PartOf=munch.target
+
+[Service]
+Type=exec
+User=munch
+Group=munch
+WorkingDirectory=/opt/munch
+EnvironmentFile=/opt/munch/.env.prod
+Environment=DJANGO_ENV=prod
+Environment=DJANGO_SETTINGS_MODULE=config.settings.production
+Environment=PYTHONUNBUFFERED=1
+
+# The schedule lives in the database (django_celery_beat's
+# DatabaseScheduler, set in base.py), so beat keeps no state of its own
+# and there is no schedule file to place or to lose.
+#
+# Exactly one of these, ever. A second beat on another host does not
+# share the work out - both fire every entry, so every periodic task
+# runs twice.
+ExecStart=/opt/munch/venv/bin/celery -A config.celery beat --loglevel=INFO
+
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

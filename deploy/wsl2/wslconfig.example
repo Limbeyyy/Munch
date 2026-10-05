@@ -1,0 +1,29 @@
+# Copy to C:\Users\<you>\.wslconfig on the Windows host - note the
+# leading dot and no extension. Then: wsl --shutdown
+#
+# This file configures the WSL2 virtual machine itself, so it lives on
+# the Windows side; /etc/wsl.conf configures the distro inside it.
+
+[wsl2]
+# Mirrored networking makes the VM share the host's interfaces: the
+# distro answers on the host's own addresses, inbound connections
+# reach it without forwarding, and the IP stops changing on every
+# boot. It removes the whole portproxy problem.
+#
+# Needs Windows 11 22H2 / Server 2025 or newer. On anything older this
+# key is ignored and NAT is used - Setup-MunchHost.ps1 detects that
+# and sets up forwarding instead.
+networkingMode=mirrored
+
+# With mirrored networking, let the host's firewall see and filter
+# the VM's traffic rather than running a second, invisible one.
+firewall=true
+
+# Cap these or the VM will take most of the machine and leave the
+# host short. Set them to what the server can actually spare.
+memory=8GB
+processors=4
+
+# Reclaims memory the VM has finished with instead of holding the
+# high-water mark until shutdown.
+autoMemoryReclaim=gradual

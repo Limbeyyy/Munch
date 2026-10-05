@@ -1,0 +1,36 @@
+[Unit]
+Description=Munch background worker (Celery)
+Documentation=file:///opt/munch/deploy/wsl2/README.md
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+PartOf=munch.target
+
+[Service]
+Type=exec
+User=munch
+Group=munch
+WorkingDirectory=/opt/munch
+EnvironmentFile=/opt/munch/.env.prod
+Environment=DJANGO_ENV=prod
+Environment=DJANGO_SETTINGS_MODULE=config.settings.production
+Environment=PYTHONUNBUFFERED=1
+
+# Prefork, which is the whole reason for deploying into WSL2 rather
+# than onto Windows directly: there, Celery has to run --pool=solo and
+# does one task at a time. Concurrency is left to Celery's default,
+# which is one process per core.
+ExecStart=/opt/munch/venv/bin/celery -A config.celery worker --loglevel=INFO
+
+Restart=always
+RestartSec=5
+# Let a task in flight finish rather than killing it mid-write.
+KillSignal=SIGTERM
+TimeoutStopSec=300
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
