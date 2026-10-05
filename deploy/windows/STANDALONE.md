@@ -243,6 +243,70 @@ It cannot be a relative path like `/api/v1`. The websocket code calls
 relative URL — which would take out the live room, the transcript and
 the guest hub while leaving the rest of the site apparently fine.
 
+## Putting it on the internet, over plain HTTP
+
+The quickest way to have it reachable, and a reasonable first step
+even if TLS is coming later: one process, one port, no proxy and no
+certificate.
+
+Pick a port your network already forwards - the same way whatever is
+on `:8081` got there.
+
+```powershell
+# If Caddy was set up earlier, take it out of the way first.
+Stop-Service Caddy -ErrorAction SilentlyContinue
+Set-Service Caddy -StartupType Disabled -ErrorAction SilentlyContinue
+```
+
+In `.env.prod` - note `http`, the port on the origins, and both TLS
+switches off:
+
+```
+ALLOWED_HOSTS=gpsnepal.com.np,localhost,127.0.0.1
+CSRF_TRUSTED_ORIGINS=http://gpsnepal.com.np:8090
+CORS_ALLOWED_ORIGINS=http://gpsnepal.com.np:8090
+TRUST_PROXY_HEADER=False
+SECURE_SSL_REDIRECT=False
+```
+
+`TRUST_PROXY_HEADER=False` matters: with nothing in front, any client
+could send `X-Forwarded-Proto: https` and be believed.
+
+Then build and run. `REACT_APP_API_URL` is **required** on any port
+but 8000 - the fallback baked into the bundle assumes that port, and
+without this the site loads and nothing in it works:
+
+```powershell
+$env:REACT_APP_API_URL = 'http://gpsnepal.com.np:8090/api/v1'
+.\deploy\windows\Start-Munch.ps1 -Port 8090
+```
+
+Leave `-BindHost` alone. It defaults to `0.0.0.0`, which is what
+makes it answer to anything other than the machine itself.
+
+Last, forward **8090** to this machine on the router, as `:8081`
+already is.
+
+**Check:** `http://gpsnepal.com.np:8090/` from a phone on mobile
+data. On the LAN it will work whether or not the forward exists, so
+that test proves nothing.
+
+### What plain HTTP costs
+
+Nothing refuses to run, and nothing crashes - both features below are
+guarded. But browsers withhold three things from a page that is not
+on a secure origin:
+
+- **No installing it to a home screen**, and no offline shell - a
+  service worker is refused outright over plain HTTP
+- **No desktop notifications** for the host's reminders
+- **Traffic is readable in transit**, including the sign-in. On a
+  conference network that is a real consideration, not a formality.
+
+Everything else is unaffected. The API, the live room, the
+transcript, the question hub and file uploads all work - websockets
+run over `ws://` quite happily.
+
 ## Putting it on the internet, with TLS
 
 Add Caddy in front. It gets a certificate from Let's Encrypt on first
