@@ -45,6 +45,24 @@ if 'whitenoise.middleware.WhiteNoiseMiddleware' not in MIDDLEWARE:
     _at = MIDDLEWARE.index(_after) + 1 if _after in MIDDLEWARE else 0
     MIDDLEWARE.insert(_at, 'whitenoise.middleware.WhiteNoiseMiddleware')
 
+# The built frontend, served by WhiteNoise rather than by the view
+# below. WhiteNoise is made for this - correct content types, caching
+# headers, and no synchronous file iterator for ASGI to complain
+# about on every request. The view is left with the one case
+# WhiteNoise cannot answer: a client-side route, which is not a file.
+WHITENOISE_ROOT = SPA_ROOT
+# index.html names the current bundle, so a cached copy goes on
+# pointing at the previous deploy's files.
+WHITENOISE_INDEX_FILE = False
+
+# Which files may be cached forever. WhiteNoise's own test looks for
+# the hash Django's ManifestStaticFilesStorage adds, and does not
+# recognise the one Create React App puts in - so the bundles, which
+# are the largest things here and the most safely cacheable, were
+# being served with a minute's cache. A changed file gets a new name,
+# so the URL can never go stale.
+WHITENOISE_IMMUTABLE_FILE_TEST = r'\.[0-9a-f]{8,}\.(js|css|map|woff2?|png|jpg|jpeg|gif|svg)$'
+
 STORAGES = {
     'default': {
         'BACKEND': 'django.core.files.storage.FileSystemStorage',
