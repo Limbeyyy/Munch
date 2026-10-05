@@ -14,7 +14,7 @@ import mimetypes
 from pathlib import Path
 
 from django.conf import settings
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, HttpResponse
 
 
 def _within(root: Path, path: str) -> Path | None:
@@ -53,9 +53,20 @@ def spa(request, path=''):
             )
 
     kind, encoding = mimetypes.guess_type(found.name)
-    response = FileResponse(found.open('rb'), content_type=kind or 'application/octet-stream')
-    if encoding:
-        response['Content-Encoding'] = encoding
+
+    if found.name == 'index.html':
+        # Read rather than streamed. A FileResponse wraps a
+        # synchronous iterator, and under ASGI Django warns about
+        # that on every single request - which, for the file served
+        # to every client-side route, is every page view. It is a few
+        # kilobytes.
+        response = HttpResponse(found.read_bytes(), content_type='text/html')
+    else:
+        response = FileResponse(
+            found.open('rb'), content_type=kind or 'application/octet-stream'
+        )
+        if encoding:
+            response['Content-Encoding'] = encoding
 
     if found.name == 'index.html':
         # Never cached. It is what names the current bundle, so a

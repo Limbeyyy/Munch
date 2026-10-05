@@ -154,6 +154,19 @@ if (-not $SkipBuild) {
     } finally { Pop-Location }
 }
 
+# -- Is there a frontend to serve? -----------------------------------
+#
+# -SkipBuild is the fast path for a Python-only change, and on a
+# checkout that has never been built it skips the only step that
+# produces anything to serve. The site then starts perfectly and
+# answers 404 to every page, which looks like a routing fault.
+$index = Join-Path $AppDir 'Munch-frontend\build\index.html'
+if (-not (Test-Path $index)) {
+    throw ("No frontend bundle at $index.`n" +
+           "   This checkout has not been built yet, so there would be nothing`n" +
+           "   to serve. Run this again without -SkipBuild.")
+}
+
 Write-Step "Static files"
 & $py manage.py collectstatic --noinput --clear | Select-Object -Last 1
 
