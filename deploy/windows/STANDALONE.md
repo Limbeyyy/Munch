@@ -204,12 +204,14 @@ breaks without them — the site works and the queue simply fills — so
 start here and add them when you need them. Two more windows:
 
 ```powershell
-cd C:\munch
-$env:DJANGO_ENV='prod'; $env:DJANGO_SETTINGS_MODULE='config.settings.standalone'
-
-.\venv\Scripts\python -m celery -A config.celery worker --pool=threads --concurrency=4 --loglevel=INFO
-.\venv\Scripts\python -m celery -A config.celery beat --loglevel=INFO
+.\deploy\windows\Start-Worker.ps1      # one window
+.\deploy\windows\Start-Beat.ps1        # another
 ```
+
+Each sets `DJANGO_ENV` and `DJANGO_SETTINGS_MODULE` itself. Run
+celery by hand without those and the settings look for `.env.dev`,
+fall back to `.env`, find neither, and report `SECRET_KEY` missing -
+true, and nothing to do with the actual mistake.
 
 `--pool=threads`, not `--pool=solo`: Windows has no prefork pool, and
 solo runs one task at a time, so a slow Drive sync blocks every

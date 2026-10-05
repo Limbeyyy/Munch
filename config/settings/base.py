@@ -20,8 +20,26 @@ env_file = os.environ.get('DJANGO_ENV', 'dev')   # default to 'dev'
 env_path = ROOT_DIR / f'.env.{env_file}'
 
 # If the file doesn't exist, fallback to .env
+_asked_for = env_path
 if not env_path.exists():
     env_path = ROOT_DIR / '.env'
+
+if not env_path.exists():
+    # Say which file, rather than letting the first setting that
+    # needed it fail. Without this the error is "Set the SECRET_KEY
+    # environment variable" from whichever line reached for it first,
+    # which sends people looking for a missing variable when what is
+    # missing is the file - usually because DJANGO_ENV was not set in
+    # this particular shell, so a deployment with a perfectly good
+    # .env.prod went looking for .env.dev.
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(
+        f'No environment file. Looked for {_asked_for} '
+        f'(DJANGO_ENV={env_file!r}) and then {ROOT_DIR / ".env"}. '
+        'Set DJANGO_ENV to the suffix of the file you mean - '
+        'DJANGO_ENV=prod reads .env.prod - or create one of those.'
+    )
 
 environ.Env.read_env(str(env_path))
 
