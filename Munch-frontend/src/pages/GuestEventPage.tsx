@@ -194,7 +194,13 @@ const GuestEventRoom: React.FC = () => {
         if (currentEvent?.status === 'ended') {
           toast('The event has ended');
           leave(true);
-        } else if (guest.status !== 'admitted') {
+        } else if (guest.status === 'pending' || guest.status === 'denied') {
+          // Only the host taking the admission back, not the room
+          // noting where somebody is. `left` is written when the page
+          // is closed and by the sweep that lets go of an idle tab,
+          // and treating it as a withdrawal threw a guest out of a
+          // room they were still sitting in - then marked them gone
+          // on the way, so coming back did it again.
           toast('You are no longer in this event');
           leave();
         }

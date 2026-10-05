@@ -28,6 +28,30 @@ class GuestKnockThrottle(AnonRateThrottle):
     scope = 'guest_knock'
 
 
+def in_the_room(guest) -> bool:
+    """Whether this pass still opens the doors.
+
+    One question asked at every door, so they cannot answer it
+    differently from each other.
+
+    The test is whether the host ever let this person in, not whether
+    they happen to be sitting down at this moment. Somebody who stepped
+    out, closed the page, or was swept up as idle still holds an
+    admission the host gave them, and turning them away on the way back
+    was the whole of the bug this replaces: the room refused a guest it
+    had already admitted, and the client - holding a pass the server had
+    just called invalid - had nothing to do about it.
+
+    Reading only, deliberately. These endpoints are polled on a timer
+    whether or not anybody is looking, so marking somebody present for
+    asking would make a forgotten tab permanently present and quietly
+    undo the sweep that exists to stop exactly that. Being here is
+    something a person does, and it is recorded where that shows:
+    the heartbeat, which the page only sends on real activity.
+    """
+    return guest is not None and guest.may_enter
+
+
 def notify_host_of_guest(guest):
     """Push a waiting guest to the host's screen."""
     try:
@@ -398,7 +422,7 @@ def guest_board(request):
             {'error': 'Invalid or expired guest session'},
             status=status.HTTP_401_UNAUTHORIZED
         )
-    if not guest.is_admitted:
+    if not in_the_room(guest):
         return Response(
             {'error': 'You have not been admitted to this event'},
             status=status.HTTP_403_FORBIDDEN
@@ -419,7 +443,7 @@ def guest_vote_board(request):
             {'error': 'Invalid or expired guest session'},
             status=status.HTTP_401_UNAUTHORIZED
         )
-    if not guest.is_admitted:
+    if not in_the_room(guest):
         return Response(
             {'error': 'You have not been admitted to this event'},
             status=status.HTTP_403_FORBIDDEN
@@ -467,7 +491,7 @@ def guest_chat(request):
             {'error': 'Invalid or expired guest session'},
             status=status.HTTP_401_UNAUTHORIZED
         )
-    if not guest.is_admitted:
+    if not in_the_room(guest):
         return Response(
             {'error': 'You have not been admitted to this event'},
             status=status.HTTP_403_FORBIDDEN
@@ -511,7 +535,7 @@ def guest_presenters(request):
     from src.apps.meetings.models import EventParticipant
 
     guest = resolve_guest(request.query_params.get('token', ''))
-    if guest is None or not guest.is_admitted:
+    if not in_the_room(guest):
         return Response(
             {'error': 'Invalid or expired guest session'},
             status=status.HTTP_401_UNAUTHORIZED
@@ -554,7 +578,7 @@ def guest_resources(request):
             {'error': 'Invalid or expired guest session'},
             status=status.HTTP_401_UNAUTHORIZED
         )
-    if not guest.is_admitted:
+    if not in_the_room(guest):
         return Response(
             {'error': 'You have not been admitted to this event'},
             status=status.HTTP_403_FORBIDDEN
@@ -598,7 +622,7 @@ def guest_resource_download(request, artifact_id):
     from src.apps.drive.services.google_drive_adapter import GoogleDriveAdapter
 
     guest = resolve_guest(request.query_params.get('token', ''))
-    if guest is None or not guest.is_admitted:
+    if not in_the_room(guest):
         return Response(
             {'error': 'Invalid or expired guest session'},
             status=status.HTTP_401_UNAUTHORIZED

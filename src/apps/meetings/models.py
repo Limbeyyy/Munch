@@ -522,6 +522,63 @@ class GuestAttendee(models.Model):
     def is_admitted(self) -> bool:
         return self.status == self.Status.ADMITTED
 
+    @property
+    def may_enter(self) -> bool:
+        """Whether the host has let this person into this event.
+
+        Still true after they have stepped out. ``LEFT`` says where
+        somebody is, not whether they are allowed - it is written when
+        they close the page and by the sweep that lets go of a tab
+        nobody is looking at, neither of which is the host taking back
+        an admission.
+
+        Reading it as permission is what turned a guest who stepped
+        outside and came back into a stranger: every door in the room
+        refused them, and the only way back in was to be let in by the
+        host a second time. Being admitted is a thing that happened,
+        and it does not stop having happened.
+
+        Denied and pending are both still refused: one is the host
+        saying no, the other is the host not having answered yet.
+        """
+        return self.status in (self.Status.ADMITTED, self.Status.LEFT)
+
+    #: How stale a guest's last activity may get before it is rewritten.
+    #: Every request they make would otherwise be a write, and the only
+    #: thing reading it measures in minutes.
+    SEEN_EVERY_SECONDS = 60
+
+    def mark_present(self, now=None) -> None:
+        """Note that somebody admitted earlier is doing something here.
+
+        Doing something in the room is being in it, which is the rule
+        the register already keeps for account holders. So this also
+        puts somebody recorded as gone back in their seat: a guest who
+        was swept up as idle, or who closed the page and opened it
+        again, is plainly here if they are asking the server for
+        things.
+        """
+        from django.utils import timezone
+
+        now = now or timezone.now()
+        fields = []
+
+        if self.status == self.Status.LEFT:
+            self.status = self.Status.ADMITTED
+            self.left_at = None
+            fields += ['status', 'left_at']
+
+        stale = (
+            self.last_seen_at is None
+            or (now - self.last_seen_at).total_seconds() >= self.SEEN_EVERY_SECONDS
+        )
+        if stale:
+            self.last_seen_at = now
+            fields.append('last_seen_at')
+
+        if fields:
+            self.save(update_fields=fields + ['updated_at'])
+
     def __str__(self):
         return f"{self.full_name} ({self.status}) @ {self.event.code}"
 

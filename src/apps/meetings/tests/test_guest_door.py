@@ -760,3 +760,177 @@ class TheGuestIsNotShownOutByTheClockTests(TestCase):
         EventService.end_event(self.event.id)
 
         self.assertEqual(self.reloaded().status, Event.Status.ENDED)
+
+
+class AGuestWhoSteppedOutTests(TestCase):
+    """Leaving a room is not the same as being put out of it.
+
+    ``LEFT`` says where somebody is. It is written when they close the
+    page and by the sweep that lets go of a tab nobody is looking at -
+    neither of which is the host taking back an admission. Every door
+    read it as permission, so a guest who stepped outside came back to
+    a room that refused them: the hub, the transcript, the files, the
+    board, all 403 on a pass the server had issued itself and would
+    honour again the moment they knocked.
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.host = make_host('host@example.com')
+        start = timezone.now() - timezone.timedelta(minutes=5)
+        self.event = make_event(self.host, start=start, minutes=120)
+        self.event.status = Event.Status.ACTIVE
+        self.event.started_at = start
+        self.event.save()
+        make_session(self.event, start, 60, 'Haldi')
+
+        from src.apps.meetings.guest_tokens import make_guest_token
+
+        self.guest = GuestAttendee.objects.create(
+            event=self.event, full_name='Bishnu Prasad',
+            status=GuestAttendee.Status.ADMITTED,
+            decided_at=timezone.now(),
+        )
+        self.token = make_guest_token(self.guest)
+
+    def step_out(self):
+        return self.client.post(
+            f'{API}/events/guest/leave/', {'token': self.token},
+            content_type='application/json',
+        )
+
+    def doors(self):
+        """Every door the room has, as the page asks for them."""
+        t = self.token
+        return {
+            'hub': self.client.get(
+                f'{API}/events/{self.event.code}/hub/?guest_token={t}'
+            ),
+            'segments': self.client.get(
+                f'{API}/events/{self.event.code}/segments/?guest_token={t}'
+            ),
+            'board': self.client.get(f'{API}/events/guest/board/?token={t}'),
+            'chat': self.client.get(f'{API}/events/guest/chat/?token={t}'),
+            'resources': self.client.get(
+                f'{API}/events/guest/resources/?token={t}'
+            ),
+            'presenters': self.client.get(
+                f'{API}/events/guest/presenters/?token={t}'
+            ),
+        }
+
+    def test_every_door_opens_while_they_are_sitting_in_it(self):
+        for name, response in self.doors().items():
+            self.assertEqual(response.status_code, 200, f'{name}: {response.content}')
+
+    def test_every_door_still_opens_after_they_have_stepped_out(self):
+        self.step_out()
+        self.guest.refresh_from_db()
+        self.assertEqual(self.guest.status, GuestAttendee.Status.LEFT)
+
+        for name, response in self.doors().items():
+            self.assertEqual(response.status_code, 200, f'{name}: {response.content}')
+
+    def test_the_same_goes_for_one_the_idle_sweep_let_go_of(self):
+        from src.apps.meetings.idle import evict_idle
+
+        self.guest.last_seen_at = timezone.now() - timezone.timedelta(hours=3)
+        self.guest.save(update_fields=['last_seen_at'])
+        evict_idle(self.event)
+        self.guest.refresh_from_db()
+        self.assertEqual(self.guest.status, GuestAttendee.Status.LEFT)
+
+        for name, response in self.doors().items():
+            self.assertEqual(response.status_code, 200, f'{name}: {response.content}')
+
+    def test_somebody_still_waiting_on_the_host_is_not_let_in(self):
+        self.guest.status = GuestAttendee.Status.PENDING
+        self.guest.save(update_fields=['status'])
+
+        for name, response in self.doors().items():
+            self.assertIn(
+                response.status_code, (401, 403), f'{name}: {response.content}'
+            )
+
+    def test_somebody_the_host_turned_away_is_not_let_in(self):
+        self.guest.status = GuestAttendee.Status.DENIED
+        self.guest.save(update_fields=['status'])
+
+        for name, response in self.doors().items():
+            self.assertIn(
+                response.status_code, (401, 403), f'{name}: {response.content}'
+            )
+
+    def test_stepping_out_still_takes_them_off_the_register_as_present(self):
+        """The fix is about the doors, not about the headcount.
+
+        Somebody who left is still somebody who left; what changes is
+        only that the pass they hold keeps working.
+        """
+        self.step_out()
+        self.guest.refresh_from_db()
+
+        self.assertFalse(self.guest.is_admitted)
+        self.assertTrue(self.guest.may_enter)
+
+
+class ComingBackIsNotedTests(TestCase):
+    """Doing something in the room is being in it.
+
+    The sweep lets go of a tab nobody is looking at. When the person
+    behind it turns out to be there after all - they typed something,
+    their page sent its heartbeat - the register has to take that back,
+    or it goes on saying somebody left a room they are talking in.
+    """
+
+    def setUp(self):
+        self.host = make_host('host@example.com')
+        start = timezone.now() - timezone.timedelta(minutes=5)
+        self.event = make_event(self.host, start=start, minutes=120)
+        self.event.status = Event.Status.ACTIVE
+        self.event.save()
+
+    def guest(self, **over):
+        fields = {
+            'event': self.event,
+            'full_name': 'Bishnu Prasad',
+            'status': GuestAttendee.Status.ADMITTED,
+        }
+        fields.update(over)
+        return GuestAttendee.objects.create(**fields)
+
+    def test_activity_puts_somebody_let_go_of_back_in_their_seat(self):
+        one = self.guest(
+            status=GuestAttendee.Status.LEFT,
+            left_at=timezone.now() - timezone.timedelta(minutes=20),
+        )
+
+        one.mark_present()
+
+        one.refresh_from_db()
+        self.assertEqual(one.status, GuestAttendee.Status.ADMITTED)
+        self.assertIsNone(one.left_at)
+        self.assertIsNotNone(one.last_seen_at)
+
+    def test_it_does_not_rewrite_the_row_on_every_single_request(self):
+        """A write per request, for a field nothing reads in seconds."""
+        one = self.guest(last_seen_at=timezone.now())
+        before = one.updated_at
+
+        one.mark_present()
+
+        one.refresh_from_db()
+        self.assertEqual(one.updated_at, before)
+
+    def test_but_it_does_once_the_last_sighting_has_gone_stale(self):
+        one = self.guest(
+            last_seen_at=timezone.now() - timezone.timedelta(minutes=5)
+        )
+
+        one.mark_present()
+
+        one.refresh_from_db()
+        self.assertLess(
+            (timezone.now() - one.last_seen_at).total_seconds(), 5
+        )

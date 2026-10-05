@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { GuestWaitingPage } from '../GuestWaitingPage';
 import { GuestEventPage } from '../GuestEventPage';
@@ -198,5 +198,85 @@ describe('a guest pass that has stopped meaning anything', () => {
     expect(window.sessionStorage.getItem('guest_token')).toBe(
       'a-pass-for-a-event-that-ended'
     );
+  });
+});
+
+/**
+ * Where somebody is, against whether they are allowed to be there.
+ *
+ * `left` is written when the page closes and by the sweep that lets go
+ * of a tab nobody is looking at. The room read it as the host taking
+ * the admission back, so a guest who stepped out and came in again was
+ * told they were no longer in the event and put out - which also marked
+ * them as having left, so doing it again did the same thing.
+ */
+describe('a guest the room has recorded as away', () => {
+  const inTheRoom = (guestStatus: string) => {
+    api.guestStatus.mockResolvedValue({
+      guest: { status: guestStatus },
+      event: {
+        id: 'event-1', code: 'RY0-SDV', title: 'Guest test event',
+        status: 'active',
+        scheduled_start: '2026-10-05T00:00:00Z',
+        scheduled_end: '2026-10-05T01:00:00Z',
+        sessions: [],
+      },
+    } as any);
+  };
+
+  const settle = async () => {
+    await waitFor(() => expect(api.guestStatus).toHaveBeenCalled());
+    // The eviction check runs on the status poll, not on first paint.
+    await new Promise((done) => setTimeout(done, 0));
+  };
+
+  it('is not turned out of a room it is plainly still in', async () => {
+    inTheRoom('left');
+
+    showEvent();
+    await settle();
+
+    expect(screen.queryByText('the door')).not.toBeInTheDocument();
+    expect(api.guestLeave).not.toHaveBeenCalled();
+  });
+
+  it('still reads the room while it is marked away', async () => {
+    inTheRoom('left');
+
+    showEvent();
+
+    await waitFor(() => expect(api.getGuestSegments).toHaveBeenCalledWith(
+      'RY0-SDV', 'a-pass-for-a-event-that-ended'
+    ));
+  });
+
+  /**
+   * The host not having answered yet, or having said no, is a
+   * different thing entirely - and the poll that notices runs on its
+   * own clock, so the clock is wound on rather than waited out.
+   */
+  const evictedOn = async (guestStatus: string) => {
+    jest.useFakeTimers();
+    try {
+      inTheRoom(guestStatus);
+      showEvent();
+      await act(async () => { jest.advanceTimersByTime(16000); });
+    } finally {
+      jest.useRealTimers();
+    }
+    return screen.queryByText('the door');
+  };
+
+  it('but one still waiting on the host is sent back to the door', async () => {
+    expect(await evictedOn('pending')).toBeInTheDocument();
+  });
+
+  it('and so is one the host turned away', async () => {
+    expect(await evictedOn('denied')).toBeInTheDocument();
+  });
+
+  /** The same wound-on clock leaves somebody merely away where they are. */
+  it('while the clock running on does not disturb one marked away', async () => {
+    expect(await evictedOn('left')).not.toBeInTheDocument();
   });
 });
