@@ -34,7 +34,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)] [string] $Hostname,
-    [string] $AppDir      = 'C:\munch',
+    [string] $AppDir      = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path,
     [string] $CaddyDir    = 'C:\caddy',
     [string] $Nssm        = 'nssm.exe',
     [int]    $UpstreamPort = 8000
@@ -51,6 +51,23 @@ $admin = ([Security.Principal.WindowsPrincipal] `
 if (-not $admin) { throw "Run this from an elevated PowerShell." }
 if (-not (Get-Command $Nssm -ErrorAction SilentlyContinue)) {
     throw "nssm.exe not found. https://nssm.cc/download, or pass -Nssm C:\path\to\nssm.exe"
+}
+
+# A certificate is for a name, so a URL is not an answer - but it is
+# the obvious thing to paste, and Caddy's failure if one gets through
+# is about parsing a site address rather than about this. Taken apart
+# here instead.
+$given = $Hostname
+$Hostname = ($Hostname -replace '^[a-zA-Z][a-zA-Z0-9+.-]*://', '') -replace '/.*$', ''
+$Hostname = ($Hostname -split ':')[0].Trim().TrimEnd('.')
+if ($Hostname -ne $given) { Write-Warn "Read '$given' as '$Hostname'." }
+
+if ($Hostname -match '^\d{1,3}(\.\d{1,3}){3}$') {
+    throw ("'$Hostname' is an address, not a name. A public certificate authority " +
+           "certifies a name it can verify you control, and it can do that for " +
+           "neither a public address nor a private one. Use a domain that resolves " +
+           "here - a free DuckDNS or No-IP name will do - or serve over plain HTTP " +
+           "on the local network and skip this.")
 }
 
 Write-Step "Checking the name"
