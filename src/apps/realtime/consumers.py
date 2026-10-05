@@ -496,9 +496,13 @@ class EventConsumer(AsyncWebsocketConsumer):
         if getattr(self, 'guest_group_name', None):
             from src.apps.meetings.models import GuestAttendee
 
-            GuestAttendee.objects.filter(
-                id=self.guest['id'], status=GuestAttendee.Status.ADMITTED
-            ).update(last_seen_at=now)
+            # Not only the ones already counted as here. Somebody the
+            # idle sweep let go of, who then says something, is back -
+            # and skipping them left a guest talking in a room whose
+            # register said they had gone.
+            guest = GuestAttendee.objects.filter(id=self.guest['id']).first()
+            if guest is not None and guest.may_enter:
+                guest.mark_present(now)
             return
 
         try:

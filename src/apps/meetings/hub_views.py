@@ -29,8 +29,14 @@ def _who(request, event):
     """
     token = request.query_params.get('guest_token') or request.data.get('guest_token')
     if token:
+        from src.apps.meetings.guest_views import in_the_room
+
         guest = resolve_guest(token)
-        if guest is None or guest.event_id != event.id or not guest.is_admitted:
+        # Admitted once is admitted: a guest who stepped out and came
+        # back holds the same pass, and the hub is the one screen where
+        # being refused costs them something - their own questions, and
+        # the answers to them.
+        if guest is None or guest.event_id != event.id or not in_the_room(guest):
             return None, None, Response(
                 {'error': 'You are not in this event'},
                 status=status.HTTP_403_FORBIDDEN,

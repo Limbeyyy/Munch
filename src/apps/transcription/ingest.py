@@ -225,8 +225,16 @@ def event_segments(request, event_ref):
 
     guest_token = request.query_params.get('guest_token')
     if guest_token:
+        from src.apps.meetings.guest_views import in_the_room
+
         guest = resolve_guest(guest_token)
-        allowed = bool(guest and guest.is_admitted and guest.event_id == event.id)
+        # The pass the host gave them, not whether they happen to be
+        # sitting down: stepping out of the hall does not un-admit
+        # somebody, and the live transcript is the first thing their
+        # page asks for on the way back in.
+        allowed = bool(
+            guest and guest.event_id == event.id and in_the_room(guest)
+        )
     else:
         from src.apps.meetings.entry import is_open
 
