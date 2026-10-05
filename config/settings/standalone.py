@@ -56,14 +56,36 @@ STORAGES = {
     },
 }
 
-# No proxy in front, so there is nothing to have terminated TLS and
-# nothing whose word to take for it. Trusting the header here would
-# mean trusting whatever the client sent.
-SECURE_PROXY_SSL_HEADER = None
+# -- Is anything in front? ---------------------------------------------
+#
+# Off by default, and it has to be. `X-Forwarded-Proto` is a header
+# like any other: with nothing in front to overwrite it, any client
+# can send `X-Forwarded-Proto: https` on a plain HTTP request and
+# Django will believe the connection was secure - set a secure
+# cookie, skip the redirect, build https:// URLs - for a request that
+# crossed the network in the clear.
+#
+# With a proxy in front it is the opposite: the header is the only
+# way Django can know, because the proxy terminates TLS and speaks
+# plain HTTP to this process. Without it, every absolute URL comes
+# back http://, secure cookies are refused, and SECURE_SSL_REDIRECT
+# bounces a request that already arrived over TLS straight back to
+# itself, forever.
+#
+# So it is a statement about the deployment, not a preference:
+# TRUST_PROXY_HEADER=True means "a proxy I control sets this".
+TRUST_PROXY_HEADER = env.bool('TRUST_PROXY_HEADER', default=False)
 
-# Honest default. Switch it on only once uvicorn itself has a
-# certificate (--ssl-keyfile / --ssl-certfile), or everything
-# redirects to a port nothing is listening on.
+if TRUST_PROXY_HEADER:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    USE_X_FORWARDED_HOST = True
+else:
+    SECURE_PROXY_SSL_HEADER = None
+
+# Honest default. Switch it on once there is actually TLS - either a
+# proxy in front terminating it, or a certificate given to uvicorn
+# directly (--ssl-keyfile / --ssl-certfile). On before that, and
+# everything redirects to a port nothing is listening on.
 SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=False)
 SESSION_COOKIE_SECURE = env.bool('SESSION_COOKIE_SECURE', default=SECURE_SSL_REDIRECT)
 CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=SECURE_SSL_REDIRECT)

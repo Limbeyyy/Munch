@@ -15,6 +15,12 @@ someone else's site on the same box.
 browser ──▶ :8000 uvicorn ──▶ Django ──▶ the frontend, /django-static/, /media/
                                 │                    PostgreSQL
                        celery ──┤ worker + beat      Memurai (Redis)
+
+and once it needs TLS and a public name:
+
+browser ──▶ :443 Caddy ──▶ 127.0.0.1:8000 uvicorn ──▶ Django
+            (certificate, renewal,
+             /django-static/ and /media/ off disk)
 ```
 
 ---
@@ -157,17 +163,99 @@ It cannot be a relative path like `/api/v1`. The websocket code calls
 relative URL — which would take out the live room, the transcript and
 the guest hub while leaving the rest of the site apparently fine.
 
+## Putting it on the internet, with TLS
+
+Add Caddy in front. It gets a certificate from Let's Encrypt on first
+start and renews it by itself, proxies websockets without being asked
+to, and sets `X-Forwarded-Proto` as a matter of course - which is the
+header everything below depends on.
+
+It is one `.exe` and about forty lines of config. IIS does the same
+job and is already written up in [`README.md`](README.md), but it
+needs ARR, the URL Rewrite module, the WebSocket feature, and two
+machine-wide settings that fail silently when missed. For this, Caddy
+is less to get wrong.
+
+Two things have to be true before any certificate can be issued, and
+neither is arranged on this machine:
+
+- the hostname resolves to your public address
+- **ports 80 and 443 reach the machine from the internet** - usually a
+  port-forward on the router. Port 80 is not optional: it answers the
+  challenge, now and at every renewal.
+
+Then, from the repository in an elevated PowerShell:
+
+```powershell
+.\deploy\windows\caddy\Install-Caddy.ps1 -Hostname munch.example.np -Nssm C:\tools\nssm.exe
+```
+
+That downloads Caddy, writes the site config from
+[`caddy/Caddyfile`](caddy/Caddyfile), registers it as a service, opens
+80 and 443, and **removes any rule publishing 8000** - nothing outside
+should reach the application server directly, since it speaks plain
+HTTP and would answer to whatever `Host` it was given.
+
+Now tell Django it is behind something. In `C:\munch\.env.prod`:
+
+```
+ALLOWED_HOSTS=munch.example.np
+CSRF_TRUSTED_ORIGINS=https://munch.example.np
+CORS_ALLOWED_ORIGINS=https://munch.example.np
+TRUST_PROXY_HEADER=True
+SECURE_SSL_REDIRECT=True
+```
+
+`TRUST_PROXY_HEADER` is the important one, and it is off by default
+for a reason. `X-Forwarded-Proto` is a header like any other: with
+nothing in front to overwrite it, any client could send
+`X-Forwarded-Proto: https` on a plain HTTP request and be believed.
+With Caddy in front it is the opposite - the header is the only way
+Django can know, because Caddy terminates TLS and speaks plain HTTP
+to uvicorn. Turn it on **only** once a proxy is genuinely there.
+
+Rebuild so the bundle calls the new origin, and bind the application
+server to loopback:
+
+```powershell
+$env:REACT_APP_API_URL = 'https://munch.example.np/api/v1'
+.\deploy\windows\Start-Munch.ps1 -BindHost 127.0.0.1
+```
+
+The absolute URL matters here. The fallback that made this work by IP
+assumes port 8000, which is now behind the proxy and not what a
+browser talks to.
+
+The first certificate takes up to a minute:
+
+```powershell
+Get-Content C:\caddy\caddy.err.log -Wait -Tail 30
+```
+
+**Check:** `https://munch.example.np/` loads with a valid certificate;
+`http://munch.example.np/` redirects to it; the live room connects.
+
+### If the certificate will not issue
+
+Caddy says why in its log, and it is almost always one of three
+things: the name does not resolve to this address, port 80 is not
+reaching the machine, or Let's Encrypt's rate limit has been hit after
+repeated failures. Test the first two from outside the network, not
+from the server - a router that resolves its own public name
+internally will tell you everything is fine when it is not.
+
 ## What this trades away
 
-- **No TLS.** Plain HTTP. Fine on a closed network, not on the
-  internet. uvicorn can take `--ssl-keyfile` / `--ssl-certfile`
-  directly if you have a certificate.
 - **Python is serving files.** Slower than a web server, and
-  irrelevant at the size of one event's resources.
+  irrelevant at the size of one event's resources. Caddy serves
+  `/django-static/` and `/media/` off disk once it is in front.
 - **One process.** Restarting it drops every open websocket; everyone
   reconnects.
 - **Nothing restarts it.** Until the NSSM step above, closing the
   window stops the site.
+- **Windows 10 22H2 is out of support** as of October 2025. On a
+  closed network that is a judgement call; facing the internet it is
+  worth raising with whoever owns the machine.
 
 ## When something is wrong
 
@@ -183,6 +271,11 @@ the browser is not in `ALLOWED_HOSTS`. Add the machine's IP.
 **Admin loads unstyled.** `collectstatic` has not run, or
 `STATIC_ROOT` is empty — note it lives at `config\staticfiles`, inside
 `config\`, not at the repository root.
+
+**Everything redirects forever once TLS is on.** `TRUST_PROXY_HEADER`
+is not `True`, so Django cannot tell that the request arrived over
+TLS - Caddy speaks plain HTTP to uvicorn - and `SECURE_SSL_REDIRECT`
+sends it back to HTTPS again, and again.
 
 **`/` shows a Django login form instead of the app.** The standalone
 settings are not in use. `DJANGO_SETTINGS_MODULE` must be
