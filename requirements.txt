@@ -11,19 +11,33 @@ django-allauth==0.62.0
 django-environ==0.11.2
 
 # Database
-psycopg2-binary==2.9.9
+# 2.9.10 rather than 2.9.9: the older pin ships Windows wheels only up
+# to cp312, so pip on Python 3.13 falls back to the source tarball and
+# the install dies asking for pg_config, which is a PostgreSQL build
+# dependency nobody wants on an application server. Same code either
+# way; 2.9.10 simply adds the newer wheels.
+psycopg2-binary==2.9.10
 django-redis==5.4.0
 
 # Authentication
 PyJWT==2.8.0
 oauthlib==3.2.2
-requests-oauthlib==1.4.0
+# 2.0.0 rather than 1.4.0: that release was yanked from PyPI for
+# incorrect metadata, so installing it prints a warning and depends on
+# a file the index has already disowned. Nothing here constrains it -
+# google-auth-oauthlib asks only for >=0.7.0.
+requests-oauthlib==2.0.0
 google-auth==2.29.0
 google-auth-oauthlib==1.2.0
 
 # Google APIs
 google-api-python-client==2.132.0
-google-auth-httplib2==0.1.1
+# 0.2.0, which is the floor google-api-python-client 2.132.0 sets. The
+# old 0.1.1 pin made this file impossible to install: pip resolved the
+# two against each other and gave up. It had evidently not been
+# installed from scratch in a long time - the development virtualenv
+# had 2.95.0 and 0.1.0, matching neither line.
+google-auth-httplib2==0.2.0
 
 # Real-time
 channels==4.0.0
