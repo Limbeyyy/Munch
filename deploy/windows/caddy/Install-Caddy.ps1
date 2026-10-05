@@ -188,11 +188,21 @@ if (Get-Service -Name Caddy -ErrorAction SilentlyContinue) {
 & $Nssm start Caddy | Out-Null
 
 Start-Sleep -Seconds 5
-Write-Host "    Caddy: $((Get-Service Caddy).Status)" -ForegroundColor Green
+$state = (Get-Service Caddy).Status
+if ($state -eq 'Running') {
+    Write-Host "    Caddy: Running" -ForegroundColor Green
+} else {
+    Write-Warn "Caddy: $state - it started and stopped again."
+    Write-Note "Almost always something already holding 80 or 443. Check:"
+    Write-Note "    Get-Content $CaddyDir\caddy.err.log -Tail 40"
+    Write-Note "    Get-NetTCPConnection -LocalPort 80,443 -State Listen |"
+    Write-Note "      Select-Object LocalPort, OwningProcess"
+    Write-Note "IIS is the usual culprit on Windows - 'Stop-Service W3SVC' frees it."
+}
 
 Write-Host @"
 
-  Now, in C:\munch\.env.prod:
+  Now, in $AppDir\.env.prod:
 
       ALLOWED_HOSTS=$Hostname
       CSRF_TRUSTED_ORIGINS=https://$Hostname
