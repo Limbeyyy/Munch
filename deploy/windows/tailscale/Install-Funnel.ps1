@@ -125,8 +125,15 @@ Write-Host @"
          ALLOWED_HOSTS=$fqdn,localhost,127.0.0.1
          CSRF_TRUSTED_ORIGINS=$origin
          CORS_ALLOWED_ORIGINS=$origin
-         TRUST_PROXY_HEADER=True
+         TRUST_PROXY_HEADER=always
          SECURE_SSL_REDIRECT=False
+
+     `always`, not `True`. True means "a proxy in front sets
+     X-Forwarded-Proto, believe it"; always means "a proxy in front
+     serves HTTPS and nothing else but does not say so", which is
+     Funnel. Without it Django builds http:// URLs for uploaded
+     images and the browser refuses to load them on an HTTPS page -
+     avatars and speaker photographs quietly disappear.
 
      SECURE_SSL_REDIRECT stays False: Funnel only ever speaks HTTPS,
      so there is no insecure request to redirect and turning it on
@@ -140,8 +147,9 @@ Write-Host @"
          `$env:REACT_APP_OAUTH_ORIGIN = '$origin'
          .\deploy\windows\Start-Munch.ps1 -Port $Port -BindHost 127.0.0.1
 
-  To take it down again:
+  To take it down again - the switch is the public port, which is
+  always 443, not the local one:
 
-         $Tailscale funnel --$Port off
+         $Tailscale funnel --https=443 off
 
 "@ -ForegroundColor Gray
