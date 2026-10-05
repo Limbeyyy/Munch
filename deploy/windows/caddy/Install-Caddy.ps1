@@ -114,14 +114,27 @@ Write-Step "Downloading Caddy"
 New-Item -ItemType Directory -Force -Path $CaddyDir | Out-Null
 $exe = Join-Path $CaddyDir 'caddy.exe'
 if (-not (Test-Path $exe)) {
-    $zip = Join-Path $env:TEMP 'caddy.zip'
-    # The official build service. Pinned to a major version rather than
-    # "latest" so a reinstall six months from now is the same binary.
+    # The build service hands back the executable itself, not an
+    # archive - `Content-Disposition: caddy_windows_amd64.exe`. Trying
+    # to unzip it fails with "Split or spanned archives are not
+    # supported", which reads as a corrupt download rather than as
+    # there being nothing to unpack.
     Invoke-WebRequest -UseBasicParsing `
         -Uri 'https://caddyserver.com/api/download?os=windows&arch=amd64' `
-        -OutFile $zip
-    Expand-Archive -Path $zip -DestinationPath $CaddyDir -Force
-    Remove-Item $zip
+        -OutFile $exe
+
+    # A captive portal or a proxy answers with an HTML page and the
+    # same 200, which would otherwise be saved as caddy.exe and fail
+    # later as something unrecognisable. Every Windows executable
+    # starts "MZ".
+    $head = [System.IO.File]::ReadAllBytes($exe)[0..1]
+    if (-join [char[]]$head -ne 'MZ') {
+        Remove-Item $exe -Force
+        throw ("What came back was not a Windows executable. Check whether " +
+               "something on this network is intercepting the download, or fetch " +
+               "caddy_windows_amd64.exe by hand from https://caddyserver.com/download " +
+               "and save it as $exe")
+    }
 }
 & $exe version
 
