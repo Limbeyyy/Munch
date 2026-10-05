@@ -35,7 +35,16 @@
 param(
     [string]   $Distro      = 'Ubuntu',
     [int[]]    $Ports       = @(80, 443),
-    [switch]   $RefreshOnly
+    [switch]   $RefreshOnly,
+
+    # Who the startup task runs as. Defaults to whoever is running
+    # this, which is the account that must also own the distro - see
+    # the note where the task is registered.
+    [string]   $TaskUser    = "$env:USERDOMAIN\$env:USERNAME",
+
+    # Register the task under SYSTEM instead. Only correct if the
+    # distro was installed by SYSTEM too, which is unusual.
+    [switch]   $AsSystem
 )
 
 $ErrorActionPreference = 'Stop'
@@ -118,10 +127,17 @@ if ($RefreshOnly) {
 
 Write-Step "Registering the boot task"
 
-# Runs as SYSTEM. A distro started by SYSTEM is a different instance
-# from one started by a signed-in user, so this is the instance that
-# must own the services - do not start the distro by hand from a user
-# shell and expect the same one.
+# WSL distros are registered per Windows user profile, not per
+# machine. A distro installed while signed in as Administrator does
+# not exist for SYSTEM, so a startup task running as SYSTEM finds no
+# distribution and the server comes back from a reboot with nothing
+# listening - and nothing in the log to say why, because the task
+# itself ran fine.
+#
+# So the task runs as the account that owns the distro, which is
+# whoever is running this script. S4U lets it start without a stored
+# password; it gets no network credentials, which is fine because
+# everything it does is local.
 $taskName = 'Munch - start WSL and publish ports'
 $script   = $MyInvocation.MyCommand.Path
 
@@ -137,8 +153,15 @@ $trigger = New-ScheduledTaskTrigger -AtStartup
 # up unreachable.
 $trigger.Delay = 'PT45S'
 
-$principal = New-ScheduledTaskPrincipal `
-    -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+if ($AsSystem) {
+    $principal = New-ScheduledTaskPrincipal `
+        -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    Write-Warn "Task will run as SYSTEM. It will only work if the distro was registered by SYSTEM."
+} else {
+    $principal = New-ScheduledTaskPrincipal `
+        -UserId $TaskUser -LogonType S4U -RunLevel Highest
+    Write-Note "Task will run as $TaskUser - the account this distro belongs to."
+}
 
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
@@ -149,6 +172,8 @@ Register-ScheduledTask -TaskName $taskName -Force `
     | Out-Null
 
 Write-Note "Task '$taskName' registered (at startup, 45s delay)."
+Write-Warn "Not proven until the machine has actually been restarted."
+Write-Note "Reboot, do not sign in, and check the site answers from another machine."
 
 # -- Done --------------------------------------------------------------
 
