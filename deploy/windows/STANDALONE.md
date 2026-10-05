@@ -243,11 +243,92 @@ It cannot be a relative path like `/api/v1`. The websocket code calls
 relative URL — which would take out the live room, the transcript and
 the guest hub while leaving the rest of the site apparently fine.
 
+## Putting it on the internet, over HTTPS, with no ports and no DNS
+
+For a machine whose 80 and 443 are not reachable and whose DNS is
+managed by somebody else. Both routes to a certificate are closed,
+and Tailscale Funnel needs neither: the machine dials out, Tailscale
+terminates TLS at a hostname it owns, and websockets pass through.
+
+**This is not optional if people have to sign in.** Google refuses
+`http://` redirect URIs for anything but localhost, and Google is the
+only way to authenticate an account on this system - there is no
+password login. Over plain HTTP nobody can sign in at all; guests can
+still join a running event, and that is the whole of it.
+
+```powershell
+.\deploy\windows\tailscale\Install-Funnel.ps1 -Port 8000
+```
+
+It installs Tailscale if absent, opens a browser to join a tailnet
+(any Google or Microsoft account; a personal tailnet is free), opens
+the funnel to the local port, and prints the hostname along with
+every value that has to change.
+
+If Funnel is refused, it is one of two switches in the admin console
+and the output says which: HTTPS certificates off for the tailnet, or
+this node not permitted to use Funnel.
+
+Then in `.env.prod` - substituting the name it printed:
+
+```
+ALLOWED_HOSTS=munch.example.ts.net,localhost,127.0.0.1
+CSRF_TRUSTED_ORIGINS=https://munch.example.ts.net
+CORS_ALLOWED_ORIGINS=https://munch.example.ts.net
+TRUST_PROXY_HEADER=always
+SECURE_SSL_REDIRECT=False
+```
+
+`always` rather than `True`, and the distinction matters. `True`
+means "a proxy in front sets `X-Forwarded-Proto`, believe it".
+`always` means "a proxy in front serves HTTPS and nothing else but
+does not say so" - which is Funnel. Without it Django builds
+`http://` URLs for uploaded images, and a browser on an HTTPS page
+refuses to load them: avatars and speaker photographs quietly
+disappear.
+
+It is only safe because nothing can reach the application except the
+funnel, which is what `-BindHost 127.0.0.1` below guarantees. Do not
+carry it to a deployment that listens on anything else.
+
+`SECURE_SSL_REDIRECT` stays `False`: Funnel only ever speaks HTTPS,
+so there is no insecure request to redirect.
+
+Register the redirect URI with Google - exactly this, at
+[console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials):
+
+```
+https://munch.example.ts.net/login
+```
+
+Then rebuild and run:
+
+```powershell
+$env:REACT_APP_API_URL      = 'https://munch.example.ts.net/api/v1'
+$env:REACT_APP_OAUTH_ORIGIN = 'https://munch.example.ts.net'
+.\deploy\windows\Start-Munch.ps1 -Port 8000 -BindHost 127.0.0.1
+```
+
+`REACT_APP_OAUTH_ORIGIN` is what pins the address Google is told to
+send people back to, whatever address the device reached the app on.
+
+**Check:** open the site from a phone on mobile data, sign in with
+Google, and open an event room - that last one exercises the
+websocket, which is the thing a proxy is most likely to drop.
+
+### What this costs
+
+The address. It is `<machine>.<tailnet>.ts.net`, not your own domain.
+Everything else - sign-in, the live room, the transcript, the hub,
+uploads, a real certificate that renews itself - works.
+
 ## Putting it on the internet, over plain HTTP
 
-The quickest way to have it reachable, and a reasonable first step
-even if TLS is coming later: one process, one port, no proxy and no
-certificate.
+**Nobody will be able to sign in.** Google refuses `http://` redirect
+URIs for anything but localhost, and Google is the only account
+authentication this system has. Guests can join a running event by
+name and code; hosts cannot get in to create or run one. Use this to
+prove the deployment works, not to open it to people.
 
 Pick a port your network already forwards - the same way whatever is
 on `:8081` got there.
