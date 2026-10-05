@@ -74,13 +74,31 @@ STORAGES = {
 #
 # So it is a statement about the deployment, not a preference:
 # TRUST_PROXY_HEADER=True means "a proxy I control sets this".
-TRUST_PROXY_HEADER = env.bool('TRUST_PROXY_HEADER', default=False)
+# Three values rather than two, because there are three situations:
+#
+#   False   nothing in front. The header is whatever a client chose
+#           to send, so it is ignored.
+#   True    a proxy in front that sets X-Forwarded-Proto. Believe it.
+#   always  a proxy in front that serves HTTPS and nothing else, but
+#           does not say so - Tailscale Funnel. The scheme is known
+#           for certain and simply absent from the request.
+#
+# `always` is only safe when nothing can reach the application except
+# that proxy, which in practice means bound to loopback. See
+# config/proxy.py.
+_trust = (env('TRUST_PROXY_HEADER', default='False') or '').split('#')[0].strip().lower()
+TRUST_PROXY_HEADER = _trust in {'true', 'yes', '1', 'on', 'always'}
+ASSUME_TLS = _trust == 'always'
 
 if TRUST_PROXY_HEADER:
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     USE_X_FORWARDED_HOST = True
 else:
     SECURE_PROXY_SSL_HEADER = None
+
+if ASSUME_TLS:
+    # First, so everything after it sees the request as secure.
+    MIDDLEWARE.insert(0, 'config.proxy.AssumeTLS')
 
 # Honest default. Switch it on once there is actually TLS - either a
 # proxy in front terminating it, or a certificate given to uvicorn
