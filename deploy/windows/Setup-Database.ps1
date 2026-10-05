@@ -79,9 +79,19 @@ Write-Host "    - the one set when PostgreSQL was installed, not the above.`n" -
 
 function Invoke-Psql {
     param([string]$Sql, [string]$Database = 'postgres')
-    $out = & $Psql -U postgres -d $Database -tAc $Sql 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "psql failed: $out" }
-    return ($out | Out-String).Trim()
+    # Same reasoning as Invoke-Native in Start-Munch.ps1: psql writes
+    # notices to stderr while succeeding, and with $ErrorActionPreference
+    # at Stop, capturing one would end the script.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = & $Psql -U postgres -d $Database -tAc $Sql 2>&1 | Out-String
+        $failed = ($LASTEXITCODE -ne 0)
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+    if ($failed) { throw "psql failed: $($out.Trim())" }
+    return $out.Trim()
 }
 
 Write-Step "Role '$DbUser'"

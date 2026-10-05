@@ -1,4 +1,9 @@
-# Prevent pkg_resources deprecation warnings
+# This does not stop the pkg_resources warning, whatever the comment
+# here used to say. drf_yasg imports pkg_resources on every
+# management command, and every setuptools from about 76 up warns
+# about it; only versions around 75 are quiet, which is too far back
+# to pin for a message on stderr. The cap is here to avoid a future
+# major release, nothing more - the warning is noise and is expected.
 setuptools<82
 
 
