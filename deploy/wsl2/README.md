@@ -59,11 +59,13 @@ Copy [`wslconfig.example`](wslconfig.example) to `C:\Users\<you>\.wslconfig`
 (leading dot, no extension) and set `memory` / `processors` to what the
 server can spare.
 
-Leave `networkingMode=mirrored` in place if this is Windows 11 22H2 /
-Server 2025 or newer — it gives the distro the host's own addresses and
-removes the port-forwarding problem entirely. On older Windows the key
-is ignored and NAT is used; the setup script detects that and forwards
-instead.
+Leave `networkingMode=mirrored` in place if this is Server 2025 or
+newer — it gives the distro the host's own addresses and removes the
+port-forwarding problem entirely. **Server 2022 does not have it**: the
+key is ignored, NAT is used, and the distro's address changes on every
+boot. That is the normal case on a Windows Server today, and it is why
+the startup task re-applies the forwarding rather than setting it once.
+`Setup-MunchHost.ps1` detects which of the two you have.
 
 ```powershell
 wsl --shutdown
@@ -181,10 +183,16 @@ Back in an elevated PowerShell, from the repository:
 This registers a startup task that boots WSL and — under NAT — rebuilds
 the port forwarding, since the distro's address changes on every boot.
 
+Run it **as the same Windows account that installed the distro**. WSL
+distros are registered per user profile, so a task running as a
+different account — `SYSTEM` included — finds no distribution, and the
+server comes back from a reboot with nothing listening and nothing in
+the log to explain it. The script defaults to whoever invokes it.
+
 **Check:** from another machine on the network, `http://<server ip>/`
-loads the app. Then reboot the Windows box and check again without
-logging in — that is the thing the startup task exists for, and the
-only way to know it works.
+loads the app. Then reboot the Windows box and check again **without
+signing in** — that is the one thing the startup task exists for, and
+a reboot is the only way to know it works.
 
 ## 7. TLS
 
