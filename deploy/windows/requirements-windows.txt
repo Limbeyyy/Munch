@@ -13,3 +13,9 @@
 # event loop, which is IOCP underneath and has no such limit. Both
 # serve the same ASGI application; nothing in the code changes.
 uvicorn[standard]==0.54.0
+
+# Serves Django's own collected assets - the admin, the browsable API,
+# swagger - from inside the application, with the caching and
+# compression a web server would otherwise be doing. Needed only by
+# config.settings.standalone, where there is no web server.
+whitenoise==6.12.0
