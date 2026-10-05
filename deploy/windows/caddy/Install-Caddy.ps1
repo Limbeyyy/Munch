@@ -49,8 +49,39 @@ $admin = ([Security.Principal.WindowsPrincipal] `
     [Security.Principal.WindowsIdentity]::GetCurrent()
     ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $admin) { throw "Run this from an elevated PowerShell." }
+# NSSM turns a console program into a Windows service, which is the
+# only reason it is here - Windows has no systemd, and `sc create`
+# wants a binary that talks to the service manager, which neither
+# Caddy nor Python does.
+#
+# Fetched rather than demanded. It is a single executable in a zip,
+# and stopping to say so only to be told again in a minute wastes a
+# step; Caddy itself is downloaded a few lines below on the same
+# reasoning.
 if (-not (Get-Command $Nssm -ErrorAction SilentlyContinue)) {
-    throw "nssm.exe not found. https://nssm.cc/download, or pass -Nssm C:\path\to\nssm.exe"
+    Write-Step "Fetching NSSM"
+    $tools = Split-Path -Parent $Nssm
+    if (-not $tools) { $tools = 'C:\tools'; $Nssm = Join-Path $tools 'nssm.exe' }
+    New-Item -ItemType Directory -Force -Path $tools | Out-Null
+    try {
+        $zip = Join-Path $env:TEMP 'nssm.zip'
+        $out = Join-Path $env:TEMP 'nssm-extract'
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri 'https://nssm.cc/release/nssm-2.24.zip' -OutFile $zip
+        Expand-Archive -Path $zip -DestinationPath $out -Force
+        # 2.24 is the current release and has been since 2014; the
+        # win64 build is the one to take on any modern machine.
+        Copy-Item (Join-Path $out 'nssm-2.24\win64\nssm.exe') $Nssm -Force
+        Remove-Item $zip, $out -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Note $Nssm
+    } catch {
+        throw ("Could not fetch NSSM: $($_.Exception.Message)`n" +
+               "     Download it by hand from https://nssm.cc/download - the win64 " +
+               "nssm.exe - and pass -Nssm C:\path\to\nssm.exe")
+    }
+}
+if (-not (Get-Command $Nssm -ErrorAction SilentlyContinue)) {
+    throw "nssm.exe still not found at $Nssm."
 }
 
 # A certificate is for a name, so a URL is not an answer - but it is
