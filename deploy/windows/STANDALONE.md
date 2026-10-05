@@ -290,6 +290,35 @@ Get-Content C:\caddy\caddy.err.log -Wait -Tail 30
 **Check:** `https://munch.example.np/` loads with a valid certificate;
 `http://munch.example.np/` redirects to it; the live room connects.
 
+### If the Caddy service will not stay running
+
+`SERVICE_PAUSED`, or a status of `Stopped` straight after starting,
+means Caddy exited on startup and NSSM gave up restarting it. It says
+why in its own log:
+
+```powershell
+Get-Content C:\caddy\caddy.err.log -Tail 40
+```
+
+Nearly always something already holding port 80 or 443:
+
+```powershell
+Get-NetTCPConnection -LocalPort 80,443 -State Listen |
+    Select-Object LocalPort, OwningProcess
+Get-Process -Id (Get-NetTCPConnection -LocalPort 80 -State Listen).OwningProcess
+```
+
+On Windows that is usually IIS, which installs listening on 80 and
+starts itself:
+
+```powershell
+Stop-Service W3SVC -Force
+Set-Service W3SVC -StartupType Disabled
+Restart-Service Caddy
+```
+
+Only disable it if nothing else on this machine is served by IIS.
+
 ### If the certificate will not issue
 
 Caddy says why in its log, and it is almost always one of three
