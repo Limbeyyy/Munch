@@ -31,7 +31,17 @@ param(
     [string] $AppDir        = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path,
     [string] $Nssm          = 'nssm.exe',
     [int]    $Port          = 8000,
-    [int]    $WorkerThreads = 4
+    [int]    $WorkerThreads = 4,
+
+    # Which settings the services run under. `standalone` is the
+    # deployment where Django serves the frontend itself and there is
+    # no proxy handing out files; `production` expects IIS or nginx in
+    # front. Getting this wrong is quiet rather than loud - the site
+    # comes up and serves a Django login page at / instead of the
+    # application, because the root redirect only standalone removes
+    # is still in place.
+    [ValidateSet('standalone', 'production')]
+    [string] $Settings      = 'standalone'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -67,8 +77,14 @@ $services = @(
         # --proxy-headers so Django sees the scheme IIS received, which
         # is what stops SECURE_SSL_REDIRECT looping.
         Args = "-m uvicorn config.asgi:application " +
-               "--host 127.0.0.1 --port $Port " +
-               "--proxy-headers --forwarded-allow-ips 127.0.0.1"
+               "--host 127.0.0.1 --port $Port" +
+               # --proxy-headers only where something in front sets
+               # them. Behind Tailscale Funnel nothing does, and the
+               # standalone settings say so themselves with
+               # TRUST_PROXY_HEADER=always.
+               $(if ($Settings -eq 'production') {
+                   " --proxy-headers --forwarded-allow-ips 127.0.0.1"
+               } else { "" })
         Log  = 'web'
     },
     @{
@@ -114,7 +130,7 @@ foreach ($svc in $services) {
     # themselves come from it.
     & $Nssm set $svc.Name AppEnvironmentExtra `
         "DJANGO_ENV=prod" `
-        "DJANGO_SETTINGS_MODULE=config.settings.production" `
+        "DJANGO_SETTINGS_MODULE=config.settings.$Settings" `
         "PYTHONUNBUFFERED=1" | Out-Null
 
     # Without this the output goes nowhere and a service that will not

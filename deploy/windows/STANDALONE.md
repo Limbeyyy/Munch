@@ -216,11 +216,16 @@ solo runs one task at a time, so a slow Drive sync blocks every
 reminder behind it. These tasks wait on networks and databases rather
 than the CPU, and psycopg2 and the ORM are both thread-safe.
 
-Once it is working, make all three survive a reboot with NSSM —
-[`services\Install-MunchServices.ps1`](services/Install-MunchServices.ps1)
-does it, and `-AppDir C:\munch` is the only argument it usually needs.
-Edit the `DJANGO_SETTINGS_MODULE` it sets to `config.settings.standalone`
-first, since it is written for the IIS deployment.
+Once it is working, make all three survive a reboot with NSSM:
+
+```powershell
+.\deploy\windows\services\Install-MunchServices.ps1 -Port 8000
+```
+
+It defaults to the standalone settings and registers MunchWeb,
+MunchWorker and MunchBeat as auto-starting Windows services, logging
+to `logs\`. After that the machine comes back from a restart
+serving, without anybody signing in.
 
 ---
 
