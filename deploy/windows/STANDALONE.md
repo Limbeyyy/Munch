@@ -290,6 +290,32 @@ Get-Content C:\caddy\caddy.err.log -Wait -Tail 30
 **Check:** `https://munch.example.np/` loads with a valid certificate;
 `http://munch.example.np/` redirects to it; the live room connects.
 
+### If port 80 cannot be had
+
+Windows reserves it readily, and not only through IIS. Anything
+registered with HTTP.sys takes it in a way that reports
+`An attempt was made to access a socket in a way forbidden by its
+access permissions` rather than "address in use", and a kernel port
+exclusion can outlive the service that caused it:
+
+```powershell
+netsh int ipv4 show excludedportrange protocol=tcp
+```
+
+Port 80 appearing in that list means it is reserved whatever you stop.
+Try freeing it first - `Stop-Service W3SVC -Force`, then
+`net stop http /y` - and if it stays reserved, stop fighting it:
+
+```powershell
+.\deploy\windows\caddy\Install-Caddy.ps1 -Hostname munch.example.np -NoPort80
+```
+
+The certificate is then obtained over TLS-ALPN-01, which is answered
+inside the TLS handshake on 443 and needs nothing on 80, at issue or
+at renewal. The cost is the redirect: somebody typing
+`http://munch.example.np` reaches nothing, because nothing is
+listening there to send them on. Links have to say `https://`.
+
 ### If the Caddy service will not stay running
 
 `SERVICE_PAUSED`, or a status of `Stopped` straight after starting,
