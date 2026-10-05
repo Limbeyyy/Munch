@@ -56,6 +56,18 @@ CSRF_TRUSTED_ORIGINS = [
     'https://192.168.10.130:8000',
 ]
 
+# Wherever this is actually served from, which cannot be known here.
+# Added to the list above rather than replacing it, so a deployment
+# setting its own origin does not take localhost away from whoever is
+# working on the thing. Scheme and port included, as Django requires:
+# CSRF_TRUSTED_ORIGINS=https://munch.example.np
+CSRF_TRUSTED_ORIGINS += [
+    origin.strip()
+    for origin in env.list('CSRF_TRUSTED_ORIGINS', default=[])
+    if origin.strip()
+]
+CSRF_TRUSTED_ORIGINS = list(dict.fromkeys(CSRF_TRUSTED_ORIGINS))
+
 # Application definition
 INSTALLED_APPS = [
     # Must precede django.contrib.staticfiles so runserver speaks ASGI and

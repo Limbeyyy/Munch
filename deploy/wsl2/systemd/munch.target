@@ -1,0 +1,11 @@
+[Unit]
+Description=Munch (all services)
+Documentation=file:///opt/munch/deploy/wsl2/README.md
+# A handle for the three at once, so a deploy is one restart rather
+# than three that can half-succeed:
+#   sudo systemctl restart munch.target
+Wants=munch-daphne.service munch-worker.service munch-beat.service
+After=munch-daphne.service munch-worker.service munch-beat.service
+
+[Install]
+WantedBy=multi-user.target

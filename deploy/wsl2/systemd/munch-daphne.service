@@ -1,0 +1,43 @@
+[Unit]
+Description=Munch ASGI server (Daphne)
+Documentation=file:///opt/munch/deploy/wsl2/README.md
+# Both are local to this distro under the install in the README. Point
+# these elsewhere if the database or Redis live on another machine -
+# `After=` on a unit that does not exist here is simply ignored, which
+# is a quiet way to lose the ordering, so check them if startup races.
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+PartOf=munch.target
+
+[Service]
+Type=exec
+User=munch
+Group=munch
+WorkingDirectory=/opt/munch
+EnvironmentFile=/opt/munch/.env.prod
+Environment=DJANGO_ENV=prod
+Environment=DJANGO_SETTINGS_MODULE=config.settings.production
+Environment=PYTHONUNBUFFERED=1
+
+# Loopback only. nginx is what the network talks to, and binding this
+# to 0.0.0.0 would publish an unencrypted port alongside it that
+# answers to any Host header the proxy never checked.
+ExecStart=/opt/munch/venv/bin/daphne \
+    --bind 127.0.0.1 \
+    --port 8000 \
+    --proxy-headers \
+    config.asgi:application
+
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+# Long enough for open websockets to be closed rather than cut.
+TimeoutStopSec=30
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
