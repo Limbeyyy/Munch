@@ -1,4 +1,10 @@
-# Deploying Munch on Windows Server, inside WSL2
+# Deploying Munch on Windows, inside WSL2
+
+> **Cannot run WSL2?** A host that is itself a virtual machine needs
+> nested virtualization exposed by its hypervisor, and some cannot get
+> it. [`../windows/`](../windows/README.md) deploys natively instead,
+> and says what that costs.
+
 
 Written for: whoever is standing up or maintaining a Munch server.
 

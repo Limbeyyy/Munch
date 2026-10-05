@@ -1,0 +1,15 @@
+# Extra packages for running Munch natively on Windows.
+#
+#   pip install -r requirements.txt -r deploy\windows\requirements-windows.txt
+#
+# Daphne is still in requirements.txt and still works on Windows, but
+# it is not what runs here. Daphne is built on Twisted, and Twisted on
+# Windows falls back to the select() reactor, which cannot watch more
+# than 512 sockets at once. Every attendee in a hall holds a websocket
+# open, so that ceiling is the one thing this application cannot
+# afford to have.
+#
+# Uvicorn runs on asyncio, and asyncio on Windows uses the Proactor
+# event loop, which is IOCP underneath and has no such limit. Both
+# serve the same ASGI application; nothing in the code changes.
+uvicorn[standard]==0.54.0
