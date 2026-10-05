@@ -51,21 +51,65 @@ will stop there. One line, in
 In an elevated PowerShell:
 
 ```powershell
-wsl --install -d Ubuntu-24.04
 wsl --version          # need 0.67.6+ for systemd; `wsl --update` if older
+wsl --status           # expect: Default Version: 2
+wsl --install -d Ubuntu-24.04
 ```
+
+Windows Server usually has no Microsoft Store, and a plain
+`wsl --install` goes through it. If the download fails or does
+nothing, fetch the distro directly instead:
+
+```powershell
+wsl --install --no-distribution
+wsl --install -d Ubuntu-24.04 --web-download
+```
+
+If `wsl --version` is not a recognised command at all, WSL itself is
+missing: enable the two features, **reboot**, then install the distro.
+`wsl --install` claims to do this in one go and then needs the restart
+anyway, which is how a server ends up with the features on and no
+distro registered.
+
+```powershell
+dism /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
+dism /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
+Restart-Computer
+```
+
+On a Windows host that is itself a virtual machine, nested
+virtualization has to be on or WSL2 cannot start. Hyper-V, from the
+*outer* host with the guest powered off:
+
+```powershell
+Set-VMProcessor -VMName "<the vm>" -ExposeVirtualizationExtensions $true
+```
+
+VMware calls it *Virtualize Intel VT-x/EPT*. Some cloud instance types
+do not offer it at all, which rules this approach out entirely.
+
+Whichever account runs these owns the distro. WSL registers them per
+user profile, so note who you are (`whoami`) - step 6 has to run as
+the same account.
 
 Copy [`wslconfig.example`](wslconfig.example) to `C:\Users\<you>\.wslconfig`
 (leading dot, no extension) and set `memory` / `processors` to what the
 server can spare.
 
-Leave `networkingMode=mirrored` in place if this is Server 2025 or
-newer — it gives the distro the host's own addresses and removes the
-port-forwarding problem entirely. **Server 2022 does not have it**: the
-key is ignored, NAT is used, and the distro's address changes on every
-boot. That is the normal case on a Windows Server today, and it is why
-the startup task re-applies the forwarding rather than setting it once.
-`Setup-MunchHost.ps1` detects which of the two you have.
+`networkingMode=mirrored` gives the distro the host's own addresses
+and removes the port-forwarding problem entirely, but it needs
+**Windows 11 22H2+ or Server 2025**. Everything older - Windows 10,
+Server 2019, Server 2022 - silently ignores the key and uses NAT, so
+the distro's address changes on every boot. That is the usual case,
+and it is why step 6 registers a task that re-applies the forwarding
+at every startup rather than setting it once.
+
+Leave the line in either way: it is ignored where unsupported, and
+correct if the machine is ever upgraded. `Setup-MunchHost.ps1`
+detects which of the two you actually have.
+
+`systeminfo | findstr /B /C:"OS Name" /C:"OS Version"` says which you
+are on.
 
 ```powershell
 wsl --shutdown
