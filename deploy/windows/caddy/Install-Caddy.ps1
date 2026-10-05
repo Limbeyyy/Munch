@@ -71,7 +71,19 @@ if (-not $admin) { throw "Run this from an elevated PowerShell." }
 # and stopping to say so only to be told again in a minute wastes a
 # step; Caddy itself is downloaded a few lines below on the same
 # reasoning.
-if (-not (Get-Command $Nssm -ErrorAction SilentlyContinue)) {
+# Where it already is, before deciding it is missing. The default is
+# the bare name 'nssm.exe', and C:\tools is not on PATH - so
+# Get-Command alone said "absent" about a file sitting exactly where
+# this script had put it, tried to download over the top, and failed
+# because the running Caddy service was holding it open.
+if ($Nssm -eq 'nssm.exe') {
+    $here = Join-Path $CaddyDir 'nssm.exe'
+    foreach ($candidate in @('C:\tools\nssm.exe', $here)) {
+        if (Test-Path $candidate) { $Nssm = $candidate; break }
+    }
+}
+
+if (-not (Test-Path $Nssm) -and -not (Get-Command $Nssm -ErrorAction SilentlyContinue)) {
     Write-Step "Fetching NSSM"
     $tools = Split-Path -Parent $Nssm
     if (-not $tools) { $tools = 'C:\tools'; $Nssm = Join-Path $tools 'nssm.exe' }
@@ -93,9 +105,10 @@ if (-not (Get-Command $Nssm -ErrorAction SilentlyContinue)) {
                "nssm.exe - and pass -Nssm C:\path\to\nssm.exe")
     }
 }
-if (-not (Get-Command $Nssm -ErrorAction SilentlyContinue)) {
+if (-not (Test-Path $Nssm) -and -not (Get-Command $Nssm -ErrorAction SilentlyContinue)) {
     throw "nssm.exe still not found at $Nssm."
 }
+Write-Note "nssm: $Nssm"
 
 # A certificate is for a name, so a URL is not an answer - but it is
 # the obvious thing to paste, and Caddy's failure if one gets through
