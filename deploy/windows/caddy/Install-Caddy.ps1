@@ -17,7 +17,10 @@
     now and at every renewal.
 
 .PARAMETER Hostname
-    The name the certificate is for. Must already resolve here.
+    The domain name the certificate is for, and it must be a domain -
+    a public CA cannot certify an IP address, because it has no way to
+    verify one belongs to you and no way to reach a private one at
+    all. It must already resolve to this machine's public address.
 
 .PARAMETER AppDir
     Where the repository is checked out.

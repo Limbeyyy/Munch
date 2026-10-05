@@ -176,13 +176,40 @@ needs ARR, the URL Rewrite module, the WebSocket feature, and two
 machine-wide settings that fail silently when missed. For this, Caddy
 is less to get wrong.
 
-Two things have to be true before any certificate can be issued, and
-neither is arranged on this machine:
+**It has to be a domain name, not an IP address.** A public CA issues
+a certificate for a name it can verify you control, and it cannot do
+that for `192.168.1.50` - that address is not yours, it is everybody's,
+and nothing on the internet can reach it to run the challenge. No
+configuration works around this. You need something like
+`munch.yourorg.com.np` that resolves publicly to this server.
 
-- the hostname resolves to your public address
+No domain? A free dynamic-DNS name from DuckDNS or No-IP works with
+Let's Encrypt and takes a few minutes.
+
+Two more things have to be true, and neither is arranged on this
+machine:
+
+- the name resolves to your public address
 - **ports 80 and 443 reach the machine from the internet** - usually a
   port-forward on the router. Port 80 is not optional: it answers the
-  challenge, now and at every renewal.
+  challenge, now and at every renewal, and plenty of ISPs block it
+  inbound.
+
+If your connection is behind CGNAT, port forwarding cannot work at
+all: compare the WAN address in the router against what the internet
+reports as your IP, and if they differ - or the router's WAN address
+starts `100.64.` to `100.127.` - you are sharing a public address with
+other customers. A tunnel (Cloudflare Tunnel and similar) is then the
+only way in, and it terminates TLS itself, so Caddy is not what you
+want.
+
+### LAN only?
+
+Then you need none of this. Caddy will issue its own certificate with
+`tls internal`, but every browser warns until its local CA is
+installed on each device - fine for a few staff laptops, not for a
+room full of attendees' phones. On a closed network, plain HTTP on
+port 8000 is the better trade.
 
 Then, from the repository in an elevated PowerShell:
 
