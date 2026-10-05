@@ -68,12 +68,46 @@ python -m venv venv
 .\venv\Scripts\pip install -r requirements.txt -r deploy\windows\requirements-windows.txt
 ```
 
-The database:
+The database. Each of these asks for the **postgres** superuser
+password set during installation:
 
 ```powershell
-& "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE USER munch WITH PASSWORD 'pick-something';"
-& "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE DATABASE munch_db OWNER munch;"
+$psql = "C:\Program Files\PostgreSQL\16\bin\psql.exe"
+
+& $psql -U postgres -c "CREATE USER munch WITH PASSWORD 'pick-something';"
+& $psql -U postgres -c "CREATE DATABASE munch_db OWNER munch;"
+
+# Lets the test suite create and drop its own scratch database.
+# Nothing the application does needs it.
+& $psql -U postgres -c "ALTER ROLE munch CREATEDB;"
 ```
+
+`OWNER munch` is the part that matters. On PostgreSQL 15 and later a
+role that does not own the database cannot create tables in the
+`public` schema, and `migrate` stops with *permission denied for
+schema public* - which reads as a login problem rather than an
+ownership one.
+
+`init.sql` in the repository root grants exactly those rights. It is
+there for the Docker path, where it runs automatically, and is
+redundant when the database was created with an owner. Run it if the
+check below fails - and note `-d munch_db`, because a grant on the
+`public` schema applies to one database and silently does nothing
+useful against another:
+
+```powershell
+& $psql -U postgres -d munch_db -f .\init.sql
+```
+
+**Check** - this has to print `t`:
+
+```powershell
+& $psql -U munch -d munch_db -h localhost `
+    -c "SELECT has_schema_privilege(current_user,'public','CREATE');"
+```
+
+`f` means the grant did not apply. Refusing to connect at all means
+the password does not match `DB_PASSWORD` in `.env.prod`.
 
 The environment:
 
