@@ -198,7 +198,7 @@ export const BoardScreen: React.FC<{
 }> = ({
   event, sessions, guestToken,
 }) => {
-  const { t, num } = useOrganizer();
+  const { t } = useOrganizer();
   const [tab, setTab] = useState<'questions' | 'suggestions'>('questions');
   const [order, setOrder] = useState<'top' | 'newest'>('top');
   const [questions, setQuestions] = useState<HubPost[]>([]);
