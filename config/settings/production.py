@@ -117,6 +117,31 @@ EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
 LOG_DIR = env('LOG_DIR', default=str(ROOT_DIR / 'logs'))
 os.makedirs(LOG_DIR, exist_ok=True)
 
+_LEVELS = {'CRITICAL', 'FATAL', 'ERROR', 'WARN', 'WARNING', 'INFO', 'DEBUG', 'NOTSET'}
+
+
+def _level(raw, fallback='INFO'):
+    """A logging level name, whatever the .env file actually said.
+
+    Two things make this worth doing rather than trusting the value.
+
+    An .env file keeps its inline comments. `LOG_LEVEL=INFO  # DEBUG,
+    INFO, ...` - which is how the example file in this repository has
+    always written it - arrives as that entire string, and the
+    repository's own example is the obvious thing to copy.
+
+    And the failure is out of all proportion to the mistake: logging
+    is configured before anything else, so a bad level takes down
+    every management command, migrate included, with a traceback
+    about dictConfig that names neither the setting nor the file it
+    came from. An unreadable level is worth a default, not an outage.
+    """
+    name = (raw or '').split('#')[0].strip().upper()
+    return name if name in _LEVELS else fallback
+
+
+LOG_LEVEL = _level(env('LOG_LEVEL', default='INFO'))
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -128,12 +153,12 @@ LOGGING = {
     },
     'handlers': {
         'console': {
-            'level': env('LOG_LEVEL', default='INFO'),
+            'level': LOG_LEVEL,
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
         'file': {
-            'level': env('LOG_LEVEL', default='INFO'),
+            'level': LOG_LEVEL,
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': os.path.join(LOG_DIR, 'django.log'),
             'maxBytes': 1024 * 1024 * 10,
@@ -143,7 +168,7 @@ LOGGING = {
     },
     'root': {
         'handlers': ['console', 'file'],
-        'level': env('LOG_LEVEL', default='INFO'),
+        'level': LOG_LEVEL,
     },
 }
 
