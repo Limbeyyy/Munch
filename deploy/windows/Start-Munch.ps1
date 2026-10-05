@@ -115,6 +115,30 @@ if (-not $SkipBuild) {
 Write-Step "Static files"
 & $py manage.py collectstatic --noinput --clear | Select-Object -Last 1
 
+# -- Let it in through the firewall ----------------------------------
+#
+# Serving on 0.0.0.0 and being reachable are different things, and
+# the gap between them looks exactly like the application being
+# broken: it answers on the machine itself and from nowhere else.
+if ($BindHost -ne '127.0.0.1') {
+    $admin = ([Security.Principal.WindowsPrincipal] `
+        [Security.Principal.WindowsIdentity]::GetCurrent()
+        ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    $rule = "Munch TCP $Port"
+    if (Get-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue) {
+        Write-Note "firewall: '$rule' already allowed"
+    } elseif ($admin) {
+        New-NetFirewallRule -DisplayName $rule -Direction Inbound `
+            -Action Allow -Protocol TCP -LocalPort $Port | Out-Null
+        Write-Note "firewall: opened $Port"
+    } else {
+        Write-Note "firewall: port $Port is not open, and this shell is not elevated."
+        Write-Note "  From an admin shell, once:"
+        Write-Note "  New-NetFirewallRule -DisplayName '$rule' -Direction Inbound ``"
+        Write-Note "    -Action Allow -Protocol TCP -LocalPort $Port"
+    }
+}
+
 Write-Step "Starting on http://${BindHost}:${Port}"
 Write-Note "Reachable from other machines on this network at http://<this machine's ip>:$Port"
 Write-Note "Ctrl+C to stop."
