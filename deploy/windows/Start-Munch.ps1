@@ -47,6 +47,29 @@ param(
 $ErrorActionPreference = 'Stop'
 
 function Write-Step { param($m) Write-Host "`n==> $m" -ForegroundColor Cyan }
+
+# -- Running other programs ------------------------------------------
+#
+# $ErrorActionPreference = 'Stop' turns anything a native command
+# writes to stderr into a terminating error as soon as 2>&1 captures
+# it. Plenty of healthy programs write to stderr: a successful
+# `import drf_yasg` emits a setuptools deprecation warning, and that
+# alone was enough to report every dependency as missing.
+#
+# So the stream is captured with that off, and the verdict comes from
+# the exit code, which is what it is for.
+function Invoke-Native {
+    param([scriptblock] $Command)
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = & $Command 2>&1 | Out-String
+        return [pscustomobject]@{ Ok = ($LASTEXITCODE -eq 0); Output = $output.Trim() }
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
 function Write-Note { param($m) Write-Host "    $m" -ForegroundColor DarkGray }
 
 Set-Location $AppDir
@@ -77,9 +100,11 @@ if ($Pull) {
 # a database problem. Asking directly costs a second and says what is
 # actually wrong.
 Write-Step "Dependencies"
-$probe = & $py -c "import daphne, channels, uvicorn, whitenoise, psycopg2, celery, rest_framework, allauth, drf_yasg, django_celery_beat, corsheaders, cryptography; print('ok')" 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "    $probe" -ForegroundColor Red
+$probe = Invoke-Native {
+    & $py -c "import daphne, channels, uvicorn, whitenoise, psycopg2, celery, rest_framework, allauth, drf_yasg, django_celery_beat, corsheaders, cryptography; print('ok')"
+}
+if (-not $probe.Ok) {
+    Write-Host "    $($probe.Output)" -ForegroundColor Red
     throw ("A package is missing, so Django cannot load its apps. Install them:`n" +
            "     .\venv\Scripts\pip install -r requirements.txt -r deploy\windows\requirements-windows.txt`n" +
            "   Then run this again.")
