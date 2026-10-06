@@ -26,7 +26,8 @@ export const TranscriptScreen: React.FC<{
   const [lines, setLines] = useState<TranscriptionSegment[]>([]);
   const [following, setFollowing] = useState(true);
   const running = useElapsed(live?.started_at);
-  const foot = useRef<HTMLDivElement>(null);
+  // Newest first, so the place to follow is the top of the list.
+  const head = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
 
   const read = useCallback(async () => {
@@ -48,21 +49,20 @@ export const TranscriptScreen: React.FC<{
 
 
   useEffect(() => {
-    if (following) foot.current?.scrollIntoView({ block: 'end' });
+    if (following) head.current?.scrollIntoView({ block: 'start' });
   }, [lines, following]);
 
   const onScroll = () => {
     const box = scroller.current;
     if (!box) return;
-    // Within a line or so of the bottom counts as still following, so a
+    // Within a line or so of the top counts as still following, so a
     // thumb resting on the page does not stop it.
-    const atFoot = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-    setFollowing(atFoot);
+    setFollowing(box.scrollTop < 40);
   };
 
   const catchUp = () => {
     setFollowing(true);
-    foot.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    head.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   return (
@@ -158,6 +158,7 @@ export const TranscriptScreen: React.FC<{
         onScroll={onScroll}
         className="flex-1 overflow-y-auto px-5 pb-4"
       >
+        <div ref={head} />
         {lines.length === 0 ? (
           <p className="pt-10 text-center text-[13px] text-[#8b90a0]">
             {t({
@@ -166,11 +167,15 @@ export const TranscriptScreen: React.FC<{
             })}
           </p>
         ) : (
-          lines.map((line, i) => {
-            // The last line is what is being said now, which is worth
-            // marking: a reader glancing down wants to know where the
-            // room has got to, not only what it said.
-            const now = i === lines.length - 1 && event.status === 'active';
+          // Newest first. Read on a phone in a hall, what matters is
+          // the line being said now; at the foot of a list taller than
+          // the screen it is the one line nobody can see. Copied
+          // rather than reversed in place, because `lines` is state.
+          [...lines].reverse().map((line, i) => {
+            // The first line is now the one being said, and it is
+            // worth marking: a reader glancing at this wants to know
+            // where the room has got to, not only what it said.
+            const now = i === 0 && event.status === 'active';
             return (
               <div key={`${line.created_at ?? ''}-${i}`} className="pt-6"
                 data-transcript-line>
@@ -204,7 +209,6 @@ export const TranscriptScreen: React.FC<{
             );
           })
         )}
-        <div ref={foot} />
       </div>
 
       {!following && lines.length > 0 && (
@@ -219,7 +223,7 @@ export const TranscriptScreen: React.FC<{
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"
             strokeLinejoin="round" aria-hidden>
-            <path d="M6 9l6 6 6-6" />
+            <path d="M18 15l-6-6-6 6" />
           </svg>
           {t({ ne: 'प्रत्यक्षमा जानुहोस्', en: 'Jump to live' })}
         </button>
