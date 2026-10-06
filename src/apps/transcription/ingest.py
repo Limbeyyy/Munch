@@ -108,9 +108,15 @@ def accept_line(event, data: dict) -> dict:
     open and streaming them. Two copies would drift, and the difference
     would be which lines got stored.
 
-    Interim lines are broadcast so the screen keeps up with the speaker
-    but are not stored: interim text is rewritten constantly, and keeping
-    it would fill the transcript with half-formed phrases.
+    Nothing is stored or sent the moment it arrives. A recogniser
+    emits the same phrase repeatedly as it hears more of it, so what
+    arrives is not a sequence of lines but one line being rewritten;
+    passing that straight through filled the transcript with
+    overlapping fragments and updated the screen several times a
+    second. Lines are folded together and released as a block once a
+    window has passed - see ``batching``. Interim and final are
+    treated alike on the way in, because both are rewrites of the same
+    phrase and only the finished block is worth keeping.
     """
     if event.status == Event.Status.ENDED:
         raise LineRejected('This event has ended', 'event_ended')
@@ -154,21 +160,79 @@ def accept_line(event, data: dict) -> dict:
     segment['session_id'] = str(live_session.id) if live_session else None
     segment['session_title'] = live_session.title if live_session else None
 
-    if is_final:
-        TranscriptionSegment.objects.create(
-            event=event,
-            session=live_session,
-            speaker_id=segment['speaker_id'],
-            speaker_name=segment['speaker_name'],
-            text=segment['text'],
-            language=segment['language'],
-            start_time=segment['start_time'],
-            end_time=segment['end_time'],
-            confidence=segment['confidence'],
-            is_final=True,
-        )
+    from src.apps.transcription import batching
 
+    block = batching.add(
+        event.id, text,
+        start_time=segment['start_time'],
+        end_time=segment['end_time'],
+        language=segment['language'],
+    )
+    if block is None:
+        # Folded in. The caller is told the line was taken; there is
+        # simply nothing to show for it yet.
+        segment['held'] = True
+        return segment
+
+    segment['text'] = block['text']
+    segment['start_time'] = block['start_time']
+    segment['end_time'] = block['end_time']
+    segment['language'] = block['language'] or segment['language']
+    # A released block is finished by definition, whatever the lines it
+    # was built from called themselves.
+    segment['is_final'] = True
+    segment['held'] = False
+
+    _store_and_publish(event, live_session, segment)
+    return segment
+
+
+def _store_and_publish(event, live_session, segment: dict) -> None:
+    """Write one finished block down, and send it to the room."""
+    TranscriptionSegment.objects.create(
+        event=event,
+        session=live_session,
+        speaker_id=segment['speaker_id'],
+        speaker_name=segment['speaker_name'],
+        text=segment['text'],
+        language=segment['language'],
+        start_time=segment['start_time'],
+        end_time=segment['end_time'],
+        confidence=segment['confidence'],
+        is_final=True,
+    )
     publish_segment(event, segment)
+
+
+def flush_pending(event) -> dict | None:
+    """Release whatever a device left mid-window.
+
+    Called when a talk or an event ends. Without it the closing words
+    of every session would sit in a buffer waiting for a line that is
+    never coming.
+    """
+    from src.apps.transcription import batching
+
+    block = batching.flush(event.id)
+    if block is None:
+        return None
+
+    live_session = event.sessions.filter(status='live').first()
+    segment = {
+        'code': event.code,
+        'speaker_id': 'room-device',
+        'speaker_name': (live_session.speaker_name if live_session else '') or 'Room',
+        'text': block['text'],
+        'language': block['language'] or 'en',
+        'start_time': block['start_time'],
+        'end_time': block['end_time'],
+        'confidence': 0.0,
+        'is_final': True,
+        'session_id': str(live_session.id) if live_session else None,
+        'session_title': live_session.title if live_session else None,
+        'held': False,
+    }
+    _store_and_publish(event, live_session, segment)
     return segment
 
 

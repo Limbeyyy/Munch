@@ -164,6 +164,19 @@ class EventService:
             for running in event.sessions.filter(status=Session.Status.LIVE):
                 close_session(running, timezone.now())
 
+            # An event can end with nothing on stage, in which case
+            # close_session released nothing. Anything the device said
+            # since the last block still belongs in the transcript.
+            try:
+                from src.apps.transcription.ingest import flush_pending
+
+                flush_pending(event)
+            except Exception:
+                logger.warning(
+                    f"Could not flush the transcript buffer for {event.code}",
+                    exc_info=True,
+                )
+
             event.status = Event.Status.ENDED
             event.ended_at = timezone.now()
             event.save()

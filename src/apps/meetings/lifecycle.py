@@ -53,6 +53,22 @@ def close_session(session, now):
     Presence is taken from the event at the moment the session ends,
     which is the only point where the room's membership is settled.
     """
+    # Whatever the room's device said in the last few seconds is still
+    # being gathered into a block. Release it while this talk is still
+    # the one on stage, or the closing words are filed under the next
+    # speaker - or, if this was the last talk, under nobody at all.
+    try:
+        from src.apps.transcription.ingest import flush_pending
+
+        flush_pending(session.event)
+    except Exception:
+        # A transcript tail is not worth failing a session close over;
+        # the register is the part that matters here.
+        logger.warning(
+            f"Could not flush the transcript buffer for {session.event.code}",
+            exc_info=True,
+        )
+
     session.status = Session.Status.DONE
     session.ended_at = now
     if not session.started_at:
