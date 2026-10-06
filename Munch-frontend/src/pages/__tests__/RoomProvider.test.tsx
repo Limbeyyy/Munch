@@ -1411,3 +1411,110 @@ describe('starting the event', () => {
     expect(api.startEvent).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Which way the transcript runs, in this room.
+ *
+ * The host is watching what is being said now. A newest line arriving
+ * at the bottom of a list already taller than the panel puts the one
+ * line that matters out of sight, so here it goes on top. Everywhere
+ * else the transcript is read as a record, from the top, and keeps
+ * the order it was said in.
+ */
+describe('the live transcript in the room', () => {
+  // The store is a module-level singleton, so lines said in one test
+  // are still there in the next and the counts come out wrong.
+  beforeEach(() => {
+    const { useEventStore } = require('../../store/eventStore');
+    act(() => useEventStore.getState().clearTranscript());
+  });
+
+  const say = (segment: any) => {
+    act(() => {
+      (window as any).__roomSocket.onmessage({
+        data: JSON.stringify({ type: 'transcription_update', segment }),
+      });
+    });
+  };
+
+  const line = (text: string, over: any = {}) => ({
+    speaker_name: 'Room', text, session_id: 's1',
+    start_time: 0, end_time: 0,
+    created_at: new Date('2026-10-06T10:12:00Z').toISOString(),
+    ...over,
+  });
+
+  const linesOnScreen = () =>
+    Array.from(document.querySelectorAll('[data-transcript-line]'))
+      .map((el) => (el.textContent || '').replace('Room: ', '').trim());
+
+  it('puts the newest line at the top', async () => {
+    showRoom();
+    await screen.findByText('Opening day');
+
+    say(line('first thing said'));
+    say(line('second thing said'));
+    say(line('third thing said'));
+
+    await waitFor(() => expect(linesOnScreen().length).toBe(3));
+    expect(linesOnScreen()).toEqual([
+      'third thing said', 'second thing said', 'first thing said',
+    ]);
+  });
+
+  /**
+   * The array belongs to the store, which every screen reading this
+   * state shares. Reversing it in place would reverse it for all of
+   * them, and the attendee's transcript is meant to read forwards.
+   *
+   * With nothing on stage this is the store's own array rather than
+   * a filtered copy of it, which is the only case where turning it
+   * over in place reaches anybody else - so that is the case worth
+   * asserting.
+   */
+  it('without turning the stored order over for anybody else', async () => {
+    const { useEventStore } = require('../../store/eventStore');
+    api.getEvent.mockResolvedValue({ ...event, current_session: null } as any);
+    showRoom();
+    // With nothing on stage the title appears in more than one place,
+    // so this waits for the room rather than for a unique match.
+    await screen.findAllByText('Opening day');
+
+    say(line('first thing said', { session_id: null }));
+    say(line('second thing said', { session_id: null }));
+
+    await waitFor(() => expect(linesOnScreen().length).toBe(2));
+    expect(linesOnScreen()).toEqual(['second thing said', 'first thing said']);
+    expect(
+      useEventStore.getState().transcript.map((s: any) => s.text)
+    ).toEqual(['first thing said', 'second thing said']);
+  });
+
+  /**
+   * The hour, not 00:00.
+   *
+   * The row prefers `created_at` and falls back to seconds into the
+   * event, which a device that does not count them reports as zero -
+   * so a line arriving live without one was stamped 00:00 while the
+   * same line, after a reload, came back from the API with the hour.
+   */
+  it('stamps a line with the hour it carries', async () => {
+    showRoom();
+    await screen.findByText('Opening day');
+
+    say(line('said at a knowable time'));
+
+    const expected = new Date('2026-10-06T10:12:00Z')
+      .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    expect(await screen.findByText(expected)).toBeInTheDocument();
+  });
+
+  it('and falls back to the elapsed count only when it carries none', async () => {
+    showRoom();
+    await screen.findByText('Opening day');
+
+    say(line('no stamp', { created_at: undefined, start_time: 125 }));
+
+    expect(await screen.findByText('02:05')).toBeInTheDocument();
+  });
+});

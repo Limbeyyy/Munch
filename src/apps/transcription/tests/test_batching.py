@@ -340,3 +340,44 @@ class WhatABlockCarriesTests(TestCase):
         kept = TranscriptionSegment.objects.get(event=self.event)
         self.assertEqual(kept.start_time, 4.0)
         self.assertEqual(kept.end_time, 9.0)
+
+
+@override_settings(TRANSCRIPT_WINDOW_SECONDS=15)
+class WhenALineWasSaidTests(TestCase):
+    """The hour, on the line that arrives live as well as the one fetched.
+
+    The screens prefer `created_at` and fall back to seconds into the
+    event. A device that does not count those sends zero for every
+    line, so a block arriving down the socket without a `created_at`
+    was stamped 00:00 - while the same block, after a reload, came
+    back from the API with the hour on it.
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.host = make_host('host@example.com')
+        start = timezone.now() - timezone.timedelta(minutes=5)
+        self.event = make_event(self.host, start=start, minutes=120)
+        self.event.status = Event.Status.ACTIVE
+        self.event.save()
+
+    def test_a_published_block_says_when_it_was_said(self):
+        published = []
+        with mock.patch('src.apps.transcription.ingest.publish_segment',
+                        side_effect=lambda e, s: published.append(s)):
+            with mock.patch.object(batching.time, 'monotonic', return_value=500.0):
+                accept_line(self.event, {'text': 'good morning'})
+            flush_pending(self.event)
+
+        self.assertEqual(len(published), 1)
+        self.assertIn('created_at', published[0])
+        self.assertTrue(published[0]['created_at'])
+
+    def test_and_it_is_the_moment_it_was_written_down(self):
+        with mock.patch.object(batching.time, 'monotonic', return_value=500.0):
+            accept_line(self.event, {'text': 'good morning'})
+        segment = flush_pending(self.event)
+
+        written = TranscriptionSegment.objects.get(event=self.event)
+        self.assertEqual(segment['created_at'], written.created_at.isoformat())
