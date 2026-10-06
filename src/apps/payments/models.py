@@ -26,6 +26,14 @@ class PaymentOrder(models.Model):
     status = models.CharField(max_length=40, choices=Status.choices, default=Status.PENDING)
     transaction_id = models.CharField(max_length=150, unique=True, db_index=True)
     transaction_reference = models.CharField(max_length=150, blank=True)
+    #: OnePG's one-use token for this attempt. Fetched before the
+    #: browser is sent anywhere - the gateway will not open a
+    #: transaction without one - and kept so a customer who comes back
+    #: to a half-finished payment is not given a second.
+    process_id = models.CharField(max_length=100, blank=True, db_index=True)
+    #: Which bank or wallet, when the customer chose before leaving.
+    #: Empty means they will choose on the gateway's own page.
+    instrument_code = models.CharField(max_length=40, blank=True)
     gateway_signature = models.CharField(max_length=128, blank=True)
     callback_payload = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
