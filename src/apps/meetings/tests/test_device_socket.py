@@ -1,14 +1,16 @@
 """The hall's capture device, streaming transcript over a socket.
 
 The device may post a line at a time or hold one socket open and stream
-them. Both doors lead to the same rule - stored if final, broadcast
-either way, filed against whatever is on stage - because two copies of
-that rule would drift, and the difference would be which lines got kept.
+them. Both doors lead to the same rule - folded into the block being
+gathered, released as one piece once the window closes, filed against
+whatever is on stage - because two copies of that rule would drift,
+and the difference would be which lines got kept.
 
 A device is not a person, so what is pinned hardest here is that the
 token is what gets it in, and that a line reaches exactly one event.
 """
 from channels.db import database_sync_to_async
+from django.core.cache import cache
 from channels.routing import URLRouter
 from channels.testing import WebsocketCommunicator
 from django.test import TransactionTestCase, override_settings
@@ -33,6 +35,10 @@ def app():
 )
 class TheCaptureDeviceSocketTests(TransactionTestCase):
     def setUp(self):
+        # The block being gathered lives in the cache, which a
+        # TransactionTestCase does not roll back between tests.
+        cache.clear()
+        self.addCleanup(cache.clear)
         self.host = make_host('host@example.com')
         start = timezone.now() - timezone.timedelta(minutes=10)
         self.event = make_event(self.host, start=start, minutes=120)
@@ -56,6 +62,18 @@ class TheCaptureDeviceSocketTests(TransactionTestCase):
             TranscriptionSegment.objects.filter(event=self.event)
             .values_list('text', flat=True)
         )
+
+    def release(self):
+        """Close the window by hand.
+
+        A line now waits for the rest of its block rather than being
+        written down where it lands, so a test sending one line and
+        looking for it immediately would be asserting the behaviour
+        this replaced.
+        """
+        from src.apps.transcription.ingest import flush_pending
+
+        flush_pending(self.event)
 
     # -- getting in -------------------------------------------------------
 
@@ -93,21 +111,40 @@ class TheCaptureDeviceSocketTests(TransactionTestCase):
         await comm.disconnect()
 
         self.assertEqual(said['type'], 'line_taken')
-        self.assertTrue(said['stored'])
+        # Taken, and not yet written: the block it belongs to is still
+        # being gathered. `stored` says which, so a device is not told
+        # text is safe while it is only in a buffer.
+        self.assertFalse(said['stored'])
+        self.assertTrue(said['held'])
+
+        await database_sync_to_async(self.release)()
         self.assertEqual(await database_sync_to_async(self.lines)(),
                          ['Sixty-nine districts passed.'])
 
-    async def test_an_interim_line_is_not(self):
-        """Interim text is rewritten constantly; keeping it would fill the
-        transcript with half-formed phrases."""
+    async def test_an_interim_line_is_held_like_any_other(self):
+        """Interim and final are the same phrase at different lengths.
+
+        The old rule dropped interim text and kept every final, which
+        is why a recogniser calling each growing prefix 'final' filled
+        the transcript with fragments. What keeps half-formed phrases
+        out now is the window, not the flag - so an interim line is
+        folded in, and what is written down is the finished block.
+        """
         comm, _ = await self.device()
 
         await comm.send_json_to({'text': 'Sixty-nine dist', 'is_final': False})
         said = await comm.receive_json_from(timeout=2)
+        await comm.send_json_to({'text': 'Sixty-nine districts passed.',
+                                 'is_final': True})
+        await comm.receive_json_from(timeout=2)
         await comm.disconnect()
 
         self.assertFalse(said['stored'])
         self.assertEqual(await database_sync_to_async(self.lines)(), [])
+
+        await database_sync_to_async(self.release)()
+        self.assertEqual(await database_sync_to_async(self.lines)(),
+                         ['Sixty-nine districts passed.'])
 
     async def test_the_devices_own_wording_is_understood(self):
         """It says event: partial | final, which is the same distinction."""
@@ -116,6 +153,7 @@ class TheCaptureDeviceSocketTests(TransactionTestCase):
         await comm.send_json_to({'event': 'final', 'text': 'We opened at nine.'})
         await comm.receive_json_from(timeout=2)
         await comm.disconnect()
+        await database_sync_to_async(self.release)()
 
         self.assertEqual(await database_sync_to_async(self.lines)(),
                          ['We opened at nine.'])
@@ -134,6 +172,7 @@ class TheCaptureDeviceSocketTests(TransactionTestCase):
         })
         await comm.receive_json_from(timeout=2)
         await comm.disconnect()
+        await database_sync_to_async(self.release)()
 
         said = await database_sync_to_async(
             lambda: TranscriptionSegment.objects.get(event=self.event).language
@@ -146,6 +185,7 @@ class TheCaptureDeviceSocketTests(TransactionTestCase):
         await comm.send_json_to({'text': 'On the record.', 'is_final': True})
         await comm.receive_json_from(timeout=2)
         await comm.disconnect()
+        await database_sync_to_async(self.release)()
 
         filed = await database_sync_to_async(
             lambda: TranscriptionSegment.objects.get(
@@ -203,6 +243,7 @@ class TheCaptureDeviceSocketTests(TransactionTestCase):
         await comm.send_json_to({'text': 'Heard in the hall.', 'is_final': True})
         await comm.receive_json_from(timeout=2)
         await comm.disconnect()
+        await database_sync_to_async(self.release)()
 
         # Bounded: a channel nothing arrives on never answers, so an
         # unbounded receive turns a regression here into a hung suite
@@ -228,6 +269,10 @@ class WhereALineGoesTests(TransactionTestCase):
     """
 
     def setUp(self):
+        # The block being gathered lives in the cache, which a
+        # TransactionTestCase does not roll back between tests.
+        cache.clear()
+        self.addCleanup(cache.clear)
         self.host = make_host('host@example.com')
         start = timezone.now() - timezone.timedelta(minutes=10)
         self.event = make_event(self.host, start=start, minutes=120)
@@ -240,9 +285,14 @@ class WhereALineGoesTests(TransactionTestCase):
 
         from src.apps.transcription.ingest import accept_line
 
+        from src.apps.transcription.ingest import flush_pending
+
         layer = MagicMock()
         with patch('channels.layers.get_channel_layer', return_value=layer):
             accept_line(self.event, {'text': 'Ours alone.', 'is_final': True})
+            # Held until its block is complete; this is about where it
+            # goes, not when.
+            flush_pending(self.event)
 
         (group, message), _ = layer.group_send.call_args
         self.assertEqual(group, f'event_{self.event.code}')
@@ -258,10 +308,14 @@ class WhereALineGoesTests(TransactionTestCase):
         elsewhere.status = Event.Status.ACTIVE
         elsewhere.save(update_fields=['status'])
 
+        from src.apps.transcription.ingest import flush_pending
+
         layer = MagicMock()
         with patch('channels.layers.get_channel_layer', return_value=layer):
             accept_line(self.event, {'text': 'Ours.', 'is_final': True})
+            flush_pending(self.event)
             accept_line(elsewhere, {'text': 'Theirs.', 'is_final': True})
+            flush_pending(elsewhere)
 
         sent_to = [call.args[0] for call in layer.group_send.call_args_list]
         self.assertEqual(

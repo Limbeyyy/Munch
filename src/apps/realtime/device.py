@@ -98,9 +98,14 @@ class DeviceConsumer(AsyncWebsocketConsumer):
             await self._refuse(str(e))
             return
 
+        # `stored` means written down, not merely accepted. A line
+        # folded into the block still being gathered has been taken and
+        # has not been stored, and telling a device otherwise would
+        # have it believe text is safe that is still only in a buffer.
         await self.send(text_data=json.dumps({
             'type': 'line_taken',
-            'stored': segment['is_final'],
+            'stored': not segment.get('held', False),
+            'held': bool(segment.get('held', False)),
         }))
 
     # -- the parts that touch the database --------------------------------
