@@ -440,6 +440,35 @@ GOOGLE_CLIENT_SECRET = env('GOOGLE_CLIENT_SECRET')
 # transcript text in. No audio is accepted, only the resulting text.
 TRANSCRIPTION_INGEST_TOKEN = env('TRANSCRIPTION_INGEST_TOKEN', default='')
 
+
+# -- Nepal Payment Solution (OnePG) ------------------------------------
+#
+# Issued by email, and five separate things: the merchant's id and name
+# identify the account, the API username and password authenticate the
+# call over HTTP Basic, and the key signs the message. The last two are
+# easy to confuse - sending the signing key as a password fails in a way
+# that reads like a wrong password.
+#
+# All default to empty, and the gateway client refuses clearly rather
+# than half-working: a deployment that does not take payments should
+# not have to invent credentials to start.
+NEPALPAYMENT_MERCHANT_ID = env('NEPALPAYMENT_MERCHANT_ID', default='')
+NEPALPAYMENT_MERCHANT_NAME = env('NEPALPAYMENT_MERCHANT_NAME', default='')
+NEPALPAYMENT_API_USERNAME = env('NEPALPAYMENT_API_USERNAME', default='')
+NEPALPAYMENT_API_PASSWORD = env('NEPALPAYMENT_API_PASSWORD', default='')
+NEPALPAYMENT_KEY = env('NEPALPAYMENT_KEY', default='')
+
+# Two different hosts: the API the server calls, and the gateway the
+# customer's browser is sent to. Sandbox by default, because a wrong
+# guess should take test money rather than real money.
+NEPALPAYMENT_API_URL = env(
+    'NEPALPAYMENT_API_URL', default='https://apisandbox.nepalpayment.com'
+)
+NEPALPAYMENT_CHECKOUT_URL = env(
+    'NEPALPAYMENT_CHECKOUT_URL',
+    default='https://gatewaysandbox.nepalpayment.com/Payment/Index',
+)
+
 GOOGLE_DRIVE_APP_FOLDER = 'My Meeting Platform'
 
 # Encryption Keys (store securely in production)
