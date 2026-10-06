@@ -82,7 +82,43 @@ class Command(BaseCommand):
 
         # -- 2. the configured values ----------------------------------
         self.stdout.write('\n== The configured values ==')
+        import os
+        from pathlib import Path
+
         from django.conf import settings
+
+        # Which file Django actually read. DJANGO_ENV picks it, and
+        # .env is only the fallback - so the file being edited is
+        # often not the file in use.
+        root = Path(settings.BASE_DIR).parent
+        chosen = root / f'.env.{os.environ.get("DJANGO_ENV", "dev")}'
+        if not chosen.exists():
+            chosen = root / '.env'
+        self.stdout.write(
+            f'   read from {chosen}'
+            + ('' if chosen.exists() else bad('  (does not exist)'))
+        )
+
+        # What that file says, as opposed to what Django ended up with.
+        # django-environ's read_env uses setdefault, so a variable
+        # already exported in the shell silently wins and the file is
+        # ignored for it - which looks exactly like the file being
+        # wrong when it is not.
+        in_file = {}
+        if chosen.exists():
+            for line in chosen.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                key, _, value = line.partition('=')
+                in_file[key.strip()] = value
+
+        shadowed = []
+        for setting in onepg._SETTINGS.values():
+            exported = os.environ.get(setting)
+            if exported is not None and setting in in_file \
+                    and exported != in_file[setting]:
+                shadowed.append(setting)
 
         raw = {
             name: getattr(settings, setting, '') or ''
@@ -129,6 +165,21 @@ class Command(BaseCommand):
             ))
         else:
             self.stdout.write(ok(line))
+
+        if shadowed:
+            trouble = True
+            self.stdout.write(bad(
+                '\n   These are exported in the environment, and differ from '
+                'the file:\n     '
+                + '\n     '.join(shadowed)
+                + '\n\n   The exported value is the one in use. .env is read '
+                'with setdefault,\n   so anything already in the shell wins '
+                'and the file is ignored for it -\n   which looks exactly '
+                'like the file being wrong when it is not, and\n   survives '
+                'every restart. Check the shell the server runs in:\n'
+                '\n       env | grep NEPALPAYMENT\n'
+                '\n   and unset them, or correct them there.'
+            ))
 
         if trouble:
             self.stdout.write(warn(
