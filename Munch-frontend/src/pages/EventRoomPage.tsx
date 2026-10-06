@@ -959,11 +959,25 @@ const EventRoomInner: React.FC = () => {
    * last one. Between talks there is nothing being said, and what the
    * room has is the record of the event so far.
    */
-  const roomLines = session?.id
-    ? transcript.filter(
-        (seg: any) => !seg.session_id || seg.session_id === session.id
-      )
-    : transcript;
+  const roomLines = (
+    session?.id
+      ? transcript.filter(
+          (seg: any) => !seg.session_id || seg.session_id === session.id
+        )
+      : transcript
+  )
+    // Newest first, in this room only. The host is watching what is
+    // being said now, and the newest line arriving at the bottom of a
+    // list that is already taller than the panel puts it out of sight
+    // - so the one line that matters is the one nobody can see.
+    // Everywhere else the transcript is read as a record, from the
+    // top, and keeps the order it was said in.
+    //
+    // Copied before reversing: this is the store's own array, and
+    // turning it over in place would turn it over for every screen
+    // reading the same state.
+    .slice()
+    .reverse();
 
   return (
     <div className="min-h-screen bg-[#f1f4f8] text-[#030712] pb-[110px]">

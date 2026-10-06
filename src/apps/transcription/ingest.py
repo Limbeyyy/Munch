@@ -189,7 +189,7 @@ def accept_line(event, data: dict) -> dict:
 
 def _store_and_publish(event, live_session, segment: dict) -> None:
     """Write one finished block down, and send it to the room."""
-    TranscriptionSegment.objects.create(
+    written = TranscriptionSegment.objects.create(
         event=event,
         session=live_session,
         speaker_id=segment['speaker_id'],
@@ -201,6 +201,13 @@ def _store_and_publish(event, live_session, segment: dict) -> None:
         confidence=segment['confidence'],
         is_final=True,
     )
+    # When it was said, as the screens show it. A line fetched from
+    # the API carried this and a line arriving down the socket did
+    # not, so the same block was stamped with the hour when the page
+    # was reloaded and with 00:00 when it arrived live - the fallback
+    # being seconds into the event, which a device that does not
+    # count them reports as zero for everything.
+    segment['created_at'] = written.created_at.isoformat()
     publish_segment(event, segment)
 
 
