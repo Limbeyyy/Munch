@@ -50,6 +50,11 @@ class Command(BaseCommand):
             '--call', action='store_true',
             help='Also make a real GetPaymentInstrumentDetails call.',
         )
+        parser.add_argument(
+            '--process-id', action='store_true',
+            help=('Also try GetProcessId with transaction ids of several '
+                  'shapes, to find which the gateway will accept.'),
+        )
 
     def handle(self, *args, **options):
         ok = self.style.SUCCESS
@@ -100,8 +105,30 @@ class Command(BaseCommand):
             else:
                 self.stdout.write(ok(line))
 
-        for setting in ('NEPALPAYMENT_API_URL', 'NEPALPAYMENT_CHECKOUT_URL'):
-            self.stdout.write(f'   {setting:<28} {getattr(settings, setting, "")}')
+        self.stdout.write(
+            f'   {"NEPALPAYMENT_API_URL":<28} {settings.NEPALPAYMENT_API_URL}')
+
+        # The two hosts are easy to confuse and fail in different
+        # places: the API one is used by every call above, the gateway
+        # one only when the customer's browser is sent off. A wrong
+        # gateway url therefore passes every check here and then loses
+        # the customer at the last step.
+        checkout = getattr(settings, 'NEPALPAYMENT_CHECKOUT_URL', '') or ''
+        line = f'   {"NEPALPAYMENT_CHECKOUT_URL":<28} {checkout}'
+        if '/Payment/Index' not in checkout:
+            trouble = True
+            self.stdout.write(warn(line))
+            self.stdout.write(warn(
+                '       ^ this is where the customer\'s browser posts the '
+                'checkout form,\n'
+                '         and the document gives it as\n'
+                '         https://gatewaysandbox.nepalpayment.com/Payment/Index\n'
+                '         (live: https://gateway.nepalpayment.com/Payment/Index).\n'
+                '         Nothing above tests it, so a wrong one passes every\n'
+                '         check here and loses the customer at the last step.'
+            ))
+        else:
+            self.stdout.write(ok(line))
 
         if trouble:
             self.stdout.write(warn(
@@ -148,8 +175,58 @@ class Command(BaseCommand):
                 f"{one.get('InstitutionName', '')}"
             )
         self.stdout.write(ok(
-            '\n   The credentials and the signature are good. If '
-            'GetProcessId still\n   refuses, the difference is in that '
-            'payload - most likely the Amount\n   format or the '
-            'MerchantTxnId.\n'
+            '\n   The credentials and the signature are good: this call '
+            'signs the\n   merchant id and name, so both are right, and so '
+            'is the key.\n'
         ))
+
+        if not options['process_id']:
+            self.stdout.write(
+                '   Add --process-id to find out what GetProcessId will '
+                'accept.\n'
+            )
+            return
+
+        # -- 4. which transaction id shape it will take ----------------
+        #
+        # GetProcessId adds exactly two fields to the call above, so if
+        # that one works and this does not, it is the Amount or the
+        # MerchantTxnId. These vary one thing at a time.
+        self.stdout.write('\n== GetProcessId ==')
+        import uuid
+
+        stem = uuid.uuid4().hex.upper()
+        attempts = [
+            ('short, letters and digits', f'MNCH{stem[:8]}', '100.00'),
+            ('with a hyphen',             f'MNCH-{stem[:8]}', '100.00'),
+            ('the length we generate',    f'MNCH-{stem}', '100.00'),
+            ('whole-rupee amount',        f'MNCH{stem[8:16]}', '100'),
+        ]
+        worked = []
+        for label, txn, amount in attempts:
+            try:
+                onepg.process_id(amount, txn)
+            except onepg.OnePGError as e:
+                self.stdout.write(bad(
+                    f'   {label:<26} {len(txn):>2} chars, '
+                    f'Amount={amount:<7} refused: {e}'))
+            else:
+                worked.append(label)
+                self.stdout.write(ok(
+                    f'   {label:<26} {len(txn):>2} chars, '
+                    f'Amount={amount:<7} accepted'))
+
+        if worked and len(worked) < len(attempts):
+            self.stdout.write(warn(
+                '\n   The gateway is particular about one of these. '
+                'Whatever it\n   accepted above is the shape the '
+                'transaction id should take.'
+            ))
+        elif not worked:
+            self.stdout.write(warn(
+                '\n   None accepted, though the call above was fine - so '
+                'the merchant\n   account may not be enabled for '
+                'transactions yet. That is a\n   question for OnePG '
+                'support rather than a change here.'
+            ))
+        self.stdout.write('')
