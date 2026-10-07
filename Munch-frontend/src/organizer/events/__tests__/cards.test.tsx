@@ -103,14 +103,8 @@ describe('the colour a card carries', () => {
     return heading.closest('button')!.parentElement!.parentElement as HTMLElement;
   };
 
-  /**
-   * A finished event is read back rather than worked on.
-   *
-   * It used to be washed green like every other card, which said its
-   * state twice on a deck where every card has the same state. 626-6477
-   * draws it plain, with the way into the record where the pencil was.
-   */
-  it('gives a finished event the card that reads it back', () => {
+  /** A finished event uses the Figma completed-card treatment and action. */
+  it('gives a finished event the completed card that reads it back', () => {
     // Ran, then ended. One that ended without ever running is a
     // different thing, and reads as never started.
     show([anEvent({
@@ -119,13 +113,9 @@ describe('the colour a card carries', () => {
     })]);
 
     const read = screen.getByRole('button', { name: 'View Summary' });
-    // Washed the colour of its state, like every other card here.
-    expect(
-      (read.parentElement!.parentElement!.parentElement as HTMLElement).className
-    ).toContain('bg-[#e1faea]');
-    // 'Completed' is also the deck's own tab, so the word is looked for
-    // inside the card rather than anywhere on the page.
-    const card = read.parentElement!.parentElement!.parentElement as HTMLElement;
+    const card = read.parentElement!.parentElement as HTMLElement;
+    expect(card.className).toContain('bg-[#fdfdfd]');
+    expect(card.className).toContain('border-[#018030]');
     expect(within(card).getByText('Completed').className).toContain('text-[#018030]');
     expect(screen.queryByRole('button', { name: /Edit|Continue Setup/ })).toBeNull();
   });

@@ -101,6 +101,9 @@ export const ContentView: React.FC<Props> = ({ events }) => {
 
   useEffect(() => { count(); }, [count]);
 
+  // Figma completed card: https://www.figma.com/design/WIiWTmyrqW4gmLIypJ5PTj/NEA?node-id=641-16836
+  // Figma upcoming card: https://www.figma.com/design/WIiWTmyrqW4gmLIypJ5PTj/NEA?node-id=641-17165
+  // Completed uses a green edge; upcoming uses a blue edge.
   // -- the events --------------------------------------------------------
 
   if (!event) {
@@ -149,11 +152,10 @@ export const ContentView: React.FC<Props> = ({ events }) => {
                 <article
                   key={one.id}
                   className={`border-[0.6px] rounded-[12px] px-4 py-3
-                    flex flex-col gap-4
-                    shadow-[0px_4px_3px_rgba(0,0,0,0.1),0px_2px_2px_rgba(0,0,0,0.05)] ${
+                    flex flex-col gap-4 ${
                     done
-                      ? 'bg-[#ebfbf1] border-[#c1f4d4]'
-                      : 'bg-white border-line'
+                      ? 'bg-[#fdfdfd] border-[#018030] shadow-[0px_4px_6px_rgba(0,130,54,0.1),0px_2px_4px_rgba(0,0,0,0.05)]'
+                      : 'bg-white border-[#4272dd] shadow-[0px_4px_3px_rgba(0,0,0,0.1),0px_2px_2px_rgba(0,0,0,0.05)]'
                   }`}
                 >
                   <div className="flex flex-col gap-2">
@@ -189,7 +191,7 @@ export const ContentView: React.FC<Props> = ({ events }) => {
                     </div>
 
                     <div className="pt-2 flex gap-4 items-center flex-wrap
-                      text-[12px] text-navy-600 leading-4">
+                      text-[12px] text-[#194d97] leading-4">
                       <span>
                         {t({
                           ne: `${num(tally?.folders ?? 0)} फोल्डर`,

@@ -231,7 +231,7 @@ describe('one event under moderation', () => {
    * is the first thing to read, so the card is tinted the colour of the
    * decision and the agenda chip inverts to stay legible against it.
    */
-  it('tints what was put up green, and says who put it up', async () => {
+  it('uses the completed Q&A card design and says who put it up', async () => {
     api.getModerationQueue.mockResolvedValue(queue({
       approved: [message({
         moderation_status: 'approved',
@@ -244,14 +244,16 @@ describe('one event under moderation', () => {
 
     const card = (await screen.findByText(/communication delays/))
       .closest('article') as HTMLElement;
-    expect(card.className).toContain('bg-[#ebfbf1]');
+    expect(card.className).toContain('bg-[#fdfdfd]');
+    expect(card.className).toContain('border-[#018030]');
+    expect(card.className).toContain('shadow-[0px_4px_6px_rgba(0,130,54,0.1)');
     expect(within(card).getByText(/Approved by Sarah Sharma/)).toBeInTheDocument();
     expect(
       within(card).getByText('Field Response Coordination').className
     ).toContain('bg-[#717171]');
   });
 
-  it('tints what was turned down red, and says who turned it down', async () => {
+  it('uses the rejected Q&A card design and says who turned it down', async () => {
     api.getModerationQueue.mockResolvedValue(queue({
       rejected: [message({
         moderation_status: 'declined',
@@ -264,7 +266,8 @@ describe('one event under moderation', () => {
 
     const card = (await screen.findByText(/communication delays/))
       .closest('article') as HTMLElement;
-    expect(card.className).toContain('bg-[#feebeb]');
+    expect(card.className).toContain('bg-[#fdfdfd]');
+    expect(card.className).toContain('border-[#e12121]');
     expect(within(card).getByText(/Rejected by Sarah Sharma/)).toBeInTheDocument();
   });
 
