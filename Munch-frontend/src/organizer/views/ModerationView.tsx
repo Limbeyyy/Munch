@@ -112,9 +112,11 @@ const SearchBox: React.FC<{
 /**
  * One thing somebody offered the board, and what the host may do with it.
  *
- * Pending carries the two decisions. Approved is tinted and says who put
- * it up; rejected is left plain. Neither of the two decided states
- * carries a button, because the decision has been made.
+ * Pending carries the two decisions. Decided entries say who made the
+ * decision and when; neither carries a button. Decided suggestion cards
+ * retain their existing treatment.
+ * Completed Q&A: https://www.figma.com/design/WIiWTmyrqW4gmLIypJ5PTj/NEA?node-id=627-13162
+ * Rejected Q&A: https://www.figma.com/design/WIiWTmyrqW4gmLIypJ5PTj/NEA?node-id=629-13273
  */
 const Entry: React.FC<{
   message: ChatMessage;
@@ -128,10 +130,15 @@ const Entry: React.FC<{
   // carries no border; only what is still waiting is a white card with
   // an edge, because only that is a thing to act on.
   const decided = pile !== 'pending';
+  const designedQuestionDecision = decided && message.topic === 'faq';
 
   return (
     <article className={`rounded-[12px] p-4 ${
-      pile === 'approved'
+      designedQuestionDecision
+        ? `bg-[#fdfdfd] border-[1.2px] ${
+          pile === 'approved' ? 'border-[#018030]' : 'border-[#e12121]'
+        } shadow-[0px_4px_6px_rgba(0,130,54,0.1),0px_2px_4px_rgba(0,0,0,0.05)]`
+        : pile === 'approved'
         ? 'bg-[#ebfbf1]'
         : pile === 'rejected'
         ? 'bg-[#feebeb]'

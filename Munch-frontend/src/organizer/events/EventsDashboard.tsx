@@ -138,12 +138,8 @@ interface Props {
 }
 
 /**
- * A finished event, as the Completed deck draws it.
- *
- * Plain white rather than washed: on a deck where everything is finished
- * the wash says nothing the deck has not already said. What it carries
- * instead is what the event came to - how many agendas ran, how many
- * were asked, how many came - and the way into the record.
+ * Completed host event card: https://www.figma.com/design/WIiWTmyrqW4gmLIypJ5PTj/NEA?node-id=626-6510
+ * White card, green completion badge and a summary action.
  */
 const CompletedCard: React.FC<{
   event: Event;
@@ -156,50 +152,46 @@ const CompletedCard: React.FC<{
   const rate = invited > 0 ? Math.round((came / invited) * 100) : 0;
 
   return (
-    // Washed the colour of its state, like every other card on this
-    // screen. The design draws it plain, but on a page where upcoming is
-    // blue and live is red a finished event reading as white made it the
-    // one state you had to stop and read the word for.
-    <div className="bg-[#e1faea] border-[0.6px] border-[#c1f4d4] rounded-[12px] p-5
-      shadow-[0px_4px_3px_rgba(0,0,0,0.04),0px_2px_2px_rgba(0,0,0,0.03)]">
-      <div className="flex gap-4 items-start">
-        <div className="flex-1 min-w-0">
-          <h3 className="text-[15px] font-medium text-head leading-[22.5px] truncate">
-            {event.title}
-          </h3>
-          <p className="text-[14px] text-subtle leading-5 pt-1">{whenLine(event)}</p>
-          {event.venue && (
-            <p className="text-[14px] text-subtle leading-5 pt-0.5 truncate">
-              {event.venue}
-            </p>
-          )}
-          <div className="flex gap-4 items-center pt-3 text-[12px] text-faint
-            leading-4 flex-wrap">
-            <span>
-              {num(event.session_count ?? 0)} {t({ ne: 'कार्यसूची', en: 'Agendas' })}
-            </span>
-            <span>
-              {num(invited)} {t({ ne: 'निम्तो', en: 'invited' })}
-            </span>
-            <span>
-              {num(came)} {t({ ne: 'आए', en: 'attended' })} · {num(rate)}%
-            </span>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-8 items-end flex-none">
-          <span className="text-[12px] font-medium leading-4 text-[#018030]">
-            {t({ ne: 'सकियो', en: 'Completed' })}
+    <div className="bg-[#fdfdfd] border-[0.6px] border-[#018030] rounded-[12px]
+      px-4 py-3 flex justify-between gap-4
+      shadow-[0px_4px_6px_rgba(0,130,54,0.1),0px_2px_4px_rgba(0,0,0,0.05)]">
+      <div className="flex-1 min-w-0">
+        <h3 className="text-[14px] font-medium text-head leading-5 truncate">
+          {event.title}
+        </h3>
+        <p className="text-[14px] text-subtle leading-5 pt-1">{whenLine(event)}</p>
+        {event.venue && (
+          <p className="text-[14px] text-subtle leading-5 pt-0.5 truncate">
+            {event.venue}
+          </p>
+        )}
+        <div className="flex gap-4 items-center pt-3 text-[12px] text-faint
+          leading-4 flex-wrap">
+          <span>
+            {num(event.session_count ?? 0)} {t({ ne: 'कार्यसूची', en: 'Agendas' })}
           </span>
-          <button
-            type="button"
-            onClick={onReadBack}
-            className="bg-navy-800 rounded-[8px] px-5 py-2.5 text-[16px]
-              font-medium text-white leading-6 hover:bg-navy-900"
-          >
-            {t({ ne: 'सारांश हेर्नुहोस्', en: 'View Summary' })}
-          </button>
+          <span>
+            {num(invited)} {t({ ne: 'निम्तो', en: 'invited' })}
+          </span>
+          <span>
+            {num(came)} {t({ ne: 'आए', en: 'attended' })} · {num(rate)}%
+          </span>
         </div>
+      </div>
+
+      <div className="flex flex-col justify-between items-end self-stretch flex-none">
+        <span className="bg-[#ebfbf1] rounded-[4px] px-2 py-0.5
+          text-[12px] font-medium leading-4 text-[#018030]">
+          {t({ ne: 'सकियो', en: 'Completed' })}
+        </span>
+        <button
+          type="button"
+          onClick={onReadBack}
+          className="bg-[#12386e] rounded-[12px] px-5 py-2 text-[16px]
+            font-medium text-white leading-6 hover:bg-navy-900"
+        >
+          {t({ ne: 'सारांश हेर्नुहोस्', en: 'View Summary' })}
+        </button>
       </div>
     </div>
   );
@@ -307,7 +299,7 @@ export const EventsDashboard: React.FC<Props> = ({
             const head = counts[event.id];
 
             // A finished event is read back rather than worked on, so its
-            // card is the one 626-6477 draws: what it came to, and the
+            // card follows the completed-card design: what it came to, and the
             // way into the record of it. Every other deck keeps the card
             // it had, which is a card about getting an event ready.
             if (deckOf(event) === 'done') {
