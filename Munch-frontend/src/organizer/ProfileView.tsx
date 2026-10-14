@@ -92,6 +92,7 @@ const initialsOf = (name: string, email: string) => {
 export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = () => {
   const { t } = useOrganizer();
   const logout = useAuthStore((v) => v.logout);
+  const setUser = useAuthStore((v) => v.setUser);
   const [profile, setProfile] = useState<ProfileSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -153,7 +154,7 @@ export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = ()
     const parts = name.trim().split(/\s+/);
     try {
       setSaving(true);
-      await apiClient.updateProfile({
+      const saved = await apiClient.updateProfile({
         first_name: parts[0],
         last_name: parts.slice(1).join(' '),
         phone: phone.trim(),
@@ -161,6 +162,17 @@ export const ProfileView: React.FC<{ onNavigate?: (view: string) => void }> = ()
         organization_name: organization.trim(),
         billing_address: address.trim(),
       });
+      /*
+       * Back into the store as well as onto this page.
+       *
+       * This screen reloads its own copy below, which is enough for
+       * this screen. It is not enough for the attendee side, which
+       * reads the store rather than asking again - so a number changed
+       * here stayed changed only here until something happened to
+       * rehydrate it. There is one number on the account; both places
+       * that show it have to be looking at the same one.
+       */
+      if (saved) setUser(saved);
       toast.success(t({ ne: 'प्रोफाइल बचत भयो', en: 'Profile saved' }));
       await load();
     } catch (e: any) {

@@ -391,7 +391,21 @@ class AuthViewSet(viewsets.GenericViewSet):
 
             return Response({
                 **issue_tokens(result['user']),
-                'user': UserSerializer(result['user']).data,
+                # The same shape /users/profile/ returns, deliberately.
+                # This is the one payload that seeds the client's idea of
+                # who it is signed in as, and UserSerializer leaves out
+                # everything the account carries beyond a name - the
+                # telephone number among it. A number set on the host's
+                # profile then read as blank on the attendee's, until
+                # something happened to refetch.
+                #
+                # Not fixed by widening UserSerializer: that one is
+                # nested as an event's `host` and as a participant's
+                # `user`, so a field added there is a field handed to
+                # everybody who can read an event.
+                'user': UserProfileSerializer(
+                    result['user'], context={'request': request}
+                ).data,
                 'google_connected': True
             })
         
