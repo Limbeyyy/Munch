@@ -292,15 +292,26 @@ export const AgendaScreen: React.FC<{
   return (
     <div className="attendee-live-room-agenda min-h-full">
       <div className="flex flex-col gap-1.5">
+        {/* The same row the agenda outside the room draws, and for the
+            same reason it was written that way there.
+
+            Without `flex-none` the chips are squeezed to share the
+            width, and without `whitespace-nowrap` "Day 1" then wraps
+            onto two lines - which is what turned them into circles
+            once there were more than three days. `overflow-x-auto`
+            is what makes a seventh day reachable instead of pushing
+            the page wider than the screen. */}
         {days.length > 1 && (
-          <div className="bg-white px-4 py-2.5 flex gap-4">
+          <div className="bg-white px-4 py-2.5 flex gap-2 overflow-x-auto
+            [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {days.map((one, i) => (
               <button
                 key={one}
                 type="button"
                 aria-pressed={one === onDay}
                 onClick={() => setDay(one)}
-                className={`rounded-full px-3 py-1.5 text-[12px] ${
+                className={`flex-none whitespace-nowrap rounded-full px-3 py-1.5
+                  text-[12px] ${
                   one === onDay
                     ? 'bg-[#12386e] text-white'
                     : 'bg-[#e3ecfd] text-[#393939]'
