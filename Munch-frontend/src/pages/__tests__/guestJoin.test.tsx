@@ -51,10 +51,13 @@ const showLogin = () =>
 /**
  * What a guest is asked for at the door.
  *
- * A name, and nothing else. The telephone number that used to be required
- * was never used for anything - the host decides on the name, the register
- * keeps the name - so it was a box on a form collecting personal data for
- * its own sake.
+ * A name, a number and an address. The last two were dropped once, on
+ * the reasoning that the host decides on the name and the register
+ * keeps the name; they are asked for again because an organizer running
+ * a real event has to be able to reach the people who were in the hall
+ * once it is over.
+ *
+ * None of the three admits anybody. The host still decides.
  */
 describe('the guest door', () => {
   const reachTheDialog = async () => {
@@ -75,11 +78,11 @@ describe('the guest door', () => {
     expect(screen.getByLabelText(/Your Name/)).toBeInTheDocument();
   });
 
-  it('asks for nothing else at all', async () => {
+  it('asks how to reach them afterwards, as well as who they are', async () => {
     await reachTheDialog();
 
-    expect(screen.queryByPlaceholderText(/Phone/i)).toBeNull();
-    expect(screen.queryByLabelText(/phone/i)).toBeNull();
+    expect(screen.getByLabelText(/Phone Number/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Email/)).toBeInTheDocument();
   });
 
   it('will not send a request without a name', async () => {
@@ -88,7 +91,46 @@ describe('the guest door', () => {
     expect(screen.getByRole('button', { name: 'Join' })).toBeDisabled();
   });
 
-  it('sends the code and the name, and the token if there is one', async () => {
+  /* Asked for means asked for: a box nobody has to fill is a box that
+     comes back empty, and an organizer with no number is where this
+     started. */
+  it('waits for all three before it will knock', async () => {
+    await reachTheDialog();
+    const press = () => screen.getByRole('button', { name: 'Join' });
+
+    fireEvent.change(screen.getByLabelText(/Your Name/), {
+      target: { value: 'Bishnu Prasad' },
+    });
+    expect(press()).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/Phone Number/), {
+      target: { value: '9801234567' },
+    });
+    expect(press()).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/Email/), {
+      target: { value: 'bishnu@example.com' },
+    });
+    expect(press()).toBeEnabled();
+  });
+
+  it('does not take an address that is not one', async () => {
+    await reachTheDialog();
+
+    fireEvent.change(screen.getByLabelText(/Your Name/), {
+      target: { value: 'Bishnu Prasad' },
+    });
+    fireEvent.change(screen.getByLabelText(/Phone Number/), {
+      target: { value: '9801234567' },
+    });
+    fireEvent.change(screen.getByLabelText(/Email/), {
+      target: { value: 'bishnu-at-example' },
+    });
+
+    expect(screen.getByRole('button', { name: 'Join' })).toBeDisabled();
+  });
+
+  it('sends the code, the details, and the token if there is one', async () => {
     window.sessionStorage.setItem('guest_token', 'held-token');
     api.guestKnock.mockResolvedValue({
       guest_token: 't', guest: { status: 'pending', full_name: 'Bishnu' },
@@ -99,26 +141,34 @@ describe('the guest door', () => {
     fireEvent.change(screen.getByLabelText(/Your Name/), {
       target: { value: 'Bishnu Prasad' },
     });
+    fireEvent.change(screen.getByLabelText(/Phone Number/), {
+      target: { value: '9801234567' },
+    });
+    fireEvent.change(screen.getByLabelText(/Email/), {
+      target: { value: 'bishnu@example.com' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Join' }));
 
     await waitFor(() => expect(api.guestKnock).toHaveBeenCalledWith(
       expect.objectContaining({
         code: 'ABC123',
         full_name: 'Bishnu Prasad',
+        phone: '9801234567',
+        email: 'bishnu@example.com',
         token: 'held-token',
       })
     ));
     expect(api.guestKnock.mock.calls[0][0].device_id).toMatch(/^[a-f0-9]{48}$/);
   });
 
-  it('says what becomes of the name, because that is the question', async () => {
+  it('says what becomes of the details, because that is the question', async () => {
     const dialog = await reachTheDialog();
 
     expect(dialog).toHaveTextContent(/kept for this event only/);
   });
 });
 
-describe('remembering a name', () => {
+describe('remembering the details', () => {
   const join = jest.fn();
 
   const showDialog = () =>
@@ -130,44 +180,88 @@ describe('remembering a name', () => {
       />
     );
 
-  it('keeps it in this browser when asked to', () => {
-    showDialog();
-
+  const fillAll = () => {
     fireEvent.change(screen.getByLabelText(/Your Name/), {
       target: { value: 'Bishnu Prasad' },
     });
-    fireEvent.click(screen.getByLabelText(/Remember my name/));
-    fireEvent.click(screen.getByRole('button', { name: 'Join' }));
+    fireEvent.change(screen.getByLabelText(/Phone Number/), {
+      target: { value: '9801234567' },
+    });
+    fireEvent.change(screen.getByLabelText(/Email/), {
+      target: { value: 'bishnu@example.com' },
+    });
+  };
 
-    expect(window.localStorage.getItem('manch.guest.name')).toBe('Bishnu Prasad');
+  const remembered = () => ({
+    name: window.localStorage.getItem('manch.guest.name'),
+    phone: window.localStorage.getItem('manch.guest.phone'),
+    email: window.localStorage.getItem('manch.guest.email'),
   });
 
-  it('fills it in next time, so the door is one press', () => {
+  beforeEach(() => join.mockClear());
+
+  it('keeps them in this browser when asked to', () => {
+    showDialog();
+
+    fillAll();
+    fireEvent.click(screen.getByLabelText(/Remember my details/));
+    fireEvent.click(screen.getByRole('button', { name: 'Join' }));
+
+    expect(remembered()).toEqual({
+      name: 'Bishnu Prasad',
+      phone: '9801234567',
+      email: 'bishnu@example.com',
+    });
+  });
+
+  it('fills them in next time, so the door is one press', () => {
     window.localStorage.setItem('manch.guest.name', 'Bishnu Prasad');
+    window.localStorage.setItem('manch.guest.phone', '9801234567');
+    window.localStorage.setItem('manch.guest.email', 'bishnu@example.com');
 
     showDialog();
 
     expect(screen.getByLabelText(/Your Name/)).toHaveValue('Bishnu Prasad');
-    expect(screen.getByLabelText(/Remember my name/)).toBeChecked();
+    expect(screen.getByLabelText(/Phone Number/)).toHaveValue('9801234567');
+    expect(screen.getByLabelText(/Email/)).toHaveValue('bishnu@example.com');
+    expect(screen.getByLabelText(/Remember my details/)).toBeChecked();
+    // One press, and that press works.
+    expect(screen.getByRole('button', { name: 'Join' })).toBeEnabled();
   });
 
-  it('forgets it again when the box is cleared', () => {
+  /* All three, not just the name: half-forgotten details are worse than
+     none, because the next door silently sends a stale number. */
+  it('forgets all of them when the box is cleared', () => {
     window.localStorage.setItem('manch.guest.name', 'Bishnu Prasad');
+    window.localStorage.setItem('manch.guest.phone', '9801234567');
+    window.localStorage.setItem('manch.guest.email', 'bishnu@example.com');
     showDialog();
 
-    fireEvent.click(screen.getByLabelText(/Remember my name/));
+    fireEvent.click(screen.getByLabelText(/Remember my details/));
     fireEvent.click(screen.getByRole('button', { name: 'Join' }));
 
-    expect(window.localStorage.getItem('manch.guest.name')).toBeNull();
+    expect(remembered()).toEqual({ name: null, phone: null, email: null });
   });
 
-  it('keeps it here and nowhere else: the request carries only the name', () => {
-    window.localStorage.setItem('manch.guest.name', 'Bishnu Prasad');
+  it('hands all three on, trimmed', () => {
     showDialog();
 
+    fireEvent.change(screen.getByLabelText(/Your Name/), {
+      target: { value: '  Bishnu Prasad  ' },
+    });
+    fireEvent.change(screen.getByLabelText(/Phone Number/), {
+      target: { value: ' 9801234567 ' },
+    });
+    fireEvent.change(screen.getByLabelText(/Email/), {
+      target: { value: ' bishnu@example.com ' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Join' }));
 
-    expect(join).toHaveBeenCalledWith('Bishnu Prasad');
+    expect(join).toHaveBeenCalledWith({
+      name: 'Bishnu Prasad',
+      phone: '9801234567',
+      email: 'bishnu@example.com',
+    });
   });
 });
 
@@ -224,11 +318,15 @@ describe('arriving with the code already', () => {
     expect(api.guestKnock).not.toHaveBeenCalled();
   });
 
-  it('prefills a remembered name for a QR arrival', async () => {
+  it('prefills remembered details for a QR arrival', async () => {
     window.localStorage.setItem('manch.guest.name', 'Bishnu Prasad');
+    window.localStorage.setItem('manch.guest.phone', '9801234567');
+    window.localStorage.setItem('manch.guest.email', 'bishnu@example.com');
     showWithLink();
 
     expect(await screen.findByLabelText(/Your Name/)).toHaveValue('Bishnu Prasad');
+    expect(screen.getByLabelText(/Phone Number/)).toHaveValue('9801234567');
+    expect(screen.getByLabelText(/Email/)).toHaveValue('bishnu@example.com');
   });
 
   it('leaves signing in right there for anybody who has an account', async () => {

@@ -68,6 +68,7 @@ def notify_host_of_guest(guest):
                 'guest_id': str(guest.id),
                 'full_name': guest.full_name,
                 'phone': guest.phone,
+                'email': guest.email,
                 'created_at': guest.created_at.isoformat(),
             },
         )
@@ -297,7 +298,17 @@ def guest_knock(request):
         again.left_at = None
         if device_id:
             again.device_id = device_id
-        again.save(update_fields=['status', 'left_at', 'device_id', 'updated_at'])
+        # What they typed at the door just now, rather than what the row
+        # happened to hold from an earlier afternoon: a number that has
+        # changed since is a number the organizer cannot reach them on.
+        # An empty box never overwrites something already known.
+        if data.get('phone'):
+            again.phone = data['phone'].strip()
+        if data.get('email'):
+            again.email = data['email'].strip()
+        again.save(update_fields=[
+            'status', 'left_at', 'device_id', 'phone', 'email', 'updated_at',
+        ])
         notify_host_of_guest(again)
         logger.info(
             f"Guest {again.full_name} asked to rejoin {event.code} by name"
@@ -316,6 +327,8 @@ def guest_knock(request):
         event=event,
         full_name=data['full_name'],
         device_id=device_id,
+        phone=(data.get('phone') or '').strip(),
+        email=(data.get('email') or '').strip(),
     )
     notify_host_of_guest(guest)
 

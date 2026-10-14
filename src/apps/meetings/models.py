@@ -487,12 +487,20 @@ class GuestAttendee(models.Model):
     # A random browser-held credential, not a hardware fingerprint. It
     # lets an already-approved guest return from the same browser.
     device_id = models.CharField(max_length=64, blank=True, default='')
-    # Asked for once, and no longer. A name is what the host needs to
-    # decide whether to let somebody in, and it is all the register keeps;
-    # a telephone number was a piece of personal data collected for no
-    # purpose either of them had. Kept on the model, blank, so the rows
-    # that already carry one are not rewritten by this.
+    # How to reach somebody who was in the hall.
+    #
+    # Both were dropped once, on the reasoning that a name is all the
+    # host needs to decide and all the register keeps. They are asked
+    # for again because an organizer running a real event has to be able
+    # to contact the people who attended it - for the papers, for a
+    # follow-up, for the attendance record a Nepali institution is
+    # expected to produce afterwards.
+    #
+    # Both stay blank-able. Rows written while the door asked for
+    # neither still load, and the admission rules do not consult either:
+    # what gets somebody in is the host saying yes.
     phone = models.CharField(max_length=32, blank=True, default='')
+    email = models.EmailField(blank=True, default='')
 
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     decided_by = models.ForeignKey(

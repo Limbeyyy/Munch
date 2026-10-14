@@ -46,6 +46,11 @@ const Fixed: React.FC<{ label: string; value: string }> = ({ label, value }) => 
  * The address is not theirs to change. It is what the account is
  * identified by and what an invitation is matched against, so it is
  * read only here and the server refuses it as well.
+ *
+ * The telephone number is theirs and starts empty: signing in with
+ * Google hands over a name, a picture and an address, and never a
+ * number. So this is the only place it can come from, and an organizer
+ * who needs to reach somebody about the day has nowhere else to look.
  */
 export const ProfileInformation: React.FC<{ onBack: () => void }> = ({
   onBack,
@@ -55,6 +60,7 @@ export const ProfileInformation: React.FC<{ onBack: () => void }> = ({
 
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(nameOf(user));
+  const [phone, setPhone] = useState(user?.phone ?? '');
   /** The chosen file, and a local view of it, until it is sent. */
   const [picked, setPicked] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -62,12 +68,15 @@ export const ProfileInformation: React.FC<{ onBack: () => void }> = ({
   const picker = useRef<HTMLInputElement>(null);
 
   useEffect(() => { setName(nameOf(user)); }, [user]);
+  useEffect(() => { setPhone(user?.phone ?? ''); }, [user]);
 
   // Released when it is replaced or the screen goes, or every picture
   // somebody tries stays held in memory until the tab is closed.
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
-  const changed = picked !== null || name.trim() !== nameOf(user).trim();
+  const nameChanged = name.trim() !== nameOf(user).trim();
+  const phoneChanged = phone.trim() !== (user?.phone ?? '').trim();
+  const changed = picked !== null || nameChanged || phoneChanged;
 
   const choose = (file: File) => {
     setPicked(file);
@@ -82,8 +91,14 @@ export const ProfileInformation: React.FC<{ onBack: () => void }> = ({
     try {
       let saved = user;
       if (picked) saved = await apiClient.uploadAvatar(picked);
-      if (name.trim() !== nameOf(user).trim()) {
-        saved = await apiClient.updateProfile(split(name));
+      // One write for whatever the form changed, rather than one per
+      // field: two requests would leave the account half-saved if the
+      // second failed.
+      if (nameChanged || phoneChanged) {
+        saved = await apiClient.updateProfile({
+          ...(nameChanged ? split(name) : {}),
+          ...(phoneChanged ? { phone: phone.trim() } : {}),
+        });
       }
       if (saved) setUser(saved);
       setPicked(null);
@@ -179,6 +194,33 @@ export const ProfileInformation: React.FC<{ onBack: () => void }> = ({
           <Fixed label={t({ ne: 'पूरा नाम', en: 'Full Name' })} value={who} />
         )}
 
+        {editing ? (
+          <div className="px-3 py-1 border-b-[0.65px] border-[#ccc]
+            flex flex-col gap-1">
+            <label
+              htmlFor="manch-phone"
+              className="py-0.5 capitalize text-[12px] leading-4 text-[#959595]"
+            >
+              {t({ ne: 'फोन नम्बर', en: 'Phone Number' })}
+            </label>
+            <input
+              id="manch-phone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="py-1 text-[14px] text-[#101010] bg-transparent
+                outline-none"
+            />
+          </div>
+        ) : (
+          <Fixed
+            label={t({ ne: 'फोन नम्बर', en: 'Phone Number' })}
+            value={user?.phone ?? ''}
+          />
+        )}
+
         {/* Never editable, here or on the server. */}
         <Fixed
           label={t({ ne: 'इमेल ठेगाना', en: 'Email address' })}
@@ -187,9 +229,10 @@ export const ProfileInformation: React.FC<{ onBack: () => void }> = ({
 
         <p className="pt-1 text-[13px] leading-[20.8px] text-[#94a3b8]">
           {t({
-            ne: 'इमेल ठेगाना तपाईंको खाता हो, त्यसैले यहाँ बदल्न मिल्दैन। नाम र तस्बिर तपाईंकै हुन्।',
+            ne: 'इमेल ठेगाना तपाईंको खाता हो, त्यसैले यहाँ बदल्न मिल्दैन। नाम, तस्बिर र फोन नम्बर तपाईंकै हुन्।',
             en: 'Your email address is what the account is, so it cannot be'
-              + ' changed here. The name and photo are yours to set.',
+              + ' changed here. The name, photo and phone number are yours'
+              + ' to set.',
           })}
         </p>
       </section>

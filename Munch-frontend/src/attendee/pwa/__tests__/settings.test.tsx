@@ -189,8 +189,13 @@ describe('profile information', () => {
 
     expect(screen.getByText('suminmaharjan@gmail.com')).toBeInTheDocument();
     expect(screen.queryByLabelText(/Email/)).toBeNull();
-    // The name is the only thing open.
-    expect(screen.getAllByRole('textbox')).toHaveLength(1);
+
+    // The name and the number are open, and nothing else is. Counted
+    // rather than named: a third box appearing here is the thing worth
+    // being told about, and asserting on the two by name would not say.
+    expect(screen.getAllByRole('textbox').map((box) => box.id)).toEqual([
+      'manch-full-name', 'manch-phone',
+    ]);
   });
 
   it('comes back', async () => {

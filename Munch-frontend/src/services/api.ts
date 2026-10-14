@@ -1056,6 +1056,9 @@ class ApiClient {
   async guestKnock(data: {
     code: string;
     full_name: string;
+    /** How the organizer reaches them after the day. Neither admits them. */
+    phone?: string;
+    email?: string;
     token?: string;
     device_id?: string;
   }): Promise<GuestSession> {

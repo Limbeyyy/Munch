@@ -4,6 +4,8 @@ export interface User {
   email: string;
   first_name: string;
   last_name: string;
+  /** Theirs to set. Google supplies no number, so it is blank until asked. */
+  phone?: string;
   avatar_url?: string;
   is_verified: boolean;
   created_at: string;
@@ -436,7 +438,9 @@ export type GuestStatus = 'pending' | 'admitted' | 'denied' | 'left';
 export interface GuestAttendee {
   id: string;
   full_name: string;
+  /** Left at the door so the organizer can reach them afterwards. */
   phone: string;
+  email: string;
   status: GuestStatus;
   created_at: string;
   decided_at: string | null;

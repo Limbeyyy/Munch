@@ -166,13 +166,18 @@ class ChatSettingsSerializer(serializers.Serializer):
 
 
 class GuestJoinSerializer(serializers.Serializer):
-    """A guest knocking on a event: a code and a name.
+    """A guest knocking on a event: a code, a name, and how to reach them.
 
-    A telephone number used to be required as well. Nothing was ever done
-    with it - the host decides on the name, the register keeps the name -
-    so it was personal data collected because a form had a box for it. The
-    field is still accepted so an older client is not broken by this, and
-    is ignored.
+    The telephone number and the address were dropped once and are asked
+    for again: an organizer running a real event has to be able to
+    contact the people who were in the hall afterwards. They are written
+    down and nothing else - neither decides anything. What gets somebody
+    in is the host saying yes, as before.
+
+    Both stay optional here even though the door asks for them, so a
+    client that has not been updated still works and a guest is never
+    turned away over a form field. Whether to insist is the door's
+    business, not the wire's.
 
     ``token`` is what a guest already inside holds. It is how somebody
     whose browser reloaded gets back to their seat without asking the host
@@ -182,6 +187,7 @@ class GuestJoinSerializer(serializers.Serializer):
     code = serializers.CharField(max_length=20)
     full_name = serializers.CharField(max_length=120)
     phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
     token = serializers.CharField(required=False, allow_blank=True)
     device_id = serializers.CharField(
         max_length=64, required=False, allow_blank=True
@@ -200,7 +206,10 @@ class GuestJoinSerializer(serializers.Serializer):
 class GuestAttendeeSerializer(serializers.ModelSerializer):
     class Meta:
         model = GuestAttendee
-        fields = ['id', 'full_name', 'phone', 'status', 'created_at', 'decided_at']
+        fields = [
+            'id', 'full_name', 'phone', 'email', 'status',
+            'created_at', 'decided_at',
+        ]
         read_only_fields = fields
 
 

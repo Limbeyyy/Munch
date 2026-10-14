@@ -1,7 +1,27 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-/** Where a name is kept when somebody asks for it to be. */
+/** Where the details are kept when somebody asks for them to be. */
 const REMEMBERED = 'manch.guest.name';
+const REMEMBERED_PHONE = 'manch.guest.phone';
+const REMEMBERED_EMAIL = 'manch.guest.email';
+
+/** Storage a browser may refuse; never a reason to refuse a guest. */
+const recall = (key: string) => {
+  try {
+    return localStorage.getItem(key) ?? '';
+  } catch {
+    return '';
+  }
+};
+
+/*
+ * Enough of an address to be worth keeping.
+ *
+ * Deliberately loose. The server validates properly, and a door is the
+ * wrong place to argue with somebody about their own email - this only
+ * catches the slip where a whole field went in the wrong box.
+ */
+const looksLikeAnAddress = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
 interface Props {
   /** The code they typed, shown back so they can see it is the right one. */
@@ -9,55 +29,59 @@ interface Props {
   /** Whether the request is with the host already. */
   busy?: boolean;
   onCancel: () => void;
-  onJoin: (name: string) => void;
+  onJoin: (details: { name: string; phone: string; email: string }) => void;
 }
 
 /**
- * What a guest is asked for at the door: their name.
+ * What a guest is asked for at the door: a name, a number, an address.
  *
- * That is the whole of it. A telephone number used to be required as well
- * and was never used for anything - the host decides on the name, the
- * register keeps the name - so it was a box on a form collecting personal
- * data for its own sake.
+ * The number and the address were dropped once, on the reasoning that
+ * the host decides on the name and the register keeps the name. They
+ * are asked for again because an organizer running a real event has to
+ * be able to reach the people who were in the hall once it is over.
  *
- * The name reaches the host as a request to come in, and is kept for as
- * long as the event lasts. Afterwards nothing about the person remains
- * except their name on that event's attendance, which is what attendance
- * is. "Remember my name" keeps it in this browser and nowhere else, so the
- * next event does not ask again.
+ * None of the three admits anybody. The name reaches the host as a
+ * request to come in and the host decides, exactly as before; the other
+ * two are written down beside it and consulted by nothing.
+ *
+ * All three are kept for as long as the event lasts and go with it when
+ * it ends, leaving the name on that event's attendance, which is what
+ * attendance is. "Remember me" keeps them in this browser and nowhere
+ * else, so the next event does not ask again.
  */
 export const GuestJoinDialog: React.FC<Props> = ({
   eventCode, busy, onCancel, onJoin,
 }) => {
-  const [name, setName] = useState(() => {
-    try {
-      return localStorage.getItem(REMEMBERED) ?? '';
-    } catch {
-      // A browser that refuses storage is not a reason to refuse a guest.
-      return '';
-    }
-  });
-  const [remember, setRemember] = useState(() => {
-    try {
-      return !!localStorage.getItem(REMEMBERED);
-    } catch {
-      return false;
-    }
-  });
+  const [name, setName] = useState(() => recall(REMEMBERED));
+  const [phone, setPhone] = useState(() => recall(REMEMBERED_PHONE));
+  const [email, setEmail] = useState(() => recall(REMEMBERED_EMAIL));
+  const [remember, setRemember] = useState(() => !!recall(REMEMBERED));
 
   const box = useRef<HTMLInputElement | null>(null);
   useEffect(() => { box.current?.focus(); }, []);
 
+  const typed = name.trim();
+  const typedPhone = phone.trim();
+  const typedEmail = email.trim();
+  const ready = typed.length >= 2
+    && typedPhone.length >= 7
+    && looksLikeAnAddress(typedEmail);
+
   const join = () => {
-    const typed = name.trim();
-    if (typed.length < 2 || busy) return;
+    if (!ready || busy) return;
     try {
-      if (remember) localStorage.setItem(REMEMBERED, typed);
-      else localStorage.removeItem(REMEMBERED);
+      if (remember) {
+        localStorage.setItem(REMEMBERED, typed);
+        localStorage.setItem(REMEMBERED_PHONE, typedPhone);
+        localStorage.setItem(REMEMBERED_EMAIL, typedEmail);
+      } else {
+        [REMEMBERED, REMEMBERED_PHONE, REMEMBERED_EMAIL]
+          .forEach((key) => localStorage.removeItem(key));
+      }
     } catch {
       // Remembering is a convenience; not being able to is not a failure.
     }
-    onJoin(typed);
+    onJoin({ name: typed, phone: typedPhone, email: typedEmail });
   };
 
   return (
@@ -111,6 +135,40 @@ export const GuestJoinDialog: React.FC<Props> = ({
             />
           </label>
 
+          <label className="flex flex-col gap-2">
+            <span className="text-[20px] font-medium text-black tracking-[-0.1px] leading-[1.4]">
+              Phone Number
+            </span>
+            <input
+              type="tel"
+              inputMode="tel"
+              value={phone}
+              autoComplete="tel"
+              onChange={(e) => setPhone(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') join(); }}
+              className="w-full bg-[#f9fafb] border border-[#e5e7eb] rounded-[12px]
+                px-[14px] py-3 text-[16px] text-[#101010] leading-6
+                focus:outline-none focus:ring-2 focus:ring-navy-500"
+            />
+          </label>
+
+          <label className="flex flex-col gap-2">
+            <span className="text-[20px] font-medium text-black tracking-[-0.1px] leading-[1.4]">
+              Email
+            </span>
+            <input
+              type="email"
+              inputMode="email"
+              value={email}
+              autoComplete="email"
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') join(); }}
+              className="w-full bg-[#f9fafb] border border-[#e5e7eb] rounded-[12px]
+                px-[14px] py-3 text-[16px] text-[#101010] leading-6
+                focus:outline-none focus:ring-2 focus:ring-navy-500"
+            />
+          </label>
+
           <label className="flex items-center gap-2.5 cursor-pointer">
             <input
               type="checkbox"
@@ -119,13 +177,13 @@ export const GuestJoinDialog: React.FC<Props> = ({
               className="w-5 h-5 rounded-[5px] border-2 border-[#dcdcde] accent-navy-800"
             />
             <span className="text-[16px] leading-[22px]">
-              Remember my name for future events
+              Remember my details for future events
             </span>
           </label>
 
           <button
             onClick={join}
-            disabled={busy || name.trim().length < 2}
+            disabled={busy || !ready}
             className="w-full bg-navy-800 hover:bg-navy-700 text-white rounded-[12px]
               px-6 py-3.5 text-[16px] font-medium leading-6
               disabled:opacity-50 disabled:cursor-not-allowed"
@@ -146,8 +204,9 @@ export const GuestJoinDialog: React.FC<Props> = ({
           </p>
 
           <p className="text-[13px] text-[#6E7C8E] leading-[18px]">
-            Your name is kept for this event only. When it ends, all that
-            remains is your name on its attendance.
+            Your details are kept for this event only, so the organizer can
+            reach you about it. When it ends, all that remains is your name
+            on its attendance.
           </p>
         </div>
       </div>

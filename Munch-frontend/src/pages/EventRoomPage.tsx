@@ -590,6 +590,7 @@ const EventRoomInner: React.FC = () => {
             id: data.guest_id,
             full_name: data.full_name,
             phone: data.phone,
+            email: data.email ?? '',
             status: 'pending',
             created_at: data.created_at,
             decided_at: null,

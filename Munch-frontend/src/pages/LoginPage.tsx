@@ -99,9 +99,11 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const handleGuestJoin = async (typedName: string) => {
+  const handleGuestJoin = async (details: {
+    name: string; phone: string; email: string;
+  }) => {
     const code = guestCode.trim().toUpperCase();
-    const name = typedName.trim();
+    const name = details.name.trim();
 
     if (!code) return toast.error('Enter the event code');
     if (name.length < 2) return toast.error('Enter your name');
@@ -111,6 +113,10 @@ export const LoginPage: React.FC = () => {
       const session = await apiClient.guestKnock({
         code: code,
         full_name: name,
+        // How the organizer reaches them about the day afterwards.
+        // Neither has any part in whether they are let in.
+        phone: details.phone.trim(),
+        email: details.email.trim(),
         // What a guest already inside holds, if this is a reload rather
         // than a new arrival: it puts them back in their seat without the
         // host being asked twice.
