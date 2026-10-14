@@ -73,12 +73,35 @@ describe('what a free account is told', () => {
     expect(screen.queryByText('Get Pro Access')).toBeNull();
   });
 
-  /** Somebody already reading the plans does not need sending to them. */
+  /*
+   * Somebody already reading the plans does not need sending to them.
+   *
+   * The same free account is shown on another screen first, and only
+   * then moved to the billing one. Rendering the billing screen on its
+   * own proves nothing: the answer from the server is a promise, and
+   * "the banner is absent" is true for a moment on every screen there
+   * is - so a test that only looks once is passed by a shell that has
+   * simply not heard back yet.
+   */
   it('leaves the billing screen alone', async () => {
     onPlan(false);
-    shell('subscription');
+    const { rerender } = shell('events');
 
-    await waitFor(() => expect(api.getMyRoles).toHaveBeenCalled());
+    // Heard back, and saying so.
+    await screen.findByText(BANNER);
+
+    rerender(
+      <OrganizerProvider>
+        <OrganizerShell
+          view="subscription"
+          onNavigate={jest.fn()}
+          onOpenA11y={jest.fn()}
+        >
+          <p>the screen</p>
+        </OrganizerShell>
+      </OrganizerProvider>
+    );
+
     expect(screen.queryByText(BANNER)).toBeNull();
     expect(screen.queryByText('Get Pro Access')).toBeNull();
   });
