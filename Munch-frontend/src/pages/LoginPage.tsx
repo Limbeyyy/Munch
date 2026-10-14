@@ -9,6 +9,7 @@ import {
   googleRedirectUri, oauthOrigin, whyGoogleWillRefuse,
 } from '../services/oauthOrigin';
 import { getGuestDeviceId } from '../services/guestDevice';
+import { onDesktop } from '../services/device';
 
 export const LoginPage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -35,6 +36,14 @@ export const LoginPage: React.FC = () => {
   useEffect(() => {
     const scanned = searchParams.get('join');
     if (scanned) {
+      // A laptop following an event link is not a guest: guest entry is
+      // for a phone, and the dialog would only collect a name and then
+      // be refused. Told why instead, with the sign-in that does work
+      // here still on the page behind it.
+      if (onDesktop()) {
+        navigate('/guest/mobile-only', { replace: true });
+        return;
+      }
       setGuestCode(scanned.toUpperCase());
       setShowGuest(true);
       setArrivedByLink(true);
@@ -45,7 +54,7 @@ export const LoginPage: React.FC = () => {
         // Link navigation still works without session storage.
       }
     }
-  }, [searchParams]);
+  }, [searchParams, navigate]);
 
   useEffect(() => {
     if (searchParams.has('guest-mobile-only')) setShowGuest(true);
@@ -222,7 +231,9 @@ export const LoginPage: React.FC = () => {
 
         {!showGuest ? (
           <button
-            onClick={() => setShowGuest(true)}
+            onClick={() => (onDesktop()
+              ? navigate('/guest/mobile-only', { replace: true })
+              : setShowGuest(true))}
             className="w-full border border-white/30 hover:bg-white/10 text-white font-semibold py-3 px-4 rounded-lg"
           >
             Join with a event code

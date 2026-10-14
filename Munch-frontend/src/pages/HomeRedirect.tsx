@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { apiClient } from '../services/api';
+import { onDesktop } from '../services/device';
 import { useAuthStore } from '../store/authStore';
 import { OrganizerProvider } from '../organizer/i18n';
 import type { UserRoles } from '../types';
@@ -47,22 +48,6 @@ export const markFreshSignIn = () => {
   }
 };
 
-/**
- * Whether this arrival follows a sign-in.
- *
- * A pure read. Clearing the mark here instead would make the answer depend
- * on how many times the effect happens to run, and React runs them twice
- * in development. The mark is spent when the decision is made, in
- * `settle`, not when it is taken.
- */
-const isFreshSignIn = (): boolean => {
-  try {
-    return window.sessionStorage.getItem(FRESH_KEY) === '1';
-  } catch {
-    return false;
-  }
-};
-
 /** The decision has been made, so the mark has done its job. */
 const clearFreshSignIn = () => {
   try {
@@ -72,38 +57,24 @@ const clearFreshSignIn = () => {
   }
 };
 
-const rememberedPortal = (): Portal | null => {
-  try {
-    const saved = window.localStorage.getItem(CHOICE_KEY);
-    return saved === 'host' || saved === 'attendee' ? saved : null;
-  } catch {
-    return null;
-  }
-};
+/*
+ * Nothing reads the remembered portal any more.
+ *
+ * It is still written, because the two portals are still two places and
+ * knowing which somebody last worked in may matter again. It is no
+ * longer consulted on the way in: the device decides that, and a
+ * preference the routes would immediately overturn is not a preference.
+ */
 
 /**
  * Whether this is a machine somebody sits at.
  *
- * A mouse is what actually separates a desk from a hand: a pointer fine
- * enough to aim and able to hover. Screen width is the wrong question -
- * a narrowed window on a laptop is still a laptop, and a tablet held in
- * landscape is still not one. A touchscreen laptop reports a fine
- * primary pointer, which is the answer we want from it.
- *
- * The user agent is only the fallback, for a browser too old to answer.
+ * Kept under this name because it is what this module's callers and
+ * their tests already say; the answer itself now comes from the one
+ * place that decides it, so the routes and this redirect cannot
+ * disagree about what somebody is holding.
  */
-export const looksLikeDesktop = (): boolean => {
-  try {
-    const fine = window.matchMedia?.('(pointer: fine)');
-    const hovers = window.matchMedia?.('(hover: hover)');
-    if (fine && hovers) return fine.matches && hovers.matches;
-  } catch {
-    // Fall through to the user agent.
-  }
-  return !/Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(
-    window.navigator?.userAgent ?? ''
-  );
-};
+export const looksLikeDesktop = (): boolean => onDesktop();
 
 /**
  * Which portal this arrival should land in.
@@ -118,9 +89,13 @@ export const looksLikeDesktop = (): boolean => {
  * because the alternative is a portal with nothing in it.
  */
 export const portalFor = (roles: UserRoles, desktop: boolean): Portal => {
+  // The device decides, both ways. It used to decide only one: a phone
+  // sent somebody who hosts and nothing else to the host portal, on the
+  // reasoning that the attendee app would be empty for them. But the
+  // host portal is drawn for a desk, so what they actually got was a
+  // dashboard they could not use - and now that /organizer turns a
+  // phone away, landing them there would be a redirect loop.
   if (desktop) return 'host';
-  if (roles.portals.includes('attendee')) return 'attendee';
-  if (roles.portals.length > 0) return roles.portals[0] as Portal;
   return 'attendee';
 };
 
@@ -151,26 +126,23 @@ const HomeRedirectInner: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
-    const justSignedIn = isFreshSignIn();
 
     apiClient
       .getMyRoles()
       .then(async (found) => {
         if (cancelled) return;
 
-        // Keep a valid preference for ordinary visits, but let a room
-        // already in progress take precedence over the dashboard.
-        let portal: Portal;
-        if (!justSignedIn) {
-          const saved = rememberedPortal();
-          if (saved && found.portals.includes(saved)) {
-            portal = saved;
-          } else {
-            portal = portalFor(found, looksLikeDesktop());
-          }
-        } else {
-          portal = portalFor(found, looksLikeDesktop());
-        }
+        /*
+         * The device, and only the device.
+         *
+         * A remembered choice used to win on an ordinary visit, which
+         * meant somebody who had once picked the attendee app was sent
+         * to /app from their laptop ever after. /app now turns a laptop
+         * away, so that preference would bounce them straight back -
+         * and a preference that cannot be honoured is not one.
+         */
+        const desktop = looksLikeDesktop();
+        const portal: Portal = portalFor(found, desktop);
 
         let active: Awaited<ReturnType<typeof apiClient.getActiveEvents>> = [];
         try {
@@ -194,8 +166,17 @@ const HomeRedirectInner: React.FC = () => {
           ?? active[0];
 
         if (live) {
-          if (String(live.host?.id ?? '') === String(userId ?? '')) {
+          if (desktop && String(live.host?.id ?? '') === String(userId ?? '')) {
             if (!cancelled) settle('host', `/event/${live.code}`);
+          } else if (!desktop) {
+            // A phone goes to the app, which finds the running event
+            // itself. The host's room is drawn for a desk.
+            try {
+              sessionStorage.setItem('manch.pending_live_event', live.code);
+            } catch {
+              // The attendee room will select the first live event.
+            }
+            if (!cancelled) settle('attendee');
           } else if (found.portals.includes('attendee')) {
             try {
               sessionStorage.setItem('manch.pending_live_event', live.code);

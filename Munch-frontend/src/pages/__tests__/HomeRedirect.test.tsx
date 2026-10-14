@@ -125,17 +125,21 @@ describe('signing in', () => {
   });
 
   /**
-   * The device is a guess about what somebody came to do. It cannot
-   * hand them a role they do not hold.
+   * A phone goes to the app even for somebody who only hosts.
+   *
+   * This used to go the other way, on the reasoning that the attendee
+   * app would be empty for them. But the host portal is drawn for a
+   * desk - and now that /organizer turns a phone away, sending them
+   * there would be a redirect loop rather than a dashboard.
    */
-  it('does not send a host-only account to the attendee app on a phone', async () => {
+  it('sends a host-only account to the app on a phone', async () => {
     usingA('finger');
     (apiClient.getMyRoles as jest.Mock).mockResolvedValue(roles());
     markFreshSignIn();
 
     show();
 
-    expect(await screen.findByText('organizer portal')).toBeInTheDocument();
+    expect(await screen.findByText('attendee portal')).toBeInTheDocument();
   });
 
   /**
@@ -269,8 +273,15 @@ describe('an account that holds neither role yet', () => {
 });
 
 describe('arriving without having just signed in', () => {
-  /** Somebody who switched should not be sent back by their device. */
-  it('honours what they last chose over the device', async () => {
+  /*
+   * The device decides, even against what they last chose.
+   *
+   * A remembered choice used to win here. It cannot any more: /app
+   * turns a laptop away, so honouring "attendee" on a laptop would
+   * bounce them straight back - and a preference the routes overturn
+   * on arrival is not a preference, it is a loop.
+   */
+  it('lets the device overrule what they last chose', async () => {
     (apiClient.getMyRoles as jest.Mock).mockResolvedValue(
       roles({ is_attendee: true, portals: ['host', 'attendee'] })
     );
@@ -278,7 +289,7 @@ describe('arriving without having just signed in', () => {
 
     show();
 
-    expect(await screen.findByText('attendee portal')).toBeInTheDocument();
+    expect(await screen.findByText('organizer portal')).toBeInTheDocument();
   });
 
   it('ignores a remembered choice that no longer applies', async () => {

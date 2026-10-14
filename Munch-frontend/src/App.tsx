@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import { onDesktop } from './services/device';
 import { useAuthStore } from './store/authStore';
 import { apiClient } from './services/api';
 import { LoginPage } from './pages/LoginPage';
@@ -8,6 +9,7 @@ import { PricingPage } from './pages/PricingPage';
 import { OrganizerPage } from './pages/OrganizerPage';
 import { AttendeePage } from './pages/AttendeePage';
 import { HomeRedirect } from './pages/HomeRedirect';
+import { GuestMobileOnlyPage } from './pages/GuestMobileOnlyPage';
 import { GuestWaitingPage } from './pages/GuestWaitingPage';
 import { GuestEventPage } from './pages/GuestEventPage';
 import { EventRoomPage } from './pages/EventRoomPage';
@@ -77,6 +79,38 @@ const HostRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return allowed ? <>{children}</> : <Navigate to="/" replace />;
 };
 
+/**
+ * A route that belongs to one kind of device.
+ *
+ * The home redirect already chose a portal from the device, but it only
+ * ran on "/" - so typing /app on a laptop, or /organizer on a phone,
+ * walked straight past it into a screen drawn for the other thing. The
+ * decision belongs on the routes, where every way in passes through it.
+ *
+ * `replace`, so the back button does not bounce between the two.
+ */
+export const DeviceRoute: React.FC<{
+  want: 'desktop' | 'mobile';
+  children: React.ReactNode;
+}> = ({ want, children }) => {
+  const desktop = onDesktop();
+  if (want === 'desktop' && !desktop) return <Navigate to="/app" replace />;
+  if (want === 'mobile' && desktop) return <Navigate to="/organizer" replace />;
+  return <>{children}</>;
+};
+
+/**
+ * Guest entry, which is for a phone and nothing else.
+ *
+ * A guest has no account to sign into and no dashboard to be sent to,
+ * so there is nowhere to bounce them: they are told why instead, and
+ * offered the sign-in that does work on a laptop.
+ */
+export const GuestRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  if (onDesktop()) return <Navigate to="/guest/mobile-only" replace />;
+  return <>{children}</>;
+};
+
 const EventLinkRedirect: React.FC = () => {
   const { eventCode = '' } = useParams<{ eventCode: string }>();
   return <Navigate to={`/login?join=${encodeURIComponent(eventCode)}`} replace />;
@@ -100,24 +134,35 @@ function App() {
 
           {/* Guests: no account, no dashboard */}
           <Route path="/events/:eventCode" element={<EventLinkRedirect />} />
-          <Route path="/guest/waiting" element={<GuestWaitingPage />} />
-          <Route path="/guest/event" element={<GuestEventPage />} />
+          <Route path="/guest/mobile-only" element={<GuestMobileOnlyPage />} />
+          <Route
+            path="/guest/waiting"
+            element={<GuestRoute><GuestWaitingPage /></GuestRoute>}
+          />
+          <Route
+            path="/guest/event"
+            element={<GuestRoute><GuestEventPage /></GuestRoute>}
+          />
           <Route
             path="/organizer"
             element={
-              <ProtectedRoute>
-                <HostRoute>
-                  <OrganizerPage />
-                </HostRoute>
-              </ProtectedRoute>
+              <DeviceRoute want="desktop">
+                <ProtectedRoute>
+                  <HostRoute>
+                    <OrganizerPage />
+                  </HostRoute>
+                </ProtectedRoute>
+              </DeviceRoute>
             }
           />
           <Route
             path="/app"
             element={
-              <ProtectedRoute>
-                <AttendeePage />
-              </ProtectedRoute>
+              <DeviceRoute want="mobile">
+                <ProtectedRoute>
+                  <AttendeePage />
+                </ProtectedRoute>
+              </DeviceRoute>
             }
           />
           <Route

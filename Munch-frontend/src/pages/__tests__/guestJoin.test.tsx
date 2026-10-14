@@ -295,12 +295,20 @@ describe('arriving with the code already', () => {
       .toBeInTheDocument();
   });
 
-  it('allows desktop visitors to open the guest join form from an event link', async () => {
+  /*
+   * A laptop following an event link is not a guest.
+   *
+   * Guest entry is for a phone. This used to open the dialog here,
+   * which collected a name and then had nowhere to go; the laptop is
+   * told why instead, and the sign-in that does work on it is the way
+   * forward.
+   */
+  it('turns a desktop visitor away from the guest door', async () => {
     showWithLink(false);
 
-    expect(await screen.findByLabelText('Event code')).toHaveValue('ABC123');
-    expect(await screen.findByRole('dialog', { name: 'Enter event info' }))
-      .toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Enter event info' }))
+        .toBeNull());
   });
 
   it('says where the code came from, rather than asking for it', async () => {
