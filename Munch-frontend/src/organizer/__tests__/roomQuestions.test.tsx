@@ -101,6 +101,28 @@ describe('the questions panel', () => {
     expect(screen.queryByText(/The host/)).toBeNull();
   });
 
+  /*
+   * ...but the person sorting the board does see it. They are choosing
+   * what goes in front of a hall, and a question with nobody behind it
+   * is a decision made half blind.
+   */
+  it('names the asker to whoever sorts the board', async () => {
+    // Nothing waiting, so the only place that name can come from is the
+    // question itself - the requests queue below carries it too.
+    api.getPendingMessages.mockResolvedValue([] as any);
+    show({ canSort: true });
+    await screen.findByText(/purpose of spending/);
+
+    expect(await screen.findByText('Rahul Ingnam')).toBeInTheDocument();
+  });
+
+  it('still says nothing about who they asked', async () => {
+    show({ canSort: true });
+    await screen.findByText(/purpose of spending/);
+
+    expect(screen.queryByText(/The host/)).toBeNull();
+  });
+
   it('sends a vote and takes the board back', async () => {
     api.voteOnBoard.mockResolvedValue({ faq: [entry({ score: 13, my_vote: 1 })], suggestions: [] } as any);
     show();

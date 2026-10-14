@@ -12,7 +12,7 @@ import { Grouped, groupSessions } from './grouping';
 import { stateOf } from './HomeShell';
 import { PhotoImage } from '../../organizer/Photos';
 import fileIcon from './icons/file.svg';
-import downloadIcon from './icons/download.svg';
+import { resourceBytes, SaveButton, useSaving } from './download';
 
 type Tab = 'agendas' | 'speaker' | 'files' | 'questions' | 'suggestions';
 
@@ -184,6 +184,7 @@ export const EventDetail: React.FC<{
   onEnterRoom?: () => void;
 }> = ({ event, fromHome = false, onBack, onEnterRoom }) => {
   const { t, num } = useOrganizer();
+  const { busy, save } = useSaving();
   const [tab, setTab] = useState<Tab>('agendas');
   /** The files tab holds two: the handouts, and the albums. */
   const [filesAt, setFilesAt] = useState<'agenda' | 'photos'>('agenda');
@@ -656,21 +657,18 @@ export const EventDetail: React.FC<{
                                 {formatSize(file.file_size)}
                               </span>
                             </span>
-                            {file.web_view_link && (
-                              <a
-                                href={file.web_view_link}
-                                target="_blank"
-                                rel="noreferrer"
-                                aria-label={t({
-                                  ne: `${file.display_name} खोल्नुहोस्`,
-                                  en: `Download ${file.display_name}`,
-                                })}
-                                className="bg-[#efefef] rounded-[12px] p-2 flex-none
-                                  grid place-items-center"
-                              >
-                                <img src={downloadIcon} alt="" width="18" height="18" />
-                              </a>
-                            )}
+                            <SaveButton
+                              label={t({
+                                ne: `${file.display_name} डाउनलोड गर्नुहोस्`,
+                                en: `Download ${file.display_name}`,
+                              })}
+                              busy={busy === file.id}
+                              onClick={() => save(
+                                file.id,
+                                file.display_name ?? 'file',
+                                () => resourceBytes(event.id, file.id),
+                              )}
+                            />
                           </li>
                           ))}
                         </ul>
@@ -742,21 +740,18 @@ export const EventDetail: React.FC<{
                       {formatSize(file.file_size)}
                     </span>
                   </span>
-                  {file.web_view_link && (
-                    <a
-                      href={file.web_view_link}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label={t({
-                        ne: `${file.display_name} खोल्नुहोस्`,
-                        en: `Download ${file.display_name}`,
-                      })}
-                      className="bg-[#efefef] rounded-[12px] p-2 flex-none
-                        grid place-items-center"
-                    >
-                      <img src={downloadIcon} alt="" width="18" height="18" />
-                    </a>
-                  )}
+                  <SaveButton
+                    label={t({
+                      ne: `${file.display_name} डाउनलोड गर्नुहोस्`,
+                      en: `Download ${file.display_name}`,
+                    })}
+                    busy={busy === file.id}
+                    onClick={() => save(
+                      file.id,
+                      file.display_name ?? 'file',
+                      () => resourceBytes(event.id, file.id),
+                    )}
+                  />
                 </li>
               ))}
             </ul>

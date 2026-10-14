@@ -1557,6 +1557,71 @@ class EventRoomViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED
         )
 
+    @action(
+        detail=True,
+        methods=['get'],
+        url_path=r'resources/(?P<artifact_id>[^/.]+)/download',
+    )
+    def resource_download(self, request, pk=None, artifact_id=None):
+        """Hand a shared file to somebody signed in to this event.
+
+        The listing already carried Drive's own ``web_view_link``, and the
+        browser was sent there - which works for the host, who owns the
+        file, and for nobody else: an attendee has no place in the host's
+        Drive and lands on Google's "request access" page. The bytes have
+        to come back through here, where this event's own rules about who
+        may read what are the ones that apply.
+
+        Served as an attachment, so it saves rather than opening: an
+        attendee taking a copy away is the whole point of the screen.
+        """
+        from django.http import HttpResponse
+        from src.apps.artifacts.models import Artifact, ArtifactType
+        from src.apps.artifacts.visibility import can_organize, is_released
+        from src.apps.drive.services.google_drive_adapter import GoogleDriveAdapter
+
+        # Who may see the event at all is settled here, by the same rules
+        # the listing goes through.
+        event = self.get_object()
+
+        artifact = Artifact.objects.filter(
+            id=artifact_id, event=event, artifact_type=ArtifactType.RESOURCE,
+        ).first()
+        if artifact is None or not artifact.drive_file_id:
+            return Response(
+                {'error': 'No such resource on this event'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # The listing withholds a session's files until that session ends.
+        # The download has to say the same, or the link is a way round the
+        # rule rather than a way to use it.
+        if not (is_released(artifact) or can_organize(event, request.user)):
+            return Response(
+                {'error': 'This file opens when its session ends'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            adapter = GoogleDriveAdapter(str(event.host_id))
+            content = adapter.download_file(artifact.drive_file_id)
+        except Exception as e:
+            logger.error(f"Download failed for {artifact.id}: {e}")
+            return Response(
+                {'error': 'Could not fetch this file'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        response = HttpResponse(
+            content,
+            content_type=artifact.mime_type or 'application/octet-stream',
+        )
+        response['Content-Disposition'] = (
+            f'attachment; filename="{artifact.display_name}"'
+        )
+        response['Content-Length'] = str(len(content))
+        return response
+
     def _remove_resource(self, request, event):
         """Take a shared file off the event, and out of the host's Drive.
 

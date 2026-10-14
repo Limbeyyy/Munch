@@ -645,6 +645,30 @@ class ApiClient {
     return URL.createObjectURL(response.data);
   }
 
+  /** The photograph's own bytes, to be saved rather than shown. */
+  async getPhotoBlob(photoId: string): Promise<Blob> {
+    const response = await this.client.get(
+      `/events/photos/${photoId}/file/`, { responseType: 'blob' }
+    );
+    return response.data;
+  }
+
+  /**
+   * A shared file's own bytes.
+   *
+   * Through this backend rather than straight to the Drive link the
+   * listing carries: that link is the host's copy in the host's Drive,
+   * and nobody else in the event has a place in it. Here, the event's
+   * own rules about who may read what are the ones that decide.
+   */
+  async downloadResource(eventId: string, resourceId: string): Promise<Blob> {
+    const response = await this.client.get(
+      `/events/${eventId}/resources/${resourceId}/download/`,
+      { responseType: 'blob' }
+    );
+    return response.data;
+  }
+
   /**
    * Put a report into this person's own Google Sheets.
    *

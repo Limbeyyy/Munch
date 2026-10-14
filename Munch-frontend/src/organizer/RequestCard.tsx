@@ -69,8 +69,19 @@ export const RequestRow: React.FC<{
   name: string;
   under: string;
   actions: React.ReactNode;
-}> = ({ name, under, actions }) => (
-  <div className="flex items-center gap-2 p-2">
+  /**
+   * The taller row the design draws for a message: the whole of it,
+   * then who sent it, then the buttons on a line of their own.
+   *
+   * A name fits on one line and a question does not. Truncating one to
+   * keep the buttons beside it leaves the host deciding on "I am testing
+   * this quest…", which is not enough of a question to accept or
+   * reject - so where the subject is something somebody wrote, it is
+   * shown whole and the buttons move underneath it.
+   */
+  stacked?: boolean;
+}> = ({ name, under, actions, stacked }) => {
+  const avatar = (
     <span
       className="bg-[#fbecd1] rounded-full w-10 h-10 grid place-items-center flex-none
         text-navy-900 font-semibold text-[15px]"
@@ -78,13 +89,41 @@ export const RequestRow: React.FC<{
     >
       {(name || '?').trim().charAt(0).toUpperCase()}
     </span>
-    <div className="min-w-0 flex-1 px-1">
-      <p className="text-[12px] font-medium text-black leading-[1.2] truncate">{name}</p>
-      <p className="text-[12px] text-[#656565] leading-[1.5] truncate">{under}</p>
+  );
+
+  if (stacked) {
+    return (
+      <div className="flex flex-col items-end justify-center gap-2 p-2
+        border-b-[0.61px] border-[#ccc] last:border-b-0">
+        <div className="flex w-full gap-2 items-start px-2">
+          {avatar}
+          <div className="min-w-0 flex-1 flex flex-col justify-center">
+            <p className="text-[12px] font-medium text-black leading-[1.2]
+              [overflow-wrap:anywhere]">
+              {name}
+            </p>
+            <p className="text-[12px] text-[#656565] leading-[1.5]
+              [overflow-wrap:anywhere]">
+              {under}
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-3 items-start flex-none">{actions}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 p-2">
+      {avatar}
+      <div className="min-w-0 flex-1 px-1">
+        <p className="text-[12px] font-medium text-black leading-[1.2] truncate">{name}</p>
+        <p className="text-[12px] text-[#656565] leading-[1.5] truncate">{under}</p>
+      </div>
+      <div className="flex gap-3 items-center flex-none">{actions}</div>
     </div>
-    <div className="flex gap-3 items-center flex-none">{actions}</div>
-  </div>
-);
+  );
+};
 
 /** The buttons those rows carry, in the two weights the design gives them. */
 export const RequestButton: React.FC<{

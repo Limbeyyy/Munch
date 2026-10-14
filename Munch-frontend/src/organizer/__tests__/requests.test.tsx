@@ -106,4 +106,40 @@ describe('a row in one', () => {
     expect(screen.getByRole('button', { name: 'Suggestions' }).className)
       .toContain('border');
   });
+
+  /*
+   * A long question is the whole decision.
+   *
+   * The ordinary row truncates its subject, which is right for a name
+   * and wrong for something somebody wrote: a host asked to accept or
+   * reject "I am testing this quest…" has not been shown the thing they
+   * are deciding about. The stacked row shows it whole and moves the
+   * buttons underneath to make the width.
+   */
+  const LONG = 'I am testing this question ul for long form of questions '
+    + 'about the same as last time I was there to help you out with that one';
+
+  it('truncates a long subject in the ordinary row', () => {
+    render(
+      <OrganizerProvider>
+        <RequestRow name={LONG} under="Prabhat Karmacharya" actions={null} />
+      </OrganizerProvider>
+    );
+
+    expect(screen.getByText(LONG).className).toContain('truncate');
+  });
+
+  it('shows it whole in the stacked one', () => {
+    render(
+      <OrganizerProvider>
+        <RequestRow stacked name={LONG} under="Prabhat Karmacharya" actions={null} />
+      </OrganizerProvider>
+    );
+
+    const said = screen.getByText(LONG);
+    expect(said.className).not.toContain('truncate');
+    // Still the asker underneath it, and still the initial beside it.
+    expect(screen.getByText('Prabhat Karmacharya')).toBeInTheDocument();
+    expect(screen.getByText('I')).toBeInTheDocument();
+  });
 });

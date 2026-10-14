@@ -780,9 +780,18 @@ describe('one event, opened', () => {
 
     expect(await screen.findByText('Deck.pdf')).toBeInTheDocument();
     expect(screen.getByText(/^PDF · /)).toBeInTheDocument();
+    /*
+     * A button, not a link.
+     *
+     * The link went to Drive's own `web_view_link`, which is the host's
+     * copy in the host's Drive - the host could open it and nobody else
+     * could. The bytes come back through this backend now, on the
+     * signed-in request, which needs a header no <a href> can carry.
+     */
     expect(
-      screen.getByRole('link', { name: 'Download Deck.pdf' })
-    ).toHaveAttribute('href', 'https://example.test/deck');
+      screen.getByRole('button', { name: 'Download Deck.pdf' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Download/ })).toBeNull();
   });
 
   /** A room is only worth offering while there is one. */

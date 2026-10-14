@@ -1,5 +1,7 @@
 import React from 'react';
-import { LineSpacing, Pair, TextSize, Theme, useOrganizer } from './i18n';
+import {
+  AppTextSize, LineSpacing, Pair, TextSize, Theme, useOrganizer,
+} from './i18n';
 import { SectionHeading, SettingsHeading, SettingsSheet } from './ProfileView';
 
 /** The three themes, each with the swatch the design gives it. */
@@ -27,10 +29,20 @@ const THEMES: { id: Theme; label: Pair; lede: Pair; swatch: string }[] = [
   },
 ];
 
-const SIZES: { id: TextSize; label: Pair; type: string }[] = [
-  { id: 'small', label: { ne: 'सानो', en: 'small' }, type: 'text-[12px] leading-4' },
-  { id: 'medium', label: { ne: 'मध्यम', en: 'medium' }, type: 'text-[14px] leading-5' },
-  { id: 'large', label: { ne: 'ठूलो', en: 'large' }, type: 'text-[16px] leading-6' },
+/*
+ * The three steps, and what each one means for the rest of the place.
+ *
+ * One control, two settings. It used to size a transcript and nothing
+ * else, which left somebody who found the type small everywhere with
+ * the one screen they had not complained about made larger. `app` is
+ * the same choice said in the whole interface's own steps, which run
+ * one finer than these: 'medium' is the base the design is drawn at,
+ * so it is 'default' rather than a size of its own.
+ */
+const SIZES: { id: TextSize; app: AppTextSize; label: Pair; type: string }[] = [
+  { id: 'small', app: 'small', label: { ne: 'सानो', en: 'small' }, type: 'text-[12px] leading-4' },
+  { id: 'medium', app: 'default', label: { ne: 'मध्यम', en: 'medium' }, type: 'text-[14px] leading-5' },
+  { id: 'large', app: 'large', label: { ne: 'ठूलो', en: 'large' }, type: 'text-[16px] leading-6' },
 ];
 
 const SPACINGS: { id: LineSpacing; label: Pair }[] = [
@@ -105,10 +117,16 @@ export const AppearanceView: React.FC = () => {
             flex flex-col gap-5">
             <div className="flex flex-col">
               <span className="text-[12px] font-medium text-body leading-4">
-                {t({ ne: 'प्रतिलिपिको अक्षर आकार', en: 'Transcript text size' })}
+                {t({ ne: 'अक्षर आकार', en: 'Text size' })}
+              </span>
+              <span className="pt-0.5 text-[11px] text-subtle leading-4">
+                {t({
+                  ne: 'यो आकार प्रतिलिपि मात्र होइन, सबै पर्दामा लागू हुन्छ।',
+                  en: 'Applies to every screen, not only the transcript.',
+                })}
               </span>
               <div className="pt-2 flex gap-2" role="radiogroup"
-                aria-label={t({ ne: 'प्रतिलिपिको अक्षर आकार', en: 'Transcript text size' })}>
+                aria-label={t({ ne: 'अक्षर आकार', en: 'Text size' })}>
                 {SIZES.map((one) => {
                   const chosen = look.transcriptSize === one.id;
                   return (
@@ -116,7 +134,9 @@ export const AppearanceView: React.FC = () => {
                       key={one.id}
                       role="radio"
                       aria-checked={chosen}
-                      onClick={() => setLook((v) => ({ ...v, transcriptSize: one.id }))}
+                      onClick={() => setLook((v) => ({
+                        ...v, transcriptSize: one.id,
+                      }))}
                       className={`flex-1 rounded-[8px] border-[1.8px] py-2 flex flex-col
                         items-center ${chosen ? 'border-head bg-[#f9fafb]' : 'border-line'}`}
                     >

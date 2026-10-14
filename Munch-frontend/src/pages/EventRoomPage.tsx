@@ -1514,6 +1514,9 @@ const EventRoomInner: React.FC = () => {
                       ) : boardRequests.map((message) => (
                         <RequestRow
                           key={message.id}
+                          /* Whole, not truncated: this is the thing being
+                             decided on, so it has to be readable. */
+                          stacked
                           name={message.body}
                           under={`${message.sender_name} · ${
                             message.topic === 'suggestion' ? 'Suggestion' : 'Question'
@@ -1528,7 +1531,7 @@ const EventRoomInner: React.FC = () => {
                                 Accept
                               </RequestButton>
                               <RequestButton
-                                tone="decline"
+                                tone="quiet"
                                 disabled={decidingGuest === message.id}
                                 onClick={() => decideBoardRequest(message, 'decline')}
                               >

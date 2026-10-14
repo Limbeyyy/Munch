@@ -61,9 +61,14 @@ interface Props {
  * The board, as the room sees it.
  *
  * A question, the room's sense of how much it wants answering, and a vote
- * either way. Nothing else: the asker's name, who they originally wrote
- * to, and what the host did with the other messages are not the reader's
- * business and are not here.
+ * either way. Who it was originally written to, and what the host did
+ * with the other messages, are not the reader's business and are not
+ * here.
+ *
+ * The asker's name is the one exception, and only for whoever sorts the
+ * board: the room reads a question on its merits, but the person
+ * deciding what goes up in front of a hall has to know whose words they
+ * are putting there.
  *
  * The host may show pending requests with the matching board tab, while
  * attendees can read, vote, and send their own messages here.
@@ -253,6 +258,18 @@ export const RoomQuestions: React.FC<Props> = ({
           {entry.body}
         </p>
       </div>
+
+      {/* Who asked, under the words and to the right of them.
+
+          Only for whoever sorts the board. The room reads a question on
+          its merits and the asker's name is nobody else's business
+          there, but the person deciding what goes up is answering to a
+          hall and has to know who they are putting in front of it. */}
+      {canSort && entry.asked_by && (
+        <p className="text-[12px] leading-4 text-[#656565] text-right">
+          {entry.asked_by}
+        </p>
+      )}
 
       {/* Indented to the question, not centred under it: the arrows
           belong to the words above them, and a row of its own in the

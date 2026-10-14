@@ -4,6 +4,7 @@ import { Pair, useOrganizer } from './i18n';
 import { Btn, Ic } from './ui';
 import { FigmaIcon, FigmaIconName } from '../assets/icons';
 import manchMark from '../assets/icons/manch-mark.svg';
+import { FreePlanBanner, GetProCard, usePaidPlan } from './pro';
 
 const REMINDERS_ICON =
   'M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0';
@@ -97,6 +98,15 @@ export const OrganizerShell: React.FC<Props> = ({
   const { user, logout } = useAuthStore();
   const { lang, setLang, t, a11y } = useOrganizer();
   const [railOpen, setRailOpen] = useState(false);
+  const paid = usePaidPlan();
+
+  /*
+   * Shown on every screen but the one it sends you to, and only once
+   * the server has actually said this account is unpaid. `null` is not
+   * yet known rather than free, so a paying host never sees the line
+   * flash up while their plan is still being read.
+   */
+  const selling = paid !== true && view !== 'subscription';
 
   const who = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim()
     || user?.email || '';
@@ -161,8 +171,10 @@ export const OrganizerShell: React.FC<Props> = ({
         </div>
       ))}
 
+      {selling && <GetProCard onUpgrade={() => go('subscription')} />}
+
       {/* The mark sits at the foot of the rail, as the design has it. */}
-      <div className="mt-auto pt-4 flex items-center justify-center gap-5">
+      <div className={`${selling ? '' : 'mt-auto '}pt-4 flex items-center justify-center gap-5`}>
         <span className="border border-navy-800/15 rounded-[10px] p-0.5 flex items-center">
           <img src={manchMark} alt="" width={30} height={30} />
         </span>
@@ -284,6 +296,8 @@ export const OrganizerShell: React.FC<Props> = ({
               </button>
             </div>
           </header>
+
+          {selling && <FreePlanBanner onUpgrade={() => go('subscription')} />}
 
           <main className="px-4 sm:px-7 py-6 pb-24 min-w-0">{children}</main>
         </div>

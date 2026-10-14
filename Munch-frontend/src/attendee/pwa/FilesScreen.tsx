@@ -7,6 +7,7 @@ import { useOrganizer } from '../../organizer/i18n';
 import { formatSize, kindOf } from '../../organizer/filesAndSummaries/shared';
 import { Switcher } from './PhoneShell';
 import { API_BASE_URL } from '../../services/apiConfig';
+import { photoBytes, resourceBytes, useSaving } from './download';
 
 /** The tinted square a file's kind sits in. */
 const TINT: Record<string, { bg: string; ink: string }> = {
@@ -19,8 +20,24 @@ const TINT: Record<string, { bg: string; ink: string }> = {
   FILE: { bg: '#f3f4f6', ink: '#6a7282' },
 };
 
+/** The downward arrow both of a file row's controls draw. */
+const ArrowDown: React.FC = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"
+    strokeLinejoin="round" aria-hidden>
+    <path d="M12 4v11M12 15l-4-4M12 15l4-4M5 19h14" />
+  </svg>
+);
+
 /** One photograph, fetched on the signed-in request rather than linked. */
-const Tile: React.FC<{ photo: EventPhoto }> = ({ photo }) => {
+const Tile: React.FC<{
+  photo: EventPhoto;
+  busy?: boolean;
+  /** Absent on a folder's cover, which is drawn inside a button of
+      its own and cannot carry a second one. */
+  onSave?: (name: string) => void;
+}> = ({ photo, busy, onSave }) => {
+  const { t } = useOrganizer();
   const [src, setSrc] = useState('');
 
   useEffect(() => {
@@ -38,10 +55,29 @@ const Tile: React.FC<{ photo: EventPhoto }> = ({ photo }) => {
   }, [photo.id]);
 
   return (
-    <div className="aspect-square rounded-[6px] overflow-hidden bg-[#eaebed]">
+    <div className="relative aspect-square rounded-[6px] overflow-hidden bg-[#eaebed]">
       {src && (
         <img src={src} alt={photo.caption || ''}
           className="w-full h-full object-cover" />
+      )}
+      {src && onSave && (
+        <button
+          type="button"
+          onClick={() => onSave(`${photo.caption || photo.id}.jpg`)}
+          disabled={busy}
+          aria-label={t({
+            ne: 'तस्बिर डाउनलोड गर्नुहोस्',
+            en: 'Download photo',
+          })}
+          className="absolute bottom-1 right-1 size-6 rounded-full bg-black/55
+            grid place-items-center text-white disabled:opacity-50"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"
+            strokeLinejoin="round" aria-hidden>
+            <path d="M12 4v11M12 15l-4-4M12 15l4-4M5 19h14" />
+          </svg>
+        </button>
       )}
     </div>
   );
@@ -62,6 +98,7 @@ export const FilesScreen: React.FC<{
   onFolderOpenChange: (open: boolean) => void;
 }> = ({ event, sessions, guestToken, guestResources, onFolderOpenChange }) => {
   const { t, num } = useOrganizer();
+  const { busy, save } = useSaving();
   const [tab, setTab] = useState<'files' | 'photos'>('files');
   const [files, setFiles] = useState<Artifact[]>([]);
   const [folders, setFolders] = useState<PhotoFolder[]>([]);
@@ -162,7 +199,14 @@ export const FilesScreen: React.FC<{
           </p>
         ) : (
           <div className="p-4 grid grid-cols-4 gap-2">
-            {inside.map((one) => <Tile key={one.id} photo={one} />)}
+            {inside.map((one) => (
+              <Tile
+                key={one.id}
+                photo={one}
+                busy={busy === one.id}
+                onSave={(name) => save(one.id, name, () => photoBytes(one.id))}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -219,28 +263,43 @@ export const FilesScreen: React.FC<{
                             {kind} · {formatSize(one.file_size)}
                           </span>
                         </span>
-                        {one.web_view_link ? (
+                        {/* A guest's link already carries their token,
+                            so theirs stays a link. Everybody else needs
+                            a header on the request, which only the
+                            client can add - so theirs is a button that
+                            fetches the bytes and saves them. */}
+                        {guestToken ? (
                           <a
                             href={one.web_view_link}
-                            target="_blank"
-                            rel="noreferrer"
+                            download={one.display_name ?? ''}
                             aria-label={t({
-                              ne: `${one.display_name} खोल्नुहोस्`,
-                              en: `Open ${one.display_name}`,
+                              ne: `${one.display_name} डाउनलोड गर्नुहोस्`,
+                              en: `Download ${one.display_name}`,
                             })}
                             className="size-9 rounded-full bg-[#f2f3f5] grid
                               place-items-center flex-none text-[#5b6070]"
                           >
-                            <svg width="16" height="16" viewBox="0 0 24 24"
-                              fill="none" stroke="currentColor" strokeWidth="1.9"
-                              strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                              <path d="M12 4v11M12 15l-4-4M12 15l4-4M5 19h14" />
-                            </svg>
+                            <ArrowDown />
                           </a>
                         ) : (
-                          <span className="text-[11px] text-[#9ba0ad] flex-none">
-                            {t({ ne: 'लिङ्क छैन', en: 'No link' })}
-                          </span>
+                          <button
+                            type="button"
+                            disabled={busy === one.id}
+                            onClick={() => save(
+                              one.id,
+                              one.display_name ?? 'file',
+                              () => resourceBytes(event.id, one.id),
+                            )}
+                            aria-label={t({
+                              ne: `${one.display_name} डाउनलोड गर्नुहोस्`,
+                              en: `Download ${one.display_name}`,
+                            })}
+                            className="size-9 rounded-full bg-[#f2f3f5] grid
+                              place-items-center flex-none text-[#5b6070]
+                              disabled:opacity-50"
+                          >
+                            <ArrowDown />
+                          </button>
                         )}
                       </li>
                     );

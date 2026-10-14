@@ -17,6 +17,7 @@ jest.mock('../../../services/api', () => ({
     addHubPost: jest.fn(),
     voteHubPost: jest.fn(),
     getResources: jest.fn(),
+    downloadResource: jest.fn(),
     getSubEvents: jest.fn(),
     getPhotos: jest.fn(),
     getPhotoObjectUrl: jest.fn(),
@@ -630,13 +631,29 @@ describe('the files', () => {
     expect(within(loose).getByText('Venue Map.pdf')).toBeInTheDocument();
   });
 
+  /**
+   * Through this backend, not off to Drive.
+   *
+   * The row used to link straight to the listing's own
+   * ``web_view_link``, which is the host's copy in the host's Drive: the
+   * host could open it and every attendee reached Google's "request
+   * access" page. So the assertion is deliberately that there is *no*
+   * link - a button, whose request can carry the signed-in header.
+   */
   it('offers a way to take one away', async () => {
     api.getResources.mockResolvedValue([pdf] as any);
+    api.downloadResource.mockResolvedValue(new Blob(['pdf']) as any);
     await go('Files');
 
-    expect(
-      await screen.findByRole('link', { name: 'Open Response Plan.pdf' })
-    ).toHaveAttribute('href', 'https://drive.example/a1');
+    const take = await screen.findByRole('button', {
+      name: 'Download Response Plan.pdf',
+    });
+    expect(screen.queryByRole('link', { name: /Response Plan\.pdf/ })).toBeNull();
+
+    fireEvent.click(take);
+    await waitFor(() =>
+      expect(api.downloadResource).toHaveBeenCalledWith('e1', 'a1')
+    );
   });
 
   /** An attendee takes a copy away and adds nothing. */
