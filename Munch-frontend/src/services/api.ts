@@ -1238,9 +1238,22 @@ class ApiClient {
     return response.data;
   }
 
-  async getAttendanceReport(eventId: string): Promise<any> {
-    const response = await this.client.get(`/admin/attendance/${eventId}/`);
-    return response.data;
+  /**
+   * The turnout on one event, for a card or a summary.
+   *
+   * The same endpoint `getAttendance` reads, and deliberately so. This
+   * used to ask `/admin/attendance/<id>/`, which no longer exists and
+   * answered 404 - and both callers swallow a failure and fall back to
+   * zero, so an event with four invited and one who came reported
+   * "0/0, 0%" on its summary and on the moderation card while the
+   * attendance screen, reading the live endpoint, had it right.
+   *
+   * Kept as its own name rather than folded into `getAttendance`: the
+   * two callers here want the counts and not the roll, and the name is
+   * what they are written against.
+   */
+  async getAttendanceReport(eventId: string): Promise<AttendanceReport> {
+    return this.getAttendance(eventId);
   }
 
   // Organization endpoints
