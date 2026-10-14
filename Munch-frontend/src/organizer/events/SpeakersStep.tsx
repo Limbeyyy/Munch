@@ -219,7 +219,7 @@ const AddSpeakerDialog: React.FC<{
         id="manch-speaker-name"
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder={t({ ne: 'सुमिन महर्जन', en: 'Sumin Maharjan' })}
+        placeholder={t({ ne: 'राम प्रसाद रिमाल', en: 'Ram Prasad Rimal' })}
         className={field}
       />
 
@@ -232,7 +232,7 @@ const AddSpeakerDialog: React.FC<{
             id="manch-speaker-position"
             value={position}
             onChange={(e) => setPosition(e.target.value)}
-            placeholder={t({ ne: 'इन्जिनियरिङ प्रमुख', en: 'VP of Engineering' })}
+            placeholder={t({ ne: 'एड्रेसग्राफ प्रा. लि. निर्देशक', en: 'Director of Addressgraph Pvt. Ltd.' })}
             className={field}
           />
         </div>
@@ -244,7 +244,7 @@ const AddSpeakerDialog: React.FC<{
             id="manch-speaker-org"
             value={organization}
             onChange={(e) => setOrganization(e.target.value)}
-            placeholder={t({ ne: 'प्रिक्सा टेक्नोलोजिज', en: 'Prixa Technologies' })}
+            placeholder={t({ ne: 'रामलक्ष्मण इनोवेशन', en: 'RamLaxman Innovations' })}
             className={field}
           />
         </div>
@@ -262,7 +262,7 @@ const AddSpeakerDialog: React.FC<{
         id="manch-speaker-linkedin"
         value={linkedin}
         onChange={(e) => setLinkedin(e.target.value)}
-        placeholder="linkedin.com/in/…"
+        placeholder="https://www.linkedin.com/in/ram-prasad-rimal-600030132/"
         className={field}
       />
 
@@ -273,7 +273,7 @@ const AddSpeakerDialog: React.FC<{
         id="manch-speaker-website"
         value={website}
         onChange={(e) => setWebsite(e.target.value)}
-        placeholder="https://…"
+        placeholder="https://www.ramlaxmangroup.com"
         className={field}
       />
 

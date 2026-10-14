@@ -60,7 +60,7 @@ const type = (placeholder: string, value: string) =>
   fireEvent.change(screen.getByPlaceholderText(placeholder), { target: { value } });
 
 const fillIn = () => {
-  type('Emergency Response Overview', 'Opening');
+  type('Kataho Emergency Response', 'Opening');
 };
 
 /**
@@ -204,7 +204,7 @@ describe('editing an agenda item', () => {
 
   it('updates that session rather than writing a second one', async () => {
     const added = showEdit();
-    type('Emergency Response Overview', 'Session Kataho, revised');
+    type('Kataho Emergency Response', 'Session Kataho, revised');
 
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
@@ -441,7 +441,7 @@ describe('choosing the day', () => {
 
   it('writes the slot onto the day that was chosen', async () => {
     showOn(['2026-09-15', '2026-09-16']);
-    type('Emergency Response Overview', 'Second morning');
+    type('Kataho Emergency Response', 'Second morning');
     fireEvent.change(screen.getByLabelText(/Select Day/), {
       target: { value: '2026-09-16' },
     });

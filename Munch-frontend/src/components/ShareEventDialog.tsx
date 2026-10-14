@@ -217,7 +217,7 @@ export const ShareEventDialog: React.FC<Props> = ({
               id="manch-share-emails"
               value={raw}
               onChange={(e) => setRaw(e.target.value)}
-              placeholder="alice@gmail.com, bob@gmail.com"
+              placeholder="ramprasadrimal@gmail.com, laxmanprasadrimal@gmail.com"
               className="w-full h-[90px] bg-[#f9fafb] border border-[#e5e7eb] rounded-[12px]
                 px-4 py-[14px] text-[16px] leading-6 text-[#101010] resize-none
                 focus:outline-none focus:ring-2 focus:ring-navy-500"

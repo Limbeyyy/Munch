@@ -135,7 +135,7 @@ export const AppearanceView: React.FC = () => {
                       role="radio"
                       aria-checked={chosen}
                       onClick={() => setLook((v) => ({
-                        ...v, transcriptSize: one.id,
+                        ...v, transcriptSize: one.id, textSize: one.app,
                       }))}
                       className={`flex-1 rounded-[8px] border-[1.8px] py-2 flex flex-col
                         items-center ${chosen ? 'border-head bg-[#f9fafb]' : 'border-line'}`}

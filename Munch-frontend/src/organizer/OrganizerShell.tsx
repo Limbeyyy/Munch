@@ -106,7 +106,7 @@ export const OrganizerShell: React.FC<Props> = ({
    * yet known rather than free, so a paying host never sees the line
    * flash up while their plan is still being read.
    */
-  const selling = paid !== true && view !== 'subscription';
+  const selling = paid === false && view !== 'subscription';
 
   const who = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim()
     || user?.email || '';

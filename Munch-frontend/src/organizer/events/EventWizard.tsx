@@ -471,7 +471,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder={t({ ne: 'आपतकालीन सेवा बैठक', en: 'Emergency Service Event' })}
+              placeholder={t({ ne: 'कताहो आकस्मिक सेवा कार्यक्रम', en: 'Kataho Emergency Services Event' })}
               className={inputClass}
             />
           </Field>
@@ -523,7 +523,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
             <input
               value={venue}
               onChange={(e) => setVenue(e.target.value)}
-              placeholder={t({ ne: 'काठमाडौँ सम्मेलन केन्द्र', en: 'Kathmandu Convention Center' })}
+              placeholder={t({ ne: 'रामलक्ष्मण इनोवेशन', en: 'RamLaxman Innovations' })}
               className={inputClass}
             />
           </Field>
@@ -533,6 +533,7 @@ export const EventWizard: React.FC<Props> = ({ event, onClose, onSaved }) => {
               rows={3}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              placeholder={t({ ne: 'कताहो इमर्जेन्सी सर्भिस (आपत्कालीन सेवा) नेपालमा कताहो डिजिटल एड्रेस सिस्टमको....', en: 'Kataho Emergency Services is a key feature of the Kataho Digital Address System.....' })}
               className={inputClass}
             />
           </Field>

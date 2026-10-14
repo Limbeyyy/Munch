@@ -314,8 +314,8 @@ export const AddAgendaDialog: React.FC<Props> = ({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder={t({
-                ne: 'आपतकालीन प्रतिकार्यको परिचय',
-                en: 'Emergency Response Overview',
+                ne: 'कताहो आकस्मिक प्रतिक्रिया',
+                en: 'Kataho Emergency Response',
               })}
               className={BOX}
             />
