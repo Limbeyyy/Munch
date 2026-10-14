@@ -221,6 +221,11 @@ export const LiveRoom: React.FC<{ onLeave: () => void }> = ({ onLeave }) => {
         (at === 'agenda' && agendaDetailOpen)
         || (at === 'files' && photoFolderOpen)
       }
+      /* One agenda item, opened. It carries its own way back out, so
+         the bar underneath is a second answer to a question already
+         answered - and on a phone it costs a strip of the screen to
+         repeat it. Only this screen: the photographs keep theirs. */
+      hideNav={at === 'agenda' && agendaDetailOpen}
       eventTitle={event.title}
     >
       {at === 'transcript' && (

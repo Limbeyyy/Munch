@@ -73,12 +73,20 @@ export const PhoneShell: React.FC<{
   /** Unread counts against the tabs that carry them. */
   pips?: Partial<Record<Section, number>>;
   hideSectionHeader?: boolean;
+  /**
+   * Leave the bar off entirely.
+   *
+   * For a screen that has its own way back, where the bar is a second
+   * answer to a question already answered and takes a strip of a phone
+   * to repeat it.
+   */
+  hideNav?: boolean;
   hideProfile?: boolean;
   eventTitle?: string;
   children: React.ReactNode;
 }> = ({
-  at, onGo, pips = {}, hideSectionHeader = false, hideProfile = false,
-  eventTitle, children,
+  at, onGo, pips = {}, hideSectionHeader = false, hideNav = false,
+  hideProfile = false, eventTitle, children,
 }) => {
   const { t } = useOrganizer();
   const horizontalHeader = !hideSectionHeader &&
@@ -100,9 +108,12 @@ export const PhoneShell: React.FC<{
       {/* Padded for the bar, so the last line of anything scrollable is
           readable rather than sitting behind it. Add a little room at the
           top so the first element doesn't sit flush against the safe-area.
-          */}
-      <main className="flex-1 pb-[76px]">{children}</main>
 
+          No bar, no padding: the gap would be a strip of nothing at the
+          foot of the screen. */}
+      <main className={`flex-1 ${hideNav ? '' : 'pb-[76px]'}`}>{children}</main>
+
+      {!hideNav && (
       <nav
         aria-label={t({ ne: 'मुख्य', en: 'Sections' })}
         className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-[#e8eaee]
@@ -137,6 +148,7 @@ export const PhoneShell: React.FC<{
           );
         })}
       </nav>
+      )}
     </div>
   );
 };

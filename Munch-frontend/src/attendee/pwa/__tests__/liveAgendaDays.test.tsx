@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { OrganizerProvider } from '../../../organizer/i18n';
 import { LiveRoom } from '../LiveRoom';
 import { apiClient } from '../../../services/api';
@@ -23,6 +23,7 @@ jest.mock('../../../services/api', () => ({
     listSessions: jest.fn(),
     getEventSegments: jest.fn(),
     getSessionSummary: jest.fn(),
+    getSpeakers: jest.fn(),
     getHub: jest.fn(),
     getResources: jest.fn(),
     getSubEvents: jest.fn(),
@@ -63,6 +64,7 @@ const sessions = Array.from({ length: DAYS }, (_, i) => ({
   id: `s${i + 1}`, event: 'e1', title: `Talk ${i + 1}`, description: '',
   starts_at: `2026-09-${15 + i}T04:00:00Z`,
   ends_at: `2026-09-${15 + i}T05:00:00Z`,
+  duration_minutes: 60,
   status: 'scheduled', speaker_name: '', speaker_email: '', speaker_phone: '',
   sub_event: null, created_at: '', updated_at: '',
 })) as any[];
@@ -79,6 +81,8 @@ beforeEach(() => {
   api.getResources.mockResolvedValue([]);
   api.getHub.mockResolvedValue({ questions: [], suggestions: [] } as any);
   api.getEventSegments.mockResolvedValue([]);
+  api.getSessionSummary.mockResolvedValue(null as any);
+  (api as any).getSpeakers?.mockResolvedValue?.([]);
   api.getPhotos.mockResolvedValue({ folders: [], photos: [] } as any);
   api.joinEvent.mockResolvedValue({} as any);
   api.leaveEvent.mockResolvedValue({} as any);
@@ -158,5 +162,47 @@ describe('the bar along the bottom of the room', () => {
 
     expect(bar.className).toContain('fixed');
     expect(bar.className).toContain('bottom-0');
+  });
+
+  /*
+   * One agenda item, opened, is the exception.
+   *
+   * That screen carries its own way back out, so the bar underneath
+   * answers a question already answered - and on a phone it costs a
+   * strip of the screen to repeat it.
+   */
+  it('goes away on one opened agenda item, which has its own way back',
+    async () => {
+      await openAgenda();
+
+      fireEvent.click(await screen.findByText('Talk 1'));
+
+      await waitFor(() =>
+        expect(screen.queryByRole('navigation', { name: 'Sections' }))
+          .toBeNull());
+      // And the way back is still there, or there would be no way out.
+      expect(screen.getByText('Agenda')).toBeInTheDocument();
+    });
+
+  it('comes back when that item is closed', async () => {
+    await openAgenda();
+    fireEvent.click(await screen.findByText('Talk 1'));
+    await waitFor(() =>
+      expect(screen.queryByRole('navigation', { name: 'Sections' })).toBeNull());
+
+    fireEvent.click(screen.getByText('Agenda'));
+
+    expect(await screen.findByRole('navigation', { name: 'Sections' }))
+      .toBeInTheDocument();
+  });
+
+  /** Only that one screen: the photographs keep theirs. */
+  it('stays on the files tab, folder open or not', async () => {
+    const bar = await openAgenda();
+    within(bar).getByText('Files').click();
+
+    await waitFor(() =>
+      expect(screen.getByRole('navigation', { name: 'Sections' }))
+        .toBeInTheDocument());
   });
 });
