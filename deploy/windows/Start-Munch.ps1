@@ -194,6 +194,12 @@ if ($BindHost -ne '127.0.0.1') {
     }
 }
 
+# A live room's websockets go through Redis, so a server without it
+# serves pages and then drops every room on the floor - silently, from
+# the browser's point of view. Said here rather than discovered there.
+. (Join-Path $PSScriptRoot 'lib\Preflight.ps1')
+Assert-RedisUp -AppDir $AppDir
+
 Write-Step "Starting on http://${BindHost}:${Port}"
 Write-Note "Reachable from other machines on this network at http://<this machine's ip>:$Port"
 Write-Note "Ctrl+C to stop."

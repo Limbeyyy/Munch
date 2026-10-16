@@ -35,6 +35,9 @@ $env:DJANGO_ENV             = 'prod'
 $env:DJANGO_SETTINGS_MODULE = "config.settings.$Settings"
 $env:PYTHONUNBUFFERED       = '1'
 
+. (Join-Path $PSScriptRoot 'lib\Preflight.ps1')
+Assert-RedisUp -AppDir $AppDir
+
 Write-Host "`n==> Celery beat" -ForegroundColor Cyan
 Write-Host "    Ctrl+C to stop.`n" -ForegroundColor DarkGray
 & $py -m celery -A config.celery beat --loglevel=INFO
