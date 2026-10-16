@@ -269,6 +269,20 @@ function App() {
               </ProtectedRoute>
             }
           />
+
+          {/* Anything else at all.
+
+              Without this a path the router does not know renders
+              nothing: the server answers a navigation with index.html
+              whatever the path, so the app loads, matches no route and
+              draws a white screen with no error anywhere. That is what
+              an installed PWA did for as long as its start_url was a
+              path this table never had.
+
+              "/" rather than a not-found page, because every such path
+              here is a stale link, a typo or an old install, and what
+              all three want is the way in. */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
       <Toaster position="top-right" />
